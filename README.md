@@ -7,9 +7,7 @@ Yass Reloaded is a fork from Yass 2.4.3 that Saruta has been developing since 20
 
 
 # Downloads
-
-Executables for the original version can be found at [http://yass-along.com](http://yass-along.com)
-Stay tuned for binaries of the Reloaded version.
+Check out the Release Section https://github.com/DoubleDee73/Yass/releases for binaries.
 
 # Developers
 
