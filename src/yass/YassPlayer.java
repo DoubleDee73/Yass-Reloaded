@@ -18,13 +18,14 @@
 
 package yass;
 
+import javafx.embed.swing.JFXPanel;
 import javazoom.jl.decoder.BitstreamException;
-import javazoom.jl.player.advanced.AdvancedPlayer;
-import javazoom.jl.player.advanced.PlaybackEvent;
-import javazoom.jl.player.advanced.PlaybackListener;
 import javazoom.spi.mpeg.sampled.file.MpegAudioFileReader;
-import javazoom.spi.vorbis.sampled.file.VorbisFileFormatType;
-import org.tritonus.share.sampled.file.TAudioFileFormat;
+import uk.co.caprica.vlcj.media.Media;
+import uk.co.caprica.vlcj.media.MediaEventAdapter;
+import uk.co.caprica.vlcj.player.base.MediaPlayer;
+import uk.co.caprica.vlcj.player.base.State;
+import uk.co.caprica.vlcj.player.component.AudioPlayerComponent;
 import yass.renderer.YassNote;
 import yass.renderer.YassPlaybackRenderer;
 import yass.renderer.YassPlayerNote;
@@ -32,10 +33,12 @@ import yass.renderer.YassSession;
 
 import javax.sound.sampled.*;
 import java.awt.image.BufferedImage;
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.text.MessageFormat;
 import java.util.Enumeration;
-import java.util.Map;
 import java.util.Vector;
 
 /**
@@ -44,7 +47,7 @@ import java.util.Vector;
  * @author Saruta
  */
 public class YassPlayer {
-    public static final boolean DEBUG = false;
+    public static final boolean DEBUG = true;
     byte[] memcache = null;
     byte[] clickmemcache = null;
     boolean midiEnabled = false, midisEnabled = false;
@@ -59,11 +62,10 @@ public class YassPlayer {
     private byte midis[][];
     private long duration = 0, position = -1, seekInOffset = 0,
             seekOutOffset = 0, seekInOffsetMs = 0, seekOutOffsetMs = 0;
-    private boolean isPlaying = false;
     private String filename = null;
     private YassCaptureAudio capture = null;
     private boolean useCapture = false;
-    private AdvancedPlayer advancedPlayer = null;
+    private MediaPlayer mediaPlayer = null;
     private PlayThread player = null;
     private String cachedMP3 = "";
     private float fps = 0;
@@ -85,7 +87,7 @@ public class YassPlayer {
     private int audioBytesSampleSize = 2;
 
     public YassPlayer(YassPlaybackRenderer s) {
-
+        JFXPanel jfxPanel = new JFXPanel();
         playbackRenderer = s;
         midi = new YassMIDI();
 
@@ -361,25 +363,60 @@ public class YassPlayer {
 
         fps = -1;
         AudioInputStream in = null;
-        ogg = false;
         try {
+            if (!filename.endsWith("m4a")) {
+                in = AudioSystem.getAudioInputStream(file);
+                if (in != null) {
+                    AudioFormat baseFormat = in.getFormat();
+                    fps = baseFormat.getFrameRate();
+                    /*
+                    if (filename.endsWith(".ogg")) {
+                        AudioInputStream din;
+                        AudioFormat decodedFormat = new AudioFormat(
+                                AudioFormat.Encoding.PCM_SIGNED, baseFormat.getSampleRate(),
+                                16, baseFormat.getChannels(), baseFormat.getChannels() * 2,
+                                baseFormat.getSampleRate(), false);
 
-            AudioFileFormat aff = AudioSystem.getAudioFileFormat(file);
-            if (aff.getType() == VorbisFileFormatType.OGG) {
-                System.err.println("Audio Type OGG is not supported");
-                ogg = true;
-                playbackRenderer
-                        .setErrorMessage(I18.get("sheet_msg_audio_ogg"));
-            } else {
-                playbackRenderer.setErrorMessage(null);
+                        din = AudioSystem.getAudioInputStream(decodedFormat, in);
+                        file = new File(filename + ".temp.wav");
+                        final byte [] buffer = new byte [4096];
+                        int n;
+                        long len = 0;
+                        final FileOutputStream fos = new FileOutputStream("test.pcm");
+                        while(-1 != (n = din.read(buffer))) {
+                            fos.write(buffer, 0, n);
+                            len++;
+                        }
+                        fos.close();
+                        final AudioInputStream pcmIn = new AudioInputStream(new FileInputStream("test.pcm"),
+                                                                            decodedFormat, len * 4096);
+                        AudioSystem.write(pcmIn, AudioFileFormat.Type.WAVE, file);
+                        this.filename = filename + ".temp.wav";
+                    }
+                    */
+                }
             }
-            // System.out.println("Audio Type : " + aff.getType());
+            playbackRenderer.setErrorMessage(null);
+            System.out.println("Create AudioPlayerComponent instance");
+            mediaPlayer = new AudioPlayerComponent().mediaPlayer();
+            mediaPlayer.events().addMediaEventListener(new MediaEventAdapter() {
+                @Override
+                public void mediaDurationChanged(Media media, long newDuration) {
+                    System.out.println("Set duration to " + newDuration);
+                    duration = newDuration * 1000;
+                }
 
-            in = AudioSystem.getAudioInputStream(file);
-            if (in != null) {
-                AudioFormat baseFormat = in.getFormat();
-                fps = baseFormat.getFrameRate();
-                // System.out.println("fps: " + fps);
+                @Override
+                public void mediaStateChanged(Media media, State newState) {
+                    System.out.println("Media Status: " + newState + ". Length " + mediaPlayer.status().length());
+                }
+            });
+            mediaPlayer.media().prepare(filename);
+            mediaPlayer.media().parsing().parse();
+            long now = System.currentTimeMillis();
+            while (duration == 0) {
+                Thread.sleep(50);
+                System.out.println("Slept " + (System.currentTimeMillis() - now) + " ms");
             }
         } catch (Exception e) {
             String s = e.getMessage();
@@ -394,27 +431,6 @@ public class YassPlayer {
                 }
             }
         }
-        try {
-            AudioFileFormat baseFileFormat = AudioSystem.getAudioFileFormat(file);
-            if (baseFileFormat instanceof TAudioFileFormat) {
-                Map<?, ?> properties = baseFileFormat
-                        .properties();
-                String key = "duration";
-                duration = ((Long) properties.get(key)).longValue();
-                if (!ogg && fps < 0) {
-                    Float fpsf = (Float) properties.get("mp3.framerate.fps");
-                    if (fpsf != null) {
-                        fps = fpsf.floatValue();
-                    }
-                }
-            }
-        } catch (Exception e) {
-            playbackRenderer.setErrorMessage(I18.get("sheet_msg_audio_format"));
-            e.printStackTrace();
-        }
-
-        cacheMP3();
-
         if (createWaveform) {
             try {
                 MpegAudioFileReader mpegAudioFileReader = new MpegAudioFileReader();
@@ -638,7 +654,7 @@ public class YassPlayer {
      * @return The playing value
      */
     public boolean isPlaying() {
-        return isPlaying;
+        return mediaPlayer != null && mediaPlayer.status().isPlaying();
     }
 
     /**
@@ -868,18 +884,18 @@ public class YassPlayer {
      * @author Saruta
      */
     class Play2Thread extends Thread {
-        AdvancedPlayer ap;
-        int skip1, skip2;
+        MediaPlayer mp;
+        long skip1, skip2;
 
         /**
          * Constructor for the Play2Thread object
          *
-         * @param ap    Description of the Parameter
+         * @param mp    Description of the Parameter
          * @param skip1 Description of the Parameter
          * @param skip2 Description of the Parameter
          */
-        public Play2Thread(AdvancedPlayer ap, int skip1, int skip2) {
-            this.ap = ap;
+        public Play2Thread(MediaPlayer mp, long skip1, long skip2) {
+            this.mp = mp;
             this.skip1 = skip1;
             this.skip2 = skip2;
         }
@@ -889,7 +905,14 @@ public class YassPlayer {
          */
         public void run() {
             try {
-                if (ap != null) ap.play(skip1, skip2);
+                if (mp != null) {
+                    System.out.println("Play2Thread started");
+//                    mp.setStartTime(Duration.millis(skip1));
+//                    mp.setStopTime(Duration.millis(skip2));
+                    mp.controls().play();
+                    mp.controls().setTime(skip1);
+                    System.out.println("Seekable: " + mp.status().time());
+                }
             } catch (Exception e) {
                 System.out.println("Playback Error");
                 e.printStackTrace();
@@ -968,7 +991,8 @@ public class YassPlayer {
             if (outpoint < 0 || outpoint > duration) {
                 outpoint = duration;
             }
-
+            long inMillis = inpoint / 1000;
+            long outMillis = outpoint / 1000;
             long off;
 
             long maxClickOffset = 0;
@@ -978,37 +1002,22 @@ public class YassPlayer {
             long nextClick = clicks == null ? -1 : clicks[clicksPos][0];
             long nextClickEnd = clicks == null ? -1 : clicks[clicksPos][2];
 
-            if (DEBUG)
+            if (DEBUG) {
                 System.out.println("playAudio:" + playAudio + "  ogg:" + ogg);
+            }
             if (playAudio && !ogg) {
-                cacheMP3();
-                ByteArrayInputStream bin = new ByteArrayInputStream(memcache);
-
                 try {
                     // System.out.println("Creating JavaZoom AdvancedPlayer...");
-                    advancedPlayer = new AdvancedPlayer(bin);
-                    advancedPlayer.setVolume(0.3);
-                    advancedPlayer.setTimeBase(timebase);
-                    advancedPlayer.setPlayBackListener(new PlaybackListener() {
-                        public void playbackStarted(PlaybackEvent evt) {
-                            isPlaying = true;
-                            // System.out.println("playback started");
-                        }
-
-                        public void playbackFinished(PlaybackEvent evt) {
-                            isPlaying = false;
-                            // System.out.println("playback finished");
-                        }
-                    });
+//                    mediaPlayer = new AudioPlayerComponent().mediaPlayer();
+//                    mediaPlayer.media().prepare(filename);
                     if (DEBUG)
-                        System.out.println("JavaZoom AdvancedPlayer created.");
+                        System.out.println("playMp3 - VLC created.");
                 } catch (IllegalArgumentException e) {
                     System.err.println("YassPlayer: " + e.getMessage());
                 } catch (Exception e) {
                     notInterrupted = false;
                     if (DEBUG)
                         System.out.println("Cannot create JavaZoom AdvancedPlayer.");
-                    //e.printStackTrace();
                 }
             }
 
@@ -1029,15 +1038,14 @@ public class YassPlayer {
                     }
                 }
 
-                if (!playbackRenderer.preparePlayback(inpoint / 1000,
-                                                      outpoint / 1000)) {
+                if (!playbackRenderer.preparePlayback(inMillis, outMillis)) {
                     finished = true;
                     return;
                 }
                 playbackRenderer.setPlaybackInterrupted(false);
 
                 if (video != null && playbackRenderer.showVideo()) {
-                    video.setTime((int) (inpoint / 1000));
+                    video.setTime((int) inMillis);
                 }
                 if (bgImage != null && playbackRenderer.showBackground()) {
                     playbackRenderer.setBackgroundImage(bgImage);
@@ -1064,24 +1072,16 @@ public class YassPlayer {
             }
             if (playAudio && !ogg) {
                 try {
-                    isPlaying = false;
-                    int skip1 = (int) Math.floor(fps * ((inpoint + seekInOffsetMs * 1000) / 1000000.0))
-                            + (int) seekInOffset;
-                    int skip2 = (int) Math.floor(fps * ((outpoint + seekOutOffsetMs * 1000) / 1000000.0))
-                            + (int) seekOutOffset;
-                    if (skip1 < 0) {
-                        skip1 = 0;
-                    }
-                    if (skip2 < 0) {
-                        skip2 = 0;
-                    }
-                    new Play2Thread(advancedPlayer, skip1, skip2).start();
+                    mediaPlayer.controls().setRate((float) 1 / timebase);
+                    new Play2Thread(mediaPlayer, inMillis + seekInOffsetMs,
+                                    outMillis + seekOutOffsetMs).start();
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
+                /*
                 int nn = 200;
                 try {
-                    while (!isPlaying && nn-- > 0) {
+                    while (!isPlaying() && nn-- > 0) {
                         Thread.sleep(0, 100);
                     }
                 } catch (InterruptedException e) {
@@ -1092,6 +1092,8 @@ public class YassPlayer {
                     notInterrupted = false;
                 }
                 if (DEBUG) System.out.println("Waited " + ((200 - nn) * 100) + " nanos");
+
+                 */
             }
 
             long nanoStart = System.nanoTime() / 1000L;
@@ -1142,8 +1144,7 @@ public class YassPlayer {
                         }
 
                         if (midiEnabled) {
-                            midi.stopPlay();
-                            midi.startPlay(midiPitch);
+                            midi.playNote(midiPitch, outMillis - inMillis);
                         }
 
                         if (++clicksPos < n) {
@@ -1267,14 +1268,14 @@ public class YassPlayer {
             notInterrupted = false;
 
             if (playAudio && !ogg) {
-                if (advancedPlayer != null && isPlaying) {
+                if (mediaPlayer != null && isPlaying()) {
                     try {
                         Thread.currentThread();
                         Thread.sleep(100);
                     } catch (InterruptedException e) {
                     }
                     try {
-                        advancedPlayer.stop();
+                        mediaPlayer.controls().stop();
                         // System.out.println("player stop()");
                     } catch (Throwable t) {
                         // t.printStackTrace();
@@ -1326,4 +1327,41 @@ public class YassPlayer {
     public void reinitSynth() {
         midi = new YassMIDI();
     }
+
+    class MidiThread extends Thread {
+        YassMIDI midi;
+
+        int note;
+        long length;
+
+        /**
+         * Constructor for the Play2Thread object
+         *
+         * @param midi    Description of the Parameter
+         * @param note Description of the Parameter
+         * @param length Description of the Parameter
+         */
+        public MidiThread(YassMIDI midi, int note, long length) {
+            this.midi = midi;
+            this.note = note;
+            this.length = length;
+        }
+
+        /**
+         * Main processing method for the Play2Thread object
+         */
+        public void run() {
+            try {
+                if (midi != null) {
+                    midi.playNote(note, YassMIDI.VOLUME_MED);
+                    Thread.sleep(length);
+                    midi.playNote(note, 0);
+                }
+            } catch (Exception e) {
+                System.out.println("Playback Error");
+                e.printStackTrace();
+            }
+        }
+    }
+
 }

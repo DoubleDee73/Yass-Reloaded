@@ -32,12 +32,17 @@ import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.awt.image.VolatileImage;
+import java.io.File;
+import java.io.IOException;
 import java.io.Serial;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.Objects;
 import java.util.Vector;
 
-public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRenderer {
+public class YassSheet extends javax.swing.JPanel implements yass.renderer.YassPlaybackRenderer {
 
     public final static int NORM_HEIGHT = 20;
 
@@ -52,7 +57,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     public static final int COLOR_FREESTYLE = 6;
     public static final int COLOR_ERROR = 7;
     public static final int COLOR_WARNING = 8;
-    private final Color[] colorSet = new Color[COLORSET_COUNT];
+    private final java.awt.Color[] colorSet = new Color[COLORSET_COUNT];
 
     public static final  Color black = new Color(0,0,0);
     public static final Color dkGray = new Color(102,102,102);
@@ -72,7 +77,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private static final Color playertextBG = new Color(1f, 1f, 1f, .9f); // used once; deprecated
     private static final  Color playBlueHi = new Color(1f, 1f, 1f, 1f);  // used once
     private static final  Color playBlue = new Color(.4f, .6f, .8f, 1f); // used once
-    public static final  Color BLUE = new Color(.4f, .6f, .8f, .7f);
+    public static final Color BLUE = new Color(.4f, .6f, .8f, .7f);
     public static final  Color blueDrag = new Color(.8f, .9f, 1f, .5f);
     public static final  Color blueDragDarkMode = new Color(.4f, .6f, .8f, .5f);
     private static final  Color dkRed = new Color(.8f, .4f, .4f, .7f);
@@ -259,12 +264,12 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private int BOTTOM_BORDER = 56,
             TOP_LINE,
             TOP_PLAYER_BUTTONS;
-    private Point[] sketch = null;
+    private java.awt.Point[] sketch = null;
     private int sketchPos = 0, dirPos = 0;
     private long sketchStartTime = 0;
     private int[] sketchDirs = null;
     private boolean sketchStarted = false;
-    private final Font smallFont = new Font("SansSerif", Font.PLAIN, 10);
+    private final java.awt.Font smallFont = new java.awt.Font("SansSerif", java.awt.Font.PLAIN, 10);
     private int minHeight = 0, maxHeight = 18;
     private int minBeat = 0, maxBeat = 1000;
     private int hit = -1, hilite = -1, hiliteHeight = 1000, hhPageMin = 0;
@@ -2211,6 +2216,17 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     }
 
     public void removeAll() {
+        java.util.List<String> tempFiles = new ArrayList<>();
+        for (YassTable table : tables) {
+            File dir = new File(table.getDir());
+            if (dir.isDirectory()) {
+                for (File file : Objects.requireNonNull(dir.listFiles())) {
+                    if (file.getName().endsWith(".ogg.temp.wav")) {
+                        tempFiles.add(file.getAbsolutePath());
+                    }
+                }
+            }
+        }
         tables.clear();
         rects.clear();
         snapshot = null;
@@ -2223,6 +2239,13 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         setDuration(-1);
         init();
         setZoom(80 * 60 / bpm);
+        for (String tempFile : tempFiles) {
+            try {
+                Files.delete(Path.of(tempFile));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     public void setNoteLengthVisible(boolean onoff) {

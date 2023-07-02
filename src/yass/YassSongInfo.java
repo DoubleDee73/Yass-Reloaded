@@ -18,14 +18,13 @@
 
 package yass;
 
-import javazoom.spi.vorbis.sampled.file.VorbisFileFormatType;
+import org.apache.commons.lang3.StringUtils;
 import org.tritonus.share.sampled.file.TAudioFileFormat;
 
 import javax.media.Controller;
 import javax.media.MediaLocator;
 import javax.media.protocol.DataSource;
 import javax.sound.sampled.AudioFileFormat;
-import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.swing.*;
 import javax.swing.event.CaretEvent;
@@ -2899,108 +2898,90 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                         ((int) (10 * file.length() / 1024.0 / 1024.0) / 10.0)
                                 + "");
 
-                boolean ogg = false;
-                AudioInputStream in = null;
-                try {
-                    AudioFileFormat aff = AudioSystem.getAudioFileFormat(file);
-                    if (aff.getType() == VorbisFileFormatType.OGG) {
-                        ogg = true;
-                    }
-                    // System.out.println("Audio Type : " + aff.getType());
+                boolean ogg = StringUtils.endsWithIgnoreCase(mp3, ".ogg");
+                boolean m4a = StringUtils.endsWithIgnoreCase(mp3, ".m4a");
 
-                    in = AudioSystem.getAudioInputStream(file);
-                    //if (in != null) {
-                    //AudioFormat baseFormat = in.getFormat();
-                    // System.out.println("Source Format : " +
-                    // baseFormat.toString());
-                    //}
-                } catch (Exception ignored) {
-                } finally {
-                    if (in != null) {
-                        try {
-                            in.close();
-                        } catch (Exception ignored) {
+                if (!ogg && !m4a) {
+                    try {
+                        AudioFileFormat baseFileFormat = AudioSystem
+                                .getAudioFileFormat(file);
+                        if (baseFileFormat instanceof TAudioFileFormat) {
+                            Map<?, ?> properties = baseFileFormat
+                                    .properties();
+                            setProperty("mp3-author",
+                                        (String) properties.get("author"));
+                            setProperty("mp3-title",
+                                        (String) properties.get("title"));
+                            setProperty("mp3-album",
+                                        (String) properties.get("album"));
+                            setProperty("mp3-date", (String) properties.get("date"));
+
+                            Long dur = (Long) properties.get("duration");
+                            if (dur != null) {
+                                duration = dur.longValue();
+                                int sec = (int) Math
+                                        .round(dur.longValue() / 1000000.0);
+                                int min = sec / 60;
+                                sec = sec - min * 60;
+                                String dString = (sec < 10) ? min + ":0" + sec
+                                        : min + ":" + sec;
+                                setProperty("mp3-duration", dString);
+                            }
+
+                            String genre = (String) properties
+                                    .get("mp3.id3tag.genre");
+                            if (genre != null) {
+                                setProperty("mp3-genre", genre);
+                            } else {
+                                setProperty("mp3-genre",
+                                            (String) properties
+                                                    .get("ogg.comment.genre"));
+                            }
+
+                            Boolean vbr = (Boolean) properties.get("mp3.vbr");
+                            if (vbr == null) {
+                                vbr = (Boolean) properties.get("vbr");
+                            }
+
+                            if (vbr != null) {
+                                setProperty("mp3-vbr", vbr.booleanValue() ? "VBR"
+                                        : "CBR");
+                            } else {
+                                setProperty("mp3-vbr", "CBR");
+                            }
+
+                            Integer val = (Integer) properties
+                                    .get("mp3.bitrate.nominal.bps");
+                            if (val == null) {
+                                val = (Integer) properties
+                                        .get("ogg.bitrate.nominal.bps");
+                            }
+
+                            String s = ((int) (10 * val.intValue() / 1000.0))
+                                    / 10.0 + "";
+                            if (s.endsWith(".0")) {
+                                s = s.substring(0, s.length() - 2);
+                            }
+                            setProperty("mp3-bitrate", val == null ? "" : s);
+
+                            val = (Integer) properties.get("mp3.frequency.hz");
+                            if (val == null) {
+                                val = (Integer) properties.get("ogg.frequency.hz");
+                            }
+                            s = ((int) (10 * val.intValue() / 1000.0)) / 10.0 + "";
+                            if (s.endsWith(".0")) {
+                                s = s.substring(0, s.length() - 2);
+                            }
+                            setProperty("mp3-frequency", val == null ? "" : s);
+                        }
+                    } catch (Exception e) {
+                        if (!ogg) {
+                            System.out.println("Unknown Audio Format: " + mp3);
+                            e.printStackTrace();
                         }
                     }
-                }
+                } else {
 
-                try {
-                    AudioFileFormat baseFileFormat = AudioSystem
-                            .getAudioFileFormat(file);
-                    if (baseFileFormat instanceof TAudioFileFormat) {
-                        Map<?, ?> properties = baseFileFormat
-                                .properties();
-                        setProperty("mp3-author",
-                                (String) properties.get("author"));
-                        setProperty("mp3-title",
-                                (String) properties.get("title"));
-                        setProperty("mp3-album",
-                                (String) properties.get("album"));
-                        setProperty("mp3-date", (String) properties.get("date"));
-
-                        Long dur = (Long) properties.get("duration");
-                        if (dur != null) {
-                            duration = dur.longValue();
-                            int sec = (int) Math
-                                    .round(dur.longValue() / 1000000.0);
-                            int min = sec / 60;
-                            sec = sec - min * 60;
-                            String dString = (sec < 10) ? min + ":0" + sec
-                                    : min + ":" + sec;
-                            setProperty("mp3-duration", dString);
-                        }
-
-                        String genre = (String) properties
-                                .get("mp3.id3tag.genre");
-                        if (genre != null) {
-                            setProperty("mp3-genre", genre);
-                        } else {
-                            setProperty("mp3-genre",
-                                    (String) properties
-                                            .get("ogg.comment.genre"));
-                        }
-
-                        Boolean vbr = (Boolean) properties.get("mp3.vbr");
-                        if (vbr == null) {
-                            vbr = (Boolean) properties.get("vbr");
-                        }
-
-                        if (vbr != null) {
-                            setProperty("mp3-vbr", vbr.booleanValue() ? "VBR"
-                                    : "CBR");
-                        } else {
-                            setProperty("mp3-vbr", "CBR");
-                        }
-
-                        Integer val = (Integer) properties
-                                .get("mp3.bitrate.nominal.bps");
-                        if (val == null) {
-                            val = (Integer) properties
-                                    .get("ogg.bitrate.nominal.bps");
-                        }
-
-                        String s = ((int) (10 * val.intValue() / 1000.0))
-                                / 10.0 + "";
-                        if (s.endsWith(".0")) {
-                            s = s.substring(0, s.length() - 2);
-                        }
-                        setProperty("mp3-bitrate", val == null ? "" : s);
-
-                        val = (Integer) properties.get("mp3.frequency.hz");
-                        if (val == null) {
-                            val = (Integer) properties.get("ogg.frequency.hz");
-                        }
-                        s = ((int) (10 * val.intValue() / 1000.0)) / 10.0 + "";
-                        if (s.endsWith(".0")) {
-                            s = s.substring(0, s.length() - 2);
-                        }
-                        setProperty("mp3-frequency", val == null ? "" : s);
-                    }
-                } catch (Exception e) {
-                    if (!ogg) {
-                        System.out.println("Unknown Audio Format: " + mp3);
-                        e.printStackTrace();
-                    }
                 }
             }
 
