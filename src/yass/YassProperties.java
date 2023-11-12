@@ -18,14 +18,16 @@
 
 package yass;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 
 import javax.swing.*;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.util.Hashtable;
-import java.util.Properties;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
 
 public class YassProperties extends Properties {
     private static final long serialVersionUID = -8189893110989853544L;
@@ -91,6 +93,7 @@ public class YassProperties extends Properties {
                 setProperty("key-18", "N");
             if (getProperty("before_next_ms") == null)
                 setProperty("before_next_ms", "300");
+            setupHyphenationDictionaries();
             return;
         } catch (Exception e) {
             // not exists
@@ -98,6 +101,7 @@ public class YassProperties extends Properties {
         // user props not found; fall back to defaults
         setDefaultProperties(this);
         loadDevices();
+        setupHyphenationDictionaries();
     }
 
     private void loadDevices() {
@@ -183,9 +187,10 @@ public class YassProperties extends Properties {
         p.put("edition-tag", "Birthday Party|Child's Play|Christmas|Greatest Hits|Halloween|Hits of the 60s|Kuschelrock|New Year's Eve|Summer|Sodamakers");
         // http|//de.wikipedia.org/wiki/Compilation
         p.put("note-naming-h", "DE RU PL NO FI SE");
+        p.put("duetsinger-tag", "P");
 
         // errors
-        p.put("valid-tags", "TITLE ARTIST LANGUAGE EDITION <br> GENRE ALBUM YEAR CREATOR ID <br> MP3 COVER BACKGROUND VIDEO <br> VIDEOGAP START END DUETSINGERP1 DUETSINGERP2 DUETSINGERP3 DUETSINGERP4 <br> RELATIVE BPM GAP <br> LENGTH PREVIEWSTART MEDLEYSTARTBEAT MEDLEYENDBEAT");
+        p.put("valid-tags", "TITLE ARTIST LANGUAGE EDITION <br> GENRE ALBUM YEAR CREATOR AUTHOR ID <br> MP3 COVER BACKGROUND VIDEO VIDEOGAP START END DUETSINGERP1 DUETSINGERP2 DUETSINGERP3 DUETSINGERP4 P1 P2 P3 P4 RELATIVE BPM GAP LENGTH PREVIEWSTART MEDLEYSTARTBEAT MEDLEYENDBEAT ENCODING COMMENT ");
         p.put("valid-lines", "#:*FRG-EP");
         p.put("max-points", "7500");
         p.put("max-golden", "1250");
@@ -299,6 +304,8 @@ public class YassProperties extends Properties {
         p.put("record-timebase", "2");
 
         p.put("use-sample", "true");
+        p.put("typographic-apostrophes", "false");
+        p.put("capitalize-rows", "false");
 
         // 0=next_note, 1=prev_note, 2=page_down, 3=page_up, 4=init, 5=init_next, 6=right, 7=left, 8=up, 9=down, 10=lengthen, 11=shorten, 12=play, 13=play_page, 14=scroll_left, 15=scroll_right, 16=one_page
         p.put("key-0", "NUMPAD6");
@@ -411,7 +418,7 @@ public class YassProperties extends Properties {
         p.put("debug-waveform", "false");
 
         //piano
-        p.put("piano-volume", "127");
+        p.put("piano-volume", "100");
 
         //non-editable
         p.put("welcome", "true");
@@ -499,6 +506,92 @@ public class YassProperties extends Properties {
 
     public boolean isUncommonSpacingAfter() {
         return "after".equals(getProperty("correct-uncommon-spacing"));
+    }
+
+    public boolean isLegacyDuet() {
+        return "DUETSINGERP".equals(getProperty("duetsinger-tag", "P"));
+    }
+
+    public void setupHyphenationDictionaries() {
+        String hyphenationLanguages = getProperty("hyphenations");
+        if (StringUtils.isEmpty(hyphenationLanguages)) {
+            System.out.println("No hyphenation languages have been setup, skipping this now...");
+            return;
+        }
+        Map<String, String> languageMap = initLanguageMap();
+        Set<Path> paths = findPath(List.of("UltraStar-Creator"));
+        if (paths == null || paths.isEmpty()) {
+            System.out.println("No valid program paths were found, skipping this now...");
+            return;
+        }
+        String[] languages = hyphenationLanguages.split("\\|");
+        boolean changes = false;
+        for (String language : languages) {
+            String prop = getProperty("hyphenations_" + language);
+            if (StringUtils.isEmpty(prop)) {
+                for (Path path : paths) {
+                    if (languageMap.get(language) == null) {
+                        System.out.println("Language " + language + " is not supported, skipping this now...");
+                        continue;
+                    }
+                    Path dictionary = Path.of(path.toString(), languageMap.get(language));
+                    if (Files.exists(dictionary)) {
+                        changes = true;
+                        setProperty("hyphenations_" + language, dictionary.toString());
+                        continue;
+                    }
+                    System.out.println("Dictionary for " + language + " was not supported, skipping this now...");
+                }
+            }
+        }
+        if (changes) {
+            store();
+        }
+    }
+
+    private Map<String, String> initLanguageMap() {
+        Map<String, String> languageMap = new HashMap<>();
+        languageMap.put("EN", "English.txt");
+        languageMap.put("FR", "French.txt");
+        languageMap.put("DE", "German.txt");
+        languageMap.put("IT", "Italian.txt");
+        languageMap.put("PL", "Polish.txt");
+        languageMap.put("PT", "Portuguese.txt");
+        languageMap.put("ES", "Spanish.txt");
+        languageMap.put("SE", "Swedish.txt");
+        return languageMap;
+    }
+
+    private Set<Path> findPath(List<String> additionalPrograms) {
+        String defaultPaths = getProperty("default-programs");
+        if (StringUtils.isEmpty(defaultPaths)) {
+            return null;
+        }
+        Set<Path> validPaths = new HashSet<>();
+        Set<String> parentPaths = new HashSet<>();
+        String[] paths = defaultPaths.split("\\|");
+        for (String path : paths) {
+            Path tempPath = Path.of(path);
+            if (!Files.exists(tempPath)) {
+                continue;
+            }
+            parentPaths.add(tempPath.toString());
+            parentPaths.add(tempPath.getParent().toString());
+            validPaths.add(tempPath);
+        }
+        if (validPaths.isEmpty()) {
+            return null;
+        }
+        for (String additionalProgram : additionalPrograms) {
+             for (String parentPath : parentPaths) {
+                 Path tempPath = Path.of(parentPath, additionalProgram);
+                 if (!Files.exists(tempPath)) {
+                     continue;
+                 }
+                 validPaths.add(tempPath);
+             }
+        }
+        return validPaths;
     }
 }
 

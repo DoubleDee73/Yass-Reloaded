@@ -18,6 +18,9 @@
 
 package yass;
 
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.math3.util.Precision;
+
 import java.util.Vector;
 
 public class YassRow implements Cloneable, Comparable<Object> {
@@ -61,6 +64,8 @@ public class YassRow implements Cloneable, Comparable<Object> {
     public static final String WRONG_VIDEOGAP = "err_wrong_videogap";
     public static final String WRONG_MEDLEY_START_BEAT = "err_wrong_medley_start_beat";
     public static final String WRONG_MEDLEY_END_BEAT = "err_wrong_medley_end_beat";
+    public static final String LOWERCASE_ROWSTART = "err_line_starts_with_lowercase";
+    public static final String BORING_APOSTROPHE = "err_contains_boring_apostrophe";
     public final static String[] ALL_MESSAGES = {
             MISSING_TAG, UNSORTED_COMMENTS,
             WRONG_MEDLEY_START_BEAT, WRONG_MEDLEY_END_BEAT,
@@ -71,7 +76,7 @@ public class YassRow implements Cloneable, Comparable<Object> {
             TOO_MUCH_SPACES, UNCOMMON_SPACING,
             EMPTY_LINE, TRANSPOSED_NOTES, NONZERO_FIRST_BEAT, INVALID_NOTE_LENGTH, NOTES_TOUCHING,
             INVALID_LINE, LINE_CUT,
-            OUT_OF_ORDER, NOTES_OVERLAP, TOO_MUCH_TEXT, UNCOMMON_GOLDEN
+            OUT_OF_ORDER, NOTES_OVERLAP, TOO_MUCH_TEXT, UNCOMMON_GOLDEN, LOWERCASE_ROWSTART, BORING_APOSTROPHE
             // MISSING_SPACES, WRONG_SPELLING,
             //WRONG_LENGTH, WRONG_HEIGHT, WRONG_TEXT, MISUSED_HYPHENATION
     };
@@ -117,6 +122,18 @@ public class YassRow implements Cloneable, Comparable<Object> {
         s[2] = r.s[2];
         s[3] = r.s[3];
         s[4] = r.s[4];
+    }
+
+    public YassRow(String line) {
+        String[] rows = line.split("\t");
+        for (int i = 0; i < rows.length; i++) {
+            s[i] = rows[i];
+        }
+        if (rows.length >= 1 && rows.length < 4) {
+            for (int i = rows.length; i < 5; i++) {
+                s[i] = "";
+            }
+        }
     }
 
     public static int[] getMinorPageBreakMessages() {
@@ -295,6 +312,10 @@ public class YassRow implements Cloneable, Comparable<Object> {
         s[2] = val + "";
     }
 
+    public void setLength(double val) {
+        setLength((int)Precision.round(val, 0));
+    }
+
     public String getSecondBeat() {
         return s[2];
     }
@@ -305,6 +326,10 @@ public class YassRow implements Cloneable, Comparable<Object> {
         } else {
             s[2] = val + "";
         }
+    }
+
+    public void setSecondBeat(double val) {
+        setSecondBeat((int)Math.round(val));
     }
 
     public String getHeight() {
@@ -380,6 +405,10 @@ public class YassRow implements Cloneable, Comparable<Object> {
         s[1] = val + "";
     }
 
+    public void setBeat(double val) {
+        setBeat((int) Precision.round(val, 0));
+    }
+
     public boolean isGolden() {
         return s[0].equals("*");
     }
@@ -401,7 +430,7 @@ public class YassRow implements Cloneable, Comparable<Object> {
      * @return
      */
     public boolean isP() {
-        return s[0].equals("P");
+        return s[0] != "" && s[0].charAt(0) == 'P';
     }
 
     public boolean isNote() {
@@ -491,8 +520,10 @@ public class YassRow implements Cloneable, Comparable<Object> {
                 ss = ss + " " + s[4];
             }
             return ss;
-        } else if (isP()) {
+        } else if (isP() && StringUtils.isNotEmpty(s[1])) {
             return s[0] + " " + s[1];
+        } else if (isP()) {
+            return s[0];
         }
         return s[0] + s[1] + s[2] + s[3] + s[4];
     }
@@ -529,8 +560,10 @@ public class YassRow implements Cloneable, Comparable<Object> {
             }
             return ss;
         }
-        if (isP()) {
+        if (isP() && StringUtils.isNotEmpty(s[1])) {
             return s[0] + " " + s[1];
+        } else if (isP()) {
+            return s[0];
         }
         return s[0] + s[1] + s[2] + s[3] + s[4];
     }
