@@ -19,12 +19,13 @@
 package yass;
 
 import javafx.embed.swing.JFXPanel;
-import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.util.Duration;
 import javazoom.jl.decoder.BitstreamException;
-import javazoom.spi.mpeg.sampled.file.MpegAudioFileReader;
 import org.tritonus.share.sampled.file.TAudioFileFormat;
+import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter;
+import uk.co.caprica.vlcj.player.base.State;
+import uk.co.caprica.vlcj.player.component.AudioPlayerComponent;
 import yass.renderer.YassNote;
 import yass.renderer.YassPlaybackRenderer;
 import yass.renderer.YassPlayerNote;
@@ -62,7 +63,7 @@ public class YassPlayer {
     private String filename = null;
     private YassCaptureAudio capture = null;
     private boolean useCapture = false;
-    private MediaPlayer mediaPlayer = null;
+    private AudioPlayerComponent mediaPlayer = null;
     private PlayThread player = null;
     private String cachedMP3 = "";
     private float fps = 0;
@@ -82,6 +83,7 @@ public class YassPlayer {
     private int audioBytesChannels = 2;
     private float audioBytesSampleRate = 44100;
     private int audioBytesSampleSize = 2;
+
     public YassPlayer(YassPlaybackRenderer s) {
         JFXPanel jfxPanel = new JFXPanel();
         jfxPanel.setVisible(false);
@@ -396,46 +398,26 @@ public class YassPlayer {
                 throw new RuntimeException(e);
             }
         }
-        Media media = new Media(file.toURI().toString());
+        mediaPlayer = new AudioPlayerComponent();
+        mediaPlayer.mediaPlayer().media().startPaused(file.getAbsolutePath());
+        duration = mediaPlayer.mediaPlayer().media().info().duration() * 1000;
         playbackRenderer.setErrorMessage(null);
-        mediaPlayer = new MediaPlayer(media);
-        mediaPlayer.statusProperty().addListener((observable, old, cur) -> {
-            if (cur == MediaPlayer.Status.READY) {
-                duration = (long) media.getDuration().toMillis() * 1000;
-            }
-            Map<String, Object> metadata = media.getMetadata();
-            System.out.println(metadata.toString());
-        });
-        long now = System.currentTimeMillis();
-        int counter = 0;
-        try {
-            while (mediaPlayer.getStatus() != MediaPlayer.Status.READY) {
-                Thread.sleep(50);
-                counter++;
-                if (counter > 200) {
-                    throw new RuntimeException("Mediaplayer could not be readied in less than 10 seconds");
-                }
-            }
-            System.out.println("Slept " + (System.currentTimeMillis() - now) + " ms");
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
-        if (createWaveform) {
-            try {
-                MpegAudioFileReader mpegAudioFileReader = new MpegAudioFileReader();
-                in = mpegAudioFileReader.getAudioInputStream(new FileInputStream(file));
-                createWaveForm(in);
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
-                if (in != null) {
-                    try {
-                        in.close();
-                    } catch (Exception e) {
-                    }
-                }
-            }
-        }
+//        if (createWaveform) {
+//            try {
+//                MpegAudioFileReader mpegAudioFileReader = new MpegAudioFileReader();
+//                in = mpegAudioFileReader.getAudioInputStream(new FileInputStream(file));
+//                createWaveForm(in);
+//            } catch (Exception e) {
+//                e.printStackTrace();
+//            } finally {
+//                if (in != null) {
+//                    try {
+//                        in.close();
+//                    } catch (Exception e) {
+//                    }
+//                }
+//            }
+
     }
 
     /**
@@ -495,6 +477,10 @@ public class YassPlayer {
      * @return The duration value
      */
     public long getDuration() {
+        if (duration == 0 && mediaPlayer != null && mediaPlayer.mediaPlayer() != null && mediaPlayer.mediaPlayer().status()
+                                                                                                    .isPlayable()) {
+            duration = mediaPlayer.mediaPlayer().media().info().duration();
+        }
         return duration;
     }
 
@@ -643,7 +629,7 @@ public class YassPlayer {
      * @return The playing value
      */
     public boolean isPlaying() {
-        return mediaPlayer != null && mediaPlayer.getStatus() == MediaPlayer.Status.PLAYING;
+        return mediaPlayer != null && mediaPlayer.mediaPlayer().media().info().state() == State.PLAYING;
     }
 
     /**
@@ -869,9 +855,9 @@ public class YassPlayer {
 
     public void disposeMediaPlayer() {
         try {
-            if (mediaPlayer != null && mediaPlayer.getStatus() != MediaPlayer.Status.DISPOSED) {
-                mediaPlayer.stop();
-                mediaPlayer.dispose();
+            if (mediaPlayer != null && mediaPlayer.mediaPlayer().status().isPlaying()) {
+                mediaPlayer.mediaPlayer().controls().stop();
+//                mediaPlayer.dispose();
             }
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -1004,9 +990,28 @@ public class YassPlayer {
             }
             if (playAudio && !ogg) {
                 try {
-                    Media media = new Media(mp3File.toURI().toString());
-                    mediaPlayer = new MediaPlayer(media);
-                    mediaPlayer.setVolume(1);
+                    mediaPlayer.mediaPlayer().media().play(mp3File.getAbsolutePath());
+                    mediaPlayer.mediaPlayer().controls().setTime(inMillis);
+                    mediaPlayer.mediaPlayer().audio().setVolume(1);
+                    mediaPlayer.mediaPlayer().events().addMediaPlayerEventListener(
+                            new MediaPlayerEventAdapter() {
+                                @Override
+                                public void timeChanged(uk.co.caprica.vlcj.player.base.MediaPlayer mediaPlayer, long newTime) {
+                                    super.timeChanged(mediaPlayer, newTime);
+//                                    if (newTime >= outMillis) {
+//                                        System.out.println("paused");
+//                                        mediaPlayer.controls().pause();
+//                                    }
+                                    System.out.println("Time changed " + newTime);
+                                }
+
+                                @Override
+                                public void positionChanged(uk.co.caprica.vlcj.player.base.MediaPlayer mediaPlayer, float newPosition) {
+                                    super.positionChanged(mediaPlayer, newPosition);
+                                    System.out.println("Position changed " + newPosition);
+                                }
+                            }
+                    );
                     if (DEBUG)
                         System.out.println("JavaFX MediaPlayer created.");
                 } catch (IllegalArgumentException e) {
@@ -1069,9 +1074,10 @@ public class YassPlayer {
             }
             if (playAudio && !ogg) {
                 try {
-                    mediaPlayer.setRate((double) 1 / timebase);
-                    new Play2Thread(mediaPlayer, inMillis + seekInOffsetMs,
-                                    outMillis + seekOutOffsetMs).start();
+                    mediaPlayer.mediaPlayer().controls().setRate((float) 1 / timebase);
+//                    mediaPlayer.mediaPlayer().controls().setTime( inMillis + seekInOffsetMs);
+//                    mediaPlayer.mediaPlayer().controls().
+//                                    outMillis + seekOutOffsetMs).start();
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -1269,8 +1275,8 @@ public class YassPlayer {
                     } catch (InterruptedException e) {
                     }
                     try {
-                        mediaPlayer.stop();
-                        mediaPlayer.dispose();
+                        mediaPlayer.mediaPlayer().controls().stop();
+//                        mediaPlayer.dispose();
                         // System.out.println("player stop()");
                     } catch (Throwable t) {
                         // t.printStackTrace();

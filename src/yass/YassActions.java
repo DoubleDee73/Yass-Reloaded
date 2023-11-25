@@ -2831,7 +2831,7 @@ public class YassActions implements DropTargetListener {
         lyrics.setTable(null);
         sheet.setActiveTable(null);
         songList.closeOpened();
-        mp3.disposeMediaPlayer();
+//        mp3.disposeMediaPlayer();
 
         isUpdating = true;
         updateLyrics();
