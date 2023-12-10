@@ -306,6 +306,9 @@ public class YassTableModel extends AbstractTableModel {
         return data.elementAt(row);
     }
 
+    public YassRow getCommentRow(UltrastarHeaderTag headerTag) {
+        return getCommentRow(headerTag.getTagName());
+    }
 
     /**
      * Gets the commentRow attribute of the YassTableModel object

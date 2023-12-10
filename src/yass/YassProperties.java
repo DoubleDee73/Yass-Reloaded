@@ -145,6 +145,7 @@ public class YassProperties extends Properties {
         p.put("import-directory", "");
 
         p.put("yass-version", YassActions.VERSION);
+        p.put("ultrastar-format-version", UltrastarHeaderTagVersion.UNITY.version);
 
         p.put("yass-language", "default");
         p.put("yass-languages", "default|en|de|hu|pl|es");
@@ -509,7 +510,14 @@ public class YassProperties extends Properties {
     }
 
     public boolean isLegacyDuet() {
+        if (isUnityOrNewer()) {
+            return false;
+        }
         return "DUETSINGERP".equals(getProperty("duetsinger-tag", "P"));
+    }
+
+    public UltrastarHeaderTagVersion getUsFormatVersion() {
+        return UltrastarHeaderTagVersion.getFormatVersion(getProperty("ultrastar-format-version"));
     }
 
     public void setupHyphenationDictionaries() {
@@ -592,6 +600,10 @@ public class YassProperties extends Properties {
              }
         }
         return validPaths;
+    }
+
+    public boolean isUnityOrNewer() {
+        return getUsFormatVersion().getNumericVersion() >= 1d;
     }
 }
 

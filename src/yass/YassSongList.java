@@ -18,6 +18,7 @@
 
 package yass;
 
+import org.apache.commons.lang3.StringUtils;
 import org.tritonus.share.sampled.file.TAudioFileFormat;
 import yass.filter.YassFilter;
 import yass.stats.YassStats;
@@ -38,6 +39,8 @@ import java.text.MessageFormat;
 import java.util.List;
 import java.util.*;
 import java.util.stream.Collectors;
+
+import static yass.UltrastarHeaderTag.*;
 
 public class YassSongList extends JTable {
     public final static int TILE = 0;
@@ -116,6 +119,11 @@ public class YassSongList extends JTable {
                     setID();
                 }
             };
+    Action editCalcMedley = new AbstractAction(I18.get("lib_set_calcmedley")) {
+        public void actionPerformed(ActionEvent e) {
+            setCalcMedley();
+        }
+    };
     Action createNewEdition = new AbstractAction(I18.get("lib_edition_set")) {
                 public void actionPerformed(ActionEvent e) {
                     newEdition();
@@ -210,7 +218,7 @@ public class YassSongList extends JTable {
         JMenu clang;
         JMenu cgenre;
         JMenu cedition;
-
+        JMenuItem menuItem;
         combinedPopup.add(new JMenuItem(editArtist));
         getInputMap().put(KeyStroke.getKeyStroke("F2"), "editArtist");
         getActionMap().put("editArtist", editArtist);
@@ -226,21 +234,27 @@ public class YassSongList extends JTable {
         combinedPopup.add(new JMenuItem(editYear));
         getInputMap().put(KeyStroke.getKeyStroke("F6"), "editYear");
         getActionMap().put("editYear", editYear);
-
-        combinedPopup.add(new JMenuItem(editAlbum));
+        menuItem = new JMenuItem(editAlbum);
+        menuItem.setName(ALBUM.toString());
+        menuItem.setVisible(!prop.isUnityOrNewer());
+        combinedPopup.add(menuItem);
         getInputMap().put(KeyStroke.getKeyStroke("F3"), "editAlbum");
         getActionMap().put("editAlbum", editAlbum);
 
         getInputMap().put(KeyStroke.getKeyStroke("HOME"), "selectFirstRow");
         getInputMap().put(KeyStroke.getKeyStroke("END"), "selectLastRow");
 
-        combinedPopup.add(new JMenuItem(editLength));
-
-        combinedPopup.add(new JMenuItem(editID));
+        menuItem = new JMenuItem(editLength);
+        menuItem.setVisible(!prop.isUnityOrNewer());
+        menuItem.setName(LENGTH.toString());
+        combinedPopup.add(menuItem);
+        menuItem = new JMenuItem(editID);
+        menuItem.setVisible(!prop.isUnityOrNewer());
+        menuItem.setName(ID.toString());
+        combinedPopup.add(menuItem);
         getInputMap().put(KeyStroke.getKeyStroke("F7"), "editID");
         getActionMap().put("editID", editID);
-
-        JMenuItem menuItem;
+        combinedPopup.add(new JMenuItem(editCalcMedley));
         combinedPopup.addSeparator();
         combinedPopup.add(menuItem = new JMenuItem(I18.get("lib_undo_selected")));
         menuItem.addActionListener(e -> undoSelection());
@@ -469,8 +483,16 @@ public class YassSongList extends JTable {
 
                         boolean isPopup = e.isPopupTrigger() || (e.getModifiers() & InputEvent.BUTTON1_MASK) == 0;
                         if (isPopup && actions.isLibraryLoaded()) {
+                            for (MenuElement element : combinedPopup.getSubElements()) {
+                                if (element instanceof JMenuItem) {
+                                    JMenuItem item = (JMenuItem) element;
+                                    if (UltrastarHeaderTag.deprecatedTags(prop.getUsFormatVersion())
+                                                          .contains(item.getName())) {
+                                        item.setVisible(!prop.isUnityOrNewer());
+                                    }
+                                }
+                            }
                             combinedPopup.show(e.getComponent(), e.getX(), e.getY());
-                            return;
                         }
                     }
 
@@ -864,8 +886,6 @@ public class YassSongList extends JTable {
         }
         setSaved(false);
         repaint();
-
-        return;
     }
 
     /**
@@ -3054,48 +3074,51 @@ public class YassSongList extends JTable {
         if (t.loadFile(filename)) {
             t.setTitle(s.getTitle());
             t.setArtist(s.getArtist());
-            String g = s.getGenre();
-            if (g != null && g.length() > 0) {
-                t.setGenre(g);
+            String tempValue = s.getGenre();
+            if (tempValue != null && tempValue.length() > 0) {
+                t.setGenre(tempValue);
             }
-            g = s.getEdition();
-            if (g != null && g.length() > 0) {
-                t.setEdition(g);
+            tempValue = s.getEdition();
+            if (tempValue != null && tempValue.length() > 0) {
+                t.setEdition(tempValue);
             }
-            g = s.getLanguage();
-            if (g != null && g.length() > 0) {
-                t.setLanguage(g);
+            tempValue = s.getLanguage();
+            if (tempValue != null && tempValue.length() > 0) {
+                t.setLanguage(tempValue);
             }
-            g = s.getYear();
-            if (g != null && g.length() > 0) {
-                t.setYear(g);
+            tempValue = s.getYear();
+            if (tempValue != null && tempValue.length() > 0) {
+                t.setYear(tempValue);
             }
-            g = s.getAlbum();
-            if (g != null && g.length() > 0) {
-                t.setAlbum(g);
+            tempValue = s.getAlbum();
+            if (tempValue != null && tempValue.length() > 0) {
+                t.setAlbum(tempValue);
             }
-            g = s.getID();
-            if (g != null && g.length() > 0) {
-                t.setID(g);
+            tempValue = s.getID();
+            if (tempValue != null && tempValue.length() > 0) {
+                t.setID(tempValue);
             }
-            g = s.getLength();
-            if (g != null && g.length() > 0) {
-                t.setLength(g);
+            tempValue = s.getLength();
+            if (tempValue != null && tempValue.length() > 0) {
+                t.setLength(tempValue);
             }
-            g = s.getPreviewStart();
-            if (g != null && g.length() > 0) {
-                t.setPreviewStart(g);
+            tempValue = s.getPreviewStart();
+            if (tempValue != null && tempValue.length() > 0) {
+                t.setPreviewStart(tempValue);
             }
-            g = s.getMedleyStartBeat();
-            if (g != null && g.length() > 0) {
-                t.setMedleyStartBeat(g);
+            tempValue = s.getMedleyStartBeat();
+            if (tempValue != null && tempValue.length() > 0) {
+                t.setMedleyStartBeat(tempValue);
             }
-            g = s.getMedleyEndBeat();
-            if (g != null && g.length() > 0) {
-                t.setMedleyEndBeat(g);
+            tempValue = s.getMedleyEndBeat();
+            if (tempValue != null && tempValue.length() > 0) {
+                t.setMedleyEndBeat(tempValue);
             }
-
             t.setEncoding(s.getEncoding());
+            t.setCalcMedley(s.getCalcMedley());
+            if (prop.isUnityOrNewer()) {
+                t.setVersion();
+            }
 
             String tmp = prop.getProperty("temp-dir");
             String title = YassSong.toFilename(s.getTitle());
@@ -3254,6 +3277,7 @@ public class YassSongList extends JTable {
         String medleystartbeat = "";
         String medleyendbeat = "";
         String encoding = "";
+        String calcMedley = "";
         boolean changed = false;
 
         boolean oldUndo = t.getPreventUndo();
@@ -3268,41 +3292,41 @@ public class YassSongList extends JTable {
             }
 
             YassTableModel tm = (YassTableModel) t.getModel();
-            YassRow r = tm.getCommentRow("TITLE:");
+            YassRow r = tm.getCommentRow(TITLE);
             title = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("ARTIST:");
+            r = tm.getCommentRow(ARTIST);
             artist = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("MP3:");
+            r = tm.getCommentRow(MP3);
             mp3 = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("COVER:");
+            r = tm.getCommentRow(COVER);
             cover = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("BACKGROUND:");
+            r = tm.getCommentRow(BACKGROUND);
             background = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("VIDEO:");
+            r = tm.getCommentRow(VIDEO);
             video = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("EDITION:");
+            r = tm.getCommentRow(EDITION);
             edition = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("GENRE:");
+            r = tm.getCommentRow(GENRE);
             genre = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("LANGUAGE:");
+            r = tm.getCommentRow(LANGUAGE);
             language = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("YEAR:");
+            r = tm.getCommentRow(YEAR);
             year = r != null ? r.getComment() : "";
 
-            r = tm.getCommentRow("VIDEOGAP:");
+            r = tm.getCommentRow(VIDEOGAP);
             vgap = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("START:");
+            r = tm.getCommentRow(START);
             start = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("END:");
+            r = tm.getCommentRow(END);
             end = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("RELATIVE:");
+            r = tm.getCommentRow(RELATIVE);
             rel = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("BPM:");
+            r = tm.getCommentRow(BPM);
             bpm = r != null ? r.getComment() : "";
-            r = tm.getCommentRow("GAP:");
+            r = tm.getCommentRow(GAP);
             gap = r != null ? r.getComment() : "";
 
-            r = tm.getCommentRow("ALBUM:");
+            r = tm.getCommentRow(ALBUM);
             album = r != null ? r.getComment() : "";
             r = tm.getCommentRow("ID:");
             id = r != null ? r.getComment() : "";
@@ -3316,6 +3340,8 @@ public class YassSongList extends JTable {
             medleystartbeat = r != null ? r.getComment() : "";
             r = tm.getCommentRow("MEDLEYENDBEAT:");
             medleyendbeat = r != null ? r.getComment() : "";
+            r = tm.getCommentRow(CALCMEDLEY.getTagName());
+            calcMedley = r != null ? r.getComment() : "";
 
             multiplayer = t.getPlayerCount();
             String multiplayerString = "";
@@ -3442,6 +3468,10 @@ public class YassSongList extends JTable {
             if (!encoding.equals(s.getEncoding())) {
                 changed = true;
                 s.setEncoding(encoding);
+            }
+            if (!calcMedley.equals(s.getCalcMedley())) {
+                changed = true;
+                s.setCalcMedley(calcMedley);
             }
 
             if (showLyrics) {
@@ -4167,7 +4197,57 @@ public class YassSongList extends JTable {
         int beat2 = r2.getBeatInt() + r2.getLengthInt();
         s.setMedleyEndBeat(beat2 + "");
 
+        s.setCalcMedley(null);
         s.setSaved(false);
+        setSaved(false);
+        repaint();
+    }
+
+    public void setCalcMedley() {
+        int i = getSelectedRow();
+        if (i < 0) {
+            return;
+        }
+
+        Vector<YassSong> sel = getSelectedSongs();
+        boolean hasMedley = false;
+        for (YassSong song : getSelectedSongs()) {
+            if (StringUtils.isNotEmpty(song.getMedleyStartBeat())) {
+                hasMedley = true;
+                break;
+            }
+        }
+        int n = sel.size();
+        StringBuilder msg = new StringBuilder();
+        if (n > 1) {
+            msg.append(MessageFormat.format(I18.get("mpop_calc_msg_2"), n));
+        } else {
+            msg.append(I18.get("mpop_calc_msg_1"));
+        }
+        if (hasMedley) {
+            msg.append("\n\n").append(I18.get("mpop_calc_msg_3"));
+        }
+
+        int input = JOptionPane.showConfirmDialog(actions.getTab(), msg.toString());
+        String calcMedley;
+        if (input == JOptionPane.NO_OPTION) {
+            calcMedley = "off";
+        } else if (input == JOptionPane.YES_OPTION) {
+            calcMedley = "on";
+        } else {
+            if (hasMedley) {
+                return;
+            }
+            calcMedley = null;
+        }
+        for (YassSong song : sel) {
+            if (StringUtils.isNotEmpty(song.getMedleyStartBeat())) {
+                song.setMedleyStartBeat(StringUtils.EMPTY);
+                song.setMedleyEndBeat(StringUtils.EMPTY);
+            }
+            song.setCalcMedley(calcMedley);
+            song.setSaved(false);
+        }
         setSaved(false);
         repaint();
     }

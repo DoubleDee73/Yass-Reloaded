@@ -43,6 +43,8 @@ import java.util.List;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static yass.UltrastarHeaderTag.*;
+
 public class YassTable extends JTable {
     public final static int ZOOM_TIME = 0;
     public final static int ZOOM_ONE = 1;
@@ -88,6 +90,7 @@ public class YassTable extends JTable {
     private int duetTrack = -1;
     private String duetTrackName = null;
     private int duetTrackCount = -1;
+    private boolean preventRelativeToAbsoluteConversion = false;
 
     public YassTable() {
         fileUtils = new YassFileUtils();
@@ -336,7 +339,7 @@ public class YassTable extends JTable {
 
     public void setMP3(String s) {
         mp3 = s;
-        YassRow r = tm.getCommentRow("MP3:");
+        YassRow r = tm.getCommentRow(MP3);
         if (r == null) {
             return;
         }
@@ -685,6 +688,53 @@ public class YassTable extends JTable {
         }
     }
 
+    public void setCalcMedley(String calcMedley) {
+        YassRow r = tm.getCommentRow(CALCMEDLEY.getTagName());
+        if (r == null) {
+            if (StringUtils.isEmpty(calcMedley)) {
+                // Nothing to do
+                return;
+            }
+            r = new YassRow("#", CALCMEDLEY.getTagName(), calcMedley, "", "");
+            int rowIndex = removeMedleyTags();
+            YassRow v = tm.getCommentRow(PREVIEWSTART.getTagName());
+            if (v == null) {
+                v = tm.getCommentRow(GAP.getTagName());
+            }
+            if (rowIndex == 0 && v != null) {
+                rowIndex = tm.getData().indexOf(v);
+            }
+            tm.getData().insertElementAt(r, rowIndex + 1);
+            tm.fireTableDataChanged();
+        } else {
+            if (StringUtils.isEmpty(calcMedley)) {
+                tm.removeRowAt(tm.getData().indexOf(r));
+                return;
+            }
+            removeMedleyTags();
+            String old = r.getComment();
+            if (!calcMedley.equals(old)) {
+                r.setComment(calcMedley);
+                int k = tm.getData().indexOf(r);
+                tm.fireTableRowsUpdated(k, k);
+            }
+        }
+    }
+
+    private int removeMedleyTags() {
+        int removedIndex = 0;
+        YassRow v = tm.getCommentRow(MEDLEYENDBEAT.getTagName());
+        if (v != null) {
+            removedIndex = tm.getData().indexOf(v);
+            tm.getData().remove(v);
+        }
+        v = tm.getCommentRow(MEDLEYSTARTBEAT.getTagName());
+        if (v != null) {
+            tm.getData().remove(v);
+        }
+        return removedIndex;
+    }
+
     public void setMedleyStartBeat(String p) {
         int pp = Integer.parseInt(p);
         setMedleyStartBeat(pp);
@@ -740,7 +790,7 @@ public class YassTable extends JTable {
     }
 
     public String getArtist() {
-        YassRow r = tm.getCommentRow("ARTIST:");
+        YassRow r = tm.getCommentRow(ARTIST);
         if (r == null) {
             return null;
         }
@@ -748,7 +798,7 @@ public class YassTable extends JTable {
     }
 
     public String getTitle() {
-        YassRow r = tm.getCommentRow("TITLE:");
+        YassRow r = tm.getCommentRow(TITLE);
         if (r == null) {
             return null;
         }
@@ -756,7 +806,7 @@ public class YassTable extends JTable {
     }
 
     public boolean setTitle(String s) {
-        YassRow r = tm.getCommentRow("TITLE:");
+        YassRow r = tm.getCommentRow(TITLE);
         if (r == null) {
             return false;
         }
@@ -770,7 +820,7 @@ public class YassTable extends JTable {
     }
 
     public boolean setArtist(String s) {
-        YassRow r = tm.getCommentRow("ARTIST:");
+        YassRow r = tm.getCommentRow(ARTIST);
         if (r == null) {
             return false;
         }
@@ -783,8 +833,17 @@ public class YassTable extends JTable {
         return false;
     }
 
+
+    public UltrastarHeaderTagVersion getVersion() {
+        YassRow row = tm.getCommentRow(VERSION);
+        if (row == null) {
+            return null;
+        }
+        return UltrastarHeaderTagVersion.getFormatVersion(row.getComment());
+    }
+
     public String getGenre() {
-        YassRow r = tm.getCommentRow("GENRE:");
+        YassRow r = tm.getCommentRow(GENRE);
         if (r == null) {
             return null;
         }
@@ -792,7 +851,7 @@ public class YassTable extends JTable {
     }
 
     public String getEdition() {
-        YassRow r = tm.getCommentRow("EDITION:");
+        YassRow r = tm.getCommentRow(EDITION);
         if (r == null) {
             return null;
         }
@@ -800,7 +859,7 @@ public class YassTable extends JTable {
     }
 
     public String getAlbum() {
-        YassRow r = tm.getCommentRow("ALBUM:");
+        YassRow r = tm.getCommentRow(ALBUM);
         if (r == null) {
             return null;
         }
@@ -808,7 +867,7 @@ public class YassTable extends JTable {
     }
 
     public String getID() {
-        YassRow r = tm.getCommentRow("ID:");
+        YassRow r = tm.getCommentRow(ID);
         if (r == null) {
             return null;
         }
@@ -816,7 +875,7 @@ public class YassTable extends JTable {
     }
 
     public String getLength() {
-        YassRow r = tm.getCommentRow("LENGTH:");
+        YassRow r = tm.getCommentRow(LENGTH);
         if (r == null) {
             return null;
         }
@@ -824,7 +883,7 @@ public class YassTable extends JTable {
     }
 
     public String getCover() {
-        YassRow r = tm.getCommentRow("COVER:");
+        YassRow r = tm.getCommentRow(COVER);
         if (r == null) {
             return null;
         }
@@ -832,7 +891,7 @@ public class YassTable extends JTable {
     }
 
     public String getBackgroundTag() {
-        YassRow r = tm.getCommentRow("BACKGROUND:");
+        YassRow r = tm.getCommentRow(BACKGROUND);
         if (r == null) {
             return null;
         }
@@ -840,7 +899,7 @@ public class YassTable extends JTable {
     }
 
     public String getVideo() {
-        YassRow r = tm.getCommentRow("VIDEO:");
+        YassRow r = tm.getCommentRow(VIDEO);
         if (r == null) {
             return null;
         }
@@ -848,7 +907,7 @@ public class YassTable extends JTable {
     }
 
     public String getLanguage() {
-        YassRow r = tm.getCommentRow("LANGUAGE:");
+        YassRow r = tm.getCommentRow(LANGUAGE);
         if (r == null) {
             return null;
         }
@@ -856,7 +915,7 @@ public class YassTable extends JTable {
     }
 
     public String getYear() {
-        YassRow r = tm.getCommentRow("YEAR:");
+        YassRow r = tm.getCommentRow(YEAR);
         if (r == null) {
             return null;
         }
@@ -888,6 +947,38 @@ public class YassTable extends JTable {
             }
         }
         return false;
+    }
+
+    public boolean setVersion() {
+        YassRow r = tm.getCommentRow(VERSION);
+        String actualVersion = prop.getUsFormatVersion().version;
+        int rowToInsert = 0;
+        if (r == null) {
+            r = new YassRow("#", VERSION.getTagName(), actualVersion, "", "");
+        } else {
+            String old = r.getComment();
+            if (!actualVersion.equals(old)) {
+                r.setComment(actualVersion);
+                tm.getData().remove(r);
+            } else {
+                int currentRow = tm.getData().indexOf(r);
+                YassRow nextRow = tm.getRowAt(currentRow + 1);
+                if (nextRow.isNote()) {
+                    return false;
+                }
+                tm.getData().remove(r);
+            }
+        }
+        for (int i = 0; i < tm.getRowCount(); i++) {
+            YassRow firstNote = tm.getRowAt(i);
+            if (firstNote.isNote()) {
+                rowToInsert = i;
+                break;
+            }
+        }
+        tm.getData().insertElementAt(r, rowToInsert);
+        tm.fireTableDataChanged();
+        return true;
     }
 
     public boolean setEdition(String s) {
@@ -1269,8 +1360,10 @@ public class YassTable extends JTable {
             Arrays.fill(duetSingerNames, null);
         }
         getModelData().clear();
-        for (YassRow r : t.getModelData())
+        setPreventRelativeToAbsoluteConversion(t.isPreventRelativeToAbsoluteConversion());
+        for (YassRow r : t.getModelData()) {
             addRow(r.toString());
+        }
         languageUtils = new YassLanguageUtils();
         if (StringUtils.isEmpty(getLanguage())) {
             detectAndSetMissingLanguage();
@@ -1341,6 +1434,11 @@ public class YassTable extends JTable {
                 if (!addRow(l)) {
                     throw new IOException("Invalid data");
                 }
+            }
+            if (isRelative()) {
+                // addRow has already done some conversions to absolute mode. We have to set a flag, that this is not done
+                // a second time
+                setPreventRelativeToAbsoluteConversion(true);
             }
             // saruta, Jan 2019: better UTF-8 detection method
             // encoding = r.getEncoding();
@@ -1430,7 +1528,7 @@ public class YassTable extends JTable {
         // System.out.println("Storing "+tm.getCommentRow("ARTIST:").getComment()+" - "+tm.getCommentRow("TITLE:").getComment());
 
         int relPageBreak = 0;
-        boolean isRel = isRelative();
+        boolean isRel = isRelative() && !prop.isUnityOrNewer();
 
         BufferedWriter bw = null;
         OutputStreamWriter osw = null;
@@ -1448,13 +1546,15 @@ public class YassTable extends JTable {
             JOptionPane.showMessageDialog(null, text);
             return false;
         }
+        boolean isUnityFormat = prop.getUsFormatVersion().getNumericVersion() >= 1d;
         String p = prop.getProperty("utf8-without-bom");
-        boolean utf8WithoutBom = p != null && p.equals("true");
+        boolean utf8WithoutBom = isUnityFormat || (p != null && p.equals("true"));
 
         p = prop.getProperty("utf8-always");
-        boolean utf8Always = p != null && p.equals("true");
+        boolean utf8Always = isUnityFormat || (p != null && p.equals("true"));
 
         boolean success = false;
+        boolean removeRelative = isRelative() && prop.isUnityOrNewer();
         try {
             File f = new File(filename);
             if (f.exists()) {
@@ -1463,7 +1563,6 @@ public class YassTable extends JTable {
             }
 
             // saruta, Jan 2019: utf8-->UTF-8
-            //if ((encoding != null && encoding.equals("UTF8")) || utf8Always) {
             if ((encoding != null && encoding.equals("UTF-8")) || utf8Always) {
                 fos = new FileOutputStream(f, false);
                 if (f.length() < 1 && !utf8WithoutBom) {
@@ -1474,36 +1573,31 @@ public class YassTable extends JTable {
                 osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
                 bw = new BufferedWriter(osw);
                 outputStream = new PrintWriter(bw);
-                // encoding = "UTF8";
                 encoding = "UTF-8";
             } else {
                 outputStream = new PrintWriter(new FileWriter(filename));
             }
-
+            setVersion();
+            handleDeprecations();
             int rows = tm.getRowCount();
             String s;
+            int lastPageBreak = 0;
             for (int i = 0; i < rows; i++) {
                 YassRow r = tm.getRowAt(i);
                 if (isRel) {
-                    int revert = -1;
                     if (r.isPageBreak() && i + 1 < rows) {
-                        // set 2nd beat to next note
-                        YassRow r2 = tm.getRowAt(i + 1);
-                        if (r2.isNote()) {
-                            revert = r.getSecondBeatInt();
-                            r.setSecondBeat(r2.getBeatInt());
-                        }
+                        int currentBeat = r.getBeatInt();
+                        r.setBeat(currentBeat);
+                        r.setSecondBeat(currentBeat);
                     }
-                    if (r.isNote() || r.isPageBreak()) {
+                    if (r.isNote()) {
                         s = r.toString(relPageBreak);
-                        if (r.isPageBreak()) {
-                            relPageBreak = r.getSecondBeatInt();
-                        }
+                    } else if (r.isPageBreak()) {
+                        relPageBreak = r.getBeatInt();
+                        s = r.toString(lastPageBreak);
+                        lastPageBreak = relPageBreak;
                     } else {
                         s = r.toString();
-                    }
-                    if (revert >= 0) {
-                        r.setSecondBeat(revert);
                     }
                 } else {
                     s = r.toString();
@@ -1514,6 +1608,7 @@ public class YassTable extends JTable {
                 // System.out.println(tm.getRowAt(i).toString());
             }
             success = true;
+            setPreventRelativeToAbsoluteConversion(false);
         } catch (Exception e) {
             if (sheet != null) {
                 sheet.setMessage(I18.get("sheet_msg_write_error"));
@@ -1539,6 +1634,9 @@ public class YassTable extends JTable {
                 ex.printStackTrace();
             }
         }
+        if (removeRelative) {
+            removeRelative();
+        }
         YassTable verify = new YassTable();
         verify.init(prop);
         verify.loadFile(filename);
@@ -1554,6 +1652,51 @@ public class YassTable extends JTable {
         }
 
         return success;
+    }
+
+    private void handleDeprecations() {
+        if (!prop.isUnityOrNewer()) {
+            return;
+        }
+        int rows = tm.getRowCount();
+        List<Integer> toBeRemoved = new ArrayList<>();
+        for (int i = 0; i < rows; i++) {
+            YassRow currentRow = tm.getRowAt(i);
+            if (!currentRow.isComment()) {
+                break;
+            }
+            UltrastarHeaderTag deprecationTag = UltrastarHeaderTag.getDeprecation(currentRow.getCommentTag(),
+                                                                                  prop.getUsFormatVersion());
+            if (deprecationTag == null) {
+                toBeRemoved.add(i);
+            } else if (!deprecationTag.getTagName().equals(currentRow.getCommentTag())) {
+                YassRow replacementRow = tm.getCommentRow(deprecationTag);
+                if (replacementRow == null) {
+                    currentRow.setBeat(deprecationTag.getTagName());
+                } else {
+                    if (!currentRow.getComment().equals(replacementRow.getComment())) {
+                        // If current tag is deprecated and replaced by a new tag, we are trying to find
+                        // out, if the new tag is already used and differs from the tag to be replaced
+                        // if so, we are appending the comment.
+                        replacementRow.setComment(replacementRow.getComment() + " / " + currentRow.getComment());
+                    }
+                    toBeRemoved.add(i);
+                }
+            }
+        }
+        toBeRemoved.sort(Collections.reverseOrder());
+        for (Integer remove : toBeRemoved) {
+            tm.removeRowAt(remove);
+        }
+    }
+
+    private void removeRelative() {
+        for (YassRow row : tm.getData()) {
+            if (row.getCommentTag().equals(RELATIVE.getTagName())) {
+                tm.getData().remove(row);
+                break;
+            }
+        }
     }
 
     public void resetUndo() {
@@ -1757,8 +1900,8 @@ public class YassTable extends JTable {
                 s = s.substring(i + 1).trim();
                 if (tag.equals("MP3:")) {
                     mp3 = s;
-                } // bpm or gap are set to 0 for invalid input
-                else if (tag.equals("BPM:")) {
+                } else if (tag.equals("BPM:")) {
+                    // bpm or gap are set to 0 for invalid input
                     bpm = Double.parseDouble(s.replace(',', '.'));
                 } else if (tag.equals("GAP:")) {
                     gap = Double.parseDouble(s.replace(',', '.'));
@@ -1810,14 +1953,14 @@ public class YassTable extends JTable {
             if (i > 0) {
                 time2 = time.substring(i + 1).trim();
                 time = time.substring(0, i).trim();
-                if (isRelative) {
+                if (isRelative && !preventRelativeToAbsoluteConversion) {
                     int ti = Integer.parseInt(time);
                     int ti2 = (time2.length() > 0) ? Integer.parseInt(time2) : ti;
                     time = String.valueOf(ti + relativePageBreak);
                     time2 = "";
                     relativePageBreak += ti2;
                 }
-            } else if (isRelative) {
+            } else if (isRelative && !preventRelativeToAbsoluteConversion) {
                 relativePageBreak += Integer.parseInt(time);
             }
             tm.addRow("-", time, time2, "", "");
@@ -1900,7 +2043,7 @@ public class YassTable extends JTable {
         }
         String txt = s.substring(k + 1);
 
-        if (isRelative) {
+        if (isRelative && !preventRelativeToAbsoluteConversion) {
             int timeInt = Integer.parseInt(time);
             timeInt += relativePageBreak;
             time = String.valueOf(timeInt);
@@ -1916,7 +2059,7 @@ public class YassTable extends JTable {
             try {
                 int currentPlayer = Integer.parseInt(pnum);
 
-                if (prop.isLegacyDuet()) {
+                if (prop.getUsFormatVersion().getNumericVersion() < 1d && prop.isLegacyDuet()) {
                     tm.addRow("P", pnum, "", "", "", ""); // add space (not stored, see YassRow.toString)
                 } else {
                     tm.addRow("P" + pnum, "", "", "", "", "");
@@ -3828,6 +3971,42 @@ public class YassTable extends JTable {
         return 0;
     }
 
+    public int pasteNoteHeights() {
+        if (sheet != null) {
+            String trstring = null;
+            try {
+                Clipboard system = Toolkit.getDefaultToolkit().getSystemClipboard();
+                trstring = (String) (system.getContents(this)
+                                           .getTransferData(DataFlavor.stringFlavor));
+            } catch (Exception e) {
+                return 0;
+            }
+
+            int ret = 0;
+            int index = 0;
+            String[] rows = trstring.split("\n");
+            for (String row : rows) {
+                YassRow yassRow = sheet.getActiveTable().getRowAt(getSelectedRow() + index);
+                if (yassRow.isEnd()) {
+                    break;
+                }
+                while (!yassRow.isNote()) {
+                    index++;
+                    yassRow = sheet.getActiveTable().getRowAt(getSelectedRow() + index);
+                    if (yassRow.isEnd()) {
+                        break;
+                    }
+                }
+                String[] rowContent = row.split("\t");
+                yassRow.setHeight(rowContent[3]);
+                index++;
+            }
+            sheet.updateActiveTable();
+            return ret;
+        }
+        return 0;
+    }
+
     /**
      * Description of the Method
      */
@@ -4793,7 +4972,7 @@ public class YassTable extends JTable {
         String s;
         for (int i = 0; i < rows; i++) {
             YassRow r = tm.getRowAt(i);
-            if (isRel) {
+            if (isRel && !preventRelativeToAbsoluteConversion) {
                 int revert = -1;
                 if (r.isPageBreak() && i + 1 < rows) {
                     // set 2nd beat to next note
@@ -5323,7 +5502,7 @@ public class YassTable extends JTable {
             resData.addElement(new YassRow(r));
         }
         int i = 1;
-        String duetTag = prop.getProperty("duetsinger-tag", "P");
+        String duetTag = determineDuetTag(prop);
         for (YassTable t : tables2) {
             String name = t.getDuetTrackName();
             if (name != null && name.trim().length() > 0)
@@ -5352,6 +5531,14 @@ public class YassTable extends JTable {
             e.printStackTrace();
         }
         return null;
+    }
+
+    private static String determineDuetTag(YassProperties prop) {
+        if (prop.getUsFormatVersion().getNumericVersion() < 1d) {
+            return prop.getProperty("duetsinger-tag", "P");
+        } else {
+            return "P";
+        }
     }
 
     /**
@@ -5759,5 +5946,13 @@ public class YassTable extends JTable {
             }
         }
         return trailingCount > leadingCount;
+    }
+
+    public boolean isPreventRelativeToAbsoluteConversion() {
+        return preventRelativeToAbsoluteConversion;
+    }
+
+    public void setPreventRelativeToAbsoluteConversion(boolean preventRelativeToAbsoluteConversion) {
+        this.preventRelativeToAbsoluteConversion = preventRelativeToAbsoluteConversion;
     }
 }

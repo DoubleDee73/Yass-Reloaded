@@ -100,7 +100,7 @@ public class YassSong implements Cloneable, Comparable<Object> {
      * Description of the Field
      */
     public static int statsindex = -1;
-    private String[] s = new String[31];
+    private String[] s = new String[32];
     private String[] messages = null;
     private float[] stats = null;
     private long timestamp = 0;
@@ -750,6 +750,14 @@ public class YassSong implements Cloneable, Comparable<Object> {
      */
     public void setEncoding(String val) {
         s[30] = val;
+    }
+
+    public String getCalcMedley() {
+        return s[31];
+    }
+
+    public void setCalcMedley(String value) {
+        s[31] = value;
     }
 
     /**
