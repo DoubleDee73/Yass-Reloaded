@@ -73,6 +73,7 @@ public class YassOptions extends JDialog {
         top.add(advanced);
 
         OptionsPanel.loadProperties(prop);
+        OptionsPanel.initActions(a);
 
         addPanel(library, I18.get("options_directories"), new DirPanel());
         addPanel(library, I18.get("options_groups_1"), new GroupPanel());

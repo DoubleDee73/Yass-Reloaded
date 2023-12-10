@@ -19,6 +19,7 @@
 package yass.options;
 
 import yass.I18;
+import yass.UltrastarHeaderTagVersion;
 
 /**
  * Description of the Class
@@ -37,8 +38,13 @@ public class TagPanel extends OptionsPanel {
         addComment(I18.get("options_tags_lines_comment"));
         addTextArea(I18.get("options_tags_comments"), "valid-tags", 4);
         addComment(I18.get("options_tags_comments_comment"));
-        addRadio(I18.get("options_tags_duetsinger"), "duetsinger-tag", "P|DUETSINGERP", I18.get("options_tags_duetsinger_p") + "|" + I18.get("options_tags_duetsinger_duetsingerp"));
-        addComment(I18.get("options_tags_duetsinger_comment"));
+        addChoice(I18.get("options_tags_compatibility"), UltrastarHeaderTagVersion.values(),
+                  "ultrastar-format-version");
+        if (getProperties().getUsFormatVersion().getNumericVersion() < 1d ) {
+            addRadio(I18.get("options_tags_duetsinger"), "duetsinger-tag", "P|DUETSINGERP",
+                     I18.get("options_tags_duetsinger_p") + "|" + I18.get("options_tags_duetsinger_duetsingerp"));
+            addComment(I18.get("options_tags_duetsinger_comment"));
+        }
         addSeparator();
     }
 }

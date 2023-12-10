@@ -47,8 +47,8 @@ import java.util.Vector;
 public class YassActions implements DropTargetListener {
 
     private final YassSheet sheet;
-    public final static String VERSION = "2023.11";
-    public final static String DATE = "11/2023";
+    public final static String VERSION = "2023.12";
+    public final static String DATE = "12/2023";
 
     static int VIEW_LIBRARY = 1;
     static int VIEW_EDIT = 2;
@@ -60,7 +60,6 @@ public class YassActions implements DropTargetListener {
     private Rectangle songBounds = null;
     private final JProgressBar progressBar;
     private JComponent tab = null;
-    private JMenu encMenu = null;
     private Vector<String> plBoxTips = null;
     private PlayListBoxListener plBoxListener = null;
     private final Font groupsFont = new Font("SansSerif", Font.BOLD, 14);
@@ -222,24 +221,6 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             if (currentView == VIEW_LIBRARY)
                 songList.setLength();
-        }
-    };
-    private final Action setID = new AbstractAction(I18.get("lib_id")) {
-        public void actionPerformed(ActionEvent e) {
-            if (currentView == VIEW_LIBRARY)
-                songList.setID();
-        }
-    };
-    private final Action setEncodingUTF8 = new AbstractAction(I18.get("lib_encoding_utf8")) {
-        public void actionPerformed(ActionEvent e) {
-            if (currentView == VIEW_LIBRARY)
-                songList.setEncoding("UTF-8"); // saruta, Jan 2019: utf8-->UTF-8
-        }
-    };
-    private final Action setEncodingANSI = new AbstractAction(I18.get("lib_encoding_ansi")) {
-        public void actionPerformed(ActionEvent e) {
-            if (currentView == VIEW_LIBRARY)
-                songList.setEncoding(null);
         }
     };
     private final Action editRecent = new AbstractAction(I18.get("lib_edit_recent")) {
@@ -505,6 +486,12 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             int[] inout = songInfo.getInOut();
             songList.setMedleyStartEnd(inout[0], inout[1]);
+        }
+    };
+    Action setCalcMedley = new AbstractAction(I18.get("lib_set_calcmedley")) {
+        public void actionPerformed(ActionEvent e) {
+            if (currentView == VIEW_LIBRARY)
+                songList.setCalcMedley();
         }
     };
     private final Action togglePlaySong = new AbstractAction(I18.get("lib_play_song")) {
@@ -1401,6 +1388,17 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             interruptPlay();
             table.insertNotesHere();
+
+            snapshotButton.setSelected(false);
+            if (showCopyCBI != null) showCopyCBI.setState(false);
+            sheet.showSnapshot(false);
+            sheet.repaint();
+        }
+    };
+    private final Action pasteNoteHeights = new AbstractAction(I18.get("edit_paste_note_heights")) {
+        public void actionPerformed(ActionEvent e) {
+            interruptPlay();
+            table.pasteNoteHeights();
 
             snapshotButton.setSelected(false);
             if (showCopyCBI != null) showCopyCBI.setState(false);
@@ -3347,6 +3345,7 @@ public class YassActions implements DropTargetListener {
         copyRows.putValue(AbstractAction.SMALL_ICON, getIcon("copy16Icon"));
         pasteRows.putValue(AbstractAction.SMALL_ICON, getIcon("pasteMelody16Icon"));
         pasteNotes.putValue(AbstractAction.SMALL_ICON, getIcon("paste16Icon"));
+        pasteNoteHeights.putValue(AbstractAction.SMALL_ICON, getIcon("pasteMelody16Icon"));
         joinRows.putValue(AbstractAction.SMALL_ICON, getIcon("join16Icon"));
         splitRows.putValue(AbstractAction.SMALL_ICON, getIcon("split16Icon"));
         removeRows.putValue(AbstractAction.SMALL_ICON, getIcon("removeSyllable16Icon"));
@@ -3485,6 +3484,7 @@ public class YassActions implements DropTargetListener {
         menu.add(copyRows);
         menu.add(pasteRows);
         menu.add(pasteNotes);
+        menu.add(pasteNoteHeights);
         menu.add(showCopyCBI = new JCheckBoxMenuItem(showCopiedRows));
         showCopyCBI.setState(false);
         menu.addSeparator();
@@ -3694,16 +3694,10 @@ public class YassActions implements DropTargetListener {
         menu2.add(setYear);
         menu2.add(setAlbum);
         menu2.add(setLength);
-        menu2.add(setID);
         menu.add(menu2);
         menu.add(setPreviewStart);
         menu.add(setMedleyStartEnd);
-
-        encMenu = new JMenu(I18.get("lib_encoding"));
-        encMenu.add(setEncodingUTF8);
-        encMenu.add(setEncodingANSI);
-        menu.add(encMenu);
-
+        menu.add(setCalcMedley);
         menu.addSeparator();
         menu2 = new JMenu(I18.get("lib_copy"));
         menu2.add(copyLyricsSongInfo);
@@ -5068,6 +5062,10 @@ public class YassActions implements DropTargetListener {
         return groups.isEnabled();
     }
 
+    public void reloadLibMenu() {
+        libMenu = createLibraryMenu();
+    }
+
     public void setLibraryLoaded(boolean b) {
         groups.setEnabled(b);
         groupsBox.setEnabled(b);
@@ -5087,18 +5085,13 @@ public class YassActions implements DropTargetListener {
 
         setPreviewStart.setEnabled(b);
         setMedleyStartEnd.setEnabled(b);
-        if (encMenu != null) {
-            encMenu.setEnabled(b);
-            setEncodingUTF8.setEnabled(b);
-            setEncodingANSI.setEnabled(b);
-        }
+        setCalcMedley.setEnabled(b);
 
         filterLibrary.setEnabled(b);
         setTitle.setEnabled(b);
         setArtist.setEnabled(b);
         setAlbum.setEnabled(b);
         setLength.setEnabled(b);
-        setID.setEnabled(b);
         songList.getLanguageMenu().setEnabled(b);
         songList.getEditionMenu().setEnabled(b);
         songList.getGenreMenu().setEnabled(b);
@@ -6881,10 +6874,6 @@ public class YassActions implements DropTargetListener {
         am.put("setAlbum", setAlbum);
         setAlbum.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F3, 0));
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F7, 0), "setID");
-        am.put("setID", setID);
-        setID.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F7, 0));
-
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0), "refreshLibrary");
         am.put("refreshLibrary", refreshLibrary);
         refreshLibrary.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0));
@@ -7117,6 +7106,10 @@ public class YassActions implements DropTargetListener {
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_MASK | InputEvent.SHIFT_DOWN_MASK), "pasteNotes");
         am.put("pasteNotes", pasteNotes);
         pasteNotes.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_MASK | InputEvent.SHIFT_MASK));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK), "pasteNoteHeights");
+        am.put("pasteNoteHeights", pasteNoteHeights);
+        pasteNoteHeights.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_MASK | InputEvent.SHIFT_MASK | InputEvent.ALT_DOWN_MASK));
 
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_MASK), "copyRows");
         am.put("copyRows", copyRows);

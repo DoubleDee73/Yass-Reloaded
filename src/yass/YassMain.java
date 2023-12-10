@@ -330,24 +330,10 @@ public class YassMain extends JFrame {
             prop.setProperty("welcome", "false");
             store = true;
         }
-        String spacing = prop.getProperty("correct-uncommon-spacing");
-        if (StringUtils.isEmpty(spacing)) {
-            int ok = JOptionPane.showConfirmDialog(this, "<html>"
-                            + I18.get("tool_prefs_spacing") + "</html>", I18.get("tool_prefs_spacing_title"),
-                    JOptionPane.OK_CANCEL_OPTION, JOptionPane.INFORMATION_MESSAGE);
-            if (ok != JOptionPane.OK_OPTION) {
-                prop.setProperty("correct-uncommon-spacing", "before");
-            } else {
-                prop.setProperty("correct-uncommon-spacing", "after");
-            }
-            store = true;
-        }
-        if (StringUtils.isEmpty(prop.getProperty("options_dir_refresh"))) {
-            int option = JOptionPane.showConfirmDialog(null, I18.get("options_dir_refresh_confirm"), I18.get(
-                    "options_dir_refresh"), JOptionPane.OK_CANCEL_OPTION);
-            prop.setProperty("options_dir_refresh", option == JOptionPane.OK_OPTION ? "true" : "false");
-            store = true;
-        }
+        store = checkUncommonSpacingSetting(store);
+        store = checkRefreshDirSetting(store);
+        store = checkUltrastarFormatVersionSetting(store);
+
         if (store) {
             prop.store();
         }
@@ -370,6 +356,49 @@ public class YassMain extends JFrame {
         songList.focusFirstVisible();
     }
 
+    private boolean checkRefreshDirSetting(boolean store) {
+        if (StringUtils.isEmpty(prop.getProperty("options_dir_refresh"))) {
+            int option = JOptionPane.showConfirmDialog(null, I18.get("options_dir_refresh_confirm"), I18.get(
+                    "options_dir_refresh"), JOptionPane.OK_CANCEL_OPTION);
+            prop.setProperty("options_dir_refresh", option == JOptionPane.OK_OPTION ? "true" : "false");
+            store = true;
+        }
+        return store;
+    }
+
+    private boolean checkUncommonSpacingSetting(boolean store) {
+        String spacing = prop.getProperty("correct-uncommon-spacing");
+        if (StringUtils.isEmpty(spacing)) {
+            int ok = JOptionPane.showConfirmDialog(this, "<html>"
+                            + I18.get("tool_prefs_spacing") + "</html>", I18.get("tool_prefs_spacing_title"),
+                    JOptionPane.OK_CANCEL_OPTION, JOptionPane.INFORMATION_MESSAGE);
+            if (ok != JOptionPane.OK_OPTION) {
+                prop.setProperty("correct-uncommon-spacing", "before");
+            } else {
+                prop.setProperty("correct-uncommon-spacing", "after");
+            }
+            store = true;
+        }
+        return store;
+    }
+
+    private boolean checkUltrastarFormatVersionSetting(boolean store) {
+        String formatVersion = prop.getProperty("ultrastar-format-version");
+        if (StringUtils.isEmpty(formatVersion)) {
+            int ok = JOptionPane.showConfirmDialog(this, "<html>" +
+                                                           I18.get("tool_prefs_compatability")
+                                                           + "</html>",
+                                                   I18.get("tool_prefs_compatability_title"),
+                                                   JOptionPane.OK_CANCEL_OPTION, JOptionPane.INFORMATION_MESSAGE);
+            if (ok != JOptionPane.OK_OPTION) {
+                prop.setProperty("ultrastar-format-version", UltrastarHeaderTagVersion.OLDY.version);
+            } else {
+                prop.setProperty("ultrastar-format-version", UltrastarHeaderTagVersion.UNITY.version);
+            }
+            store = true;
+        }
+        return store;
+    }
     public void stop() {
         askStop();
     }

@@ -19,6 +19,8 @@
 package yass.options;
 
 import yass.I18;
+import yass.YassActions;
+import yass.YassEnum;
 import yass.YassProperties;
 
 import javax.swing.*;
@@ -27,10 +29,8 @@ import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
-import java.util.Enumeration;
-import java.util.Hashtable;
-import java.util.StringTokenizer;
-import java.util.Vector;
+import java.util.List;
+import java.util.*;
 
 /**
  * Description of the Class
@@ -47,6 +47,8 @@ public class OptionsPanel extends JPanel {
     private int labelWidth = 80;
     private Vector<String> panelProps = new Vector<>();
     private JPanel contentPanel = null;
+    private static final List<String> RESET_CONTEXT_MENU_OPTIONS = Arrays.asList("options_tags_compatibility");
+    private static YassActions actions = null;
 
 
     /**
@@ -70,6 +72,10 @@ public class OptionsPanel extends JPanel {
         }
     }
 
+    public static void initActions(YassActions yassActions) {
+        actions = yassActions;
+    }
+
     public void resetPanelProperties() {
         for (Enumeration<String> en = panelProps.elements(); en.hasMoreElements(); ) {
             String key = en.nextElement();
@@ -87,10 +93,18 @@ public class OptionsPanel extends JPanel {
      * Description of the Method
      */
     public static void storeProperties() {
+        boolean resetContextMenu = false;
         for (Enumeration<String> en = myprop.keys(); en.hasMoreElements(); ) {
             String key = en.nextElement();
             String val = myprop.get(key);
+            String old = prop.getProperty(key);
+            if (!resetContextMenu && RESET_CONTEXT_MENU_OPTIONS.contains(key) && !old.equals(val)) {
+                resetContextMenu = true;
+            }
             prop.put(key, val);
+        }
+        if (resetContextMenu) {
+            actions.reloadLibMenu();
         }
         prop.store();
     }
@@ -122,7 +136,7 @@ public class OptionsPanel extends JPanel {
      * @return The property value
      */
     public String getProperty(String key) {
-        if (! panelProps.contains(key)) panelProps.add(key);
+        if (!panelProps.contains(key)) panelProps.add(key);
         return myprop.get(key);
     }
 
@@ -533,6 +547,34 @@ public class OptionsPanel extends JPanel {
         while (st.hasMoreTokens()) {
             keys.addElement(st.nextToken().trim());
             labels.addElement(st2.nextToken().trim());
+        }
+        JComboBox<String> choiceBox = new JComboBox<>(labels);
+        String key = getProperty(select_key);
+        int i = keys.indexOf(key);
+        choiceBox.setSelectedIndex(i);
+        choiceBox.addActionListener(new ChoiceListener(keys, select_key));
+
+        row.add(lab);
+        row.add(choiceBox);
+        lab.setAlignmentY(Component.TOP_ALIGNMENT);
+        choiceBox.setAlignmentY(Component.TOP_ALIGNMENT);
+        right.add(row);
+    }
+
+    public void addChoice(String label, YassEnum[] enumElements, String select_key) {
+        JPanel row = new JPanel();
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        JLabel lab = new JLabel(label);
+        lab.setVerticalAlignment(JLabel.CENTER);
+        lab.setHorizontalAlignment(JLabel.LEFT);
+        //lab.setSize(new Dimension(120, 10));
+        lab.setPreferredSize(new Dimension(labelWidth, 20));
+        //lab.setMaximumSize(new Dimension(200, 20));
+        Vector<String> labels = new Vector<>();
+        Vector<String> keys = new Vector<>();
+        for (YassEnum keyVal : enumElements) {
+            keys.add(keyVal.getValue());
+            labels.add(keyVal.getLabel());
         }
         JComboBox<String> choiceBox = new JComboBox<>(labels);
         String key = getProperty(select_key);
