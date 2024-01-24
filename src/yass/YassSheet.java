@@ -307,6 +307,12 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private YassSession session = null;
     private boolean isMousePressed = false;
 
+    private YassLyrics lyrics;
+
+    private SongHeader songHeader;
+
+    private YassMain owner;
+
     public YassSheet() {
         super(false);
         setFocusable(true);
@@ -314,7 +320,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         cutCursor = Toolkit.getDefaultToolkit().createCustomCursor(image, new Point(0, 10), "cut");
         removeAll();
         setDarkMode(false); // creates TexturePaint
-
         addKeyListener(new KeyListener() {
             private long lastDigitMillis;
             private int lastDigit;
@@ -1283,7 +1288,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 }
                 if (!notInLyrics && getComponentCount() > 0 && lyricsVisible) {
                     // dirty bugfix for lost bounds
-                    YassLyrics lyrics = (YassLyrics) getComponent(0);
                     Point p2 = lyrics.getLocation();
                     if ((layout.equals("East") && (x - p2.x > 500))
                             || (layout.equals("West") && x < lyricsWidth)) {
@@ -2542,19 +2546,18 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         // LYRICS POSITION
         if (getComponentCount() > 0
                 && lyricsVisible) {
-            YassLyrics c = (YassLyrics) getComponent(0);
-            Rectangle cr = c.getBounds();
+            Rectangle cr = lyrics.getBounds();
 
             if (layout.equals("East")) {
                 db.translate(
                         clip.x + clip.width - cr.width + cr.getX()
-                                - c.getX(), cr.getY() - c.getY() + 20);
+                                - lyrics.getX(), cr.getY() - lyrics.getY() + 20);
             } else if (layout.equals("West")) {
-                db.translate(clip.x, cr.getY() - c.getY() + 20);
+                db.translate(clip.x, cr.getY() - lyrics.getY() + 20);
             }
 
             // System.out.println("refresh print");
-            c.print(db);
+            lyrics.print(db);
             // System.out.println("refresh print done");
         }
         // paintText(db);
@@ -3727,34 +3730,35 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
                     if (onoff && r.width > 2.4) {
                         g2.fill(r);
+                        // additional info text only if showing few pages
+                        if (isSelected && (table.getMultiSize() <= 4 || table.hasSingleSelectedRow()))
+                        {
+                            if (!isPlaying && !live) {
+                                g2.setFont(smallFont);
+                                g2.setColor(darkMode ? blackDarkMode : black);
+                                FontMetrics fm = g2.getFontMetrics();
 
-                        if (wSize > 8) {
-                            YassRow row = table.getRowAt(i);
-                            if (table.isRowSelected(i))
-                            {
-                                if (!isPlaying && !live) {
-                                    g2.setFont(smallFont);
-                                    g2.setColor(darkMode ? blackDarkMode : black);
-                                    FontMetrics fm = g2.getFontMetrics();
+                                YassRow row = table.getRowAt(i);
+                                int beat = row.getBeatInt();
+                                int x = beatToTimeline(beat);
+                                String s = beat+"";
+                                int sw = fm.stringWidth(s);
+                                g2.setColor(darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2);
+                                g2.fillRect(x - sw / 2, 0, sw, 10);
+                                g2.setColor(darkMode ? blackDarkMode : black);
+                                g2.drawString(s, x - sw / 2, 8f);
 
-                                    int beat = row.getBeatInt();
-                                    int x = beatToTimeline(beat);
-                                    String s = beat+"";
-                                    int sw = fm.stringWidth(s);
-                                    g2.setColor(darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2);
-                                    g2.fillRect(x - sw / 2, 0, sw, 10);
-                                    g2.setColor(darkMode ? blackDarkMode : black);
-                                    g2.drawString(s, x - sw / 2, 8f);
-
-                                    long ms = (long)table.beatToMs(beat);
-                                    s = YassUtils.commaTime(ms) + "s";
-                                    sw = fm.stringWidth(s);
-                                    g2.setColor(darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2);
-                                    g2.fillRect(x - sw / 2, 10, sw, 10);
-                                    g2.setColor(darkMode ? blackDarkMode : black);
-                                    g2.drawString(s, x - sw / 2, 18);
-                                }
+                                long ms = (long)table.beatToMs(beat);
+                                s = YassUtils.commaTime(ms) + "s";
+                                sw = fm.stringWidth(s);
+                                g2.setColor(darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2);
+                                g2.fillRect(x - sw / 2, 10, sw, 10);
+                                g2.setColor(darkMode ? blackDarkMode : black);
+                                g2.drawString(s, x - sw / 2, 18);
                             }
+                        }
+                        if (table.getMultiSize() <= 4) {
+                            YassRow row = table.getRowAt(i);
                             if (showNoteBeat) {
                                 String beatstr = row.getBeat();
                                 int yoff = 4;
@@ -5622,5 +5626,38 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
     public void stopPlaying() {
         firePropertyChange("play", null, "stop");
+    }
+
+    public void setLyrics(YassLyrics lyrics) {
+        this.lyrics = lyrics;
+    }
+
+    public void disposeSongHeader() {
+        if (songHeader != null) {
+            songHeader.dispose();
+        }
+    }
+
+    public void initSongHeader(YassActions actions) {
+        songHeader = new SongHeader(getOwner(), actions, getActiveTable());
+    }
+
+    public void refreshHeaderLocation() {
+        if (songHeader == null) {
+            return;
+        }
+        songHeader.refreshLocation();
+    }
+
+    public YassMain getOwner() {
+        return owner;
+    }
+
+    public void setOwner(YassMain owner) {
+        this.owner = owner;
+    }
+
+    public SongHeader getSongHeader() {
+        return songHeader;
     }
 }

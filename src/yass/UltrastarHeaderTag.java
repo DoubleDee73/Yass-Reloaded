@@ -59,7 +59,12 @@ public enum UltrastarHeaderTag {
     COMMENT(37, OLDY),
     RESOLUTION(38, OLDY, CLASSY, UNITY),
     NOTESGAP(39, OLDY, CLASSY, UNITY),
-    AUTHOR(40, OLDY, CLASSY, UNITY, CREATOR);
+    AUTHOR(40, OLDY, CLASSY, UNITY, CREATOR),
+    AUDIO(41, SHINY),
+    VOCALS(42, SHINY),
+    INSTRUMENTAL(43, SHINY),
+    TAGS(44, SHINY),
+    PROVIDEDBY(45, SHINY);
 
     final int index;
     final boolean mandatory;

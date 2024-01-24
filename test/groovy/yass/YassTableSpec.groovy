@@ -128,7 +128,7 @@ class YassTableSpec extends Specification {
         }
 
         when:
-        yassTable.rollRight(splitCode as char, (slitPos + 1)) // We are substracting this in the code again
+        yassTable.rollRight(splitCode as char, slitPos) // We are substracting this in the code again
 
         then:
         verifyExpectation(yassTable, expectation)
@@ -555,30 +555,39 @@ class YassTableSpec extends Specification {
         yassTable.model = Stub(TableModel) {
             getRowCount() >> TRAILING_SPACE_END_TILDE_SONG.size()
         }
+        YassHyphenator hyphenator = new YassHyphenator(null)
+        hyphenator.setFallbackHyphenations( ['hello': 'he•lo'])
+        yassTable.hyphenator =  hyphenator
 
         when:
-        yassTable.insertRowsAt(textToInsert, 7, false)
+        yassTable.insertRowsAt(textToInsert, startRow, false)
 
         then:
         verifyExpectation(yassTable, expectation)
 
         where:
-        textToInsert                 || expectation
-        ':\t0\t4\t20\tHello '        || ['One', '~ ', 'two ', 'three ', '_', 'Hello ', 'five', '~ ']
-        ':\t0\t8\t20\tHello '        || ['One', '~ ', 'two ', 'three ', '_', 'Hello ', '~ ']
+        textToInsert                  | startRow || expectation
+        ':\t0\t4\t20\tHello '         | 7        || ['One', '~ ', 'two ', 'three ', '_', 'Hello ', '_', 'five', '~ ']
+        ':\t0\t8\t20\tHello '         | 7        || ['One', '~ ', 'two ', 'three ', '_', 'Hello ', '_', '~ ']
         ':\t0\t2\t20\ta \n' +
                 ':\t3\t2\t20\tb \n' +
                 ':\t6\t2\t20\tc \n' +
                 ':\t9\t3\t20\td \n' +
-                ':\t14\t2\t20\te \n' || ['One', '~ ', 'two ', 'three ', '_', 'a ', 'b ', 'c ', 'd ', 'e ']
+                ':\t14\t2\t20\te \n'  | 7        || ['One', '~ ', 'two ', 'three ', '_', 'a ', 'b ', 'c ', 'd ', 'e ']
+        ':\t0\t2\t20\ta \n' +
+                ':\t3\t2\t20\tb \n' +
+                ':\t6\t2\t20\tc \n' +
+                ':\t9\t3\t20\td \n' +
+                ':\t14\t2\t20\te \n'  | 5        || ['One', '~ ', 'two ', 'a ', 'b ', 'c ', 'd ', 'e ', '_', 'Four ', 'five', '~ ']
+        'hello b c d\ne f g h\n'      | 5        || ['One', '~ ', 'two ', 'he', 'lo ', 'b ', 'c ', 'd ', '_', 'e ', 'f ', 'g ', 'h ', '_', 'Four ', 'five', '~ ']
     }
 
     private boolean verifyExpectation(YassTable yassTable, List<String> expectation) {
         int offset = 0
-        YassRow yassRow
-        do {
+        YassRow yassRow = yassTable.getRowAt(offset)
+        while (yassRow.isComment()) {
             yassRow = yassTable.getRowAt(++offset)
-        } while(yassRow.isComment())
+        }
         expectation.eachWithIndex { String entry, int i ->
             yassRow = yassTable.getRowAt(i + offset)
             if (yassRow.isPageBreak()) {
@@ -614,10 +623,10 @@ class YassTableSpec extends Specification {
                 new YassRow(':', '6', '5', '10', '~ '),
                 new YassRow(':', '12', '5', '10', 'two '),
                 new YassRow(':', '18', '5', '10', 'three '),
-                new YassRow('-', '24', '', '', ''),
-                new YassRow(':', '26', '5', '10', 'Four '),
-                new YassRow(':', '32', '5', '10', 'five'),
-                new YassRow(':', '38', '5', '10', '~ '),
+                new YassRow('-', '124', '', '', ''),
+                new YassRow(':', '126', '5', '10', 'Four '),
+                new YassRow(':', '132', '5', '10', 'five'),
+                new YassRow(':', '138', '5', '10', '~ '),
                 new YassRow('E', '', '', '', '')
         ]
         rows.each { row ->

@@ -160,7 +160,22 @@ public class TimeSpinner extends JPanel {
         return msSpinner;
     }
 
+    public void setLabelSize(Dimension dimension) {
+        Dimension adjustedDimension = new Dimension((int)dimension.getWidth() - 10, (int)dimension.getHeight());
+        if (lab1 != null) {
+            lab1.setSize(adjustedDimension);
+            lab1.setMinimumSize(adjustedDimension);
+            lab1.setPreferredSize(adjustedDimension);
+        }
+    }
 
+    public void setSpinnerWidth(int width) {
+        Dimension spinnerWidth = new Dimension(width, 20);
+        ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setColumns(5);
+        ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setSize(spinnerWidth);
+        ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setMinimumSize(spinnerWidth);
+        ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setPreferredSize(spinnerWidth);
+    }
     /**
      * Gets the time attribute of the TimeSpinner object
      *

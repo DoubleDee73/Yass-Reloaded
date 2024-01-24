@@ -109,20 +109,38 @@ public class YassMain extends JFrame {
         addIconToIconList(icon16, icons);
         this.setIconImages(icons);
         this.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-        this.addWindowListener(
-                new WindowAdapter() {
-                    public void windowClosing(WindowEvent e) {
-                        if (!askStop())
-                            return;
+        this.addWindowListener(createWindowListener());
+        this.addComponentListener(new ComponentListener() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                if (actions != null) {
+                    actions.setX(getX());
+                    actions.setY(getY());
+                }
+                if (sheet != null && sheet.isVisible()) {
+                    sheet.refreshHeaderLocation();
+                }
+            }
 
-                        setDefaultSize(((Component) e.getSource()).getSize());
-                        setDefaultLocation(((Component) e.getSource()).getLocation());
+            @Override
+            public void componentMoved(ComponentEvent e) {
+                if (actions != null) {
+                    actions.setX(getX());
+                    actions.setY(getY());
+                }
+                if (sheet != null && sheet.isVisible()) {
+                    sheet.refreshHeaderLocation();
+                }
+            }
 
-                        e.getWindow().setVisible(false);
-                        e.getWindow().dispose();
-                        System.exit(0);
-                    }
-                });
+            @Override
+            public void componentShown(ComponentEvent e) {
+            }
+
+            @Override
+            public void componentHidden(ComponentEvent e) {
+            }
+        });
         this.pack();
         this.setSize(getDefaultSize());
 
@@ -131,7 +149,25 @@ public class YassMain extends JFrame {
             this.setLocation(p);
         else
             this.setLocationRelativeTo(null);
+        actions.setX(getX());
+        actions.setY(getY());
         this.setVisible(true);
+    }
+
+    private WindowListener createWindowListener() {
+        return new WindowAdapter() {
+            public void windowClosing(WindowEvent e) {
+                if (!askStop())
+                    return;
+
+                setDefaultSize(((Component) e.getSource()).getSize());
+                setDefaultLocation(((Component) e.getSource()).getLocation());
+
+                e.getWindow().setVisible(false);
+                e.getWindow().dispose();
+                System.exit(0);
+            }
+        };
     }
 
     private static void addIconToIconList(URL icon, ArrayList<Image> icons) {
@@ -210,6 +246,7 @@ public class YassMain extends JFrame {
         mainPanel.setLayout(new BorderLayout());
 
         sheet = new YassSheet();
+        sheet.setOwner(this);
         mp3 = new YassPlayer(sheet);
 
         lyrics = new YassLyrics(prop);
@@ -237,7 +274,6 @@ public class YassMain extends JFrame {
 
         sheet.setLayout(null);
         sheet.add(lyrics);
-
         YassErrors errors = new YassErrors(actions, prop, actions.createErrorToolbar());
         actions.setErrors(errors);
 
@@ -561,7 +597,6 @@ public class YassMain extends JFrame {
         sheetPane.getViewport().setScrollMode(JViewport.SIMPLE_SCROLL_MODE);
         sheetPane.setBorder(null);
         sheetPane.getActionMap().clear();
-
         return sheetPanel;
     }
 

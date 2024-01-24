@@ -26,7 +26,8 @@ import java.util.stream.Collectors;
 public enum UltrastarHeaderTagVersion implements YassEnum {
     CLASSY("0.2.0", 0.2d),
     OLDY("0.3.0", 0.3d),
-    UNITY("1.0.0", 1d);
+    UNITY("1.0.0", 1d),
+    SHINY("1.1.0", 1.1d);
     final String version;
     final double numericVersion;
 

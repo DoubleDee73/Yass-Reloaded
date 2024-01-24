@@ -3015,7 +3015,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             if (file.exists()) {
                 YassTable t = new YassTable();
                 t.loadFile(dir + File.separator + txtname);
-
+                song.setTagsFromString(t.getTags());
                 copyLyricsAction.setEnabled(true);
 
                 setProperty("txt-notes", t.getNoteCount() + "");
@@ -3052,10 +3052,8 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                 setProperty("txt-year", year == null ? "-" : year);
                 String album = t.getAlbum();
                 setProperty("txt-album", album == null ? "-" : album);
-                String id = t.getID();
-                setProperty("txt-id", id == null ? "-" : id);
-                String len = t.getLength();
-                setProperty("txt-length", len == null ? "-" : len);
+                String tags = t.getTags();
+                setProperty("txt-tags", tags == null ? "-" : tags);
                 String lang = t.getLanguage();
                 setProperty("txt-language", lang == null ? "-" : lang);
 

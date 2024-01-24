@@ -38,7 +38,7 @@ public class YassHyphenator {
     private String currentLanguage;
     private YassProperties yassProperties;
 
-    private List<String> fallbackHyphenations = null;
+    private Map<String, String> fallbackHyphenations = null;
 
     /**
      * Constructor for the YassHyphenator object
@@ -123,7 +123,7 @@ public class YassHyphenator {
 
 
     /**
-     * Description of the Method
+     * Hyphenates a word by putting in a \u00AD character between each syllable
      *
      * @param word Description of the Parameter
      * @return Description of the Return Value
@@ -132,15 +132,20 @@ public class YassHyphenator {
         if (hyphenator != null) {
             word = hyphenator.hyphenate(word, 2, 2);
             if (!word.contains("\u00AD")) {
-                word = fallbackHyphenation(word);
+                word = syllableficate(word);
             }
-            if (!word.contains("\u00AD")) {
-                // Still couldn't hyphenate. Checking, if it's a word like Checkin'
-                word = hyphenateWithApostrophe(word);
-            }
-            if (!word.contains("\u00AD") && word.length() == 2 && StringUtils.isAllUpperCase(word)) {
-                word = word.charAt(0) + "\u00AD" + word.charAt(1);
-            }
+        }
+        return word;
+    }
+
+    public String syllableficate(String word) {
+            word = fallbackHyphenation(word);
+        if (!word.contains("\u00AD")) {
+            // Still couldn't hyphenate. Checking, if it's a word like Checkin'
+            word = hyphenateWithApostrophe(word);
+        }
+        if (!word.contains("\u00AD") && word.length() == 2 && StringUtils.isAllUpperCase(word)) {
+            word = word.charAt(0) + "\u00AD" + word.charAt(1);
         }
         return word;
     }
@@ -300,27 +305,34 @@ public class YassHyphenator {
                 fallbackHyphenations = null;
             }
             try {
-                fallbackHyphenations = Files.readAllLines(Paths.get(fallbackDictionary));
+                fallbackHyphenations = new HashMap<>();
+                for (String line : Files.readAllLines(Paths.get(fallbackDictionary))) {
+                    fallbackHyphenations.put(line.replace("•", ""), line);
+                }
             } catch (IOException e) {
                 fallbackHyphenations = null;
             }
         }
         if (fallbackHyphenations != null) {
-            for (String line : fallbackHyphenations) {
-                if (line.replace("•", "").equals(word.toLowerCase())) {
-                    String temp = line.replace("•", "\u00AD");
-                    if (StringUtils.isAllUpperCase(word.substring(0, 1))) {
-                        temp = StringUtils.capitalize(temp);
-                    }
-                    return temp;
+            String temp = fallbackHyphenations.get(word.toLowerCase());
+            if (temp != null) {
+                temp = temp.replace("•", "\u00AD");
+                if (StringUtils.isAllUpperCase(word.substring(0, 1))) {
+                    temp = StringUtils.capitalize(temp);
                 }
-                if (Character.getNumericValue(line.charAt(0)) > Character.getNumericValue(
-                        word.toLowerCase().charAt(0))) {
-                    break;
-                }
+                return temp;
             }
         }
+
         return word;
+    }
+
+    public Map<String, String> getFallbackHyphenations() {
+        return fallbackHyphenations;
+    }
+
+    public void setFallbackHyphenations(Map<String, String> fallbackHyphenations) {
+        this.fallbackHyphenations = fallbackHyphenations;
     }
 }
 
