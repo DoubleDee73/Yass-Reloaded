@@ -24,6 +24,7 @@ import yass.YassSongList;
 import yass.YassUtils;
 
 import java.io.File;
+import java.text.Normalizer;
 import java.util.*;
 
 /**
@@ -166,11 +167,11 @@ public class YassFilter implements Cloneable {
         if (f == null) {
             return false;
         }
-        f = f.toLowerCase();
+        f = Normalizer.normalize(f.toLowerCase(), Normalizer.Form.NFKD).replaceAll("\\p{M}", "");
         if (str.contains("'")) {
             f = f.replace("’", "'");
         }
-        return f.contains(str);
+        return f.contains(Normalizer.normalize(str, Normalizer.Form.NFKD).replaceAll("\\p{M}", ""));
     }
 
     /**

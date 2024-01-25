@@ -27,6 +27,8 @@ import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.swing.*;
 import javax.swing.border.Border;
+import javax.swing.event.MenuEvent;
+import javax.swing.event.MenuListener;
 import javax.swing.table.*;
 import java.awt.*;
 import java.awt.event.*;
@@ -174,7 +176,8 @@ public class YassSongList extends JTable {
     private final Vector<String> editions;
     private JMenu moreEditions, cmoreEditions;
     private final ActionListener actionEdition;
-    private final JMenu languagePopup, genrePopup, editionPopup, sortbyPopup;
+    private final ActionListener actionTags;
+    private final JMenu languagePopup, genrePopup, editionPopup, sortbyPopup, tagsPopup;
     private String emptyString = I18.get("songlist_msg_empty");
     private boolean showErrors = false;
     private boolean showStats = false;
@@ -218,6 +221,7 @@ public class YassSongList extends JTable {
         JMenu clang;
         JMenu cgenre;
         JMenu cedition;
+        JMenu ctags;
         JMenuItem menuItem;
         combinedPopup.add(new JMenuItem(editArtist));
         getInputMap().put(KeyStroke.getKeyStroke("F2"), "editArtist");
@@ -229,6 +233,7 @@ public class YassSongList extends JTable {
 
         combinedPopup.add(cgenre = new JMenu(I18.get("lib_genre")));
         combinedPopup.add(cedition = new JMenu(I18.get("lib_edition")));
+        combinedPopup.add(ctags = new JMenu(I18.get("lib_tags")));
         combinedPopup.add(clang = new JMenu(I18.get("lib_language")));
 
         combinedPopup.add(new JMenuItem(editYear));
@@ -413,6 +418,25 @@ public class YassSongList extends JTable {
 
         editions = new Vector<>();
 
+        tagsPopup = new JMenu(I18.get("lib_tags"));
+        StringTokenizer tags = new StringTokenizer(prop.getProperty("tags-tag"), "|");
+        ag = e -> setSelectionTags(e.getActionCommand(), ((JCheckBoxMenuItem)e.getSource()).isSelected());
+        JCheckBoxMenuItem checkBoxMenuItem;
+        while (tags.hasMoreTokens()) {
+            String s = tags.nextToken();
+            checkBoxMenuItem = new JCheckBoxMenuItem(s);
+            tagsPopup.add(checkBoxMenuItem);
+            checkBoxMenuItem.addActionListener(ag);
+            checkBoxMenuItem = new JCheckBoxMenuItem(s);
+            ctags.add(checkBoxMenuItem);
+            checkBoxMenuItem.addActionListener(ag);
+        }
+        ctags.addMenuListener(tagsMenuListener());
+        tagsPopup.addMenuListener(tagsMenuListener());
+        ctags.setName("TagsMenu");
+        actionTags = e -> setSelectionTags(e.getActionCommand(), ((JCheckBoxMenuItem)e.getSource()).isSelected());
+        tagsPopup.setEnabled(prop.isShinyOrNewer());
+        ctags.setEnabled(prop.isShinyOrNewer());
         sortbyPopup = new JMenu(I18.get("songlist_col_sortby"));
         String[] sortString = new String[]{I18.get("songlist_col_1"), I18.get("songlist_col_2"), I18.get("songlist_col_3"), I18.get("songlist_col_4"),
                 I18.get("songlist_col_5"), I18.get("songlist_col_6"), I18.get("songlist_col_7"), I18.get("songlist_col_8"), I18.get("songlist_col_9"),
@@ -510,6 +534,7 @@ public class YassSongList extends JTable {
             t.init(prop);
             t.removeAllRows();
             t.loadFile(filename);
+            s.setTagsFromString(t.getTags());
             YassTableModel tm = (YassTableModel) t.getModel();
             if (col1 == ARTIST_COLUMN) {
                 YassRow r = tm.getCommentRow("ARTIST:");
@@ -816,6 +841,33 @@ public class YassSongList extends JTable {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private MenuListener tagsMenuListener() {
+        return new MenuListener() {
+            @Override
+            public void menuSelected(MenuEvent e) {
+                Set<String> selectedElements = new HashSet<>();
+                int[] rows = getSelectedRows();
+                for (int row : rows) {
+                    YassSong song = sm.getRowAt(row);
+                    selectedElements.addAll(song.getTagsAsList());
+                }
+                JPopupMenu popupMenu = ((JMenu)e.getSource()).getPopupMenu();
+                for (MenuElement menuElement : popupMenu.getSubElements()) {
+                    JCheckBoxMenuItem tag = (JCheckBoxMenuItem) menuElement;
+                    tag.setState(selectedElements.contains(tag.getText()));
+                }
+            }
+
+            @Override
+            public void menuDeselected(MenuEvent e) {
+            }
+
+            @Override
+            public void menuCanceled(MenuEvent e) {
+            }
+        };
     }
 
     /**
@@ -1356,6 +1408,10 @@ public class YassSongList extends JTable {
      */
     public JMenu getGenreMenu() {
         return genrePopup;
+    }
+
+    public JMenu getTagsMenu() {
+        return tagsPopup;
     }
 
     /**
@@ -2295,6 +2351,37 @@ public class YassSongList extends JTable {
     }
 
     /**
+     * Sets the selectionTags attribute of the YassSongList object
+     *
+     * @param tags The new selectionGenre value
+     */
+    public void setSelectionTags(String tags, boolean isSelected) {
+        System.out.println("setSelectionTags " + tags);
+        int[] rows = getSelectedRows();
+        boolean changed = false;
+        for (int row : rows) {
+            YassSong s = sm.getRowAt(row);
+            if (s.isOpened()) {
+                if (s.getTable().setTags(tags, isSelected)) {
+                    changed = true;
+                    s.setSaved(false);
+                }
+            }
+            if (!isSelected || !tags.equals(s.getTags())) {
+                s.setTags(tags, isSelected);
+                changed = true;
+                s.setSaved(false);
+            }
+            sm.fireTableRowsUpdated(row, row);
+        }
+        if (changed) {
+            setSaved(false);
+            actions.refreshGroups();
+
+        }
+    }
+
+    /**
      * Sets the selectionEdition attribute of the YassSongList object
      *
      * @param edition The new selectionEdition value
@@ -3119,6 +3206,10 @@ public class YassSongList extends JTable {
             if (prop.isUnityOrNewer()) {
                 t.setVersion();
             }
+            if (prop.isShinyOrNewer() && StringUtils.isEmpty(s.getAudio())) {
+                t.setAudio(s.getMP3());
+            }
+            t.setTags(s.getTags());
 
             String tmp = prop.getProperty("temp-dir");
             String title = YassSong.toFilename(s.getTitle());
@@ -3278,6 +3369,11 @@ public class YassSongList extends JTable {
         String medleyendbeat = "";
         String encoding = "";
         String calcMedley = "";
+        String audio = "";
+        String instrumental = "";
+        String vocals = "";
+        String tags = "";
+        String providedBy = "";
         boolean changed = false;
 
         boolean oldUndo = t.getPreventUndo();
@@ -3342,6 +3438,16 @@ public class YassSongList extends JTable {
             medleyendbeat = r != null ? r.getComment() : "";
             r = tm.getCommentRow(CALCMEDLEY.getTagName());
             calcMedley = r != null ? r.getComment() : "";
+            r = tm.getCommentRow(AUDIO.getTagName());
+            audio = r != null ? r.getComment() : "";
+            r = tm.getCommentRow(INSTRUMENTAL.getTagName());
+            instrumental = r != null ? r.getComment() : "";
+            r = tm.getCommentRow(VOCALS.getTagName());
+            vocals = r != null ? r.getComment() : "";
+            r = tm.getCommentRow(TAGS.getTagName());
+            tags = r != null ? r.getComment() : "";
+            r = tm.getCommentRow(PROVIDEDBY.getTagName());
+            providedBy = r != null ? r.getComment() : "";
 
             multiplayer = t.getPlayerCount();
             String multiplayerString = "";
@@ -3473,7 +3579,26 @@ public class YassSongList extends JTable {
                 changed = true;
                 s.setCalcMedley(calcMedley);
             }
-
+            if (!audio.equals(s.getAudio())) {
+                changed = true;
+                s.setAudio(audio);
+            }
+            if (!instrumental.equals(s.getInstrumental())) {
+                changed = true;
+                s.setInstrumental(instrumental);
+            }
+            if (!vocals.equals(s.getVocals())) {
+                changed = true;
+                s.setVocals(vocals);
+            }
+            if (!tags.equals(s.getTags())) {
+                changed = true;
+                s.setTags(tags, StringUtils.isNotEmpty(s.getTags()));
+            }
+            if (!providedBy.equals(s.getProvidedBy())) {
+                changed = true;
+                s.setProvidedBy(providedBy);
+            }
             if (showLyrics) {
                 String txt = t.getText().trim();
                 txt = txt.replaceAll("[-|~|\r|" + YassRow.HYPHEN + "]", "");
@@ -4596,7 +4721,7 @@ public class YassSongList extends JTable {
             String at = YassSong.toFilename(s.getArtist() + " - " + s.getTitle() + " @ " + s.getFolder());
             File cacheFile = new File(imageCacheName + File.separator + at + ".jpg");
 
-            if (cacheSongCover(imageCacheName, s)) {
+            if (cacheSongCover(imageCacheName, s) && s.getIcon() != null && !s.getIcon().equals(noCover)) {
                 try {
                     Image img = javax.imageio.ImageIO.read(cacheFile);
                     s.setIcon(new ImageIcon(img));
@@ -4822,21 +4947,16 @@ public class YassSongList extends JTable {
                 BufferedReader inputStream = new BufferedReader(r);
 
                 int len;
-                int c = inputStream.read();
-                while (c == '#') {
-                    len = inputStream.read(cstr, 0, 8);
-                    if (len < 8) {
-                        inputStream.close();
-                        return false;
-                    }
-                    String headerTag = new String(cstr).trim().toUpperCase();
-                    if (HeaderEnum.isValidHeader(headerTag)) {
+                String line = inputStream.readLine();
+                while (line.startsWith("#")) {
+                    String headerTag = line.substring(1, line.indexOf(":") + 1).toUpperCase();
+                    if (UltrastarHeaderTag.getTag(headerTag) != null) {
                         inputStream.close();
                         return true;
                     } else {
                         System.out.println("Invalid Header Tag for " + f.getName());
                     }
-                    c = inputStream.read();
+                    line = inputStream.readLine();
                 }
                 inputStream.close();
             } catch (Exception e) {
@@ -6173,6 +6293,7 @@ public class YassSongList extends JTable {
                         YassFilter.containsIgnoreCase(s.getTitle(), str) ||
                         YassFilter.containsIgnoreCase(s.getArtist(), str) ||
                         YassFilter.containsIgnoreCase(s.getLanguage(), str) ||
+                        YassFilter.containsIgnoreCase(s.getTags(), str) ||
                         YassFilter.containsIgnoreCase(s.getEdition(), str) ||
                         YassFilter.containsIgnoreCase(s.getGenre(), str) ||
                         YassFilter.containsIgnoreCase(s.getDuetSingerNames(), str);
@@ -6241,27 +6362,6 @@ public class YassSongList extends JTable {
                 repaint();
             });
             isFinished = true;
-        }
-    }
-
-    enum HeaderEnum {
-        TITLE,
-        ARTIST,
-        MEDLEY,
-        MP3,
-        AUTHOR,
-        LANGUAGE,
-        GENRE,
-        YEAR,
-        ENCODING;
-
-        static boolean isValidHeader(String header) {
-            for (HeaderEnum headerEnum : HeaderEnum.values()) {
-                if (header.startsWith(headerEnum.toString())) {
-                    return true;
-                }
-            }
-            return false;
         }
     }
 }

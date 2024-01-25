@@ -28,14 +28,18 @@ import javax.imageio.stream.ImageInputStream;
 import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.swing.*;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.text.Document;
+import javax.swing.text.JTextComponent;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.beans.PropertyChangeEvent;
 import java.io.*;
 import java.text.MessageFormat;
-import java.util.Hashtable;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Vector;
+import java.util.*;
 import java.util.regex.Pattern;
 
 /**
@@ -1021,6 +1025,44 @@ public class YassUtils {
     static class ImageLoadStatus {
         public boolean widthDone = false;
         public boolean heightDone = false;
+    }
+
+    public static void addChangeListener(JTextComponent text, ChangeListener changeListener) {
+        Objects.requireNonNull(text);
+        Objects.requireNonNull(changeListener);
+        DocumentListener dl = new DocumentListener() {
+            private int lastChange = 0, lastNotifiedChange = 0;
+
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                changedUpdate(e);
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                changedUpdate(e);
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                lastChange++;
+                SwingUtilities.invokeLater(() -> {
+                    if (lastNotifiedChange != lastChange) {
+                        lastNotifiedChange = lastChange;
+                        changeListener.stateChanged(new ChangeEvent(text));
+                    }
+                });
+            }
+        };
+        text.addPropertyChangeListener("document", (PropertyChangeEvent e) -> {
+            Document d1 = (Document)e.getOldValue();
+            Document d2 = (Document)e.getNewValue();
+            if (d1 != null) d1.removeDocumentListener(dl);
+            if (d2 != null) d2.addDocumentListener(dl);
+            dl.changedUpdate(null);
+        });
+        Document d = text.getDocument();
+        if (d != null) d.addDocumentListener(dl);
     }
 }
 

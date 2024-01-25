@@ -20,7 +20,9 @@ package yass;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseMotionAdapter;
 import java.awt.geom.Line2D;
 import java.awt.geom.Rectangle2D;
 import java.util.Vector;
@@ -68,6 +70,7 @@ public class YassSheetInfo extends JPanel {
     public YassSheetInfo(YassSheet s, int track) {
         super(true);
         setFocusable(false);
+
         this.sheet = s;
         this.track = track;
         sheet.addYassSheetListener(sheetListener = new YassSheetListener() {

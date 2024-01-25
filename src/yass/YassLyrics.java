@@ -1056,6 +1056,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 		if (sheet != null)
 			sheet.removeYassSheetListener(this);
 		sheet = s;
+		sheet.setLyrics(this);
 		sheet.addYassSheetListener(this);
 		propsChanged(sheet);
 	}

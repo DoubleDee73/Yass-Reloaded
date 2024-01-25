@@ -18,9 +18,12 @@
 
 package yass;
 
+import org.apache.commons.lang3.StringUtils;
+
 import javax.swing.*;
 import java.io.File;
-import java.util.StringTokenizer;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Description of the Class
@@ -100,7 +103,7 @@ public class YassSong implements Cloneable, Comparable<Object> {
      * Description of the Field
      */
     public static int statsindex = -1;
-    private String[] s = new String[32];
+    private String[] s = new String[37];
     private String[] messages = null;
     private float[] stats = null;
     private long timestamp = 0;
@@ -758,6 +761,69 @@ public class YassSong implements Cloneable, Comparable<Object> {
 
     public void setCalcMedley(String value) {
         s[31] = value;
+    }
+
+    public String getAudio() {
+        return s[32];
+    }
+
+    public void setAudio(String value) {
+        s[32] = value;
+    }
+
+    public String getInstrumental() {
+        return s[33];
+    }
+
+    public void setInstrumental(String value) {
+        s[33] = value;
+    }
+
+    public String getVocals() {
+        return s[34];
+    }
+
+    public void setVocals(String value) {
+        s[34] = value;
+    }
+
+    public String getTags() {
+        return s[35];
+    }
+
+    public List<String> getTagsAsList() {
+        if (StringUtils.isEmpty(getTags())) {
+            return Collections.emptyList();
+        }
+        String[] tags = getTags().split(",");
+        return Arrays.stream(tags)
+                     .map(YassSong::normalizeTag)
+                     .collect(Collectors.toList());
+    }
+
+    public static String normalizeTag(String tag) {
+        return tag.trim();
+    }
+
+    public void setTagsFromString(String value) {
+        s[35] = value;
+    }
+    public void setTags(String value, boolean add) {
+        Set<String> currentTags = new HashSet<>(getTagsAsList());
+        if (add) {
+            currentTags.add(value);
+        } else {
+            currentTags.remove(value);
+        }
+        s[35] = currentTags.stream().sorted().collect(Collectors.joining(", "));
+    }
+
+    public String getProvidedBy() {
+        return s[36];
+    }
+
+    public void setProvidedBy(String value) {
+        s[36] = value;
     }
 
     /**
