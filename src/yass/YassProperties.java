@@ -205,6 +205,7 @@ public class YassProperties extends Properties {
         // http|//de.wikipedia.org/wiki/Liste_der_ID3-Genres
         p.putIfAbsent("edition-tag", "Birthday Party|Child's Play|Christmas|Greatest Hits|Halloween|Hits of the 60s|Kuschelrock|New Year's Eve|Summer|Sodamakers");
         // http|//de.wikipedia.org/wiki/Compilation
+        p.putIfAbsent("tags-tag", "");
         p.putIfAbsent("note-naming-h", "DE RU PL NO FI SE");
         p.putIfAbsent("duetsinger-tag", "P");
         // errors
