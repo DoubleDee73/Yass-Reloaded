@@ -9,7 +9,9 @@ Yass Reloaded is a fork from Yass 2.4.3 that Saruta has been developing since 20
 
 # Downloads
 Binaries can be found in the [Release Section](https://github.com/DoubleDee73/Yass/releases)
+
 Min. Requirement is Java 17 with JavaFX (e. g. Open JDK ZuluFX https://www.azul.com/downloads/)
+
 Also, it is highly recommended to download Ultrastar Creator to get you started (https://github.com/UltraStar-Deluxe/UltraStar-Creator)
 
 # Developers
