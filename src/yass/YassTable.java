@@ -965,6 +965,9 @@ public class YassTable extends JTable {
             return true;
         }
         if (r == null) {
+            if (StringUtils.isEmpty(tag)) {
+                return false;
+            }
             r = new YassRow("#", TAGS.getTagName(), tag, "", "");
             YassRow v = tm.getCommentRow(GENRE);
             if (v == null) {
@@ -4194,6 +4197,7 @@ public class YassTable extends JTable {
             int rowCounter = before ? 0 : 1;
             int pasteBeat = -1;
             int currentBeat = 0;
+            int lengthInt = 0;
             boolean hasPageBreak = false;
             for (String line : lines) {
                 String[] currentRow = line.split("\t");
@@ -4207,7 +4211,7 @@ public class YassTable extends JTable {
                 String txt = currentRow.length > 4 ? currentRow[4] : "";
                 txt = txt.replace(' ', YassRow.SPACE);
                 int beatInt = Integer.parseInt(beat);
-                int lengthInt = StringUtils.isNumeric(length) ? Integer.parseInt(length) : 0;
+                lengthInt = StringUtils.isNumeric(length) ? Integer.parseInt(length) : 0;
                 boolean isSep = type.equals("-");
                 if (isSep && length.length() > 0) {
                     length = Integer.toString(lengthInt + startBeat);
@@ -4223,7 +4227,8 @@ public class YassTable extends JTable {
                     if (pasteBeat == -1) {
                         pasteBeat = existingRowsToAppend.get(0).getBeatInt() - 1;
                     } else {
-                        pasteBeat = pasteBeat + ((existingRowsToAppend.get(0).getBeatInt() - pasteBeat) / 2);
+                        int lastNoteEnding = currentBeat + lengthInt;
+                        pasteBeat = lastNoteEnding + ((existingRowsToAppend.get(0).getBeatInt() - lastNoteEnding) / 2);
                     }
                     tm.addRow(new YassRow("-", Integer.toString(pasteBeat), StringUtils.EMPTY, StringUtils.EMPTY,
                                           StringUtils.EMPTY));

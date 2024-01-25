@@ -2356,7 +2356,6 @@ public class YassSongList extends JTable {
      * @param tags The new selectionGenre value
      */
     public void setSelectionTags(String tags, boolean isSelected) {
-        System.out.println("setSelectionTags " + tags);
         int[] rows = getSelectedRows();
         boolean changed = false;
         for (int row : rows) {
@@ -3210,7 +3209,6 @@ public class YassSongList extends JTable {
                 t.setAudio(s.getMP3());
             }
             t.setTags(s.getTags());
-
             String tmp = prop.getProperty("temp-dir");
             String title = YassSong.toFilename(s.getTitle());
             String artist = YassSong.toFilename(s.getArtist());
