@@ -10,7 +10,7 @@ Yass Reloaded is a fork from Yass 2.4.3 that Saruta has been developing since 20
 # Downloads
 Binaries can be found in the [Release Section](https://github.com/DoubleDee73/Yass/releases)
 
-Min. Requirement is Java 17 with JavaFX (e. g. Open JDK ZuluFX https://www.azul.com/downloads/)
+Min. Requirement is Java 21 with JavaFX (e. g. Open JDK ZuluFX https://www.azul.com/downloads/)
 
 Also, it is highly recommended to download Ultrastar Creator to get you started (https://github.com/UltraStar-Deluxe/UltraStar-Creator)
 
@@ -37,7 +37,7 @@ Speed measure 'Inverse Duration' based on Marcel Taeumel's approach (http://uman
 
 # License
 
-Copyright (C) 2009-2022 Saruta, 2023 DoubleDee 
+Copyright (C) 2009-2022 Saruta, 2024 DoubleDee 
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
