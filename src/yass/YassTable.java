@@ -389,9 +389,21 @@ public class YassTable extends JTable {
      * @return null if any is null
      */
     public String getDirMP3() {
-        if (dir == null || mp3 == null)
+        if (dir == null || (mp3 == null && audio == null)) {
             return null;
-        return dir + File.separator + mp3;
+        }
+        StringJoiner joiner = new StringJoiner(File.separator);
+        joiner.add(dir);
+        if (prop.isShinyOrNewer()) {
+            if (StringUtils.isNotEmpty(audio)) {
+                joiner.add(audio);
+            } else {
+                joiner.add(mp3);
+            }
+        } else {
+            joiner.add(mp3);
+        }
+        return joiner.toString();
     }
 
     public String getCanonicalFilename() {
@@ -2233,6 +2245,7 @@ public class YassTable extends JTable {
                     try {
                         int pIndex = tag.indexOf("P") + 1;
                         int p = Integer.parseInt(String.valueOf(tag.charAt(pIndex))) - 1; // P1=[0], P2=[1], ...
+                        maxP = Math.max(maxP, p + 1);
                         if (duetSingerNames[p] != null) { // duplicate
                             tm.addRow("#", tag, s, "", "", YassRow.INVALID_LINE);
                             return true;
@@ -5714,7 +5727,7 @@ public class YassTable extends JTable {
             return "";
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < n; i++) {
-            if (sb.length() > 0)
+            if (!sb.isEmpty())
                 sb.append('/');
             String name = duetSingerNames[i];
             sb.append(name != null ? name : "-");

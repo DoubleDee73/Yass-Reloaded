@@ -24,7 +24,7 @@
 
     <groupId>yass</groupId>
     <artifactId>Yass-Reloaded</artifactId>
-    <version>2024.1</version>
+    <version>2024.2</version>
     <dependencies>
         <dependency>
             <groupId>com.danielreese</groupId>
@@ -78,13 +78,6 @@
             <systemPath>${project.basedir}/lib/jazzy.jar</systemPath>
         </dependency>
 
-        <!-- https://mvnrepository.com/artifact/org.apache.derby/derby -->
-        <dependency>
-            <groupId>org.apache.derby</groupId>
-            <artifactId>derby</artifactId>
-            <version>10.16.1.1</version>
-            <scope>test</scope>
-        </dependency>
         <!-- https://mvnrepository.com/artifact/net.java.jutils/jutils -->
         <dependency>
             <groupId>net.java.jutils</groupId>
@@ -186,12 +179,11 @@
             <artifactId>commons-math3</artifactId>
             <version>3.6.1</version>
         </dependency>
-
     </dependencies>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 

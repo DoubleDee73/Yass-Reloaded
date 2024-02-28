@@ -19,6 +19,7 @@ package yass;
 
 import com.nexes.wizard.Wizard;
 import org.apache.commons.lang3.StringUtils;
+import yass.extras.UsdbSyncerMetaTagCreator;
 import yass.renderer.YassSession;
 import yass.wizard.CreateSongWizard;
 
@@ -50,8 +51,8 @@ import java.util.Vector;
 public class YassActions implements DropTargetListener {
 
     private final YassSheet sheet;
-    public final static String VERSION = "2024.1";
-    public final static String DATE = "01/2024";
+    public final static String VERSION = "2024.2";
+    public final static String DATE = "02/2024";
 
     static int VIEW_LIBRARY = 1;
     static int VIEW_EDIT = 2;
@@ -672,7 +673,7 @@ public class YassActions implements DropTargetListener {
                 }
                 File selectedFile = chooser.getSelectedFile();
                 String filename = selectedFile.getName();
-                if (currentFile != null && currentFile.equals(filename)) {
+                if (currentFile != null && currentFile.equals(filename) && activeTable.getMP3().equals(filename)) {
                     return;
                 }
                 textField.setText(filename);
@@ -3528,7 +3529,8 @@ public class YassActions implements DropTargetListener {
         menu.add(autoCorrectPageBreaks);
         menu.add(autoCorrectSpacing);
         menu.add(autoCorrectTransposed);
-
+        menu.addSeparator();
+        menu.add(createSyncerTags);
         menu.addSeparator();
         menu.add(showOptions);
 
@@ -3637,6 +3639,8 @@ public class YassActions implements DropTargetListener {
         menu = new JMenu(I18.get("lib_extras"));
         menu.setMnemonic(KeyEvent.VK_X);
         menu.add(testMic);
+        menu.addSeparator();
+        menu.add(createSyncerTags);        
         menu.addSeparator();
         menu.add(showOptions);
         menuBar.add(menu);
@@ -5620,16 +5624,17 @@ public class YassActions implements DropTargetListener {
 
     private void updateStartEnd() {
         int start = (int) table.getStart();
-        startSpinner.setTime(start);
+        SongHeader songHeader = sheet.getSongHeader();
+        songHeader.getStartSpinner().setTime(start);
         int end = (int) table.getEnd();
         int dur = (int) (mp3.getDuration() / 1000);
         if (end < 0) {
             end = dur;
         }
-        endSpinner.setTime(end);
+        songHeader.getEndSpinner().setTime(end);
 
-        startSpinner.setDuration(dur);
-        endSpinner.setDuration(dur);
+        songHeader.getStartSpinner().setDuration(dur);
+        songHeader.getEndSpinner().setDuration(dur);
     }
 
     public void setGap(int ms) {
@@ -5641,14 +5646,15 @@ public class YassActions implements DropTargetListener {
 
     private void updateGap() {
         int gap = (int) table.getGap();
-        if (gapSpinner != null) {
-            gapSpinner.setTime(gap);
+        SongHeader songHeader = sheet.getSongHeader();
+        if (songHeader != null && songHeader.getGapSpinner() != null) {
+            songHeader.getGapSpinner().setTime(gap);
             int dur = (int) (mp3.getDuration() / 1000);
-            gapSpinner.setDuration(dur);
+            songHeader.getGapSpinner().setDuration(dur);
         }
         double bpm = table.getBPM();
-        if (bpmField != null) {
-            bpmField.setText(bpm + "");
+        if (songHeader != null && songHeader.getBpmField() != null) {
+            songHeader.getBpmField().setText(bpm + "");
         }
     }
 
@@ -6141,6 +6147,11 @@ public class YassActions implements DropTargetListener {
         return true;
     }
 
+    public void openMp3(String filename) {
+        mp3.reinitSynth();
+        mp3.openMP3(filename);
+    }
+    
     private void openEditor(boolean reload) {
         if (table == null)
             setActiveTable(firstTable());
@@ -7460,4 +7471,17 @@ public class YassActions implements DropTargetListener {
     public void setY(int y) {
         this.y = y;
     }
+    
+    public final Action createSyncerTags = new AbstractAction(I18.get("lib_syncer_tags")) {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (currentView == VIEW_EDIT) {
+                openEditor(false);
+                updateSheetProperties();
+            } else if (currentView == VIEW_LIBRARY) {
+                YassSong s = songList.getFirstSelectedSong();
+                UsdbSyncerMetaTagCreator syncerTagDialog = new UsdbSyncerMetaTagCreator(YassActions.this);
+            }
+        }
+    };
 }

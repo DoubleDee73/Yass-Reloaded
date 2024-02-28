@@ -26,6 +26,7 @@ import java.awt.*;
 import java.awt.event.ItemEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.File;
 import java.util.Objects;
 
 public class SongHeader extends JDialog {
@@ -75,7 +76,7 @@ public class SongHeader extends JDialog {
                     YassRow mp3Row = table.getCommentRow(e.getItem() + ":");
                     if (mp3Row != null) {
                         mp3.setText(mp3Row.getComment());
-                        table.loadFile(mp3Row.getComment());
+                        actions.openMp3(table.getDir() + File.separator + mp3Row.getComment());
                     } else {
                         mp3.setText(StringUtils.EMPTY);
                     }
@@ -88,7 +89,7 @@ public class SongHeader extends JDialog {
             label.setPreferredSize(labelSize);
             panel.add(label);
         }
-        mp3 = new JTextField(table.getMP3());
+        mp3 = new JTextField(StringUtils.isNotEmpty(table.getAudio()) ? table.getAudio() : table.getMP3());
         mp3.setName("mp3");
         YassUtils.addChangeListener(mp3, e -> {
             String selectedAudio = audioSelector != null && audioSelector.getSelectedItem() != null ?
@@ -181,7 +182,8 @@ public class SongHeader extends JDialog {
         panel.add(startSpinner);
         panel.add(Box.createHorizontalStrut(30));
         int end = table.getEnd() > 0 ? (int) table.getEnd() : 10000;
-        endSpinner = new TimeSpinner(I18.get("mpop_audio_end"), end, 10000);
+        int duration = actions.getMP3() != null ? (int)(actions.getMP3().getDuration() / 1000) : 10000;
+        endSpinner = new TimeSpinner(I18.get("mpop_audio_end"), end, Math.max(10000, duration));
         endSpinner.setLabelSize(midDimension);
         endSpinner.setSpinnerWidth(100);
         endSpinner.getSpinner().setFocusable(false);

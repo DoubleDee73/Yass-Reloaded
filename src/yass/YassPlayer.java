@@ -413,12 +413,13 @@ public class YassPlayer {
                 Thread.sleep(50);
                 counter++;
                 if (counter > 200) {
+                    mediaPlayer.dispose();
                     throw new RuntimeException("Mediaplayer could not be readied in less than 10 seconds");
                 }
             }
             System.out.println("Slept " + (System.currentTimeMillis() - now) + " ms");
         } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+            return;
         }
         if (createWaveform) {
             try {

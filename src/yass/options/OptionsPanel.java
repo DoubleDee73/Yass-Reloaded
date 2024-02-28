@@ -18,10 +18,7 @@
 
 package yass.options;
 
-import yass.I18;
-import yass.YassActions;
-import yass.YassEnum;
-import yass.YassProperties;
+import yass.*;
 
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -258,19 +255,7 @@ public class OptionsPanel extends JPanel {
      * @param s The feature to be added to the Comment attribute
      */
     public void addComment(String s) {
-        JPanel row = new JPanel();
-        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
-        JLabel la = new JLabel("<html><font color=gray>" + s);
-        la.setVerticalAlignment(JLabel.TOP);
-        la.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
-
-        JLabel spacer = new JLabel("");
-        //spacer.setSize(new Dimension(120, 10));
-        spacer.setPreferredSize(new Dimension(labelWidth, 20));
-        //spacer.setMaximumSize(new Dimension(200, 20));
-        row.add(spacer);
-        row.add(la);
-        right.add(row);
+        right.add(DialogTools.createHeaderPanel(s, labelWidth));
     }
 
 
@@ -382,23 +367,8 @@ public class OptionsPanel extends JPanel {
      * @param key   The feature to be added to the Text attribute
      */
     public void addText(String label, String key) {
-        JPanel row = new JPanel();
-        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
-        JLabel lab = new JLabel(label);
-        lab.setVerticalAlignment(JLabel.CENTER);
-        lab.setHorizontalAlignment(JLabel.LEFT);
-        //lab.setSize(new Dimension(120, 10));
-        lab.setPreferredSize(new Dimension(labelWidth, 20));
-        //lab.setMaximumSize(new Dimension(200, 20));
-
-        JTextField txtField = new JTextField(getProperty(key));
-        txtField.getDocument().addDocumentListener(new MyDocumentListener(key));
-
-        row.add(lab);
-        row.add(txtField);
-        right.add(row);
+        right.add(DialogTools.createTextfield(label, labelWidth, getProperty(key), new MyDocumentListener(key), key));
     }
-
 
     /**
      * Adds a feature to the Button attribute of the OptionsPanel object
