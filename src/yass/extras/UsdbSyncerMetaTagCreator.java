@@ -188,16 +188,16 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         result.add(getTextValue("p1", player1));
         result.add(getTextValue("p2", player2));
         result.add(getSpinnerValue("preview", preview));
-        result.add(getCombinedValue("medley", Arrays.asList(medleyStart, medleyEnd)));
+        result.add(getCombinedValue("medley", Arrays.asList(medleyStart, medleyEnd), true));
         String tagLine = result.stream().filter(StringUtils::isNotEmpty).collect(Collectors.joining(","));
         if (tagLine.isEmpty()) {
             resultLine.setText(StringUtils.EMPTY);
         } else {
-            resultLine.setText(UltrastarHeaderTag.VIDEO.getTagName() + tagLine);
+            resultLine.setText("#" + UltrastarHeaderTag.VIDEO.getTagName() + tagLine);
         }
         resultLine.repaint();
     }
-    
+
     private String getTextValue(String key, JTextField textField) {
         if (StringUtils.isEmpty(textField.getText())) {
             return null;
@@ -230,7 +230,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     private String determineVideoLink(String url) {
         String videoUrl;
         if (isYouTube(url.toLowerCase())) {
-            videoUrl = extractYoutubeVideoIdFromUrl(url);        
+            videoUrl = extractYoutubeVideoIdFromUrl(url);
         } else if (isVimeo(url.toLowerCase())) {
             videoUrl = extractVimeoVideoId(url);
         } else {
@@ -246,7 +246,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     private boolean isYouTube(String text) {
         return text.contains("youtube.com/") || text.contains("youtu.be/") || text.startsWith("v=");
     }
-    
+
     private String extractYoutubeVideoIdFromUrl(String url) {
         String pattern = "(?<=watch\\?v=|/videos/|embed/|youtu.be/|/v/|/e/|watch\\?v%3D|watch\\?feature=player_embedded&v=|%2Fvideos%2F|embed%2F|youtu.be%2F|%2Fv%2F)[^#&?\\n]*";
         Pattern compiledPattern = Pattern.compile(pattern);
@@ -258,14 +258,15 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
 
         return null;
     }
-    
+
     private boolean isVimeo(String url) {
         return url.contains("vimeo.com");
     }
 
     private String extractVimeoVideoId(String vimeoUrl) {
         // Regulärer Ausdruck, um die Video-ID zu extrahieren
-        Pattern pattern = Pattern.compile("https?://(?:www\\.|player\\.)?vimeo.com/(?:channels/(?:\\w+/)?|groups/([^/]+)/videos/|album/(\\d+)/video/|video/|)(\\d+)(?:$|/|\\?)");
+        Pattern pattern = Pattern.compile(
+                "https?://(?:www\\.|player\\.)?vimeo.com/(?:channels/(?:\\w+/)?|groups/([^/]+)/videos/|album/(\\d+)/video/|video/|)(\\d+)(?:$|/|\\?)");
         Matcher matcher = pattern.matcher(vimeoUrl);
 
         if (matcher.find()) {
@@ -277,22 +278,26 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         }
     }
 
+
     private String getSpinnerValue(String key, JSpinner spinner) {
+        return getSpinnerValue(key, spinner, false);
+    }
+
+    private String getSpinnerValue(String key, JSpinner spinner, boolean includeZero) {
         Object value = spinner.getValue();
         if (value == null) {
             return null;
         }
         String stringValue;
-        if (value instanceof Double) {
-            double dblValue = (double) value;
-            if (dblValue == 0d) {
+        if (value instanceof Double dblValue) {
+            if (dblValue == 0d && !includeZero) {
                 return null;
             }
             DecimalFormat format = new DecimalFormat("#####0.###", DecimalFormatSymbols.getInstance(Locale.US));
             stringValue = format.format(dblValue);
         } else {
             int intValue = (int) value;
-            if (intValue == 0) {
+            if (intValue == 0 && !includeZero) {
                 return null;
             }
             stringValue = Integer.toString(intValue);
@@ -305,10 +310,14 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     }
 
     private String getCombinedValue(String key, List<JSpinner> spinners) {
+        return getCombinedValue(key, spinners, false);
+    }
+
+    private String getCombinedValue(String key, List<JSpinner> spinners, boolean includeZero) {
         StringJoiner joiner = new StringJoiner("-");
         String temp;
         for (JSpinner spinner : spinners) {
-            temp = getSpinnerValue("", spinner);
+            temp = getSpinnerValue("", spinner, includeZero);
             if (temp == null) {
                 return null;
             } else {

@@ -49,7 +49,6 @@ public class DialogTools {
         JPanel row = new JPanel();
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
         JLabel lab = new JLabel(label);
-        lab.setBorder(BorderFactory.createLineBorder(Color.CYAN));
         lab.setVerticalAlignment(JLabel.CENTER);
         lab.setHorizontalAlignment(JLabel.LEFT);
         //lab.setSize(new Dimension(120, 10));

@@ -1139,7 +1139,7 @@ public class YassPlayer {
                         }
 
                         if (midiEnabled) {
-                            midi.playNote(midiPitch, outMillis - inMillis);
+                            midi.playNote(midiPitch, (nextClickEnd - nextClick) / 1000);
                         }
 
                         if (++clicksPos < n) {

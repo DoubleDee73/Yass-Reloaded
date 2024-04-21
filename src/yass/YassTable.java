@@ -40,6 +40,8 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.time.Year;
 import java.util.List;
 import java.util.*;
@@ -450,15 +452,8 @@ public class YassTable extends JTable {
 
     public void setBPM(double b) {
         bpm = b;
-
-        String s = Double.toString(bpm);
-        s = s.replace('.', ',');
-        if (s.endsWith(",00")) {
-            s = s.substring(0, s.length() - 3);
-        }
-        if (s.endsWith(",0")) {
-            s = s.substring(0, s.length() - 2);
-        }
+        DecimalFormat decimalFormat = new DecimalFormat("#.##", DecimalFormatSymbols.getInstance(Locale.US));
+        String s = decimalFormat.format(b);
         YassRow r = tm.getCommentRow("BPM:");
         if (r == null) {
             r = new YassRow("#", "BPM:", s, "", "");
@@ -1896,7 +1891,11 @@ public class YassTable extends JTable {
                 }
 
                 s = s.replace(YassRow.SPACE, ' ');
-                outputStream.println(s);
+                if (s.equals("E")) {
+                    outputStream.print(s);   
+                } else {
+                    outputStream.println(s);
+                }
                 // System.out.println(tm.getRowAt(i).toString());
             }
             success = true;
@@ -2224,6 +2223,8 @@ public class YassTable extends JTable {
                 } else if (tag.equals("BPM:")) {
                     // bpm or gap are set to 0 for invalid input
                     bpm = Double.parseDouble(s.replace(',', '.'));
+                    DecimalFormat decimalFormat = new DecimalFormat("#.##", new DecimalFormatSymbols(Locale.US));
+                    s = decimalFormat.format(bpm);
                 } else if (tag.equals("GAP:")) {
                     gap = Double.parseDouble(s.replace(',', '.'));
                 } else if (tag.equals("START:")) {
@@ -4201,7 +4202,7 @@ public class YassTable extends JTable {
             int endRowNum = findRowThatDoesNotOverlap(startRow,
                                                       startBeat + offset + lastRowToAdd.getLengthInt());
             List<YassRow> existingRowsToAppend;
-            if (endRowNum > startRow) {
+            if (endRowNum >= startRow) {
                 existingRowsToAppend = copyRowsFrom(endRowNum);
             } else {
                 existingRowsToAppend = Collections.emptyList();
@@ -4341,11 +4342,11 @@ public class YassTable extends JTable {
     }
 
     private int findRowThatDoesNotOverlap(int startRow, int lastBeat) {
-        YassRow row;
+        YassRow row = getRowAt(startRow);
         int counter = 0;
-        do {
+        while (row != null && row.getBeatInt() < lastBeat) {
             row = getRowAt(startRow + (++counter));
-        } while (row != null && row.getBeatInt() < lastBeat);
+        }
         return counter + startRow;
     }
 

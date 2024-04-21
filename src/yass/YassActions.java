@@ -6254,7 +6254,6 @@ public class YassActions implements DropTargetListener {
             sheet.init(null);
         }
         sheet.initSongHeader(this);
-        sheet.add(new JLabel("HALLO WELT"));
     }
 
     /**

@@ -42,6 +42,7 @@ public class SongHeader extends JDialog {
 
     public SongHeader(JFrame owner, YassActions actions, YassTable table) {
         super(owner);
+        System.out.println("Init Songheader");
         if (isVisible()) {
             return;
         }
