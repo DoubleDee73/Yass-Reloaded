@@ -125,11 +125,6 @@ public class YassActions implements DropTargetListener {
     private int y;
     private final RecordEventListener awt = new RecordEventListener();
     private final AWTEventListener awt2 = e -> {
-        if (e instanceof MouseWheelEvent) {
-            // att: freezes when not consumed
-            stopPlaying();
-            ((MouseWheelEvent) e).consume();
-        }
         if (e instanceof KeyEvent k) {
             if (k.getID() == KeyEvent.KEY_RELEASED) {
                 return;
@@ -5782,28 +5777,19 @@ public class YassActions implements DropTargetListener {
         sheet.getTemporaryNotes().clear();
 
         awt.reset();
-        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK);
-        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(awt, AWTEvent.MOUSE_MOTION_EVENT_MASK);
-        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(awt, AWTEvent.KEY_EVENT_MASK);
+        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK | AWTEvent.KEY_EVENT_MASK);
     }
 
     private void stopRecording() {
         mp3.interruptMP3();
         java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(awt);
-        java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(awt);
-        java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(awt);
     }
 
     public void startPlaying() {
-        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(awt2, AWTEvent.MOUSE_EVENT_MASK);
-        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(awt2, AWTEvent.MOUSE_MOTION_EVENT_MASK);
-        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(awt2, AWTEvent.KEY_EVENT_MASK);
-        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(awt2, AWTEvent.MOUSE_WHEEL_EVENT_MASK);
+        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(awt2, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK | AWTEvent.KEY_EVENT_MASK);
     }
 
     public void stopPlaying() {
-        java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(awt2);
-        java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(awt2);
         java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(awt2);
         mp3.interruptMP3();
     }
@@ -6151,7 +6137,7 @@ public class YassActions implements DropTargetListener {
         mp3.reinitSynth();
         mp3.openMP3(filename);
     }
-    
+
     private void openEditor(boolean reload) {
         if (table == null)
             setActiveTable(firstTable());
@@ -7470,7 +7456,7 @@ public class YassActions implements DropTargetListener {
     public void setY(int y) {
         this.y = y;
     }
-    
+
     public final Action createSyncerTags = new AbstractAction(I18.get("lib_syncer_tags")) {
         @Override
         public void actionPerformed(ActionEvent e) {
