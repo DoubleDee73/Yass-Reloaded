@@ -5744,6 +5744,9 @@ public class YassActions implements DropTargetListener {
 
         mp3.setMIDIEnabled(false);
         mp3.setAudioEnabled(true);
+        if (pos == end) {
+            pos = Math.max(pos - 1, 0);
+        }
         mp3.playSelection(pos * 1000, end * 1000, null, playTimebase);
     }
 
