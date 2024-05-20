@@ -249,6 +249,11 @@ public class YassActions implements DropTargetListener {
           table.rehyphenate();
       }
     };
+    private final Action shiftEnding = new AbstractAction(I18.get("edit_shiftEnding")) {
+        public void actionPerformed(ActionEvent e) {
+            table.shiftEnding();
+        }
+    };
     private final Action findLyrics = new AbstractAction(I18.get("edit_lyrics_find")) {
         public void actionPerformed(ActionEvent e) {
             lyrics.find();
@@ -3508,6 +3513,7 @@ public class YassActions implements DropTargetListener {
         menu.addSeparator();
 
         menu.add(reHyphenate);
+        menu.add(shiftEnding);
         menu.add(findLyrics);
         menu.add(spellLyrics);
 
@@ -6848,6 +6854,10 @@ public class YassActions implements DropTargetListener {
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_H, InputEvent.CTRL_MASK), "reHyphenate");
         am.put("reHyphenate", reHyphenate);
         reHyphenate.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_H, InputEvent.CTRL_MASK));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.SHIFT_DOWN_MASK), "shiftEnding");
+        am.put("shiftEnding", shiftEnding);
+        shiftEnding.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.SHIFT_DOWN_MASK));
 
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_MASK), "selectAllSongs");
         am.put("selectAllSongs", selectAllSongs);

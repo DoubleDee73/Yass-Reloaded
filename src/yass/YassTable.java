@@ -3892,6 +3892,28 @@ public class YassTable extends JTable {
         tm.fireTableDataChanged();
     }
 
+    public void shiftEnding() {
+        if (getSelectedRows().length != 2) {
+            return;
+        }
+        int selectedRowIndex = getSelectedRows()[0];
+        YassRow secondSyllable = getRowAt(selectedRowIndex + 1);
+        if (!secondSyllable.isNote() && !secondSyllable.getTrimmedText().startsWith("~")) {
+            return;
+        }
+        YassRow firstSyllable = getRowAt(selectedRowIndex);
+        if (!firstSyllable.isNote() || firstSyllable.getTrimmedText().length() == 1 || firstSyllable.endsWithSpace()) {
+            return;
+        }
+        String newSecond = "~" + StringUtils.right(firstSyllable.getTrimmedText(), 1) + secondSyllable.getTrimmedText()
+                                                                                                      .substring(1);
+        String newFirst = StringUtils.left(firstSyllable.getText(), firstSyllable.getText().length() - 1);
+        secondSyllable.setText(newSecond + (secondSyllable.endsWithSpace() ? YassRow.SPACE : ""));
+        firstSyllable.setText(newFirst);
+        tm.fireTableDataChanged();
+        getSelectionModel().setSelectionInterval(selectedRowIndex, selectedRowIndex + 1);
+    }
+
     public void pasteRows() {
         int startRow = getSelectionModel().getMinSelectionIndex();
         if (startRow < 0) {
