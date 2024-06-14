@@ -173,7 +173,8 @@ public class SongHeader extends JDialog {
         panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
         panel.add(Box.createHorizontalStrut(5));
-        startSpinner = new TimeSpinner(I18.get("mpop_audio_start"), (int)table.getStart(), 10000);
+        int duration = actions.getMP3() != null ? (int)(actions.getMP3().getDuration() / 1000) : 10000;
+        startSpinner = new TimeSpinner(I18.get("mpop_audio_start"), (int)table.getStart(), duration);
         startSpinner.setLabelSize(labelSize);
         startSpinner.setSpinnerWidth(100);
         startSpinner.getSpinner().setFocusable(false);
@@ -183,7 +184,6 @@ public class SongHeader extends JDialog {
         panel.add(startSpinner);
         panel.add(Box.createHorizontalStrut(30));
         int end = table.getEnd() > 0 ? (int) table.getEnd() : 10000;
-        int duration = actions.getMP3() != null ? (int)(actions.getMP3().getDuration() / 1000) : 10000;
         endSpinner = new TimeSpinner(I18.get("mpop_audio_end"), end, Math.max(10000, duration));
         endSpinner.setLabelSize(midDimension);
         endSpinner.setSpinnerWidth(100);

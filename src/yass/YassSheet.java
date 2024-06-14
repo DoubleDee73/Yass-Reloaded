@@ -337,7 +337,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 char c = e.getKeyChar();
                 int code = e.getKeyCode();
-
                 if (equalsKeyMillis > 0) {
                     if (code == KeyEvent.VK_BACK_SPACE) {
                         equalsDigits = equalsDigits.substring(0,

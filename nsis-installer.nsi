@@ -1,6 +1,6 @@
 ﻿Name "Yass"
 
-OutFile ".\target\yass-installer-2024.2.exe"
+OutFile ".\target\yass-installer-2024.6.exe"
 
 Unicode true
 SetCompressor lzma
@@ -8,7 +8,7 @@ XPStyle on
 InstallColors /windows
 Icon .\src\yass\resources\icons\yass-multi-icon.ico
 UninstallIcon .\src\yass\resources\icons\yass-multi-icon.ico
-InstallDir "$PROGRAMFILES\Yass Along"
+InstallDir "$PROGRAMFILES\Yass Reloaded"
 RequestExecutionLevel admin
 
 LoadLanguageFile "${NSISDIR}\Contrib\Language files\English.nlf"
@@ -23,11 +23,11 @@ LicenseLangString myLicenseData ${LANG_POLISH} .\License.txt
 LicenseLangString myLicenseData ${LANG_SPANISH} .\License.txt
 LicenseData $(myLicenseData)
 
-LangString Msg_Prev ${LANG_ENGLISH} "Yass Along is already installed. $\n$\nChoose `OK` to remove the previous version or `Cancel` to cancel this upgrade."
-LangString Msg_Prev ${LANG_GERMAN} "Yass Along ist bereits installiert. $\n$\nMit `OK` wird die vorherige Version entfernt, mit `Abbrechen` wird die Aktualisierung abgebrochen."
-LangString Msg_Prev ${LANG_HUNGARIAN} "Yass Along is already installed. $\n$\nChoose `OK` to remove the previous version or `Cancel` to cancel this upgrade."
-LangString Msg_Prev ${LANG_POLISH} "Yass Along is already installed. $\n$\nChoose `OK` to remove the previous version or `Cancel` to cancel this upgrade."
-LangString Msg_Prev ${LANG_SPANISH} "Yass Along ya está instalado. $\n$\Elija `OK` para desinstalar la versión anterior o `Cancelar` para cancelar la actualización."
+LangString Msg_Prev ${LANG_ENGLISH} "Yass Reloaded is already installed. $\n$\nChoose `OK` to remove the previous version or `Cancel` to cancel this upgrade."
+LangString Msg_Prev ${LANG_GERMAN} "Yass Reloaded ist bereits installiert. $\n$\nMit `OK` wird die vorherige Version entfernt, mit `Abbrechen` wird die Aktualisierung abgebrochen."
+LangString Msg_Prev ${LANG_HUNGARIAN} "Yass Reloaded is already installed. $\n$\nChoose `OK` to remove the previous version or `Cancel` to cancel this upgrade."
+LangString Msg_Prev ${LANG_POLISH} "Yass Reloaded is already installed. $\n$\nChoose `OK` to remove the previous version or `Cancel` to cancel this upgrade."
+LangString Msg_Prev ${LANG_SPANISH} "Yass Reloaded ya está instalado. $\n$\Elija `OK` para desinstalar la versión anterior o `Cancelar` para cancelar la actualización."
 
 LangString Sec_ContextMenuText ${LANG_ENGLISH} "Add context menu item to text files"
 LangString Sec_ContextMenuText ${LANG_GERMAN} "Kontextmenüeintrag für Textdateien"
@@ -104,7 +104,7 @@ Function .onInit
 	StrCmp $LANGUAGE "cancel" 0 +2
 		Abort
 
-  ReadRegStr $R0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Yass Along" "UninstallString"
+  ReadRegStr $R0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Yass Reloaded" "UninstallString"
   StrCmp $R0 "" done
 
   MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION \
@@ -115,10 +115,10 @@ Function .onInit
 uninst:
   # workaround: cleanup previous start menu entries (all users)
   SetShellVarContext all
-  RMDir /r "$SMPROGRAMS\Yass Along 1.9.0"
-  RMDir /r "$SMPROGRAMS\Yass Along 1.8.1"
-  RMDir /r "$SMPROGRAMS\Yass Along 1.8.0"
-  RMDir /r "$SMPROGRAMS\Yass Along 1.7.1"
+  RMDir /r "$SMPROGRAMS\Yass Reloaded 1.9.0"
+  RMDir /r "$SMPROGRAMS\Yass Reloaded 1.8.1"
+  RMDir /r "$SMPROGRAMS\Yass Reloaded 1.8.0"
+  RMDir /r "$SMPROGRAMS\Yass Reloaded 1.7.1"
 
   ClearErrors
   ExecWait $R0
@@ -198,22 +198,22 @@ Section
 #  File ".\lib\jinput-raw.dll"
 #  File ".\lib\jinput-dx8.dll"
 #  File ".\src\icons\yass-edit.ico"
-  File ".\lib\Yass Along 1.0.1.pref"
-  WriteRegStr HKLM "SOFTWARE\Yass Along" "installdir" "$INSTDIR"
+  File ".\lib\Yass Reloaded 1.0.1.pref"
+  WriteRegStr HKLM "SOFTWARE\Yass Reloaded" "installdir" "$INSTDIR"
 
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Yass Along" "DisplayName" "Yass Along"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Yass Along" "UninstallString" "$INSTDIR\uninstall.exe"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Yass Reloaded" "DisplayName" "Yass Reloaded"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Yass Reloaded" "UninstallString" "$INSTDIR\uninstall.exe"
 
   WriteUninstaller $INSTDIR\uninstall.exe
 
   StrCpy $R1 $R0 1
   StrCmp $R1 ">" skip
-	CreateDirectory "$SMPROGRAMS\Yass Along"
-#	CreateShortCut "$SMPROGRAMS\Yass Along\Yass Player.lnk" "$INSTDIR\yass.exe" "-play"
-	CreateShortCut "$SMPROGRAMS\Yass Along\Yass Editor.lnk" "$INSTDIR\yass.exe" "-lib"
+	CreateDirectory "$SMPROGRAMS\Yass Reloaded"
+#	CreateShortCut "$SMPROGRAMS\Yass Reloaded\Yass Player.lnk" "$INSTDIR\yass.exe" "-play"
+	CreateShortCut "$SMPROGRAMS\Yass Reloaded\Yass Editor.lnk" "$INSTDIR\yass.exe" "-lib"
 # "$INSTDIR\yass-edit.ico"
-	CreateShortCut "$SMPROGRAMS\Yass Along\Yass Converter.lnk" "$INSTDIR\yass.exe" "-convert"
-	CreateShortCut "$SMPROGRAMS\Yass Along\Uninstall Yass Along.lnk" "$INSTDIR\uninstall.exe"
+	CreateShortCut "$SMPROGRAMS\Yass Reloaded\Yass Converter.lnk" "$INSTDIR\yass.exe" "-convert"
+	CreateShortCut "$SMPROGRAMS\Yass Reloaded\Uninstall Yass Reloaded.lnk" "$INSTDIR\uninstall.exe"
   skip:
 SectionEnd
 
@@ -222,7 +222,7 @@ UninstallText $(Msg_Uninstall)
 Section "Uninstall"
   SetShellVarContext all
 
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Yass Along"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Yass Reloaded"
 
   DeleteRegKey HKCR "SystemFileAssociations\.txt\shell\yass\command"
   DeleteRegKey HKCR "SystemFileAssociations\.txt\shell\yass"
@@ -253,12 +253,12 @@ Section "Uninstall"
 
   Delete "$DESKTOP\Yass Editor.lnk"
 #  delete "$DESKTOP\Yass Player.lnk"
-#  delete "$SMPROGRAMS\Yass Along\Yass Player.lnk"
-  Delete "$SMPROGRAMS\Yass Along\Yass Editor.lnk"
-  Delete "$SMPROGRAMS\Yass Along\Yass Converter.lnk"
-  Delete "$SMPROGRAMS\Yass Along\Uninstall Yass.lnk"
-  RMDir /r "$SMPROGRAMS\Yass Along"
-  Delete "$INSTDIR\Yass Along 1.0.1.pref"
+#  delete "$SMPROGRAMS\Yass Reloaded\Yass Player.lnk"
+  Delete "$SMPROGRAMS\Yass Reloaded\Yass Editor.lnk"
+  Delete "$SMPROGRAMS\Yass Reloaded\Yass Converter.lnk"
+  Delete "$SMPROGRAMS\Yass Reloaded\Uninstall Yass.lnk"
+  RMDir /r "$SMPROGRAMS\Yass Reloaded"
+  Delete "$INSTDIR\Yass Reloaded 1.0.1.pref"
   Delete "$INSTDIR\fobs4jmf.dll"
   Delete "$INSTDIR\yass.exe"
   Delete "$INSTDIR\uninstall.exe"

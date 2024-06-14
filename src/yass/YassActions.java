@@ -51,8 +51,8 @@ import java.util.Vector;
 public class YassActions implements DropTargetListener {
 
     private final YassSheet sheet;
-    public final static String VERSION = "2024.2";
-    public final static String DATE = "02/2024";
+    public final static String VERSION = "2024.6";
+    public final static String DATE = "06/2024";
 
     static int VIEW_LIBRARY = 1;
     static int VIEW_EDIT = 2;
@@ -1010,22 +1010,22 @@ public class YassActions implements DropTargetListener {
     };
     private final Action showOnlineHelp = new AbstractAction(I18.get("lib_help_online")) {
         public void actionPerformed(ActionEvent e) {
-            openURL("http://www.yass-along.com");
+            openURL("https://github.com/DoubleDee73/Yass/wiki");
         }
     };
     private final Action showOnlineHelpErrors = new AbstractAction(I18.get("lib_help_online")) {
         public void actionPerformed(ActionEvent e) {
-            openURL("http://www.yass-along.com/errors");
+            openURL("https://github.com/DoubleDee73/Yass/wiki/Errors");
         }
     };
     final Action showOnlineHelpBeat = new AbstractAction(I18.get("lib_help_online")) {
         public void actionPerformed(ActionEvent e) {
-            openURL("http://www.yass-along.com/beats");
+            openURL("https://github.com/DoubleDee73/Yass/wiki/Beats");
         }
     };
     private final Action showOnlineHelpDuet = new AbstractAction(I18.get("lib_help_online")) {
         public void actionPerformed(ActionEvent e) {
-            openURL("http://www.yass-along.com/duets");
+            openURL("https://github.com/DoubleDee73/Yass/wiki/Duets");
         }
     };
     private final Action editLyrics = new AbstractAction(I18.get("edit_lyrics_edit")) {
@@ -5537,7 +5537,7 @@ public class YassActions implements DropTargetListener {
 
     public String getInfo() {
         StringBuilder sb = new StringBuilder();
-        sb.append("Yass Reloaded\nVersion: " + VERSION + " (" + DATE + ")\nmail@yass-along.com\n\n");
+        sb.append("Yass Reloaded\nVersion: " + VERSION + " (" + DATE + ")\nhttps://github.com/DoubleDee73/Yass\n\n");
         GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
         GraphicsDevice gd = ge.getDefaultScreenDevice();
         GraphicsConfiguration gc = gd.getDefaultConfiguration();
@@ -5624,7 +5624,7 @@ public class YassActions implements DropTargetListener {
     }
 
     private void updateStartEnd() {
-        int start = (int) table.getStart();
+        int start = (int) (table.getStart() / 1000);
         SongHeader songHeader = sheet.getSongHeader();
         songHeader.getStartSpinner().setTime(start);
         int end = (int) table.getEnd();

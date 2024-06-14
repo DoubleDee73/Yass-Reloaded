@@ -24,7 +24,7 @@
 
     <groupId>yass</groupId>
     <artifactId>Yass-Reloaded</artifactId>
-    <version>2024.2</version>
+    <version>2024.6</version>
     <dependencies>
         <dependency>
             <groupId>com.danielreese</groupId>

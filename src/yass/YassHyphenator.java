@@ -139,7 +139,7 @@ public class YassHyphenator {
     }
 
     public String syllableficate(String word) {
-            word = fallbackHyphenation(word);
+        word = fallbackHyphenation(word);
         if (!word.contains("\u00AD")) {
             // Still couldn't hyphenate. Checking, if it's a word like Checkin'
             word = hyphenateWithApostrophe(word);
@@ -202,9 +202,16 @@ public class YassHyphenator {
             newSyllables = hyphenated.split("\u00AD");
         }
 
-        if (newSyllables.length != original.size() && word.endsWith("~")) {
-            hyphenated = fallbackHyphenation(word.substring(0, word.indexOf("~")));
-            newSyllables = hyphenated.split("\u00AD");
+        if (word.endsWith("~")) {
+            if (newSyllables.length != original.size()) {
+                hyphenated = fallbackHyphenation(word.substring(0, word.indexOf("~")));
+                newSyllables = hyphenated.split("\u00AD");
+            } else {
+                String lastSyllable = newSyllables[newSyllables.length - 1];
+                if (lastSyllable.endsWith("~")) {
+                    newSyllables[newSyllables.length - 1] = lastSyllable.substring(0, lastSyllable.length() - 1);
+                }
+            }
         }
         if (newSyllables.length != original.size() && checkAbbreviatedWord(original)) {
             hyphenated = hyphenateAbbreviation(original.get(0));
@@ -314,13 +321,20 @@ public class YassHyphenator {
             }
         }
         if (fallbackHyphenations != null) {
-            String temp = fallbackHyphenations.get(word.toLowerCase());
+            String normalizedWord = word.toLowerCase();
+            String punctuation = StringUtils.right(word, 1);
+            if (punctuation.matches("\\p{Punct}")) {
+                normalizedWord = normalizedWord.substring(0, normalizedWord.length() - 1);   
+            } else {
+                punctuation = "";
+            }
+            String temp = fallbackHyphenations.get(normalizedWord);
             if (temp != null) {
                 temp = temp.replace("•", "\u00AD");
                 if (StringUtils.isAllUpperCase(word.substring(0, 1))) {
                     temp = StringUtils.capitalize(temp);
                 }
-                return temp;
+                return temp + punctuation;
             }
         }
 

@@ -3893,11 +3893,20 @@ public class YassTable extends JTable {
     }
 
     public void shiftEnding() {
-        if (getSelectedRows().length != 2) {
+        int selectedRows = getSelectedRows().length;
+        if (selectedRows < 2) {
             return;
         }
         int selectedRowIndex = getSelectedRows()[0];
-        YassRow secondSyllable = getRowAt(selectedRowIndex + 1);
+        for (int i = 1; i < selectedRows; i++) {
+            YassRow tempSyllable = getRowAt(selectedRowIndex + i);
+            if (!tempSyllable.getTrimmedText()
+                             .startsWith("~") && i == selectedRows - 1 || (!tempSyllable.getTrimmedText()
+                                                                                        .equals("~") && i < selectedRows - 1)) {
+                return;
+            }
+        }
+        YassRow secondSyllable = getRowAt(selectedRowIndex + (selectedRows - 1));
         if (!secondSyllable.isNote() && !secondSyllable.getTrimmedText().startsWith("~")) {
             return;
         }
@@ -3911,7 +3920,7 @@ public class YassTable extends JTable {
         secondSyllable.setText(newSecond + (secondSyllable.endsWithSpace() ? YassRow.SPACE : ""));
         firstSyllable.setText(newFirst);
         tm.fireTableDataChanged();
-        getSelectionModel().setSelectionInterval(selectedRowIndex, selectedRowIndex + 1);
+        getSelectionModel().setSelectionInterval(selectedRowIndex, selectedRowIndex + (selectedRows - 1));
     }
 
     public void pasteRows() {
@@ -3929,6 +3938,11 @@ public class YassTable extends JTable {
             Clipboard system = Toolkit.getDefaultToolkit().getSystemClipboard();
             String trstring = (String) (system.getContents(this)
                                               .getTransferData(DataFlavor.stringFlavor));
+            if (StringUtils.isNotEmpty(trstring) && !trstring.startsWith(":") && !trstring.contains("\t")) {
+                // Only lyrics in the clipboard -> Just pasting lyrics
+                pasteLyrics(trstring);
+                return;
+            }
             StringTokenizer st1 = new StringTokenizer(trstring, "\n");
             int i;
             int n = getRowCount();
@@ -3959,6 +3973,18 @@ public class YassTable extends JTable {
             tm.fireTableRowsUpdated(startRow, Math.min(startRow + i, n - 1));
         } catch (Exception ignored) {
         }
+    }
+
+    private void pasteLyrics(String trstring) {
+        String[] lines = splitTextToLines(trstring);
+        for (int i = 0; i < getSelectionModel().getSelectedItemsCount(); i++) {
+            YassRow row = getRowAt(i + getSelectedRow());
+            if (i < lines.length) {
+                YassRow tempRow = new YassRow(lines[i]);
+                row.setText(tempRow.getText().replace(' ', YassRow.SPACE));
+            }
+        }
+        tm.fireTableRowsUpdated(getSelectedRow(), getSelectedRow() + getSelectionModel().getSelectedItemsCount());
     }
 
     /**

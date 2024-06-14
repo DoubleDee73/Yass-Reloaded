@@ -444,7 +444,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 			public void keyPressed(KeyEvent e) {
 				if (!lyricsArea.isEditable() && sheet != null) {
 					char c = e.getKeyChar();
-
 					if (e.isControlDown() && e.isAltDown()
 							&& c == KeyEvent.CHAR_UNDEFINED) {
 						sheet.dispatchEvent(e);
@@ -470,6 +469,9 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 						editLyrics();
 						e.consume();
 					}
+					return;
+				} else if (keyCode == KeyEvent.VK_O && e.isControlDown() && e.isShiftDown()) {
+					// Do nothing. Prevent the default behaviour of changing orientation
 					return;
 				} else if (keyCode == KeyEvent.VK_Y && e.isControlDown()) {
 					if (isEditable()) {
@@ -1952,6 +1954,9 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 	 * Adds a feature to the KeymapBindings attribute of the YassLyrics object
 	 */
 	protected void addKeymapBindings() {
+		lyricsArea.getInputMap()
+					  .put(KeyStroke.getKeyStroke(KeyEvent.VK_O, KeyEvent.SHIFT_DOWN_MASK + KeyEvent.CTRL_DOWN_MASK),
+						   "none");
 		lyricsArea.getInputMap().put(
 				KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.CTRL_MASK),
 				"find");
