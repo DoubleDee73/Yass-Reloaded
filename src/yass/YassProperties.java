@@ -306,6 +306,7 @@ public class YassProperties extends Properties {
 
         p.putIfAbsent("utf8-without-bom", "true");
         p.putIfAbsent("utf8-always", "true");
+        p.putIfAbsent("usdbsyncer-always-pin", "false");
         //p.put("duet-sequential", "true");
 
         p.putIfAbsent("floatable", "false");

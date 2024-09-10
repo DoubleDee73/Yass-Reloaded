@@ -18,6 +18,8 @@
 
 package yass;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.commons.math3.util.Precision;
@@ -101,9 +103,13 @@ public class YassTable extends JTable {
     private int duetTrackCount = -1;
     private boolean preventRelativeToAbsoluteConversion = false;
 
+    private UsdbSyncerMetaFile usdbSyncerMetaFile;
+    private String usdbSyncerMetaFilePath;
+
     private Set<String> tags = new HashSet<>();
 
     public static final List<String> FIXED_UPPERCASE = List.of("I", "I'm", "I’m");
+
     public YassTable() {
         fileUtils = new YassFileUtils();
         getTableHeader().setReorderingAllowed(false);
@@ -491,7 +497,7 @@ public class YassTable extends JTable {
     public void setStart(double b) {
         start = b;
 
-        String s = Double.toString(start);
+        String s = (b == (int) b) ? Integer.toString((int) b) : Double.toString(start);
         YassRow r = tm.getCommentRow("START:");
         if (r == null && start > 0) {
             r = new YassRow("#", "START:", s, "", "");
@@ -610,11 +616,9 @@ public class YassTable extends JTable {
         return Double.parseDouble(p);
     }
 
-    public void setPreviewStart(double g) {
-        String s = Double.toString(g).replace('.', ',');
-        if (s.endsWith(",0")) {
-            s = s.substring(0, s.length() - 2);
-        }
+    public void setPreviewStart(double dblPrevStart) {
+        String s = (dblPrevStart == (int) dblPrevStart) ? Integer.toString((int) dblPrevStart) : Double.toString(
+                dblPrevStart);
         YassRow r = tm.getCommentRow("PREVIEWSTART:");
         if (r == null) {
             r = new YassRow("#", "PREVIEWSTART:", s, "", "");
@@ -938,6 +942,7 @@ public class YassTable extends JTable {
         }
         return r.getComment();
     }
+
     public boolean setGenre(String s) {
         YassRow r = tm.getCommentRow("GENRE:");
         if (r == null) {
@@ -1408,6 +1413,7 @@ public class YassTable extends JTable {
             return true;
         }
     }
+
     public boolean setAudio(String s) {
         YassRow r = tm.getCommentRow(AUDIO.getTagName());
         if (r == null) {
@@ -1480,6 +1486,7 @@ public class YassTable extends JTable {
         }
         return r.getComment();
     }
+
     public boolean setVocals(String s) {
         YassRow r = tm.getCommentRow(VOCALS.getTagName());
         if (r == null) {
@@ -1511,6 +1518,7 @@ public class YassTable extends JTable {
         }
         return r.getComment();
     }
+
     public void resetMessages() {
         if (messages == null) {
             messages = new Hashtable<>();
@@ -1892,7 +1900,7 @@ public class YassTable extends JTable {
 
                 s = s.replace(YassRow.SPACE, ' ');
                 if (s.equals("E")) {
-                    outputStream.print(s);   
+                    outputStream.print(s);
                 } else {
                     outputStream.println(s);
                 }
@@ -1941,8 +1949,30 @@ public class YassTable extends JTable {
                                           "<html>Write Error: Written data could not be verified.<br>File: "
                                                   + filename, "Error", JOptionPane.ERROR_MESSAGE);
         }
-
+        if (prop.getBooleanProperty("usdbsyncer-always-pin")) {
+            pinUsdbSyncer();
+        }
         return success;
+    }
+
+    private void pinUsdbSyncer() {
+        if (usdbSyncerMetaFilePath != null && usdbSyncerMetaFile != null && !usdbSyncerMetaFile.isPinned()) {
+            usdbSyncerMetaFile.setPinned(true);
+            Gson json = new GsonBuilder()
+                    .disableHtmlEscaping()
+                    .create();
+            try (Writer writer = new FileWriter(usdbSyncerMetaFilePath)) {
+                json.toJson(usdbSyncerMetaFile, writer);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    void loadUsdbSyncerMetaFile(String filename) {
+        UsdbSyncerMetaFileLoader loader = new UsdbSyncerMetaFileLoader(filename);
+        usdbSyncerMetaFile = loader.getMetaFile();
+        usdbSyncerMetaFilePath = loader.getMetaFilePath();
     }
 
     private void handleAudio() {
@@ -4454,7 +4484,7 @@ public class YassTable extends JTable {
 
     /**
      * Checks if more than one row is selected.
-     * */
+     */
     public boolean hasSingleSelectedRow() {
         int iMin = selectionModel.getMinSelectionIndex();
         int iMax = selectionModel.getMaxSelectionIndex();
@@ -6021,6 +6051,9 @@ public class YassTable extends JTable {
         gap = gap + ms;
         gap = ((int) (gap * 100)) / 100.0;
         setGap(gap);
+        if (sheet != null && sheet.getSongHeader() != null && sheet.getSongHeader().getGapSpinner() != null) {
+            sheet.getSongHeader().getGapSpinner().setTime((int) gap);
+        }
 
         // correct beats
         YassRow r;
@@ -6342,6 +6375,29 @@ public class YassTable extends JTable {
         } else {
             return getMP3();
         }
+    }
+
+    public void toggleApostropheEnd() {
+        int selectedRow = getSelectedRow();
+        if (selectedRow < 1) {
+            return;
+        }
+        YassRow row = getRowAt(selectedRow);
+        if (row == null || !row.isNote() || StringUtils.isEmpty(row.getTrimmedText()) || row.getTrimmedText()
+                                                                                            .length() < 2) {
+            return;
+        }
+        String apostrophe = prop.getBooleanProperty("typographic-apostrophes") ? "’" : "'";
+        String trimmedText = StringUtils.left(row.getTrimmedText(), row.getTrimmedText().length() - 1);
+        String lastChar = StringUtils.right(row.getTrimmedText(), 1);
+        String endSpace = row.endsWithSpace() ? YassRow.SPACE + "" : "";
+        if (lastChar.equals("’") || YassAutoCorrectApostrophes.BORING_APOSTROPHES.contains(lastChar)) {
+            row.setText(trimmedText + "g" + endSpace);
+        } else {
+            row.setText(trimmedText + apostrophe + endSpace);
+        }
+        fireTableTableDataChanged();
+        setRowSelectionInterval(selectedRow, selectedRow);
     }
 
     public static class YassTableCellEditor extends AbstractCellEditor implements
