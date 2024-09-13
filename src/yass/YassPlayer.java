@@ -22,9 +22,14 @@ import javafx.embed.swing.JFXPanel;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.util.Duration;
-import javazoom.jl.decoder.BitstreamException;
-import javazoom.spi.mpeg.sampled.file.MpegAudioFileReader;
+import net.bramp.ffmpeg.FFmpeg;
+import net.bramp.ffmpeg.FFmpegExecutor;
+import net.bramp.ffmpeg.FFprobe;
+import net.bramp.ffmpeg.builder.FFmpegBuilder;
+import net.bramp.ffmpeg.job.FFmpegJob;
+import net.bramp.ffmpeg.probe.FFmpegProbeResult;
 import org.tritonus.share.sampled.file.TAudioFileFormat;
+import yass.ffmpeg.FFMPEGLocator;
 import yass.renderer.YassNote;
 import yass.renderer.YassPlaybackRenderer;
 import yass.renderer.YassPlayerNote;
@@ -82,6 +87,11 @@ public class YassPlayer {
     private int audioBytesChannels = 2;
     private float audioBytesSampleRate = 44100;
     private int audioBytesSampleSize = 2;
+    public static final String TEMP_WAV = System.getProperty(
+            "user.home") + File.separator + ".yass" + File.separator + "temp.wav";
+    
+    private File tempWave;
+    
     public YassPlayer(YassPlaybackRenderer s) {
         JFXPanel jfxPanel = new JFXPanel();
         jfxPanel.setVisible(false);
@@ -351,8 +361,15 @@ public class YassPlayer {
         this.filename = filename;
         if (filename == null)
             return;
-
-        File file = new File(filename);
+        File file;
+        try {
+            file = generateTemp(filename);
+        } catch (IOException | UnsupportedAudioFileException | LineUnavailableException e) {
+            throw new RuntimeException(e);
+        }
+        if (file == null || !file.exists()) {
+            file = new File(filename);
+        }
         if (!file.exists()) {
             playbackRenderer.setErrorMessage(I18.get("sheet_msg_audio_missing"));
             return;
@@ -420,22 +437,6 @@ public class YassPlayer {
             System.out.println("Slept " + (System.currentTimeMillis() - now) + " ms");
         } catch (InterruptedException e) {
             return;
-        }
-        if (createWaveform) {
-            try {
-                MpegAudioFileReader mpegAudioFileReader = new MpegAudioFileReader();
-                in = mpegAudioFileReader.getAudioInputStream(new FileInputStream(file));
-                createWaveForm(in);
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
-                if (in != null) {
-                    try {
-                        in.close();
-                    } catch (Exception e) {
-                    }
-                }
-            }
         }
     }
 
@@ -752,12 +753,6 @@ public class YassPlayer {
             // System.out.println("len " + audioBytes.length);
         } catch (Exception e) {
             e.printStackTrace();
-            if (e instanceof BitstreamException) {
-                int code = ((BitstreamException) e).getErrorCode();
-                if (code == 102) {
-                    if (bout != null) audioBytes = bout.toByteArray();
-                }
-            }
         } finally {
             try {
                 decodedStream.close();
@@ -967,7 +962,7 @@ public class YassPlayer {
             finished = false;
             started = true;
 
-            File mp3File = new File(filename);
+            File mp3File = new File(TEMP_WAV);
             if (!mp3File.exists()) {
                 finished = true;
                 return;
@@ -1360,4 +1355,23 @@ public class YassPlayer {
         }
     }
 
+    public File generateTemp(String source) throws IOException, UnsupportedAudioFileException, LineUnavailableException {
+        if (FFMPEGLocator.getInstance().getFfmpeg() == null) {
+            return null;
+        }
+        FFmpeg ffmpeg = FFMPEGLocator.getInstance().getFfmpeg();
+        FFprobe fFprobe = FFMPEGLocator.getInstance().getFfprobe();
+        FFmpegProbeResult fFmpegProbeResult =fFprobe.probe(source);
+        FFmpegBuilder fFmpegBuilder = new FFmpegBuilder();
+        fFmpegBuilder.addInput(fFmpegProbeResult);
+        File tempFile = new File(TEMP_WAV);
+        fFmpegBuilder.overrideOutputFiles(true)
+                     .addOutput(tempFile.getAbsolutePath())
+                     .done();
+        FFmpegExecutor executor = new FFmpegExecutor(ffmpeg, fFprobe);
+        // Run a one-pass encode
+        FFmpegJob job = executor.createJob(fFmpegBuilder);
+        job.run();
+        return tempFile;
+    }
 }

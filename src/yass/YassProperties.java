@@ -164,6 +164,7 @@ public class YassProperties extends Properties {
 
         p.putIfAbsent("yass-version", YassActions.VERSION);
         p.putIfAbsent("ultrastar-format-version", UltrastarHeaderTagVersion.UNITY.version);
+        p.putIfAbsent("ffmpegPath", "");
 
         p.putIfAbsent("yass-language", "default");
         p.putIfAbsent("yass-languages", "default|en|de|hu|pl|es");
