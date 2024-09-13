@@ -676,6 +676,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                         firePropertyChange("play", null, "start");
                     });
                     return;
+                } else if (c == '\'') {
+                    table.toggleApostropheEnd();
                 }
                 dispatch();
             }

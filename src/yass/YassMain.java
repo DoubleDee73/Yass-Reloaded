@@ -19,6 +19,7 @@
 package yass;
 
 import org.apache.commons.lang3.StringUtils;
+import yass.ffmpeg.FFMPEGLocator;
 import yass.stats.YassStats;
 
 import javax.sound.midi.MidiUnavailableException;
@@ -67,7 +68,7 @@ public class YassMain extends JFrame {
             final YassMain y = new YassMain();
             y.parseCommandLine(argv);
 
-            System.out.println("Init...");
+            System.out.println("Init... Yass Reloaded " + YassActions.VERSION);
             y.init();
             System.out.println("Initialized.");
 
@@ -369,6 +370,7 @@ public class YassMain extends JFrame {
         store = checkUncommonSpacingSetting(store);
         store = checkRefreshDirSetting(store);
         store = checkUltrastarFormatVersionSetting(store);
+        store = checkFfmpeg(store);
 
         if (store) {
             prop.store();
@@ -435,6 +437,49 @@ public class YassMain extends JFrame {
         }
         return store;
     }
+
+    private boolean checkFfmpeg(boolean store) {
+        String ffmpegPath = prop.getProperty("ffmpegPath");
+        if (StringUtils.isEmpty(ffmpegPath)) {
+            System.out.println("Could not find FFmpeg path in user.xml");
+            // No ffmpeg path is configured in properties
+            FFMPEGLocator ffmpegLocator = FFMPEGLocator.getInstance();
+            store = store || validateFfmpeg(ffmpegLocator);
+        } else {
+            System.out.println("Using FFmpeg path " + ffmpegPath + " from user.xml");
+            // ffmpeg path is configured in properties, checking, if it is valid
+            FFMPEGLocator ffmpegLocator = FFMPEGLocator.getInstance(ffmpegPath);
+            if (!validateFfmpeg(ffmpegLocator, true)) {
+                // seems to be invalid. Trying again, to check, if ffmpeg was configured in PATH environment
+                ffmpegLocator = FFMPEGLocator.getInstance();
+                store = store || validateFfmpeg(ffmpegLocator);
+            }
+        }
+        return store;
+    }
+
+
+    private boolean validateFfmpeg(FFMPEGLocator ffmpegLocator) {
+        return validateFfmpeg(ffmpegLocator, false);
+    }
+    
+    private boolean validateFfmpeg(FFMPEGLocator ffmpegLocator, boolean hideHint) {
+        if (ffmpegLocator == null || ffmpegLocator.getFfmpeg() == null || ffmpegLocator.getFfprobe() == null) {
+            if (!hideHint) {
+                JOptionPane.showConfirmDialog(this, "<html>" +
+                                                      I18.get("tool_prefs_ffmpeg")
+                                                      + "</html>",
+                                              I18.get("tool_prefs_ffmpeg_title"),
+                                              JOptionPane.OK_CANCEL_OPTION, JOptionPane.INFORMATION_MESSAGE);
+            }
+            return false;
+        } else {
+            System.out.println("Found ffmpeg in path " + ffmpegLocator.getPath() + ". Writing to user.xml");
+            prop.setProperty("ffmpegPath", ffmpegLocator.getPath());
+            return true;
+        }
+    }
+    
     public void stop() {
         askStop();
     }

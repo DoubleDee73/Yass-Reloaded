@@ -1,6 +1,7 @@
 /*
- * Yass - Karaoke Editor
- * Copyright (C) 2009 Saruta
+ * Yass Reloaded - Karaoke Editor
+ * Copyright (C) 2009-2023 Saruta
+ * Copyright (C) 2023 DoubleDee
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +19,6 @@
 
 package yass.filter;
 
-import javazoom.spi.vorbis.sampled.file.VorbisFileFormatType;
 import org.tritonus.share.sampled.file.TAudioFileFormat;
 import yass.YassSong;
 import yass.YassSongList;
@@ -117,15 +117,7 @@ public class YassFormatFilter extends YassFilter {
             String dir = s.getDirectory();
             String mp3 = s.getMP3();
             File file = new File(dir + File.separator + mp3);
-            boolean ogg = false;
-            try {
-                AudioFileFormat aff = AudioSystem.getAudioFileFormat(file);
-                if (aff.getType() == VorbisFileFormatType.OGG) {
-                    ogg = true;
-                }
-            } catch (Exception ignored) {
-            }
-            hit = ogg;
+            hit = file.getName().endsWith(".ogg");
         }
         return hit;
     }

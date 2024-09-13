@@ -51,8 +51,8 @@ import java.util.Vector;
 public class YassActions implements DropTargetListener {
 
     private final YassSheet sheet;
-    public final static String VERSION = "2024.6";
-    public final static String DATE = "06/2024";
+    public final static String VERSION = "2024.9";
+    public final static String DATE = "09/2024";
 
     static int VIEW_LIBRARY = 1;
     static int VIEW_EDIT = 2;
@@ -5610,21 +5610,27 @@ public class YassActions implements DropTargetListener {
     }
 
     public void setStart(int ms) {
-        for (YassTable t: getOpenTables(table))
-            t.setStart(ms);
-        updateStartEnd();
+        for (YassTable t: getOpenTables(table)) {
+            t.setStart((double) ms / 1000);
+        }
+        if (sheet.getSongHeader().getStartSpinner().getTime() != ms) {
+            updateStartEnd();
+        }
     }
 
     public void setEnd(int ms) {
         if (ms == (int) (mp3.getDuration() / 1000))
             ms = -1;
-        for (YassTable t: getOpenTables(table))
+        for (YassTable t: getOpenTables(table)) {
             t.setEnd(ms);
-        updateStartEnd();
+        }
+        if (sheet.getSongHeader().getEndSpinner().getTime() != ms) {
+            updateStartEnd();
+        }
     }
 
     private void updateStartEnd() {
-        int start = (int) (table.getStart() / 1000);
+        int start = (int) (table.getStart() * 1000);
         SongHeader songHeader = sheet.getSongHeader();
         songHeader.getStartSpinner().setTime(start);
         int end = (int) table.getEnd();
@@ -6157,6 +6163,7 @@ public class YassActions implements DropTargetListener {
 
         sheet.setDuration(mp3.getDuration() / 1000.0);
         sheet.setActiveTable(table);
+        table.loadUsdbSyncerMetaFile(table.getDir());
         String vd = table.getVideo();
         if (video != null && vd != null) {
             video.setVideo(table.getDir() + File.separator + vd);

@@ -18,15 +18,12 @@
 
 package yass;
 
-import javazoom.spi.vorbis.sampled.file.VorbisFileFormatType;
-import org.tritonus.share.sampled.file.TAudioFileFormat;
+import net.bramp.ffmpeg.probe.FFmpegProbeResult;
+import yass.ffmpeg.FFMPEGLocator;
 
 import javax.media.Controller;
 import javax.media.MediaLocator;
 import javax.media.protocol.DataSource;
-import javax.sound.sampled.AudioFileFormat;
-import javax.sound.sampled.AudioInputStream;
-import javax.sound.sampled.AudioSystem;
 import javax.swing.*;
 import javax.swing.event.CaretEvent;
 import javax.swing.event.CaretListener;
@@ -45,6 +42,7 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.*;
 import java.net.URL;
+import java.text.DecimalFormat;
 import java.util.*;
 
 /**
@@ -199,15 +197,15 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
     private String speedLabel, melodicLabel, bumpyLabel, leapsLabel,
             holdsLabel;
 
-	/*
-	 * public void openCover() { FileDialog fd = new FileDialog((JFrame)
-	 * SwingUtilities.getWindowAncestor(this),
-	 * "Please choose your cover image:", FileDialog.LOAD); String defDir =
-	 * prop.getProperty("song-directory"); if (defDir != null) {
-	 * fd.setDirectory(defDir); } fd.setVisible(true); if (fd.getFile() != null) {
-	 * setCover(fd.getDirectory() + File.separator + fd.getFile());
-	 * storeAction.setEnabled(true); } fd.dispose(); }
-	 */
+    /*
+     * public void openCover() { FileDialog fd = new FileDialog((JFrame)
+     * SwingUtilities.getWindowAncestor(this),
+     * "Please choose your cover image:", FileDialog.LOAD); String defDir =
+     * prop.getProperty("song-directory"); if (defDir != null) {
+     * fd.setDirectory(defDir); } fd.setVisible(true); if (fd.getFile() != null) {
+     * setCover(fd.getDirectory() + File.separator + fd.getFile());
+     * storeAction.setEnabled(true); } fd.dispose(); }
+     */
     private JPopupMenu copopup, bgpopup, vdpopup, txtpopup, filepopup;
     private boolean layoutIsLyrics = false;
     private Action storeAction = null, copyAction = null, pasteAction = null,
@@ -266,7 +264,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                 String s = "";
                 try {
                     s = txt.getDocument().getText(0,
-                            txt.getDocument().getLength());
+                                                  txt.getDocument().getLength());
                 } catch (Exception ignored) {
                 }
 
@@ -441,16 +439,16 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             }
         });
         /*
-		 * addMouseMotionListener( new MouseMotionAdapter() { public void
-		 * mouseExited(MouseEvent e) { titlerectActive = false;
-		 * setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR)); }
-		 * public void mouseMoved(MouseEvent e) { Point p = e.getPoint(); if
-		 * (titlerect.contains(p) && !titlerectActive) { titlerectActive = true;
-		 * setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)); } if
-		 * (!titlerect.contains(p) && titlerectActive) { titlerectActive =
-		 * false; setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
-		 * } } });
-		 */
+         * addMouseMotionListener( new MouseMotionAdapter() { public void
+         * mouseExited(MouseEvent e) { titlerectActive = false;
+         * setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR)); }
+         * public void mouseMoved(MouseEvent e) { Point p = e.getPoint(); if
+         * (titlerect.contains(p) && !titlerectActive) { titlerectActive = true;
+         * setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)); } if
+         * (!titlerect.contains(p) && titlerectActive) { titlerectActive =
+         * false; setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+         * } } });
+         */
         setDropTarget(txt);
         setDropTarget(this);
 
@@ -606,7 +604,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
         boolean onoff;
         try {
             onoff = Toolkit.getDefaultToolkit().getSystemClipboard()
-                    .getContents(null) != null;
+                           .getContents(null) != null;
         } catch (IllegalStateException ex) {
             onoff = true;// used by another app
         }
@@ -656,10 +654,10 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
         int h = (int) (dw * 3 / 4.0);
 
         // correct zoom would be:
-		/*
-		 * if (dw > (int) (dh * 4 / 3.0)) { w = (int) dw; h = (int) (w * 3 /
-		 * 4.0); } else { h = dh; w = (int) (h * 4 / 3.0); }
-		 */
+        /*
+         * if (dw > (int) (dh * 4 / 3.0)) { w = (int) dw; h = (int) (w * 3 /
+         * 4.0); } else { h = dh; w = (int) (h * 4 / 3.0); }
+         */
         int xx = 0;
         int yy = dh / 2 - h / 2;
 
@@ -733,7 +731,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
 
         if (infoMode == SHOW_FILES && scroll.isVisible()) {
             GradientPaint gp = new GradientPaint(tx, ty, color1, td.width,
-                    td.height, color2);
+                                                 td.height, color2);
             g2d.setPaint(gp);
             g2d.fillRect(tx + 2, ty, td.width - 3, td.height);
 
@@ -744,7 +742,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             g2d.drawRect(tx + 2, ty, td.width - 3, td.height);
         } else if (infoMode == SHOW_LYRICS && scroll.isVisible()) {
             GradientPaint gp = new GradientPaint(tx, ty, color1, td.width,
-                    td.height, color2);
+                                                 td.height, color2);
             g2d.setPaint(gp);
             g2d.fillRect(tx + 2, ty, td.width - 3, td.height);
 
@@ -764,7 +762,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             g2d.drawImage(YassSongList.err_tags_icon, tx + 20, ty + 60, null);
             g2d.drawImage(YassSongList.err_file_icon, tx + 20, ty + 80, null);
             g2d.drawImage(YassSongList.err_minorpage_icon, tx + 20, ty + 100,
-                    null);
+                          null);
             g2d.drawImage(YassSongList.err_text_icon, tx + 20, ty + 120, null);
         }
 
@@ -775,11 +773,11 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
         d = getSize();
 
         titlerect.setBounds(corect.x, corect.y + corect.height + 10, cow - 1,
-                33);
+                            33);
 
         g2d.setColor(hiliteTitleRect ? hiBlue : blue);
         g2d.fillRect(titlerect.x, titlerect.y, titlerect.width,
-                titlerect.height);
+                     titlerect.height);
 
         // g2d.translate(titlerect.x + titlerect.width, titlerect.y +
         // titlerect.height / 2);
@@ -802,7 +800,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
         // titlerect.height / 2));
 
         vdrect.setBounds(titlerect.x + titlerect.width - 32, titlerect.y, 32,
-                32);
+                         32);
         if (hasvideo && videoIcon != null) {
             g2d.drawImage(videoIcon, vdrect.x, vdrect.y, null);
         }
@@ -837,18 +835,18 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             g2d.setColor(selColor);
             g2d.setStroke(new BasicStroke(2));
             g2d.drawOval(corect.x - statSize - offx,
-                    d.height - statSize - offy, statSize, statSize);
+                         d.height - statSize - offy, statSize, statSize);
 
             int statSize8 = statSize / 8;
             g2d.setColor(color1);
             g2d.fillOval(corect.x - statSize / 2 - offx - statSize8, d.height
-                            - statSize / 2 - offy - statSize8, statSize8 * 2,
-                    statSize8 * 2);
+                                 - statSize / 2 - offy - statSize8, statSize8 * 2,
+                         statSize8 * 2);
 
             g2d.setColor(color1);
             g2d.setStroke(new BasicStroke(statSize8));
             g2d.drawOval(corect.x - statSize / 2 - offx - 2 * statSize8
-                    - statSize8 / 2, d.height - statSize / 2 - offy - 2
+                                 - statSize8 / 2, d.height - statSize / 2 - offy - 2
                     * statSize8 - statSize8 / 2, 5 * statSize8, 5 * statSize8);
 
             int speedlenIndex = yass.stats.YassStats.indexOf("speedlen");
@@ -1302,7 +1300,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             if (s != null && s.length() > 0) {
                 StringSelection data = new StringSelection(s);
                 Toolkit.getDefaultToolkit().getSystemClipboard()
-                        .setContents(data, data);
+                       .setContents(data, data);
                 pasteAction.setEnabled(true);
             }
         } else if (sel == COVER) {
@@ -1311,11 +1309,11 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                 f = getCoverBackupFile();
                 if (f == null) {
                     f = new File(song.getDirectory() + File.separator
-                            + song.getCover());
+                                         + song.getCover());
                 }
             } else {
                 f = new File(song.getDirectory() + File.separator
-                        + song.getCover());
+                                     + song.getCover());
             }
             if (f.exists()) {
                 FileTransferable.copyToClipboard(f);
@@ -1327,7 +1325,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             }
             ImageSelection imgSel = new ImageSelection(origco);
             Toolkit.getDefaultToolkit().getSystemClipboard()
-                    .setContents(imgSel, null);
+                   .setContents(imgSel, null);
             pasteAction.setEnabled(true);
         } else if (sel == BACKGROUND) {
             File f;
@@ -1335,11 +1333,11 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                 f = getBackgroundBackupFile();
                 if (f == null) {
                     f = new File(song.getDirectory() + File.separator
-                            + song.getBackground());
+                                         + song.getBackground());
                 }
             } else {
                 f = new File(song.getDirectory() + File.separator
-                        + song.getBackground());
+                                     + song.getBackground());
             }
             if (f.exists()) {
                 FileTransferable.copyToClipboard(f);
@@ -1351,7 +1349,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             }
             ImageSelection imgSel = new ImageSelection(origbg);
             Toolkit.getDefaultToolkit().getSystemClipboard()
-                    .setContents(imgSel, null);
+                   .setContents(imgSel, null);
             pasteAction.setEnabled(true);
         } else if (sel == VIDEO) {
             if (!hasvideo || song == null) {
@@ -1399,7 +1397,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
      */
     public void paste() {
         Transferable t = Toolkit.getDefaultToolkit().getSystemClipboard()
-                .getContents(null);
+                                .getContents(null);
 
         try {
             if (t != null && t.isDataFlavorSupported(DataFlavor.imageFlavor)) {
@@ -1684,7 +1682,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             if (song != null) {
                 table = new YassTable();
                 table.loadFile(song.getDirectory() + File.separator
-                        + song.getFilename());
+                                       + song.getFilename());
                 pages = table.getPages();
                 if (pages.size() > 0) {
                     Vector<YassRow> rows = pages.get(0).getRows();
@@ -1839,7 +1837,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
 
         vdname = vdname.replace('\\', '/');
         javax.media.Manager.setHint(javax.media.Manager.LIGHTWEIGHT_RENDERER,
-                true);
+                                    true);
         javax.media.Manager.setHint(javax.media.Manager.PLUGIN_PLAYER, true);
         try {
             // System.out.println("create player: " + vdname);
@@ -1908,12 +1906,12 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                                 // (javax.media.control.FrameGrabbingControl)
                                 // mediaPlayer.getControl("javax.media.control.FrameGrabbingControl");
                                 long dur = mediaPlayer.getDuration()
-                                        .getNanoseconds();
+                                                      .getNanoseconds();
                                 if (dur < 0) {
                                     dur = 0;
                                 }
                                 int sec = (int) Math.round(dur
-                                        / (1000.0 * 1000.0 * 1000.0));
+                                                                   / (1000.0 * 1000.0 * 1000.0));
                                 int min = sec / 60;
                                 sec = sec - min * 60;
                                 String dString = (sec < 10) ? min + ":0" + sec
@@ -1970,13 +1968,13 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             imgco = new BufferedImage(250, 250, BufferedImage.TYPE_INT_RGB);
             Graphics2D g2d = imgco.createGraphics();
             g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                    RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                                 RenderingHints.VALUE_INTERPOLATION_BICUBIC);
             g2d.drawImage(origco, 0, 0, 250, 250, null);
             g2d.dispose();
 
             setProperty("co-filename", trim(coverFile.getName()));
             setProperty("co-filesize",
-                    ((int) (10 * coverFile.length() / 1024.0) / 10.0) + "");
+                        ((int) (10 * coverFile.length() / 1024.0) / 10.0) + "");
             setProperty("co-width", origco == null ? "" : origco.getWidth()
                     + "");
             setProperty("co-height", origco == null ? "" : origco.getHeight()
@@ -2006,13 +2004,13 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             imgbg = new BufferedImage(800, 600, BufferedImage.TYPE_INT_RGB);
             Graphics2D g2d = imgbg.createGraphics();
             g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                    RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                                 RenderingHints.VALUE_INTERPOLATION_BILINEAR);
             g2d.drawImage(origbg, 0, 0, 800, 600, null);
             g2d.dispose();
 
             setProperty("bg-filename", trim(bgFile.getName()));
             setProperty("bg-filesize",
-                    ((int) (10 * bgFile.length() / 1024.0) / 10.0) + "");
+                        ((int) (10 * bgFile.length() / 1024.0) / 10.0) + "");
             setProperty("bg-width", origbg == null ? "" : origbg.getWidth()
                     + "");
             setProperty("bg-height", origbg == null ? "" : origbg.getHeight()
@@ -2036,7 +2034,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
         coString = null;
 
         origco = new BufferedImage(im.getWidth(null), im.getHeight(null),
-                BufferedImage.TYPE_INT_RGB);
+                                   BufferedImage.TYPE_INT_RGB);
         Graphics g = origco.getGraphics();
         g.drawImage(im, 0, 0, null);
         g.dispose();
@@ -2044,7 +2042,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
         imgco = new BufferedImage(250, 250, BufferedImage.TYPE_INT_RGB);
         Graphics2D g2d = imgco.createGraphics();
         g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                             RenderingHints.VALUE_INTERPOLATION_BILINEAR);
         g2d.drawImage(origco, 0, 0, 250, 250, null);
         g2d.dispose();
 
@@ -2075,7 +2073,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
         bgString = null;
 
         origbg = new BufferedImage(im.getWidth(null), im.getHeight(null),
-                BufferedImage.TYPE_INT_RGB);
+                                   BufferedImage.TYPE_INT_RGB);
         Graphics g = origbg.getGraphics();
         g.drawImage(im, 0, 0, null);
         g.dispose();
@@ -2083,9 +2081,9 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
         imgbg = new BufferedImage(800, 600, BufferedImage.TYPE_INT_RGB);
         Graphics2D g2d = imgbg.createGraphics();
         g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                             RenderingHints.VALUE_INTERPOLATION_BICUBIC);
         g2d.setRenderingHint(RenderingHints.KEY_RENDERING,
-                RenderingHints.VALUE_RENDER_QUALITY);
+                             RenderingHints.VALUE_RENDER_QUALITY);
         g2d.drawImage(origbg, 0, 0, 800, 600, null);
         g2d.dispose();
 
@@ -2120,7 +2118,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
         JPanel cmp = new JPanel(new BorderLayout());
         YassTable table = new YassTable();
         table.loadFile(song.getDirectory() + File.separator
-                + song.getFilename());
+                               + song.getFilename());
 
         YassTable table2 = new YassTable();
         table2.setText(txt);
@@ -2227,7 +2225,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                 tag = tag.substring(0, tag.length() - 1);
                 tag = tag.toUpperCase();
                 boolean same = r2.getComment().trim()
-                        .equals(r.getComment().trim());
+                                 .equals(r.getComment().trim());
                 if (same || tag.equals("TITLE") || tag.equals("ARTIST")) {
                     updatePanel.add(label = new JLabel(""));
                     label.setPreferredSize(new Dimension(140, h));
@@ -2315,9 +2313,9 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
         scroll3.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
 
         JOptionPane optionPane = new JOptionPane(cmp,
-                JOptionPane.PLAIN_MESSAGE,
-                needsOk ? JOptionPane.OK_CANCEL_OPTION
-                        : JOptionPane.DEFAULT_OPTION);
+                                                 JOptionPane.PLAIN_MESSAGE,
+                                                 needsOk ? JOptionPane.OK_CANCEL_OPTION
+                                                         : JOptionPane.DEFAULT_OPTION);
         dia.setContentPane(optionPane);
         optionPane.addPropertyChangeListener(new PropertyChangeListener() {
             public void propertyChange(PropertyChangeEvent e) {
@@ -2352,7 +2350,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                             tag = tag.substring(0, tag.length() - 1);
                             tag = tag.toUpperCase();
                             boolean same = r2.getComment().trim()
-                                    .equals(r.getComment().trim());
+                                             .equals(r.getComment().trim());
                             if (same || tag.equals("TITLE")
                                     || tag.equals("ARTIST")) {
                                 tm3.addRow(r);
@@ -2389,10 +2387,10 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
 
                     t3.setEncoding(t.getEncoding());
                     if (!t3.storeFile(song.getDirectory() + File.separator
-                            + song.getFilename())) {
+                                              + song.getFilename())) {
                         System.out.println("Cannot update file: "
-                                + song.getDirectory() + File.separator
-                                + song.getFilename());
+                                                   + song.getDirectory() + File.separator
+                                                   + song.getFilename());
                     }
                 }
 
@@ -2894,113 +2892,62 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             duration = -1;
 
             File file = new File(dir + File.separator + mp3);
-            if (mp3 != null && mp3.trim().length() > 0 && file.exists()) {
+            if (mp3 != null && !mp3.trim().isEmpty() && file.exists()) {
                 setProperty("mp3-filesize",
-                        ((int) (10 * file.length() / 1024.0 / 1024.0) / 10.0)
-                                + "");
+                            ((int) (10 * file.length() / 1024.0 / 1024.0) / 10.0)
+                                    + "");
 
-                boolean ogg = false;
-                AudioInputStream in = null;
-                try {
-                    AudioFileFormat aff = AudioSystem.getAudioFileFormat(file);
-                    if (aff.getType() == VorbisFileFormatType.OGG) {
-                        ogg = true;
-                    }
-                    // System.out.println("Audio Type : " + aff.getType());
-
-                    in = AudioSystem.getAudioInputStream(file);
-                    //if (in != null) {
-                    //AudioFormat baseFormat = in.getFormat();
-                    // System.out.println("Source Format : " +
-                    // baseFormat.toString());
-                    //}
-                } catch (Exception ignored) {
-                } finally {
-                    if (in != null) {
-                        try {
-                            in.close();
-                        } catch (Exception ignored) {
-                        }
-                    }
+                FFMPEGLocator ffmpegLocator = FFMPEGLocator.getInstance();
+                if (ffmpegLocator == null || !ffmpegLocator.hasFFmpeg()) {
+                    return;
                 }
-
                 try {
-                    AudioFileFormat baseFileFormat = AudioSystem
-                            .getAudioFileFormat(file);
-                    if (baseFileFormat instanceof TAudioFileFormat) {
-                        Map<?, ?> properties = baseFileFormat
-                                .properties();
-                        setProperty("mp3-author",
-                                (String) properties.get("author"));
-                        setProperty("mp3-title",
-                                (String) properties.get("title"));
-                        setProperty("mp3-album",
-                                (String) properties.get("album"));
-                        setProperty("mp3-date", (String) properties.get("date"));
-
-                        Long dur = (Long) properties.get("duration");
-                        if (dur != null) {
-                            duration = dur.longValue();
-                            int sec = (int) Math
-                                    .round(dur.longValue() / 1000000.0);
-                            int min = sec / 60;
-                            sec = sec - min * 60;
-                            String dString = (sec < 10) ? min + ":0" + sec
-                                    : min + ":" + sec;
-                            setProperty("mp3-duration", dString);
-                        }
-
-                        String genre = (String) properties
-                                .get("mp3.id3tag.genre");
+                    FFmpegProbeResult probeResult = ffmpegLocator.getFfprobe().probe(file.getAbsolutePath());
+                    Map<String, String> properties = probeResult.getFormat().tags;
+                    if (properties != null) {
+                        setProperty("mp3-author", properties.get("author"));
+                        setProperty("mp3-title", properties.get("title"));
+                        setProperty("mp3-album", properties.get("album"));
+                        setProperty("mp3-date", properties.get("date"));
+                        String genre = properties.get("mp3.id3tag.genre");
                         if (genre != null) {
                             setProperty("mp3-genre", genre);
                         } else {
-                            setProperty("mp3-genre",
-                                    (String) properties
-                                            .get("ogg.comment.genre"));
+                            setProperty("mp3-genre", properties.get("ogg.comment.genre"));
                         }
-
-                        Boolean vbr = (Boolean) properties.get("mp3.vbr");
-                        if (vbr == null) {
-                            vbr = (Boolean) properties.get("vbr");
-                        }
-
-                        if (vbr != null) {
-                            setProperty("mp3-vbr", vbr.booleanValue() ? "VBR"
-                                    : "CBR");
-                        } else {
-                            setProperty("mp3-vbr", "CBR");
-                        }
-
-                        Integer val = (Integer) properties
-                                .get("mp3.bitrate.nominal.bps");
-                        if (val == null) {
-                            val = (Integer) properties
-                                    .get("ogg.bitrate.nominal.bps");
-                        }
-
-                        String s = ((int) (10 * val.intValue() / 1000.0))
-                                / 10.0 + "";
-                        if (s.endsWith(".0")) {
-                            s = s.substring(0, s.length() - 2);
-                        }
-                        setProperty("mp3-bitrate", val == null ? "" : s);
-
-                        val = (Integer) properties.get("mp3.frequency.hz");
-                        if (val == null) {
-                            val = (Integer) properties.get("ogg.frequency.hz");
-                        }
-                        s = ((int) (10 * val.intValue() / 1000.0)) / 10.0 + "";
-                        if (s.endsWith(".0")) {
-                            s = s.substring(0, s.length() - 2);
-                        }
-                        setProperty("mp3-frequency", val == null ? "" : s);
                     }
-                } catch (Exception e) {
-                    if (!ogg) {
-                        System.out.println("Unknown Audio Format: " + mp3);
-                        e.printStackTrace();
+                    duration = (long) (probeResult.getFormat().duration * 1000000.0);
+                    if (duration > 0) {
+                        int sec = (int) Math.round(duration / 1000000.0);
+                        int min = sec / 60;
+                        sec = sec - min * 60;
+                        String dString = (sec < 10) ? min + ":0" + sec : min + ":" + sec;
+                        setProperty("mp3-duration", dString);
                     }
+
+                    long val;
+                    if (probeResult.getStreams() != null && !probeResult.getStreams().isEmpty()) {
+                        val = probeResult.getStreams().get(0).bit_rate;
+                    } else {
+                        val = probeResult.format.bit_rate;
+                    }
+                    boolean vbr = !Long.toString(val).endsWith("000");
+                    setProperty("mp3-vbr", vbr ? "VBR" : "CBR");
+                    
+                    String s = ((int) (10 * val / 1000.0)) / 10.0 + "";
+                    if (s.endsWith(".0")) {
+                        s = s.substring(0, s.length() - 2);
+                    }
+                    setProperty("mp3-bitrate", val > 0 ? s : "");
+                    if (!probeResult.getStreams().isEmpty()) {
+                        val = probeResult.getStreams().get(0).sample_rate;
+                    } else {
+                        val = 0;
+                    }
+                    setProperty("mp3-frequency", val > 0 ? new DecimalFormat("#.#").format(val / 1000d) : "");
+
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
                 }
             }
 
@@ -3033,7 +2980,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                 String startString = start + "";
                 if (startString.endsWith(".0")) {
                     startString = startString.substring(0,
-                            startString.length() - 2);
+                                                        startString.length() - 2);
                 }
                 setProperty("txt-start", startString);
 
@@ -3144,7 +3091,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                     String vg = null;
                     if (file != null) {
                         vg = YassUtils.getWildcard(file.getName(),
-                                videoID.toLowerCase());
+                                                   videoID.toLowerCase());
                     }
                     if (vg == null) {
                         vg = "0";
@@ -3176,8 +3123,8 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             }
             if (file != null && file.exists()) {
                 setProperty("vd-filesize",
-                        ((int) (10 * file.length() / 1024.0 / 1024.0) / 10.0)
-                                + "");
+                            ((int) (10 * file.length() / 1024.0 / 1024.0) / 10.0)
+                                    + "");
                 hasvideo = true;
 
                 // System.out.println("Loading Video:" + vd);

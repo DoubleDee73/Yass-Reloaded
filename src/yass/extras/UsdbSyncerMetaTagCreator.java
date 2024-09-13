@@ -69,6 +69,8 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
 
     private final Map<String, JSpinner> cropSpinners = new HashMap<>();
     private final Map<String, JTextField> textfields = new HashMap<>();
+    
+    private Map<String, String> prefilledTags = new HashMap<>();
 
     public UsdbSyncerMetaTagCreator(YassActions a) {
         actions = a;
@@ -92,6 +94,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         setLayout(new BorderLayout());
         URL icon = this.getClass().getResource("/yass/resources/img/usdb_syncer_icon.png");
         setIconImage(new ImageIcon(icon).getImage());
+        initPrefilledMap();
         initSpinners();
         initTextFields();
         add(initPanel(), BorderLayout.PAGE_START);
@@ -99,21 +102,65 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         setVisible(true);
     }
 
+    private void initPrefilledMap() {
+        UsdbSyncerMetaFileLoader loader = new UsdbSyncerMetaFileLoader(song.getDir());
+        if (loader.getMetaFile() == null || StringUtils.isEmpty(loader.getMetaFile().getMetaTags())) {
+            return;
+        }
+        String[] tags = loader.getMetaFile().getMetaTags().split(",");
+        for (String tag : tags) {
+            String[] keyValue = tag.split("=");
+            if (keyValue.length != 2) {
+                continue;
+            }
+            String[] values;
+            if (!keyValue[1].startsWith("-")) {
+                values = keyValue[1].split("-");
+            } else {
+                values = new String[0];
+            }
+            if (values.length == 2) {
+                prefilledTags.put(keyValue[0] + "-width", values[0]);
+                prefilledTags.put(keyValue[0] + "-height", values[1]);
+            } else if (values.length == 4) {
+                prefilledTags.put(keyValue[0] + "-left", values[0]);
+                prefilledTags.put(keyValue[0] + "-top", values[1]);
+                prefilledTags.put(keyValue[0] + "-width", values[2]);
+                prefilledTags.put(keyValue[0] + "-height", values[3]);
+            } else {
+                prefilledTags.put(keyValue[0], keyValue[1]);
+            }
+        }
+    }
+
     private void initSpinners() {
+        coverCropLeft.setValue(extractIntValue("co-crop-left"));
         cropSpinners.putIfAbsent("cover-left", coverCropLeft);
+        coverCropTop.setValue(extractIntValue("co-crop-top"));
         cropSpinners.putIfAbsent("cover-top", coverCropTop);
+        coverCropWidth.setValue(extractIntValue("co-crop-width"));
         cropSpinners.putIfAbsent("cover-width", coverCropWidth);
+        coverCropHeight.setValue(extractIntValue("co-crop-height"));
         cropSpinners.putIfAbsent("cover-height", coverCropHeight);
+        backgroundCropLeft.setValue(extractIntValue("bg-crop-left"));
         cropSpinners.putIfAbsent("background-left", backgroundCropLeft);
+        backgroundCropTop.setValue(extractIntValue("bg-crop-top"));
         cropSpinners.putIfAbsent("background-top", backgroundCropTop);
+        backgroundCropWidth.setValue(extractIntValue("bg-crop-width"));
         cropSpinners.putIfAbsent("background-width", backgroundCropWidth);
+        backgroundCropHeight.setValue(extractIntValue("bg-crop-height"));
         cropSpinners.putIfAbsent("background-height", backgroundCropHeight);
+        backgroundResizeWidth.setValue(extractIntValue("bg-resize-width"));
         cropSpinners.putIfAbsent("background-resize-width", backgroundResizeWidth);
+        backgroundResizeHeight.setValue(extractIntValue("bg-resize-height"));
         cropSpinners.putIfAbsent("background-resize-height", backgroundResizeHeight);
         cropSpinners.values()
                     .forEach(this::initSpinner);
+        coverRotation.setValue(extractDoubleValue("co-rotate"));
         initSpinner(coverRotation);
+        coverContrast.setValue(extractDoubleValue("co-contrast"));
         initSpinner(coverContrast);
+        coverResize.setValue(extractIntValue("co-resize"));
         initSpinner(coverResize);
         initSpinner(backgroundResizeWidth);
         initSpinner(backgroundResizeHeight);
@@ -130,15 +177,41 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     }
 
     private void initTextFields() {
+        videoUrl.setText(extractValue("v"));
         addDocumentListener(videoUrl);
-        addDocumentListener(videoUrl);
+        audioUrl.setText(extractValue("a"));
         addDocumentListener(audioUrl);
+        coverUrl.setText(extractValue("co"));
         addDocumentListener(coverUrl);
+        backgroundUrl.setText(extractValue("bg"));
         addDocumentListener(backgroundUrl);
+        player1.setText(extractValue("p1"));
         addDocumentListener(player1);
+        player2.setText(extractValue("p2"));
         addDocumentListener(player2);
     }
 
+    private String extractValue(String key) {
+        if (prefilledTags == null || !prefilledTags.containsKey(key)) {
+            return StringUtils.EMPTY;
+        }
+        return prefilledTags.get(key);
+    }
+
+    private double extractDoubleValue(String key) {
+        if (prefilledTags == null || !prefilledTags.containsKey(key)) {
+            return 0d;
+        }
+        return Double.parseDouble(prefilledTags.get(key));
+    }
+
+    private double extractIntValue(String key) {
+        if (prefilledTags == null || !prefilledTags.containsKey(key)) {
+            return 0d;
+        }
+        return Integer.parseInt(prefilledTags.get(key));
+    }
+    
     private void addDocumentListener(JTextField textfield) {
         textfield.getDocument().addDocumentListener(onChangeTextfield());
     }
@@ -323,6 +396,9 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
             } else {
                 joiner.add(temp);
             }
+        }
+        if (includeZero && joiner.toString().equalsIgnoreCase("0-0")) {
+            return null;
         }
         return key + "=" + joiner;
     }
