@@ -36,22 +36,26 @@ public class LinuxFFMPEGLocator extends AbstractFFMPEGLocator {
         Process p = null;
         String cmd = "which ffmpeg";
         String s;
+        String ffmpeg = null;
         try {
             p = run.exec(cmd);
             p.getErrorStream();
 
             BufferedReader stdInput = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            while ((s = stdInput.readLine()) != null) {
-                System.out.println(s);
+
+            while ((s = stdInput.readLine()) != null && ffmpeg == null) {
+                if (s.contains("ffmpeg")) {
+                    ffmpeg = s.substring(0, s.indexOf("ffmpeg"));
+                }
             }
             p.waitFor();
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
             System.out.println("Error occured");
-            s = null;
+            ffmpeg = null;
         } finally {
             p.destroy();
         }
-        return s;
+        return ffmpeg;
     }
 }
