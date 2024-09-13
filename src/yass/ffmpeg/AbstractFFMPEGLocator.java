@@ -33,7 +33,13 @@ public abstract class AbstractFFMPEGLocator {
     abstract String getFfmpegPath();
 
     String findFfmpegInPath() {
-        String[] pathsToSearch = PATH.split(";");
+        String delimiter;
+        if (CURRENT_OS.contains("linux") || CURRENT_OS.contains("mac")) {
+            delimiter = ":";
+        } else {
+            delimiter = ";";
+        }
+        String[] pathsToSearch = PATH.split(delimiter);
         String returnPath = null;
         for (String path : pathsToSearch) {
             if (path.contains("ffmpeg")) {

@@ -68,7 +68,7 @@ public class YassMain extends JFrame {
             final YassMain y = new YassMain();
             y.parseCommandLine(argv);
 
-            System.out.println("Init...");
+            System.out.println("Init... Yass Reloaded " + YassActions.VERSION);
             y.init();
             System.out.println("Initialized.");
 
