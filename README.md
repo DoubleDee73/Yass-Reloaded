@@ -5,7 +5,14 @@ You can drag & drop notes, spread syllables, and find errors. Further you can fi
 
 Yass Reloaded is a fork from Yass 2.4.3 that Saruta has been developing since 2009. Due to time constraints on his behalf and "creative differences" with the other contributors, I decided to go rogue with my fork.
 
-
+# Main Differences to the original Yass
+- Better support for audio formats: M4A is supported out-of-the-box. If FFmpeg is installed, any audio format that FFmpeg supports, will work in Yass Reloaded, such as OGG or OPUS
+- Improved UX: Coming from someone who has created hundreds of songs, many little tweaks and improvements have gone into Yass Reloaded to make things easier
+  - Better copy-pasting
+  - BPM, GAP, START, END tags can now directly be edited without having to open additional dialogs
+- Faster bugfixing: Many issues, that are still open in the original Yass have already been dealt with in Yass Reloaded. Any new issues that arise will also be reviewed and fixed
+- The Ultrastar community has decided to enhance the current Ultrastar format by adding new tags. Theses enhancements are also constantly incorporated into the software.
+- Is developed in Java 21 instead of Java 8. Third party libraries will be kept up-to-date
 
 # Downloads
 Binaries can be found in the [Release Section](https://github.com/DoubleDee73/Yass/releases)
