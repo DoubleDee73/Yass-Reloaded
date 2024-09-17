@@ -582,6 +582,39 @@ class YassTableSpec extends Specification {
         'hello b c d\ne f g h\n'      | 5        || ['One', '~ ', 'two ', 'he', 'lo ', 'b ', 'c ', 'd ', '_', 'e ', 'f ', 'g ', 'h ', '_', 'Four ', 'five', '~ ']
     }
 
+    def 'calculateNewGap should add a Gap'() {
+        expect:
+        YassTable.calculateNewGap(gap, currentGap) == expected
+        
+        where:
+        currentGap | gap   || expected
+        1234       | 10    || 1240
+        1240       | 10    || 1250
+        1234       | -10   || 1230
+        1230       | -10   || 1220
+        1234       | 1000  || 2234
+        1234       | -1000 || 234
+        234        | -1000 || 0
+    }
+
+    def 'calculateNewBpm should add a BPM'() {
+        expect:
+        YassTable.calculateNewBpm(bpm, currentBpm) == expected
+
+        where:
+        currentBpm | bpm   || expected
+        123.45d    | 0.1d  || 123.5d
+        123.4d     | 0.1d  || 123.5d
+        123.45d    | -0.1d || 123.4d
+        123.4d     | -0.1d || 123.3d
+        123.4d     | 1d    || 124d
+        123.45d    | 1d    || 124d
+        123d       | 1d    || 124d
+        123.4d     | -1d   || 123d
+        123.45d    | -1d   || 123d
+        123d       | -200d || 0
+    }
+    
     private boolean verifyExpectation(YassTable yassTable, List<String> expectation) {
         int offset = 0
         YassRow yassRow = yassTable.getRowAt(offset)

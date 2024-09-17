@@ -44,6 +44,9 @@ public class SketchPanel extends OptionsPanel {
         addComment(I18.get("options_control_playback_comment"));
         addBoolean("", "playback-buttons", I18.get("options_control_buttons_enable"));
         addComment(I18.get("options_control_buttons_comment"));
+        addSeparator();
+        addText(I18.get("options_autosave_interval"), "options_autosave_interval");
+        addComment(I18.get("options_autosave_interval_comment"));
 
         addSeparator();
         addChoice(I18.get("options_control_mic_title"), getProperties().getProperty("control-mics"), "control-mics", "control-mic");

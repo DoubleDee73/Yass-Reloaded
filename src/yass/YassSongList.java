@@ -20,6 +20,7 @@ package yass;
 
 import org.apache.commons.lang3.StringUtils;
 import org.tritonus.share.sampled.file.TAudioFileFormat;
+import yass.autocorrect.YassAutoCorrect;
 import yass.filter.YassFilter;
 import yass.stats.YassStats;
 
@@ -2492,7 +2493,7 @@ public class YassSongList extends JTable {
             if (k > 1) {
                 String txt = s.getFilename();
                 File f = new File(dir + File.separator + txt);
-                if (!f.delete()) {
+                if (!YassUtils.deleteFile(f)) {
                     JOptionPane.showMessageDialog(actions.getTab(), I18.get("mpop_remove_error"), I18.get("mpop_remove_title"), JOptionPane.ERROR_MESSAGE);
                     break;
                 }

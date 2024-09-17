@@ -53,6 +53,7 @@ Basic setup is described in the Wiki: https://github.com/SarutaSan72/Yass/wiki/D
 - Java FX
 - Java Look & Feel Graphics Repository
 - FFmpeg
+- [FFmpeg CLI Wrapper for Java](https://github.com/bramp/ffmpeg-cli-wrapper)
 - iText
 - Jazzy Spell Checker
 - JInput
@@ -84,6 +85,14 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 # Troubleshooting
+## Yass Reloaded does nothing after showing the splash screen
+- Have you checked your Java version? 
+  - Open a command line window and type in <code>java -version</code>. 
+  - You should have Java 21
+- Have you tried opening it as a jar?
+  - Download the jar, open a command line window and type in <code>java -jar Yass-Reloaded-2024.10.jar</code>
+  - Any error messages are then printed out in the command line window for debugging
+
 ## Cannot find FFmpeg?
 Yass Reloaded has a built-in auto-detection for FFmpeg. 
 It will look in any PATH environment variables and try to find both ffmpeg and ffprobe.  

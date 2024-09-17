@@ -311,6 +311,7 @@ public class YassProperties extends Properties {
         //p.put("duet-sequential", "true");
 
         p.putIfAbsent("floatable", "false");
+        p.putIfAbsent("options_autosave_interval", "30");
 
         p.putIfAbsent("mouseover", "false");
         p.putIfAbsent("sketching", "false");

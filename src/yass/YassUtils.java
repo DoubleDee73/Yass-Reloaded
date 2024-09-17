@@ -580,9 +580,19 @@ public class YassUtils {
                 }
             }
         }
-        return dir.delete();
+        return YassUtils.deleteFile(dir);
     }
 
+    public static boolean deleteFile(File file) {
+        boolean success;
+        try {
+            success = Desktop.getDesktop().moveToTrash(file);
+        } catch (Exception e) {
+            success = file.delete();
+        }
+        return success;
+    }
+    
     /**
      * Description of the Method
      *

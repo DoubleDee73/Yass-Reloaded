@@ -17,7 +17,11 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-package yass;
+package yass.autocorrect;
+
+import yass.YassProperties;
+import yass.YassRow;
+import yass.YassTable;
 
 public class YassAutoCorrectUncommonSpacing extends YassAutoCorrector {
     public YassAutoCorrectUncommonSpacing(YassProperties properties) {

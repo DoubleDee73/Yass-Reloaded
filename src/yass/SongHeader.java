@@ -184,7 +184,8 @@ public class SongHeader extends JDialog {
         panel.add(startSpinner);
         panel.add(Box.createHorizontalStrut(30));
         int end = table.getEnd() > 0 ? (int) table.getEnd() : 10000;
-        endSpinner = new TimeSpinner(I18.get("mpop_audio_end"), end, Math.max(10000, duration));
+        
+        endSpinner = new TimeSpinner(I18.get("mpop_audio_end"), Math.min(duration, end), Math.max(10000, duration));
         endSpinner.setLabelSize(midDimension);
         endSpinner.setSpinnerWidth(100);
         endSpinner.getSpinner().setFocusable(false);

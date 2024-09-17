@@ -1,7 +1,7 @@
 /*
-/*
- * Yass - Karaoke Editor
- * Copyright (C) 2009 Saruta
+ * Yass Reloaded - Karaoke Editor
+ * Copyright (C) 2009-2023 Saruta
+ * Copyright (C) 2023 DoubleDee
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,9 +17,10 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-package yass;
+package yass.autocorrect;
 
 import org.apache.commons.lang3.StringUtils;
+import yass.*;
 
 import javax.swing.*;
 import java.awt.*;
@@ -52,6 +53,7 @@ public class YassAutoCorrect {
         tempAutoCorrectors.put(YassRow.UNCOMMON_SPACING, new YassAutoCorrectUncommonSpacing(prop));
         tempAutoCorrectors.put(YassRow.LOWERCASE_ROWSTART, new YassAutoCorrectLineCapitalization(prop));
         tempAutoCorrectors.put(YassRow.BORING_APOSTROPHE, new YassAutoCorrectApostrophes(prop));
+        tempAutoCorrectors.put(YassRow.UNCOMMON_PAGE_BREAK, new YassAutoCorrectUncommonPageBreaks(prop));
         return tempAutoCorrectors;
     }
 
@@ -1273,6 +1275,7 @@ public class YassAutoCorrect {
         YassTableModel tm = (YassTableModel) table.getModel();
         Vector<?> data = tm.getData();
         YassAutoCorrector autoCorrector = autoCorrectorMap.get(currentMessage);
+        YassAutoCorrector pageBreakCorrector = autoCorrectorMap.get(YassRow.UNCOMMON_PAGE_BREAK);
         for (int k = 0; k < n; k++) {
             int i = rows[k];
             YassRow r = table.getRowAt(i);
@@ -1454,16 +1457,7 @@ public class YassAutoCorrect {
                 case YassRow.EARLY_PAGE_BREAK:
                 case YassRow.LATE_PAGE_BREAK:
                 case YassRow.UNCOMMON_PAGE_BREAK: {
-                    int comm[] = new int[2];
-                    comm[0] = table.getRowAt(i - 1).getBeatInt()
-                            + table.getRowAt(i - 1).getLengthInt();
-                    comm[1] = table.getRowAt(i + 1).getBeatInt();
-                    int pause = getCommonPageBreak(comm, table.getBPM(), null);
-                    if (pause >= 0) {
-                        r.setBeat(comm[0]);
-                        r.setSecondBeat(comm[1]);
-                        changed = true;
-                    }
+                    changed = changed || pageBreakCorrector.autoCorrect(table, i, table.getRowCount());
                     break;
                 }
                 case YassRow.SHORT_PAGE_BREAK: {

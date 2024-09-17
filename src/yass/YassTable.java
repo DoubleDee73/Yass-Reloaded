@@ -20,11 +20,14 @@ package yass;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.commons.math3.util.Precision;
 import org.mozilla.universalchardet.Constants;
 import unicode.UnicodeReader;
+import yass.autocorrect.YassAutoCorrect;
+import yass.autocorrect.YassAutoCorrectApostrophes;
 import yass.renderer.YassLine;
 import yass.renderer.YassNote;
 import yass.renderer.YassSession;
@@ -46,6 +49,7 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.Year;
 import java.util.List;
+import java.util.Timer;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -110,6 +114,8 @@ public class YassTable extends JTable {
 
     public static final List<String> FIXED_UPPERCASE = List.of("I", "I'm", "I’m");
 
+    public Timer timer;
+    
     public YassTable() {
         fileUtils = new YassFileUtils();
         getTableHeader().setReorderingAllowed(false);
@@ -445,13 +451,47 @@ public class YassTable extends JTable {
     }
 
     public void addGap(double g) {
-        setGap(getGap() + g);
+        setGap(calculateNewGap(g, getGap()));
         if (sheet != null) {
             sheet.update();
             sheet.repaint();
         }
     }
 
+    public static double calculateNewGap(double gapChange, double currentGap) {
+        int mod = (int)currentGap % 10;
+        if ((int)Math.abs(gapChange) == 10 && mod > 0) {
+            gapChange = gapChange > 0 ? (gapChange - mod) : (-1 * mod);
+        }
+        double newGap = currentGap + gapChange;
+        return newGap > 0 ? newGap : 0;
+    }
+
+    public void addBpm(double g) {
+        setBPM(calculateNewBpm(g, getBPM()));
+        if (sheet != null) {
+            sheet.update();
+            sheet.repaint();
+        }
+    }
+
+    public static double calculateNewBpm(double dblBpmChange, double dblCurrentBpm) {
+        int bpmChange = (int)(dblBpmChange * 100);
+        int currentBpm = (int)(dblCurrentBpm * 100);
+        int mod;
+        if (Math.abs(bpmChange) == 10) {
+            mod = currentBpm % 10;
+        } else if (Math.abs(bpmChange) == 100) {
+            mod = currentBpm % 100;
+        } else {
+            mod = 0;
+        }
+        if (mod > 0) {
+            bpmChange = bpmChange > 0 ? (bpmChange - mod) : (-1 * mod);
+        }
+        double newGap = ((double)currentBpm + (double)bpmChange) / 100d;
+        return newGap > 0 ? newGap : 0;
+    }
     public double getBPM() {
         return bpm;
     }
@@ -1688,7 +1728,12 @@ public class YassTable extends JTable {
             return false;
         if (f.length() > 1024 * 1024)
             return false;
-
+        try {
+            checkAutosaveBackup(f);
+        } catch (IOException e) {
+            System.out.println("Failed to handle backup");
+            return false;
+        }
         dir = f.getAbsolutePath();
         int isep = dir.lastIndexOf(File.separator);
         if (isep <= 0)
@@ -1773,7 +1818,6 @@ public class YassTable extends JTable {
         isLoading = true;
         tm.fireTableDataChanged();
         isLoading = false;
-
         return success;
     }
 
@@ -6512,5 +6556,39 @@ public class YassTable extends JTable {
 
     public void fireTableTableDataChanged() {
         tm.fireTableDataChanged();
+    }
+    
+    private void checkAutosaveBackup(File currentFile) throws IOException {
+        String absolutPath = currentFile.getAbsolutePath();
+        File backupFile = new File(absolutPath + ".bak");
+        if (backupFile.exists() && backupFile.lastModified() > currentFile.lastModified()) {
+            int restore = JOptionPane.showConfirmDialog(this, I18.get("edit_autosave_hint"),
+                                                        I18.get("edit_autosave_title"),
+                                                        JOptionPane.OK_CANCEL_OPTION,
+                                                        JOptionPane.INFORMATION_MESSAGE);
+            if (restore == JOptionPane.OK_OPTION) {
+                File old = new File(absolutPath + ".old");
+                FileUtils.copyFile(currentFile, old);
+                FileUtils.copyFile(backupFile, currentFile);
+            } else {
+                System.out.println("Ignoring more recent backup file");
+            }
+        }
+    }
+    
+    public void initAutoSave() {
+        if (sheet == null) {
+            return;
+        }
+        int period = prop.getIntProperty("options_autosave_interval");
+        if (period == 0) {
+            System.out.println("Autosave disabled");
+            return;
+        } 
+        timer = new Timer();
+        int periodMillis = Math.min(period, 600) * 1000;
+        System.out.println("Autosave initialized with " + Math.min(period, 600) + "s intervals.");
+        YassAutoSave autoSave = new YassAutoSave(this);
+        timer.scheduleAtFixedRate(autoSave, 30000, periodMillis);
     }
 }

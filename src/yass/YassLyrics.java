@@ -20,6 +20,7 @@ package yass;
 
 import com.swabunga.spell.engine.SpellDictionaryHashMap;
 import com.swabunga.spell.swing.JTextComponentSpellChecker;
+import yass.autocorrect.YassAutoCorrect;
 
 import javax.swing.*;
 import javax.swing.event.*;
@@ -1082,13 +1083,13 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 			table.getModel().addTableModelListener(tableListener);
 		}
 		if (table == null) {
+			resetFindReplaceMatcher();
 			return;
 		}
 
 		preventFireUpdate = true;
 
 		lyricsArea.setText(table.getText());
-
 		try {
 			if (spellCheckerComp != null && lyricsArea.isVisible()) {
 				spellCheckerComp.getHandler().markupSpelling(lyricsArea);
@@ -2236,6 +2237,12 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 			lyricsArea.addCaretListener(caretListener);
 			table.getSelectionModel().addListSelectionListener(
 					tableSelectionListener);
+		}
+	}
+	
+	public void resetFindReplaceMatcher() {
+		if (frDialog != null) {
+			frDialog.m = null;
 		}
 	}
 }

@@ -347,7 +347,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                         equalsKeyMillis = 0;
                         repaint();
                     } else if (code == KeyEvent.VK_ENTER) {
-                        if (equalsDigits.length() > 0)
+                        if (!equalsDigits.isEmpty())
                             setCurrentLineTo(Integer.valueOf(equalsDigits)
                                     .intValue());
                         equalsDigits = "";
@@ -546,7 +546,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 }
 
-                if (Character.isDigit(c) && e.isAltDown() && !e.isControlDown()) {
+                if (Character.isDigit(c) && c != '0' && c != '9' && e.isAltDown() && !e.isControlDown()) {
                     String cstr = Character.toString(c);
                     long currentTime = System.currentTimeMillis();
                     if (currentTime < lastTime + 700) {
@@ -639,7 +639,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 }
 
-                if (Character.isDigit(c) && !e.isControlDown()) {
+                // change length of note, except 0 and 9 which are reserved for GAP
+                if (Character.isDigit(c) && c != '0' && c != '9' && !e.isControlDown()) {
                     boolean changed = false;
                     String cstr = Character.toString(c);
                     int n = -1;
