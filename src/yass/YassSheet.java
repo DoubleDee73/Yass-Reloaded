@@ -227,8 +227,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private boolean messageMemory = false;
     private final int[] keycodes = new int[19];
     private long equalsKeyMillis = 0;
-    private String layout = "East";
-
     private Paint tex, bgtex;
     private BufferedImage bgImage = null;
     private boolean showVideo = false, showBackground = false;
@@ -836,12 +834,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 boolean one = e.getClickCount() == 1;
 
                 // LYRICS POSITION
-                boolean notInLyrics = true;
-                if (layout.equals("East")) {
-                    notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
-                } else if (layout.equals("West")) {
-                    notInLyrics = (x - getViewPosition().x) > lyricsWidth;
-                }
+                boolean notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
 
                 if (y > clip.height - BOTTOM_BORDER + 20
                         || (y > 20 && y < TOP_LINE - 10 && notInLyrics)) {
@@ -1282,26 +1275,15 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 }
                 // LYRICS POSITION
-                boolean notInLyrics = true;
-                if (layout.equals("East")) {
-                    notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
-                } else if (layout.equals("West")) {
-                    notInLyrics = (x - getViewPosition().x) > lyricsWidth;
-                }
+                boolean notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
                 if (!notInLyrics && getComponentCount() > 0 && lyricsVisible) {
                     // dirty bugfix for lost bounds
                     Point p2 = lyrics.getLocation();
-                    if ((layout.equals("East") && (x - p2.x > 500))
-                            || (layout.equals("West") && x < lyricsWidth)) {
+                    if ((x - p2.x) > 500) {
                         Point p = ((JViewport) getParent()).getViewPosition();
                         Dimension vr = ((JViewport) getParent()).getExtentSize();
 
                         int newx = (int) p.getX() + vr.width - lyricsWidth;
-                        if (layout.equals("East")) {
-                            newx = (int) p.getX() + vr.width - lyricsWidth;
-                        } else if (layout.equals("West")) {
-                            newx = (int) p.getX();
-                        }
 
                         int newy = (int) p.getY() + 50;
                         if (p2.x != newx || p2.y != newy) {
@@ -1855,10 +1837,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
     public void setAutoTrim(boolean onoff) {
         autoTrim = onoff;
-    }
-
-    public void setLyricsLayout(String s) {
-        layout = s;
     }
 
     public int getTopLine() {
@@ -2537,11 +2515,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             int usedHeap = occHeap - freeHeap;
             String info = usedHeap + " of " + maxHeap + "Mb in use" + ", "
                     + occHeap + "Mb reserved.";
-            if (layout.equals("East")) {
-                db.drawString(info, clip.x + 10, 40);
-            } else if (layout.equals("West")) {
-                db.drawString(info, clip.x + 10 + lyricsWidth, 40);
-            }
+            db.drawString(info, clip.x + 10, 40);
         }
 
         // message:
@@ -2550,13 +2524,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 && lyricsVisible) {
             Rectangle cr = lyrics.getBounds();
 
-            if (layout.equals("East")) {
-                db.translate(
-                        clip.x + clip.width - cr.width + cr.getX()
-                                - lyrics.getX(), cr.getY() - lyrics.getY() + 20);
-            } else if (layout.equals("West")) {
-                db.translate(clip.x, cr.getY() - lyrics.getY() + 20);
-            }
+            db.translate(clip.x + clip.width - cr.width + cr.getX() - lyrics.getX(), cr.getY() - lyrics.getY() + 20);
 
             // System.out.println("refresh print");
             lyrics.print(db);
@@ -2716,13 +2684,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             // LYRICS POSITION
 
             if (lyricsVisible) {
-                if (layout.equals("East")) {
-                    g2.fillRect(clip.x, TOP_BORDER, clip.width - lyricsWidth,
-                            TOP_LINE - 10 - TOP_BORDER - 1);
-                } else if (layout.equals("West")) {
-                    g2.fillRect(clip.x + lyricsWidth, TOP_BORDER, clip.width
-                            - lyricsWidth, TOP_LINE - 10 - TOP_BORDER - 1);
-                }
+                g2.fillRect(clip.x, TOP_BORDER, clip.width - lyricsWidth, TOP_LINE - 10 - TOP_BORDER - 1);
                 if (live) {
                     g2.fillRect(clip.x, dim.height - BOTTOM_BORDER + 16,
                             clip.width, BOTTOM_BORDER + 16);

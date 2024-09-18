@@ -244,10 +244,6 @@ public class YassProperties extends Properties {
         p.putIfAbsent("control-mics", "");
 
         //editor
-        p.putIfAbsent("editor-layout", "East");
-        p.putIfAbsent("editor-layouts", "East|West");
-        p.putIfAbsent("lyrics-width", "450");
-        p.putIfAbsent("lyrics-min-height", "120");
         p.putIfAbsent("lyrics-font-size", "14");
 
         p.putIfAbsent("note-color-8", "#dd9966"); // warning

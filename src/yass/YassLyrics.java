@@ -223,7 +223,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 		DefaultStyledDocument doc = new DefaultStyledDocument(sc);
 
 		// Ok, line not too long
-
 		notLongStyle = sc.addStyle(null, null);
 		StyleConstants.setLeftIndent(notLongStyle, 5);
 		StyleConstants.setRightIndent(notLongStyle, 10);
@@ -231,7 +230,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 		StyleConstants.setFontSize(notLongStyle, fontSize);
 		StyleConstants.setSpaceAbove(notLongStyle, 0);
 		StyleConstants.setSpaceBelow(notLongStyle, 0);
-		// StyleConstants.setForeground(notLongStyle, dkGray); --> see propsChanged
 		StyleConstants.setStrikeThrough(notLongStyle, false);
 
 		// Line too long
@@ -239,12 +237,8 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 		StyleConstants.setStrikeThrough(longStyle, true);
 		// not selected
 		notSelectStyle = sc.addStyle(null, null);
-		//StyleConstants.setForeground(notSelectStyle, dkGray); --> see propsChanged
-		//StyleConstants.setBackground(notSelectStyle, nofontBG); --> see propsChanged
 		// selected
 		selectStyle = sc.addStyle(null, null);
-		// StyleConstants.setForeground(selectStyle, black); --> see propsChanged
-		// StyleConstants.setBackground(selectStyle, lyricsArea.getSelectionColor()); --> see propsChanged
 		// golden
 		goldenStyle = sc.addStyle(null, null);
 		StyleConstants.setBold(goldenStyle, true);
@@ -371,17 +365,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 				}
 			}
 		});
-		/*
-		 * addMouseMotionListener( new MouseMotionListener() { public void
-		 * mouseMoved(MouseEvent e) { Component p = getParent();
-		 * p.dispatchEvent(e); } public void mouseDragged(MouseEvent e) { } });
-		 * lyricsArea.addMouseMotionListener( new MouseMotionListener() { public
-		 * void mouseMoved(MouseEvent e) { Component p = getParent();
-		 * p.dispatchEvent(e); } public void mouseDragged(MouseEvent e) { } });
-		 * lineNumbers.addMouseMotionListener( new MouseMotionListener() {
-		 * public void mouseMoved(MouseEvent e) { Component p = getParent();
-		 * p.dispatchEvent(e); } public void mouseDragged(MouseEvent e) { } });
-		 */
 		lyricsArea.addMouseListener(new MouseAdapter() {
 
 			public void mouseExited(MouseEvent e) {

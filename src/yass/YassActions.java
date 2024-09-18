@@ -2259,12 +2259,6 @@ public class YassActions implements DropTargetListener {
 
             auto.init(prop);
 
-            String layout = prop.getProperty("editor-layout");
-            if (layout == null) {
-                layout = "East";
-            }
-            sheet.setLyricsLayout(layout);
-
             String hLangs = prop.getProperty("note-naming-h").toLowerCase();
             sheet.setHNoteEnabled(hLangs.contains(I18.getLanguage()));
 
@@ -2697,10 +2691,6 @@ public class YassActions implements DropTargetListener {
     }
 
     private void loadLayout() {
-        String lyricsWidthString = prop.getProperty("lyrics-width");
-        int lyricsWidth = Integer.parseInt(lyricsWidthString);
-        sheet.setLyricsWidth(lyricsWidth);
-
         boolean debugMemory = prop.getProperty("debug-memory").equals("true");
         sheet.setDebugMemory(debugMemory);
     }
@@ -3075,12 +3065,6 @@ public class YassActions implements DropTargetListener {
         } catch (Exception ignored) {
             setBeforeNextMs(300);
         }
-
-        String layout = prop.getProperty("editor-layout");
-        if (layout == null) {
-            layout = "East";
-        }
-        sheet.setLyricsLayout(layout);
 
         String hLanguages = prop.getProperty("note-naming-h").toLowerCase();
         sheet.setHNoteEnabled(hLanguages.contains(I18.getLanguage()));
@@ -6029,28 +6013,15 @@ public class YassActions implements DropTargetListener {
             return;
         }
         int newh = sheet.getTopLine() - 30;
-
-        // LYRICS POSITION
-        String layout = prop.getProperty("editor-layout");
-        if (layout == null) {
-            layout = "East";
-        }
-
-        String lyricsWidthString = prop.getProperty("lyrics-width");
-        String lyricsHeightString = prop.getProperty("lyrics-min-height");
-        int lyricsWidth = Integer.parseInt(lyricsWidthString);
-        int lyricsMinHeight = Integer.parseInt(lyricsHeightString);
+        int lyricsWidth = 450;
+        int lyricsMinHeight = 120;
         if (newh < lyricsMinHeight) {
             newh = lyricsMinHeight;
         }
 
         int h = lyrics.getBounds().height;
         if (h != newh) {
-            if (layout.equals("East")) {
-                lyrics.setBounds(500, 30, lyricsWidth, newh);
-            } else if (layout.equals("West")) {
-                lyrics.setBounds(0, 30, lyricsWidth, newh);
-            }
+            lyrics.setBounds(500, 30, lyricsWidth, newh);
             sheet.revalidate();
         }
     }

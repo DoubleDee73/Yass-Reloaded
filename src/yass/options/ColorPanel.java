@@ -50,8 +50,6 @@ public class ColorPanel extends OptionsPanel {
         addBoolean("", "show-note-length", I18.get("options_design_notes_length"));
 
         addSeparator(I18.get("options_design_lyrics"));
-        addChoice(I18.get("options_design_lyrics_layout_title"), I18.get("options_design_lyrics_layout"), "editor-layouts", "editor-layout");
-        addText(I18.get("options_design_lyrics_width"), "lyrics-width");
         addText(I18.get("options_design_lyrics_fontsize"), "lyrics-font-size");
         addComment(I18.get("options_design_lyrics_fontsize_comment"));
 
