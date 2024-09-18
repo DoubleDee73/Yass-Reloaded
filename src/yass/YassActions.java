@@ -45,10 +45,8 @@ import java.lang.reflect.Method;
 import java.net.URL;
 import java.nio.file.Path;
 import java.text.MessageFormat;
-import java.util.Enumeration;
-import java.util.Hashtable;
-import java.util.StringTokenizer;
-import java.util.Vector;
+import java.util.List;
+import java.util.*;
 
 public class YassActions implements DropTargetListener {
 
@@ -2771,7 +2769,8 @@ public class YassActions implements DropTargetListener {
     private void disposeAutosaveFiles(Vector<YassTable> openTables) {
         for (YassTable currentTable : openTables) {
             File autosaveFile = new File(currentTable.getDirFilename() + ".bak");
-            if (autosaveFile.exists()) {
+            File currentFile = new File(currentTable.getDirFilename());
+            if (autosaveFile.exists() && autosaveFile.lastModified() < currentFile.lastModified()) {
                 try {
                     FileUtils.delete(autosaveFile);
                 } catch (IOException e) {
@@ -6122,6 +6121,13 @@ public class YassActions implements DropTargetListener {
         Vector<YassTable> multis = new Vector<>();
         Vector<YassTable> singles = new Vector<>();
         for (String f : all) {
+            try {
+                checkAutosaveBackup(f);
+            } catch (IOException e) {
+                System.out.println("Failed to handle backup");
+                return false;
+            }
+
             YassTable t = new YassTable();
             t.init(prop);
             t.loadFile(f);
@@ -6164,7 +6170,25 @@ public class YassActions implements DropTargetListener {
         setView(VIEW_EDIT);
         return true;
     }
-
+    
+    private void checkAutosaveBackup(String absolutPath) throws IOException {
+        File backupFile = new File(absolutPath + ".bak");
+        File currentFile = new File(absolutPath);
+        if (backupFile.exists() && backupFile.lastModified() > currentFile.lastModified()) {
+            int restore = JOptionPane.showConfirmDialog(tab, I18.get("edit_autosave_hint"),
+                                                        I18.get("edit_autosave_title"),
+                                                        JOptionPane.OK_CANCEL_OPTION,
+                                                        JOptionPane.INFORMATION_MESSAGE);
+            if (restore == JOptionPane.OK_OPTION) {
+                File old = new File(absolutPath + ".old");
+                FileUtils.copyFile(currentFile, old);
+                FileUtils.copyFile(backupFile, currentFile);
+            } else {
+                System.out.println("Ignoring more recent backup file");
+            }
+        }
+    }
+    
     public void openMp3(String filename) {
         mp3.reinitSynth();
         mp3.openMP3(filename);
@@ -6410,31 +6434,37 @@ public class YassActions implements DropTargetListener {
         updateVideoGap();
     }
 
-    public void saveAllTables() {
-        save(openTables);
+    public List<YassTable> mergeTableAndSave(YassTable table, boolean backup) {
+        List<YassTable> stored = new ArrayList<>();
+        String fileSuffix = backup ? ".bak" : StringUtils.EMPTY;
+        if (table.getDuetTrack() > 0) {
+            Vector<YassTable> tracks = getOpenTables(table);
+            YassTable mergedTable = YassTable.mergeTables(tracks, prop);
+            mergedTable.storeFile(table.getDirFilename() + fileSuffix);
+            stored.addAll(tracks);
+        } else {
+            table.storeFile(table.getDirFilename() + fileSuffix);
+            stored.add(table);
+        }
+        return stored;
     }
     
     private void save(Vector<YassTable> tables) {
-        Vector<YassTable> stored = new Vector<>();
+        List<YassTable> stored = new ArrayList<>();
         for (YassTable table : tables) {
-            if (table.isSaved() || stored.contains(table))
+            if (table.isSaved() || stored.contains(table)) {
                 continue;
-            if (table.getDuetTrack() > 0) {
-                Vector<YassTable> tracks = getOpenTables(table);
-                YassTable mergedTable = YassTable.mergeTables(tracks, prop);
-                mergedTable.storeFile(table.getDirFilename());
-                stored.addAll(tracks);
-            } else {
-                table.storeFile(table.getDirFilename());
-                stored.add(table);
             }
-        }
-        for (YassTable t : stored)
-            t.setSaved(true);
-        saveAll.setEnabled(false);
-        main.repaint();
-    }
+            stored.addAll(mergeTableAndSave(table, false));
 
+            for (YassTable t : stored) {
+                t.setSaved(true);
+            }
+            saveAll.setEnabled(false);
+            main.repaint();
+        }
+    }
+    
     private void saveTrackAs() {
         String filename = askFilename(I18.get("lib_edit_file_msg"), FileDialog.SAVE);
         if (filename != null) {
@@ -7272,11 +7302,11 @@ public class YassActions implements DropTargetListener {
         insertNote.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK));
         insertNote.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK));
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK), "prevTrack");
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.CTRL_DOWN_MASK), "prevTrack");
         am.put("prevTrack", activatePrevTrack);
         activatePrevTrack.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.CTRL_DOWN_MASK));
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK), "nextTrack");
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK), "nextTrack");
         am.put("nextTrack", activateNextTrack);
         activateNextTrack.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK));
 

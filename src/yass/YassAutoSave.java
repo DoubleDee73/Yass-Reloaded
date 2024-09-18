@@ -19,12 +19,6 @@
 
 package yass;
 
-import org.apache.commons.io.FileUtils;
-
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.StandardCopyOption;
-import java.util.Date;
 import java.util.TimerTask;
 
 public class YassAutoSave extends TimerTask {
@@ -41,18 +35,6 @@ public class YassAutoSave extends TimerTask {
         if (yassTable.isSaved()) {
             return;
         }
-        File original = new File(yassTable.getDirFilename());
-        File backup = new File(yassTable.getDirFilename() + ".bak");
-        if (original.exists()) {
-            try {
-                FileUtils.copyFile(original, backup, StandardCopyOption.REPLACE_EXISTING);
-                error = false;
-            } catch (IOException e) {
-                error = true;
-                throw new RuntimeException(e);
-            }
-            System.out.println(new Date() + ": Autosaved " + yassTable.getDirFilename() + " / success " + !error);
-        }
-        yassTable.getActions().saveAllTables();
+        yassTable.getActions().mergeTableAndSave(yassTable, true);
     }
 }

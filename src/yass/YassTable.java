@@ -20,7 +20,6 @@ package yass;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.commons.math3.util.Precision;
@@ -1728,12 +1727,6 @@ public class YassTable extends JTable {
             return false;
         if (f.length() > 1024 * 1024)
             return false;
-        try {
-            checkAutosaveBackup(f);
-        } catch (IOException e) {
-            System.out.println("Failed to handle backup");
-            return false;
-        }
         dir = f.getAbsolutePath();
         int isep = dir.lastIndexOf(File.separator);
         if (isep <= 0)
@@ -6556,24 +6549,6 @@ public class YassTable extends JTable {
 
     public void fireTableTableDataChanged() {
         tm.fireTableDataChanged();
-    }
-    
-    private void checkAutosaveBackup(File currentFile) throws IOException {
-        String absolutPath = currentFile.getAbsolutePath();
-        File backupFile = new File(absolutPath + ".bak");
-        if (backupFile.exists() && backupFile.lastModified() > currentFile.lastModified()) {
-            int restore = JOptionPane.showConfirmDialog(this, I18.get("edit_autosave_hint"),
-                                                        I18.get("edit_autosave_title"),
-                                                        JOptionPane.OK_CANCEL_OPTION,
-                                                        JOptionPane.INFORMATION_MESSAGE);
-            if (restore == JOptionPane.OK_OPTION) {
-                File old = new File(absolutPath + ".old");
-                FileUtils.copyFile(currentFile, old);
-                FileUtils.copyFile(backupFile, currentFile);
-            } else {
-                System.out.println("Ignoring more recent backup file");
-            }
-        }
     }
     
     public void initAutoSave() {
