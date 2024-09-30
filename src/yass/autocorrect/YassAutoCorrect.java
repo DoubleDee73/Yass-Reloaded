@@ -28,6 +28,7 @@ import java.awt.image.BufferedImage;
 import java.io.*;
 import java.text.MessageFormat;
 import java.util.*;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -35,6 +36,7 @@ import java.util.*;
  * @author Saruta
  */
 public class YassAutoCorrect {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static int FIXED_PAGE_BREAK = 0;
 
     int[] fontWidth = null;
@@ -983,7 +985,7 @@ public class YassAutoCorrect {
                                         ? prop.getProperty("font-file-custom")
                                         : prop.getProperty("font-file");
 
-                                // System.out.println(percentFree + " outside");
+                                // LOGGER.info(percentFree + " outside");
                                 int pf = -(int) (percentFree * 100);
                                 if (pf == 0) {
                                     currentRow.addMessage(
@@ -1519,7 +1521,7 @@ public class YassAutoCorrect {
             }
             stringWidth += fontWidth[ascii] * fontSize / 256.0 + charSpacing;
         }
-        //System.out.println(s.substring(0,5) + " = " + (int)stringWidth + " px" + "  " + (int)(100*(stringWidth)/800.0));
+        //LOGGER.info(s.substring(0,5) + " = " + (int)stringWidth + " px" + "  " + (int)(100*(stringWidth)/800.0));
         return (int) stringWidth;
     }
 
@@ -1561,7 +1563,7 @@ public class YassAutoCorrect {
             s = os.toString("UTF-8");
             is.close();
         } catch (Exception e) {
-            System.out.println("Font file not found: " + font);
+            LOGGER.info("Font file not found: " + font);
             e.printStackTrace();
         }
 
@@ -1572,7 +1574,7 @@ public class YassAutoCorrect {
         {
             if (! st.startsWith("["))
             {
-                //System.out.println((i) + " = " + st);
+                //LOGGER.info((i) + " = " + st);
                 fontWidth[i] = Integer.parseInt(st);
                 i++;
                 if (i>255) break;
@@ -1600,10 +1602,10 @@ public class YassAutoCorrect {
                 if (i==173) c= "shy";
                 if (i>=32) s += " ["+i+"]["+c+"] "+ fw2[i];
             }
-            // System.out.println(font + " = " + s);
+            // LOGGER.info(font + " = " + s);
             g.dispose();
         } catch (Exception e) {
-            System.out.println("Font file not found: " + font);
+            LOGGER.info("Font file not found: " + font);
             e.printStackTrace();
         }
     }

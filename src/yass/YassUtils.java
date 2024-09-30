@@ -40,6 +40,8 @@ import java.beans.PropertyChangeEvent;
 import java.io.*;
 import java.text.MessageFormat;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 /**
@@ -48,6 +50,7 @@ import java.util.regex.Pattern;
  * @author Saruta
  */
 public class YassUtils {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public final static int NORTH = 0;
     public final static int SOUTH = 1;
     public final static int EAST = 2;
@@ -298,8 +301,7 @@ public class YassUtils {
             }
             return true;
         } catch (Exception e) {
-            System.out.println("Cannot copy file: " + in.getName());
-            e.printStackTrace();
+            LOGGER.info("Cannot copy file: " + in.getName());
             return false;
         } finally {
             if (fis != null) {
@@ -425,7 +427,7 @@ public class YassUtils {
 
         File dirfile = new File(dir);
         if (!dirfile.exists() || !dirfile.isDirectory()) {
-            System.out.println("Error: Cannot find folder " + dir);
+            LOGGER.info("Error: Cannot find folder " + dir);
             return false;
         }
         String newdir = dirfile.getParent() + File.separator + at;
@@ -439,7 +441,7 @@ public class YassUtils {
                 t.setDir(newdir);
                 dir = newdir;
             } else {
-                System.out.println("Error: Cannot rename folder " + dir);
+                LOGGER.info("Error: Cannot rename folder " + dir);
             }
         }
 
@@ -459,7 +461,7 @@ public class YassUtils {
                 if (file.renameTo(newfile)) {
                     t.setFilename(text);
                 } else {
-                    System.out.println("Error: Cannot rename karaoke " + filename);
+                    LOGGER.info("Error: Cannot rename karaoke " + filename);
                 }
             }
         }
@@ -477,7 +479,7 @@ public class YassUtils {
                 if (file.renameTo(newfile)) {
                     t.setCover(cover);
                 } else {
-                    System.out.println("Error: Cannot rename cover " + filename);
+                    LOGGER.info("Error: Cannot rename cover " + filename);
                 }
             }
         }
@@ -495,7 +497,7 @@ public class YassUtils {
                 if (file.renameTo(newfile)) {
                     t.setBackground(background);
                 } else {
-                    System.out.println("Error: Cannot rename background " + filename);
+                    LOGGER.info("Error: Cannot rename background " + filename);
                 }
             }
         }
@@ -513,7 +515,7 @@ public class YassUtils {
                 if (file.renameTo(newfile)) {
                     t.setMP3(audio);
                 } else {
-                    System.out.println("Error: Cannot rename audio " + filename);
+                    LOGGER.info("Error: Cannot rename audio " + filename);
                 }
             }
         }
@@ -535,7 +537,7 @@ public class YassUtils {
                 if (file.renameTo(newfile)) {
                     t.setVideo(video);
                 } else {
-                    System.out.println("Error: Cannot rename video " + filename);
+                    LOGGER.info("Error: Cannot rename video " + filename);
                 }
             }
         }
@@ -566,7 +568,7 @@ public class YassUtils {
                 while (!success && trials-- > 0) {
                     success = deleteDir(new File(dir, child));
                     if (!success) {
-                        //System.out.println("cannot delete " + children[i]);
+                        //LOGGER.info("cannot delete " + children[i]);
                         try {
                             Thread.currentThread();
                             Thread.sleep(100);
@@ -606,18 +608,18 @@ public class YassUtils {
         try {
             classDefinition = Class.forName(s, true, ClassLoader.getSystemClassLoader());
         } catch (Throwable cls) {
-            //System.out.println("Security manager hides SystemClassLoader.");
-            //System.out.println("Falling back to ContextClassLoader.");
+            //LOGGER.info("Security manager hides SystemClassLoader.");
+            //LOGGER.info("Falling back to ContextClassLoader.");
             try {
                 classDefinition = Class.forName(s, true, Thread.currentThread().getContextClassLoader());
             } catch (Throwable cls2) {
-                //    System.out.println("Security manager hides current thread's ContextClassLoader.");
+                //    LOGGER.info("Security manager hides current thread's ContextClassLoader.");
                 try {
                     classDefinition = Class.forName(s);
                 } catch (Throwable cls3) {
                     throw new ClassNotFoundException("Unknown class: " + s);
                 }
-                //    System.out.println("Falling back to Class.forName("+s+")");
+                //    LOGGER.info("Falling back to Class.forName("+s+")");
             }
         }
         return classDefinition;
@@ -672,7 +674,7 @@ public class YassUtils {
         try {
             b = reader.read(0, param);
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
 
         reader.dispose();
@@ -905,7 +907,7 @@ public class YassUtils {
             }
             inputStream.close();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
         return false;
     }
@@ -939,7 +941,7 @@ public class YassUtils {
             }
             inputStream.close();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
         return false;
     }

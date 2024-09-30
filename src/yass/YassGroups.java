@@ -18,6 +18,8 @@
 
 package yass;
 
+import yass.filter.YassFilter;
+
 import javax.swing.*;
 import javax.swing.border.Border;
 import javax.swing.event.ListSelectionEvent;
@@ -35,8 +37,8 @@ import java.io.File;
 import java.io.StringReader;
 import java.text.MessageFormat;
 import java.util.*;
-
-import yass.filter.YassFilter;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -45,6 +47,7 @@ import yass.filter.YassFilter;
  */
 public class YassGroups extends JTable implements DropTargetListener {
     private static final long serialVersionUID = 7459513036812933052L;
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     /**
      * Description of the Field
      */
@@ -133,7 +136,7 @@ public class YassGroups extends JTable implements DropTargetListener {
         try {
             noCover = new ImageIcon(I18.getImage("group_image.jpg"));
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
     }
 
@@ -328,7 +331,7 @@ public class YassGroups extends JTable implements DropTargetListener {
      * @return The icon value
      */
     public ImageIcon getCover(String s) {
-        //System.out.println("getcover " + s);
+        //LOGGER.info("getcover " + s);
         ImageIcon ii = covers.get(s);
         if (ii != null) {
             return ii;
@@ -516,7 +519,7 @@ public class YassGroups extends JTable implements DropTargetListener {
                                         }
                                     });
                         } catch (Exception e) {
-                            e.printStackTrace();
+                            LOGGER.log(Level.INFO, e.getMessage(), e);
                         }
                     }
                     if (f.refreshCounters()) {
@@ -585,7 +588,7 @@ public class YassGroups extends JTable implements DropTargetListener {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
 
         dragOverCell = -1;
@@ -606,7 +609,7 @@ public class YassGroups extends JTable implements DropTargetListener {
             counters.removeAllElements();
 
             Vector<?> rules = gm.getData();
-            //System.out.println("refreshing counters...");
+            //LOGGER.info("refreshing counters...");
             for (Enumeration<?> en = rules.elements(); en.hasMoreElements() && notInterrupted; ) {
                 String t = (String) en.nextElement();
                 YassFilter f = filters.get(group + "-" + t);
@@ -629,7 +632,7 @@ public class YassGroups extends JTable implements DropTargetListener {
 
                 counters.addElement(new Integer(n));
             }
-            //System.out.println("refreshing counters done.");
+            //LOGGER.info("refreshing counters done.");
             finished = true;
         }
     }
@@ -679,7 +682,7 @@ public class YassGroups extends JTable implements DropTargetListener {
             String key = "group_" + f.getID() + "_" + s;
             try {
                 String is = i18Labels.get(key);
-                //System.out.println(key + " " + is);
+                //LOGGER.info(key + " " + is);
                 if (is == null) {
                     is = I18.get(key);
                     if (is == null) {
@@ -707,7 +710,7 @@ public class YassGroups extends JTable implements DropTargetListener {
             Icon i = getCover(s);
             if (i == null) {
                 i = getCover(key);
-                //System.out.println("key="+key);
+                //LOGGER.info("key="+key);
             }
             if (i == null) {
                 i = getCover(groupkey);

@@ -25,6 +25,8 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -32,6 +34,7 @@ import java.util.*;
  * @author Saruta
  */
 public class YassHyphenator {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static String userdir = System.getProperty("user.home") + File.separator + ".yass" + File.separator + "hyphen";
     private Hyphenator hyphenator = null;
     private Hashtable<String, Object> hyphenators = null;
@@ -107,12 +110,12 @@ public class YassHyphenator {
                         is = getClass().getResourceAsStream("/yass/resources/hyphen/" + hy + ".tex");
                     }
 
-                    //System.out.println("/hyphen/" + hy + ".tex");
+                    //LOGGER.info("/hyphen/" + hy + ".tex");
                     hyphenator = new Hyphenator();
                     hyphenator.loadTable(new BufferedInputStream(is));
                     hyphenators.put((String) hy, hyphenator);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    LOGGER.log(Level.INFO, e.getMessage(), e);
                 }
             } else {
                 hyphenator = (Hyphenator) hy;
@@ -129,6 +132,12 @@ public class YassHyphenator {
      * @return Description of the Return Value
      */
     public String hyphenateWord(String word) {
+        if (word.contains(" ")) {
+            return word.replace( " ", YassRow.SPACE + "\u00AD");
+        }
+        if (word.contains("-")) {
+            return word.replace( "-", "–\u00AD");
+        }
         if (hyphenator != null) {
             word = hyphenator.hyphenate(word, 2, 2);
             if (!word.contains("\u00AD")) {
@@ -275,7 +284,7 @@ public class YassHyphenator {
 
                 //System.out.print("word "+word+" ");
                 word = hyphenator.hyphenate(word, 2, 2);
-                //System.out.println(word);
+                //LOGGER.info(word);
                 word = word.replace('-', YassRow.HYPHEN);
                 word = word.replace(' ', YassRow.SPACE);
                 word = word.replace('\u00ad', '-');

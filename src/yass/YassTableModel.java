@@ -24,6 +24,7 @@ import javax.swing.table.AbstractTableModel;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Vector;
+import java.util.logging.Logger;
 
 /**
  * Descriptinoutn of the Class
@@ -34,7 +35,7 @@ public class YassTableModel extends AbstractTableModel {
     private static final long serialVersionUID = 879831241165423284L;
     private String[] columnNames;
     private Vector<YassRow> data = new Vector<>(3000, 1000);
-
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
     /**
      * Constructor for the YassTableModel object
@@ -389,8 +390,8 @@ public class YassTableModel extends AbstractTableModel {
             YassRow r = getRowAt(i);
             YassRow tr = tm.getRowAt(i);
             if (!r.equals(tr)) {
-                System.out.println("this: " + r);
-                System.out.println("that: " + tr);
+                LOGGER.info("this: " + r);
+                LOGGER.info("that: " + tr);
                 return false;
             }
         }

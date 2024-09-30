@@ -117,7 +117,6 @@ public class Tap extends JPanel {
         table.getCommentRow("GENRE:").setComment(wizard.getValue("genre"));
         table.getCommentRow("LANGUAGE:").setComment(wizard.getValue("language"));
         wizard.setValue("melodytable", table.getPlainText());
-        //System.out.println(wizard.getValue("melodytable"));
         table.getColumnModel().getColumn(0).setPreferredWidth(10);
         table.getColumnModel().getColumn(0).setMaxWidth(10);
         table.setEnabled(false);

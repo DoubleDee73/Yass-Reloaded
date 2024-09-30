@@ -613,6 +613,7 @@ class YassTableSpec extends Specification {
         123.4d     | -1d   || 123d
         123.45d    | -1d   || 123d
         123d       | -200d || 0
+        299.9d     | 0.1d  || 300d
     }
     
     private boolean verifyExpectation(YassTable yassTable, List<String> expectation) {

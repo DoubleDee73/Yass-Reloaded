@@ -20,6 +20,7 @@ package yass;
 
 import org.apache.commons.lang3.StringUtils;
 import yass.ffmpeg.FFMPEGLocator;
+import yass.logger.YassLogger;
 import yass.stats.YassStats;
 
 import javax.sound.midi.MidiUnavailableException;
@@ -33,6 +34,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Vector;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -58,7 +60,10 @@ public class YassMain extends JFrame {
     private JPanel groupsPanel, songPanel, playlistPanel, sheetInfoPanel;
     private JComponent editToolbar;
 
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+
     public static void main(String[] argv) {
+        YassLogger.init(System.getProperty("user.home") + File.separator + ".yass" + File.separator + "log.txt");
         checkAudio();
         initLater(argv);
     }
@@ -68,32 +73,30 @@ public class YassMain extends JFrame {
             final YassMain y = new YassMain();
             y.parseCommandLine(argv);
 
-            System.out.println("Init... Yass Reloaded " + YassActions.VERSION);
+            LOGGER.info("Init... Yass Reloaded " + YassActions.VERSION);
             y.init();
-            System.out.println("Initialized.");
-
+            LOGGER.info("Initialized.");
             y.initConvert();
-
             y.onShow();
 
-            System.out.println("Starting...");
+            LOGGER.info("Starting...");
             y.load();
 
             y.initFrame();
             if (y.refreshLibrary()) {
-                System.out.println("Song Library was refreshed...");
+                LOGGER.info("Song Library was refreshed...");
             }
-            System.out.println("Ready. Let's go.");
+            LOGGER.info("Ready. Let's go.");
         });
     }
 
     private static void checkAudio() {
         try {
             if (javax.sound.midi.MidiSystem.getSequencer() == null)
-                System.out.println("MidiSystem sequencer unavailable.");
+                LOGGER.info("MidiSystem sequencer unavailable.");
             else if (javax.sound.sampled.AudioSystem.getMixer(null) == null)
-                System.out.println("AudioSystem unavailable.");
-            System.out.println("AudioSystem and MidiSystem Sequencer found.");
+                LOGGER.info("AudioSystem unavailable.");
+            LOGGER.info("AudioSystem and MidiSystem Sequencer found.");
         } catch (MidiUnavailableException e) {
             System.err.println("Midi system sequencer not available.");
         }
@@ -238,11 +241,10 @@ public class YassMain extends JFrame {
 
     public void init() {
         prop = new YassProperties();
-
         initLanguage();
         checkVersion();
         initTempDir();
-
+        
         JPanel mainPanel = new JPanel();
         mainPanel.setLayout(new BorderLayout());
 
@@ -299,7 +301,7 @@ public class YassMain extends JFrame {
             YassUtils.deleteDir(td);
         }
         if (!td.mkdirs()) {
-            System.out.println("Warning: Cannot create temp-dir: " + td.getAbsolutePath());
+            LOGGER.info("Warning: Cannot create temp-dir: " + td.getAbsolutePath());
         }
     }
 
@@ -328,7 +330,7 @@ public class YassMain extends JFrame {
         if (lang == null || lang.equals("default")) {
             lang = Locale.getDefault().getLanguage();
         }
-        System.out.println("Setting Language: " + lang);
+        LOGGER.info("Setting Language: " + lang);
         I18.setLanguage(lang);
     }
 
@@ -436,12 +438,12 @@ public class YassMain extends JFrame {
     private boolean checkFfmpeg(boolean store) {
         String ffmpegPath = prop.getProperty("ffmpegPath");
         if (StringUtils.isEmpty(ffmpegPath)) {
-            System.out.println("Could not find FFmpeg path in user.xml");
+            LOGGER.info("Could not find FFmpeg path in user.xml");
             // No ffmpeg path is configured in properties
             FFMPEGLocator ffmpegLocator = FFMPEGLocator.getInstance();
             store = store || validateFfmpeg(ffmpegLocator);
         } else {
-            System.out.println("Using FFmpeg path " + ffmpegPath + " from user.xml");
+            LOGGER.info("Using FFmpeg path " + ffmpegPath + " from user.xml");
             // ffmpeg path is configured in properties, checking, if it is valid
             FFMPEGLocator ffmpegLocator = FFMPEGLocator.getInstance(ffmpegPath);
             if (!validateFfmpeg(ffmpegLocator, true)) {
@@ -469,10 +471,14 @@ public class YassMain extends JFrame {
             }
             return false;
         } else {
-            System.out.println("Found ffmpeg in path " + ffmpegLocator.getPath() + ". Writing to user.xml");
-            prop.setProperty("ffmpegPath", ffmpegLocator.getPath());
-            return true;
+            String propPath = prop.getProperty("ffmpegPath");
+            if (StringUtils.isEmpty(propPath) || !propPath.equals(ffmpegLocator.getPath())) {
+                LOGGER.info("Found ffmpeg in path " + ffmpegLocator.getPath() + ". Writing to user.xml");
+                prop.setProperty("ffmpegPath", ffmpegLocator.getPath());
+                return true;
+            }
         }
+        return false;
     }
 
     public void stop() {

@@ -28,6 +28,7 @@ import java.awt.event.WindowEvent;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Vector;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -36,6 +37,7 @@ import java.util.Vector;
  */
 public class YassCaptureAudio {
 
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private final static float MAX_8_BITS_SIGNED = Byte.MAX_VALUE;
     private final static float MAX_8_BITS_UNSIGNED = 0xff;
     private final static float MAX_16_BITS_SIGNED = Short.MAX_VALUE;
@@ -452,7 +454,7 @@ public class YassCaptureAudio {
                 System.err.println("Capture device not found: " + name);
                 return false;
             }
-            // System.out.println(audioFormat);
+            // LOGGER.info(audioFormat);
 
             Mixer mixer = AudioSystem.getMixer(mixerInfo[micIndex]);
             line = (TargetDataLine) mixer.getLine(new DataLine.Info(
@@ -665,7 +667,7 @@ public class YassCaptureAudio {
                     }
                     YassPlayerNote pnoteLeft = getCurrentNote(LEFT);
                     YassPlayerNote pnoteRight = getCurrentNote(RIGHT);
-                    // System.out.println(pnoteLeft.getLevel()+"/"+pnoteRight.getLevel());
+                    // LOGGER.info(pnoteLeft.getLevel()+"/"+pnoteRight.getLevel());
 
                     if (monitor != null) {
                         notesLeft.addElement(pnoteLeft);

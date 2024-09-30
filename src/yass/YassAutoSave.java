@@ -19,22 +19,32 @@
 
 package yass;
 
+import java.util.Date;
+import java.util.List;
 import java.util.TimerTask;
+import java.util.logging.Logger;
 
 public class YassAutoSave extends TimerTask {
-
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private YassTable yassTable;
-    private boolean error;
+    private boolean locked;
     
     public YassAutoSave(YassTable yassTable) {
         this.yassTable = yassTable;
+        locked = false;
     }
 
     @Override
     public void run() {
-        if (yassTable.isSaved()) {
+        if (yassTable.isSaved() || yassTable.isAutosaved() || locked) {
             return;
         }
-        yassTable.getActions().mergeTableAndSave(yassTable, true);
+        locked = true;
+        List<YassTable> saved = yassTable.getActions().mergeTableAndSave(yassTable, true);
+        if (!saved.isEmpty()) {
+            yassTable.setAutosaved(true);
+            LOGGER.info(new Date() + ": Performed autosave " + saved.get(0).getDirFilename() + ".bak");
+        }
+        locked = false;
     }
 }

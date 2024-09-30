@@ -26,6 +26,7 @@ import javax.media.format.AudioFormat;
 import javax.media.format.RGBFormat;
 import javax.media.format.VideoFormat;
 import java.util.Vector;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -33,6 +34,7 @@ import java.util.Vector;
  * @author Saruta
  */
 public class YassVideoUtils {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
     public static boolean TRY_TO_USE_FOBS = false;
 
@@ -74,7 +76,7 @@ public class YassVideoUtils {
         com.sun.media.Log.isEnabled = false;
         Registry.set("secure.allowLogging", Boolean.FALSE);
 
-        System.out.println("Looking for FOBS...");
+        LOGGER.info("Looking for FOBS...");
         try {
             javax.media.Format[] ffmpegformat = new VideoFormat[]{new VideoFormat("FFMPEG_VIDEO")};
             javax.media.Format[] ffmpegdesc = new javax.media.protocol.ContentDescriptor[]{new javax.media.protocol.ContentDescriptor("video.ffmpeg")};
@@ -181,7 +183,7 @@ public class YassVideoUtils {
             plist.remove(plist.lastIndexOf(last));
             PlugInManager.setPlugInList(plist, PlugInManager.RENDERER);
             // try{PlugInManager.commit();}catch(Exception e){e.printStackTrace();};
-            //System.out.println("RENDERER\n" + plist.toString());
+            //LOGGER.info("RENDERER\n" + plist.toString());
 
 			/*
              *  PlugInManager.addPlugIn("com.omnividea.media.parser.video.Parser",
@@ -199,7 +201,7 @@ public class YassVideoUtils {
                     Out,
                     PlugInManager.DEMULTIPLEXER);
             plist = PlugInManager.getPlugInList(null, null, PlugInManager.DEMULTIPLEXER);
-            //System.out.println("DEMULTIPLEXER\n" + plist.toString());
+            //LOGGER.info("DEMULTIPLEXER\n" + plist.toString());
 
             In = ffmpegformat;
             Out = frgb;
@@ -224,7 +226,7 @@ public class YassVideoUtils {
                     Out,
                     PlugInManager.CODEC);
             plist = PlugInManager.getPlugInList(null, null, PlugInManager.CODEC);
-            //System.out.println("CODECS\n" + plist.toString());
+            //LOGGER.info("CODECS\n" + plist.toString());
 
             //registre le package
             Vector packagePrefix = PackageManager.getProtocolPrefixList();
@@ -232,19 +234,19 @@ public class YassVideoUtils {
             packagePrefix.add(0, myPackagePrefix);
             PackageManager.setProtocolPrefixList(packagePrefix);
 
-            System.out.println("FOBS found. Video functions activated.");
+            LOGGER.info("FOBS found. Video functions activated.");
             useFOBS = true;
         } catch (Error e) {
             useFOBS = false;
-            System.out.println("FOBS error. Video functions deactivated.");
+            LOGGER.info("FOBS error. Video functions deactivated.");
             return false;
         } catch (Throwable e) {
             useFOBS = false;
-            System.out.println("FOBS error. Video functions deactivated.");
+            LOGGER.info("FOBS error. Video functions deactivated.");
             return false;
         }
 
-        //System.out.println(PackageManager.getProtocolPrefixList().toString());
+        //LOGGER.info(PackageManager.getProtocolPrefixList().toString());
 
         return true;
     }

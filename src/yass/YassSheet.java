@@ -36,9 +36,11 @@ import java.io.Serial;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Vector;
+import java.util.logging.Logger;
 
 public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRenderer {
 
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public final static int NORM_HEIGHT = 20;
 
     // gray, blue, golden, freestyle, red
@@ -1146,7 +1148,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             }
 
             public void mouseEntered(MouseEvent e) {
-                // System.out.println("sheet entered");
+                // LOGGER.info("sheet entered");
             }
 
             public void mouseExited(MouseEvent e) {
@@ -1962,11 +1964,11 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
 		/*
          * System.out.print("p.x"); for (int i = 0; i < sketchPos; i++) {
-		 * System.out.print(" " + sketch[i].x); } System.out.println();
+		 * System.out.print(" " + sketch[i].x); } LOGGER.info();
 		 * System.out.print("p.y"); for (int i = 0; i < sketchPos; i++) {
-		 * System.out.print(" " + sketch[i].y); } System.out.println();
+		 * System.out.print(" " + sketch[i].y); } LOGGER.info();
 		 * System.out.print("dir"); for (int i = 1; i < dirPos; i++) {
-		 * System.out.print(" " + sketchDirs[i]); } System.out.println();
+		 * System.out.print(" " + sketchDirs[i]); } LOGGER.info();
 		 */
         return true;
     }
@@ -1986,7 +1988,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     }
 
     private int executeSketch() {
-        // System.out.println("execute");
+        // LOGGER.info("execute");
 
         if (sketchDirs == null) {
             return 0;
@@ -2000,55 +2002,55 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
         if (compareWithGesture(sketchDirs, GESTURE_RIGHT_LEFT_RIGHT)) {
             firePropertyChange("rollRight", null, 1);
-            // System.out.println("gesture right-left-right");
+            // LOGGER.info("gesture right-left-right");
             return 1;
         } else if (compareWithGesture(sketchDirs, GESTURE_LEFT_RIGHT_LEFT)) {
             firePropertyChange("rollLeft", null, -1);
-            // System.out.println("gesture left-right-left");
+            // LOGGER.info("gesture left-right-left");
             return 1;
         } else if (compareWithGesture(sketchDirs, GESTURE_UP_DOWN_UP)) {
             firePropertyChange("removePageBreak", null, 1);
-            // System.out.println("gesture up-down-up");
+            // LOGGER.info("gesture up-down-up");
             return 1;
         } else if (compareWithGesture(sketchDirs, GESTURE_DOWN_UP_DOWN)) {
             firePropertyChange("addPageBreak", null, 1);
-            // System.out.println("gesture up-down-up");
+            // LOGGER.info("gesture up-down-up");
             return 1;
         } else if (compareWithGesture(sketchDirs, GESTURE_RIGHT_LEFT)) {
             firePropertyChange("relRight", null, 1);
-            // System.out.println("gesture right-left");
+            // LOGGER.info("gesture right-left");
             return 2;
         } else if (compareWithGesture(sketchDirs, GESTURE_LEFT_RIGHT)) {
             firePropertyChange("relRight", null, -1);
-            // System.out.println("gesture left-right");
+            // LOGGER.info("gesture left-right");
             return 2;
         } else if (compareWithGesture(sketchDirs, GESTURE_UP_DOWN)) {
             firePropertyChange("join", null, 0.5d);
-            // System.out.println("gesture up-down");
+            // LOGGER.info("gesture up-down");
             return 1;
         } else if (compareWithGesture(sketchDirs, GESTURE_DOWN_UP)) {
             firePropertyChange("split", null, 0.5d);
-            // System.out.println("gesture down-up");
+            // LOGGER.info("gesture down-up");
             return 1;
         }
 
         if (compareWithGesture(sketchDirs, GESTURE_LEFT)) {
             firePropertyChange("relBeat", null, -1);
             table.updatePlayerPosition();
-            // System.out.println("gesture left");
+            // LOGGER.info("gesture left");
             return 2;
         } else if (compareWithGesture(sketchDirs, GESTURE_RIGHT)) {
             firePropertyChange("relBeat", null, 1);
             table.updatePlayerPosition();
-            // System.out.println("gesture right");
+            // LOGGER.info("gesture right");
             return 2;
         } else if (compareWithGesture(sketchDirs, GESTURE_UP)) {
             firePropertyChange("relHeight", null, 1);
-            // System.out.println("gesture up");
+            // LOGGER.info("gesture up");
             return 3;
         } else if (compareWithGesture(sketchDirs, GESTURE_DOWN)) {
             firePropertyChange("relHeight", null, -1);
-            // System.out.println("gesture down");
+            // LOGGER.info("gesture down");
             return 3;
         }
         return 0;
@@ -2526,9 +2528,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
             db.translate(clip.x + clip.width - cr.width + cr.getX() - lyrics.getX(), cr.getY() - lyrics.getY() + 20);
 
-            // System.out.println("refresh print");
+            // LOGGER.info("refresh print");
             lyrics.print(db);
-            // System.out.println("refresh print done");
+            // LOGGER.info("refresh print done");
         }
         // paintText(db);
 
@@ -2586,7 +2588,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             if (!backVolImage.contentsLost()) {
                 return;
             }
-            System.out.println("contents lost (" + i + ")");
+            LOGGER.info("contents lost (" + i + ")");
         }
         g.drawImage(image, clip.x, clip.y, clip.x + clip.width, clip.y
                 + clip.height, 0, 0, clip.width, clip.height, white, this);
@@ -2636,7 +2638,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             if (!backVolImage.contentsLost()) {
                 return;
             }
-            System.out.println("contents lost (" + i + ")");
+            LOGGER.info("contents lost (" + i + ")");
         }
         g.drawImage(image, clip.x, clip.y, clip.x + clip.width, clip.y
                 + clip.height, 0, 0, clip.width, clip.height, white, this);
@@ -5264,7 +5266,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         // quick hack to get actual size on screen
         int d = ((JViewport) getParent()).getExtentSize().width - 2;
         if (d < 0) {
-            System.out.println("warning: invalid sheet width");
+            LOGGER.info("warning: invalid sheet width");
         }
         d -= LEFT_BORDER + RIGHT_BORDER;
         if (paintHeights)

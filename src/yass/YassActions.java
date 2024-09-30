@@ -47,12 +47,15 @@ import java.nio.file.Path;
 import java.text.MessageFormat;
 import java.util.List;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class YassActions implements DropTargetListener {
 
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private final YassSheet sheet;
-    public final static String VERSION = "2024.9";
-    public final static String DATE = "09/2024";
+    public final static String VERSION = "2024.10";
+    public final static String DATE = "10/2024";
 
     static int VIEW_LIBRARY = 1;
     static int VIEW_EDIT = 2;
@@ -178,7 +181,7 @@ public class YassActions implements DropTargetListener {
                 });
                 JOptionPane.showMessageDialog(null, label, I18.get("lib_about_title"), JOptionPane.PLAIN_MESSAGE, icon);
             } catch (Exception ex) {
-                ex.printStackTrace();
+                LOGGER.log(Level.INFO, ex.getMessage(), ex);
             }
         }
     };
@@ -640,7 +643,7 @@ public class YassActions implements DropTargetListener {
         @Override
         public void actionPerformed(ActionEvent e) {
             JFileChooser chooser = new JFileChooser();
-            FileNameExtensionFilter fileFilter = new FileNameExtensionFilter("Audio Files", "mp3", "m4a", "wav");
+            FileNameExtensionFilter fileFilter = new FileNameExtensionFilter("Audio Files", "mp3", "m4a", "wav", "ogg", "opus", "flac");
             chooser.setFileFilter(fileFilter);
             chooser.addChoosableFileFilter(fileFilter);
             String fileField = (String)this.getValue("fileField");
@@ -1974,24 +1977,40 @@ public class YassActions implements DropTargetListener {
     };
     private final Action incGap = new AbstractAction(I18.get("edit_gap_add_10")) {
         public void actionPerformed(ActionEvent e) {
+            if (lyrics.isEditable() || songList.isEditing()
+                    || isFilterEditing()) {
+                return;
+            }
             table.addGap(+10);
             updateGapBpm();
         }
     };
     private final Action decGap = new AbstractAction(I18.get("edit_gap_sub_10")) {
         public void actionPerformed(ActionEvent e) {
+            if (lyrics.isEditable() || songList.isEditing()
+                    || isFilterEditing()) {
+                return;
+            }
             table.addGap(-10);
             updateGapBpm();
         }
     };
     private final Action incGap2 = new AbstractAction(I18.get("edit_gap_add_1000")) {
         public void actionPerformed(ActionEvent e) {
+            if (lyrics.isEditable() || songList.isEditing()
+                    || isFilterEditing()) {
+                return;
+            }
             table.addGap(+1000);
             updateGapBpm();
         }
     };
     private final Action decGap2 = new AbstractAction(I18.get("edit_gap_sub_1000")) {
         public void actionPerformed(ActionEvent e) {
+            if (lyrics.isEditable() || songList.isEditing()
+                    || isFilterEditing()) {
+                return;
+            }
             table.addGap(-1000);
             updateGapBpm();
         }
@@ -2596,7 +2615,7 @@ public class YassActions implements DropTargetListener {
                     par[0] = File.class;
                     m = c.getMethod("open", par);
                     m.invoke(desktop, new File(filename));
-                    // System.out.println("desktop open " + filename);
+                    // LOGGER.info("desktop open " + filename);
                 } catch (Throwable t) {
                     try {
                         String os = System.getProperty("os.name");
@@ -2625,12 +2644,12 @@ public class YassActions implements DropTargetListener {
                             }
                         }
                     } catch (Exception ex) {
-                        ex.printStackTrace();
+                        LOGGER.log(Level.INFO, ex.getMessage(), ex);
                     }
                 }
             }
         } catch (Exception ex) {
-            ex.printStackTrace();
+            LOGGER.log(Level.INFO, ex.getMessage(), ex);
         }
     }
 
@@ -4042,7 +4061,7 @@ public class YassActions implements DropTargetListener {
             File plcache = new File(plcacheName);
             if (plcache.exists()) {
                 if (!plcache.delete()) {
-                    System.out.println("Error: Cannot delete playlist cache.");
+                    LOGGER.info("Error: Cannot delete playlist cache.");
                 }
             }
             File pp = plcache.getParentFile();
@@ -4061,8 +4080,7 @@ public class YassActions implements DropTargetListener {
                     outputStream.println(plt);
                 }
             } catch (Exception e) {
-                System.out.println("Playlist Cache Write Error:" + e.getMessage());
-                e.printStackTrace();
+                LOGGER.info("Playlist Cache Write Error:" + e.getMessage());
             } finally {
                 try {
                     if (fw != null) {
@@ -4072,7 +4090,7 @@ public class YassActions implements DropTargetListener {
                         outputStream.close();
                     }
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    LOGGER.log(Level.INFO, e.getMessage(), e);
                 }
             }
         }
@@ -4863,7 +4881,7 @@ public class YassActions implements DropTargetListener {
         try {
             mp3.setPianoVolume(Integer.parseInt(s));
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
     }
 
@@ -4911,12 +4929,12 @@ public class YassActions implements DropTargetListener {
             currentView = VIEW_EDIT;
         } else if (n == VIEW_LIBRARY) {
             main.removeAll();
-            // System.out.println("init view 1");
+            // LOGGER.info("init view 1");
             main.add("Center", libComponent);
 
             mp3.setPlaybackRenderer(sheet);
 
-            // System.out.println("init view 2");
+            // LOGGER.info("init view 2");
             if (libMenu == null) {
                 libMenu = createLibraryMenu();
             }
@@ -6114,7 +6132,7 @@ public class YassActions implements DropTargetListener {
                 JOptionPane.showMessageDialog(main, I18.get("lib_missing_file"), I18.get("lib_refresh"),
                                               JOptionPane.PLAIN_MESSAGE);
             }
-            System.out.println("Song(s) to be opened were not found on the file system. Refreshing song list now...");
+            LOGGER.info("Song(s) to be opened were not found on the file system. Refreshing song list now...");
             refreshLibrary();
         }
         // collect all tracks
@@ -6124,7 +6142,7 @@ public class YassActions implements DropTargetListener {
             try {
                 checkAutosaveBackup(f);
             } catch (IOException e) {
-                System.out.println("Failed to handle backup");
+                LOGGER.info("Failed to handle backup");
                 return false;
             }
 
@@ -6184,7 +6202,7 @@ public class YassActions implements DropTargetListener {
                 FileUtils.copyFile(currentFile, old);
                 FileUtils.copyFile(backupFile, currentFile);
             } else {
-                System.out.println("Ignoring more recent backup file");
+                LOGGER.info("Ignoring more recent backup file and deleting it: success " + backupFile.delete());
             }
         }
     }
@@ -6274,7 +6292,7 @@ public class YassActions implements DropTargetListener {
         for (YassTable t: openTables)
             songList.addOpened(t);
 
-        System.out.println("Searching for USB mic...");
+        LOGGER.info("Searching for USB mic...");
         String device = prop.getProperty("control-mic");
         String[] devices = YassCaptureAudio.getDeviceNames();
         boolean found = false;
@@ -6439,7 +6457,9 @@ public class YassActions implements DropTargetListener {
         String fileSuffix = backup ? ".bak" : StringUtils.EMPTY;
         if (table.getDuetTrack() > 0) {
             Vector<YassTable> tracks = getOpenTables(table);
+            LOGGER.info("Merging tables");
             YassTable mergedTable = YassTable.mergeTables(tracks, prop);
+            LOGGER.info("Storing " + table.getDirFilename() + fileSuffix);
             mergedTable.storeFile(table.getDirFilename() + fileSuffix);
             stored.addAll(tracks);
         } else {

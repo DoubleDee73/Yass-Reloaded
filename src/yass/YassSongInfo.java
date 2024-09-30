@@ -44,6 +44,8 @@ import java.io.*;
 import java.net.URL;
 import java.text.DecimalFormat;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -52,6 +54,7 @@ import java.util.*;
  */
 public class YassSongInfo extends JPanel implements DropTargetListener {
     private static final long serialVersionUID = -9041213163254101396L;
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     /**
      * Description of the Field
      */
@@ -310,7 +313,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                             s = getProperty("full-dir-path");
                             break;
                     }
-                    // System.out.println(s);
+                    // LOGGER.info(s);
                     YassActions.openURLFile(s);
                 }
             }
@@ -1506,7 +1509,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                         }
                         encoding = r.getEncoding();
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        LOGGER.log(Level.INFO, e.getMessage(), e);
                     } finally {
                         if (inputStream != null) {
                             inputStream.close();
@@ -1810,7 +1813,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             int n = 10;
             while (!closed && --n > 0) {
                 try {
-                    System.out.println("waiting until mediaplayer closed");
+                    LOGGER.info("waiting until mediaplayer closed");
                     Thread.currentThread();
                     Thread.sleep(100);
                 } catch (Exception ignored) {
@@ -1840,7 +1843,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                                     true);
         javax.media.Manager.setHint(javax.media.Manager.PLUGIN_PLAYER, true);
         try {
-            // System.out.println("create player: " + vdname);
+            // LOGGER.info("create player: " + vdname);
 
             if (mediaPlayer != null) {
                 synchronized (mediaPlayer) {
@@ -1872,7 +1875,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                 return;
             }
 
-            // System.out.println("player created");
+            // LOGGER.info("player created");
 
             mediaPlayer
                     .addControllerListener(new javax.media.ControllerAdapter() {
@@ -1886,7 +1889,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                                     }
                                 }
                                 closed = true;
-                                // System.out.println("ERROR: Video could be realized.");
+                                // LOGGER.info("ERROR: Video could be realized.");
                             }
                             if (event instanceof javax.media.RealizeCompleteEvent) {
                                 closed = false;
@@ -1900,7 +1903,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                                     }
                                 } catch (Exception e) {
                                     video = null;
-                                    e.printStackTrace();
+                                    LOGGER.log(Level.INFO, e.getMessage(), e);
                                 }
                                 // fg =
                                 // (javax.media.control.FrameGrabbingControl)
@@ -1947,7 +1950,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
         } catch (Exception e) {
             video = null;
             closed = true;
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
     }
 
@@ -2388,7 +2391,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                     t3.setEncoding(t.getEncoding());
                     if (!t3.storeFile(song.getDirectory() + File.separator
                                               + song.getFilename())) {
-                        System.out.println("Cannot update file: "
+                        LOGGER.info("Cannot update file: "
                                                    + song.getDirectory() + File.separator
                                                    + song.getFilename());
                     }
@@ -2462,7 +2465,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                         r.close();
                         fis.close();
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        LOGGER.log(Level.INFO, e.getMessage(), e);
                     }
                     String s = sb.toString();
                     YassTable t = new YassTable();
@@ -2473,7 +2476,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
     }
 
@@ -2585,7 +2588,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                         r.close();
                         fis.close();
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        LOGGER.log(Level.INFO, e.getMessage(), e);
                     }
                     String s = sb.toString();
                     if (YassUtils.isValidKaraokeString(s)) {
@@ -2718,7 +2721,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                 return;
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
         dropTargetDropEvent.rejectDrop();
     }
@@ -3127,11 +3130,11 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                                     + "");
                 hasvideo = true;
 
-                // System.out.println("Loading Video:" + vd);
+                // LOGGER.info("Loading Video:" + vd);
 
                 YassVideoUtils.initVideo();
                 setVideo(file.getPath());
-                // System.out.println("Loading Video DONE");
+                // LOGGER.info("Loading Video DONE");
 
                 copyVideoAction.setEnabled(true);
             }

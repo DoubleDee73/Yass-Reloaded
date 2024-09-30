@@ -26,12 +26,12 @@ import java.awt.datatransfer.Transferable;
 import java.awt.dnd.*;
 import java.awt.event.*;
 import java.io.*;
-import java.net.URL;
 import java.text.MessageFormat;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.StringTokenizer;
 import java.util.Vector;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -39,6 +39,7 @@ import java.util.Vector;
  * @author Saruta
  */
 public class YassMIDIConverter implements DropTargetListener {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     String filename = null;
 
     String trackTitle[];
@@ -212,7 +213,7 @@ public class YassMIDIConverter implements DropTargetListener {
         try {
             mff = MidiSystem.getMidiFileFormat(inFile);
         } catch (Exception e) {
-            System.out.println(I18.get("convert_err_read"));
+            LOGGER.info(I18.get("convert_err_read"));
             return -1;
         }
         // if (mff.getType() == 0)
@@ -222,12 +223,12 @@ public class YassMIDIConverter implements DropTargetListener {
         try {
             sequence = MidiSystem.getSequence(inFile);
         } catch (Exception e) {
-            System.out.println(I18.get("convert_err_format"));
+            LOGGER.info(I18.get("convert_err_format"));
             return -1;
         }
         Track[] tracks = sequence.getTracks();
         if (tracks.length < 1) {
-            System.out.println(I18.get("convert_err_tracks"));
+            LOGGER.info(I18.get("convert_err_tracks"));
             return -1;
         }
 
@@ -235,9 +236,9 @@ public class YassMIDIConverter implements DropTargetListener {
         int nResolution = sequence.getResolution();
 
         boolean isTicksPerQuarterNote = fDivisionType == Sequence.PPQ;
-        // System.out.println("isTicksPerQuarterNote: "+isTicksPerQuarterNote);
+        // LOGGER.info("isTicksPerQuarterNote: "+isTicksPerQuarterNote);
         ticksPerQuarterNote = sequence.getResolution();
-        // System.out.println("ticksPerQuarterNote: "+ticksPerQuarterNote);
+        // LOGGER.info("ticksPerQuarterNote: "+ticksPerQuarterNote);
 
         trackTitle = new String[tracks.length];
         trackNotes = new Vector[tracks.length];
@@ -270,7 +271,7 @@ public class YassMIDIConverter implements DropTargetListener {
             try {
                 singleTrackSequence = new Sequence(fDivisionType, nResolution);
             } catch (InvalidMidiDataException e) {
-                System.out.println(I18.get("convert_err_format"));
+                LOGGER.info(I18.get("convert_err_format"));
                 return -1;
             }
 
@@ -348,7 +349,7 @@ public class YassMIDIConverter implements DropTargetListener {
                             // System.out.print("tempo track="+nTrack);
                             // System.out.print("tempo change with bpm="+60000000.0
                             // / microsecondsPerQuarterNote);
-                            // System.out.println(" at tick "+t);
+                            // LOGGER.info(" at tick "+t);
                         }
                     } else if (type == 1 || type == 5) {
                         // text or lyrics
@@ -409,7 +410,7 @@ public class YassMIDIConverter implements DropTargetListener {
                         int frames = msg[6];
                         int subframes = msg[7];
                         // System.out.print("SMPTE offset "+hour+" "+min+" "+sec+" "+frames+" "+subframes);
-                        // System.out.println(" at "+t);
+                        // LOGGER.info(" at "+t);
                     } else if (type == 88) {
                         // time signature
                         int numer = msg[3];
@@ -417,14 +418,14 @@ public class YassMIDIConverter implements DropTargetListener {
                         int metro = msg[5];
                         int s32 = msg[6];
                         // System.out.print("time signature "+numer+" "+deno+" "+metro+" "+s32);
-                        // System.out.println(" at "+t);
+                        // LOGGER.info(" at "+t);
                     } else if (type == 89) {
                         // key signature
                     } else if (type == 47) {
                         // end of track
                     } else {
                         // track title
-                        // System.out.println("Unknown Meta Event: "+type);
+                        // LOGGER.info("Unknown Meta Event: "+type);
                     }
                 } else if (eventType == 8) {
                     // note off
@@ -444,7 +445,7 @@ public class YassMIDIConverter implements DropTargetListener {
                     // note aftertouch
                     int note = msg[1];
                     int velocity = msg[2];
-                    // System.out.println("aftertouch at "+t);
+                    // LOGGER.info("aftertouch at "+t);
                     trackTimesEnd[nTrack].addElement(t + "");
                     trackTimes[nTrack].addElement(t + "");
                     trackNotes[nTrack].addElement(trackNotes[nTrack]
@@ -453,10 +454,10 @@ public class YassMIDIConverter implements DropTargetListener {
                     // controller
                     /*
 					 * int ty = msg[2]; if (ty==0)
-					 * System.out.println("bank select at "+t); else if (ty>=32
-					 * && ty<=63) System.out.println("LSB at "+t); else if
-					 * (ty==64) { System.out.println("HOLD PEDAL at "+t); } else
-					 * System.out.println("controller "+ty+" at "+t);
+					 * LOGGER.info("bank select at "+t); else if (ty>=32
+					 * && ty<=63) LOGGER.info("LSB at "+t); else if
+					 * (ty==64) { LOGGER.info("HOLD PEDAL at "+t); } else
+					 * LOGGER.info("controller "+ty+" at "+t);
 					 */
                 } else if (eventType == 12) {
                     // program change
@@ -464,12 +465,12 @@ public class YassMIDIConverter implements DropTargetListener {
                     instrums[nTrack] = instrument[instr];
                 } else if (eventType == 14) {
                     // pitch bend
-                    // System.out.println("bend at "+time);
+                    // LOGGER.info("bend at "+time);
                 } else {
 					/*
 					 * System.out.print("event type"+eventType); for (int k=2;
 					 * k<len; k++) System.out.print(msg[k]+" ");
-					 * System.out.println();
+					 * LOGGER.info();
 					 */
                 }
             }
@@ -845,7 +846,7 @@ public class YassMIDIConverter implements DropTargetListener {
         }
 
         try {
-            System.out.println("Midi Converter: Loading Soundbank...");
+            LOGGER.info("Midi Converter: Loading Soundbank...");
             Soundbank s = MidiSystem.getSoundbank(getClass().getResource("/yass/resources/midi/AJH_Piano.sf2"));
             Instrument[] instr = s.getInstruments();
 
@@ -992,10 +993,10 @@ public class YassMIDIConverter implements DropTargetListener {
             sequencer.setTickPosition(timeToTick(ms / 1000.0));
 
 			/*
-			 * System.out.println("Time: "+ms/1000); long tick =
-			 * timeToTick(ms/1000.0); System.out.println("Time To Tick: "+tick);
+			 * LOGGER.info("Time: "+ms/1000); long tick =
+			 * timeToTick(ms/1000.0); LOGGER.info("Time To Tick: "+tick);
 			 * double time2 = tickToTime(tick);
-			 * System.out.println("Tick To Time: "+time2);
+			 * LOGGER.info("Tick To Time: "+time2);
 			 */
             sequencer.start();
             sequencer.setTempoInBPM(196);
@@ -1267,7 +1268,7 @@ public class YassMIDIConverter implements DropTargetListener {
 
         java.util.Collections.sort(data);
         String txt = t1.getPlainText();
-        System.out.println(txt);
+        LOGGER.info(txt);
         return txt;
     }
 
@@ -1521,7 +1522,7 @@ public class YassMIDIConverter implements DropTargetListener {
 
             diffTime = (changeTick - lastTick) / (double) ticksPerQuarterNote
                     * microsecondsPerQuarterNote / 1000000.0;
-            // if (debug<debugn) System.out.println("  +"+ diffTime
+            // if (debug<debugn) LOGGER.info("  +"+ diffTime
             // +" ("+changeTick+")");
             time += diffTime;
 
@@ -1530,9 +1531,9 @@ public class YassMIDIConverter implements DropTargetListener {
         }
         diffTime = (tick - lastTick) / (double) ticksPerQuarterNote
                 * microsecondsPerQuarterNote / 1000000.0;
-        // if (debug<debugn) System.out.println("  +"+ diffTime +" ("+tick+")");
+        // if (debug<debugn) LOGGER.info("  +"+ diffTime +" ("+tick+")");
         time += diffTime;
-        // if (debug<debugn) System.out.println(tick +" --> "+ time);
+        // if (debug<debugn) LOGGER.info(tick +" --> "+ time);
         // debug++;
         return time;
     }
@@ -1560,14 +1561,14 @@ public class YassMIDIConverter implements DropTargetListener {
                 break;
             }
             mytime += diffTime;
-            // System.out.println("  +"+ diffTime +" ("+changeTick+")");
+            // LOGGER.info("  +"+ diffTime +" ("+changeTick+")");
             microsecondsPerQuarterNote = tmap.nextElement()
                     .longValue();
         }
         diffTime = time - mytime;
         long diffTick = (long) (diffTime * ticksPerQuarterNote
                 / microsecondsPerQuarterNote * 1000000.0);
-        // System.out.println("  +"+ diffTime + " (" + diffTick + ")");
+        // LOGGER.info("  +"+ diffTime + " (" + diffTick + ")");
         return lastTick + diffTick;
     }
 
@@ -1691,11 +1692,11 @@ public class YassMIDIConverter implements DropTargetListener {
 
                     double bpmtempo = sequencer.getTempoInBPM();
                     float fac = sequencer.getTempoFactor();
-                    // System.out.println("Tempo: "+bpmtempo + " * "+fac);
+                    // LOGGER.info("Tempo: "+bpmtempo + " * "+fac);
 
                     long ms = sequencerOffset + System.currentTimeMillis()
                             - sequencerStartTime;
-                    // System.out.println("Millesecond Position: "+ms);
+                    // LOGGER.info("Millesecond Position: "+ms);
 
                     double t = ms;
                     // pos/(double)len * lenms;

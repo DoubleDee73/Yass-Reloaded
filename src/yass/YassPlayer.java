@@ -42,6 +42,8 @@ import java.text.MessageFormat;
 import java.util.Enumeration;
 import java.util.Map;
 import java.util.Vector;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -49,6 +51,7 @@ import java.util.Vector;
  * @author Saruta
  */
 public class YassPlayer {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public static final boolean DEBUG = false;
     byte[] memcache = null;
     byte[] clickmemcache = null;
@@ -120,7 +123,7 @@ public class YassPlayer {
      * @param t       The new capture value
      */
     public void setCapture(int t, String device, int channel) {
-        System.out.println("player " + t + " " + device + " (" + channel + ")");
+        LOGGER.info("player " + t + " " + device + " (" + channel + ")");
         if (device == null) {
             playerdevice[t] = -1;
             playerchannel[t] = channel;
@@ -218,7 +221,7 @@ public class YassPlayer {
         Mixer.Info[] mixerInfo = AudioSystem.getMixerInfo();
         for (int i = 0; i < mixerInfo.length; i++) {
 
-            System.out.println("Mixer[" + i + "]: \"" + mixerInfo[i].getName() + "\"");
+            LOGGER.info("Mixer[" + i + "]: \"" + mixerInfo[i].getName() + "\"");
         }
     }
 
@@ -237,17 +240,17 @@ public class YassPlayer {
                     AudioFormat[] formats = ((DataLine.Info) aLineInfo)
                             .getFormats();
                     for (int j = 0; j < formats.length; j++) {
-                        System.out.println(indent + formats[j]);
+                        LOGGER.info(indent + formats[j]);
                     }
                     numDumped++;
                 } else if (aLineInfo instanceof Port.Info) {
-                    System.out.println(indent + aLineInfo);
+                    LOGGER.info(indent + aLineInfo);
                     numDumped++;
                 }
             }
         }
         if (numDumped == 0) {
-            System.out.println(indent + "none");
+            LOGGER.info(indent + "none");
         }
     }
 
@@ -388,7 +391,7 @@ public class YassPlayer {
         } catch (Exception e) {
             String s = e.getMessage();
             if (s == null || !s.equals("Resetting to invalid mark")) {
-                e.printStackTrace();
+                LOGGER.log(Level.INFO, e.getMessage(), e);
             }
         } finally {
             if (in != null) {
@@ -421,7 +424,7 @@ public class YassPlayer {
                 duration = (long) media.getDuration().toMillis() * 1000;
             }
             Map<String, Object> metadata = media.getMetadata();
-            System.out.println(metadata.toString());
+            LOGGER.info(metadata.toString());
         });
         long now = System.currentTimeMillis();
         int counter = 0;
@@ -434,7 +437,7 @@ public class YassPlayer {
                     throw new RuntimeException("Mediaplayer could not be readied in less than 10 seconds");
                 }
             }
-            System.out.println("Slept " + (System.currentTimeMillis() - now) + " ms");
+            LOGGER.info("Slept " + (System.currentTimeMillis() - now) + " ms");
         } catch (InterruptedException e) {
             return;
         }
@@ -462,29 +465,29 @@ public class YassPlayer {
                 }
                 memcache = bout.toByteArray();
                 cachedMP3 = filename;
-                System.out.println("MP3 cached.");
+                LOGGER.info("MP3 cached.");
             } catch (Exception e) {
-                e.printStackTrace();
+                LOGGER.log(Level.INFO, e.getMessage(), e);
             } finally {
                 if (bout != null) {
                     try {
                         bout.close();
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        LOGGER.log(Level.INFO, e.getMessage(), e);
                     }
                 }
                 if (bfi != null) {
                     try {
                         bfi.close();
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        LOGGER.log(Level.INFO, e.getMessage(), e);
                     }
                 }
                 if (fi != null) {
                     try {
                         fi.close();
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        LOGGER.log(Level.INFO, e.getMessage(), e);
                     }
                 }
             }
@@ -574,7 +577,7 @@ public class YassPlayer {
                     Thread.sleep(10);
                 } catch (Exception e) {
                 }
-                // System.out.println("waiting for finished " + player.started +
+                // LOGGER.info("waiting for finished " + player.started +
                 // " " + player.finished);
             }
         }
@@ -736,7 +739,7 @@ public class YassPlayer {
                 audioBytesSampleSize * 8, audioBytesChannels,
                 audioBytesChannels * audioBytesSampleSize, // framesize
                 audioBytesFormat.getSampleRate(), false);
-        // System.out.println(decodedFormat);
+        // LOGGER.info(decodedFormat);
 
         ByteArrayOutputStream bout = new ByteArrayOutputStream();
 
@@ -750,9 +753,9 @@ public class YassPlayer {
                 bout.write(bufferP, 0, readP);
             }
             audioBytes = bout.toByteArray();
-            // System.out.println("len " + audioBytes.length);
+            // LOGGER.info("len " + audioBytes.length);
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         } finally {
             try {
                 decodedStream.close();
@@ -870,7 +873,7 @@ public class YassPlayer {
                 mediaPlayer.dispose();
             }
         } catch (Exception ex) {
-            ex.printStackTrace();
+            LOGGER.log(Level.INFO, ex.getMessage(), ex);
         }
     }
 
@@ -907,8 +910,8 @@ public class YassPlayer {
                     mp.setAutoPlay(true);
                 }
             } catch (Exception e) {
-                System.out.println("Playback Error");
-                e.printStackTrace();
+                LOGGER.info("Playback Error");
+                LOGGER.log(Level.INFO, e.getMessage(), e);
             }
         }
     }
@@ -969,8 +972,8 @@ public class YassPlayer {
             }
 
             if (DEBUG) {
-                System.out.println("in: " + inpoint);
-                System.out.println("out: " + outpoint);
+                LOGGER.info("in: " + inpoint);
+                LOGGER.info("out: " + outpoint);
                 for (int i = 0; i < clicks.length; i++) {
                     long duration = clicks[i][2] - clicks[i][0];
                     System.out
@@ -996,7 +999,7 @@ public class YassPlayer {
             long nextClickEnd = clicks == null ? -1 : clicks[clicksPos][2];
 
             if (DEBUG) {
-                System.out.println("playAudio:" + playAudio + "  ogg:" + ogg);
+                LOGGER.info("playAudio:" + playAudio + "  ogg:" + ogg);
             }
             if (playAudio && !ogg) {
                 try {
@@ -1004,13 +1007,13 @@ public class YassPlayer {
                     mediaPlayer = new MediaPlayer(media);
                     mediaPlayer.setVolume(1);
                     if (DEBUG)
-                        System.out.println("JavaFX MediaPlayer created.");
+                        LOGGER.info("JavaFX MediaPlayer created.");
                 } catch (IllegalArgumentException e) {
                     System.err.println("YassPlayer: " + e.getMessage());
                 } catch (Exception e) {
                     notInterrupted = false;
                     if (DEBUG)
-                        System.out.println("Cannot create JavaFX MediaPlayer.");
+                        LOGGER.info("Cannot create JavaFX MediaPlayer.");
                 }
             }
 
@@ -1069,7 +1072,7 @@ public class YassPlayer {
                     new Play2Thread(mediaPlayer, inMillis + seekInOffsetMs,
                                     outMillis + seekOutOffsetMs).start();
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    LOGGER.log(Level.INFO, e.getMessage(), e);
                 }
                 int nn = 200;
                 try {
@@ -1080,10 +1083,10 @@ public class YassPlayer {
                 }
                 if (nn <= 0) {
                     if (DEBUG)
-                        System.out.println("Cannot start playback.");
+                        LOGGER.info("Cannot start playback.");
                     notInterrupted = false;
                 }
-                if (DEBUG) System.out.println("Waited " + ((200 - nn) * 100) + " nanos");
+                if (DEBUG) LOGGER.info("Waited " + ((200 - nn) * 100) + " nanos");
             }
 
             long nanoStart = System.nanoTime() / 1000L;
@@ -1092,7 +1095,7 @@ public class YassPlayer {
             long lastms = System.nanoTime();
 
             if (!notInterrupted) {
-                System.out.println("Playback interrupted.");
+                LOGGER.info("Playback interrupted.");
             }
 
             while (notInterrupted) {
@@ -1100,7 +1103,7 @@ public class YassPlayer {
                 if (position >= outpoint) {
                     position = outpoint;
                     notInterrupted = false;
-                    if (DEBUG) System.out.println("Playback stopped.");
+                    if (DEBUG) LOGGER.info("Playback stopped.");
                     break;
                 }
                 if (clicks != null && clicksPos < n) {
@@ -1112,7 +1115,7 @@ public class YassPlayer {
                     if (position >= nextClick) {
                         off = Math.abs(position - nextClick);
                         if (DEBUG)
-                            System.out.println(off + " us offset  at line "
+                            LOGGER.info(off + " us offset  at line "
                                                        + clicksPos);
                         maxClickOffset = Math.max(maxClickOffset, off);
                         midiPitch = (int) clicks[clicksPos][1];
@@ -1242,11 +1245,11 @@ public class YassPlayer {
                     if (diffms < 1000) {
                         Thread.currentThread();
                         Thread.sleep(0, 1000 - diffms);
-                        // System.out.println("   wait " + (1000 - diffms));
+                        // LOGGER.info("   wait " + (1000 - diffms));
                     }
                 } catch (InterruptedException e) {
                     if (DEBUG)
-                        System.out.println("Playback renderer: interrupt.");
+                        LOGGER.info("Playback renderer: interrupt.");
                     notInterrupted = false;
                 }
 
@@ -1267,7 +1270,7 @@ public class YassPlayer {
                     try {
                         mediaPlayer.stop();
                         mediaPlayer.dispose();
-                        // System.out.println("player stop()");
+                        // LOGGER.info("player stop()");
                     } catch (Throwable t) {
                         // t.printStackTrace();
                     }
@@ -1349,8 +1352,8 @@ public class YassPlayer {
                     midi.playNote(note, 0);
                 }
             } catch (Exception e) {
-                System.out.println("Playback Error");
-                e.printStackTrace();
+                LOGGER.info("Playback Error");
+                LOGGER.log(Level.INFO, e.getMessage(), e);
             }
         }
     }

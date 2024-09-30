@@ -35,7 +35,7 @@ If you install Yass Reloaded with the Windows installer, you can simply run <cod
 
 Alternatively, you can download the jar file and start it from the console:
 
-On Windows, you can simply do this: <code>java -jar Yass-Reloaded-2024.9.jar</code>
+On Windows, you can simply do this: <code>java -jar Yass-Reloaded-2024.10.jar</code>
 
 On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
@@ -43,7 +43,7 @@ On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
 and then start the jar like so:
 
-<code>java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2024.9.jar</code>
+<code>java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2024.10.jar</code>
 
 # Developers
 
@@ -69,7 +69,7 @@ Speed measure 'Inverse Duration' based on Marcel Taeumel's approach (http://uman
 
 # License
 
-Copyright (C) 2009-2022 Saruta, 2024 DoubleDee 
+Copyright (C) 2009-2023 Saruta, 2023-2024 DoubleDee 
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

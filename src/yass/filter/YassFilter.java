@@ -26,6 +26,8 @@ import yass.YassUtils;
 import java.io.File;
 import java.text.Normalizer;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -33,6 +35,7 @@ import java.util.*;
  * @author Saruta
  */
 public class YassFilter implements Cloneable {
+    final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     /**
      * Description of the Field
      */
@@ -83,7 +86,7 @@ public class YassFilter implements Cloneable {
             Class<?> c = YassUtils.forName(filtername);
             f = (YassFilter) c.getDeclaredConstructor().newInstance();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
             return null;
         }
 
@@ -151,7 +154,7 @@ public class YassFilter implements Cloneable {
             YassFilter f = hash.get(group);
             return (YassFilter) f.clone();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
         return null;
     }

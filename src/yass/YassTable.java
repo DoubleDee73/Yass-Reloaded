@@ -50,6 +50,8 @@ import java.time.Year;
 import java.util.List;
 import java.util.Timer;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static yass.UltrastarHeaderTag.*;
@@ -84,6 +86,7 @@ public class YassTable extends JTable {
     private int maxP = 0;
     private Color myColor = null;
     private boolean saved = true;
+    private boolean autosaved = true;
     private boolean isLoading = false;
     private String encoding = null;
     private boolean showMessages = true;
@@ -114,6 +117,8 @@ public class YassTable extends JTable {
     public static final List<String> FIXED_UPPERCASE = List.of("I", "I'm", "I’m");
 
     public Timer timer;
+
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     
     public YassTable() {
         fileUtils = new YassFileUtils();
@@ -286,8 +291,17 @@ public class YassTable extends JTable {
         return saved;
     }
 
+    public boolean isAutosaved() {
+        return autosaved;
+    }
+
     public void setSaved(boolean onoff) {
         saved = onoff;
+        autosaved = onoff;
+    }
+
+    public void setAutosaved(boolean autosaved) {
+        this.autosaved = autosaved;
     }
 
     public Color getTableColor() {
@@ -475,8 +489,8 @@ public class YassTable extends JTable {
     }
 
     public static double calculateNewBpm(double dblBpmChange, double dblCurrentBpm) {
-        int bpmChange = (int)(dblBpmChange * 100);
-        int currentBpm = (int)(dblCurrentBpm * 100);
+        int bpmChange = (int)(Math.round(dblBpmChange * 100));
+        int currentBpm = (int)(Math.round(dblCurrentBpm * 100));
         int mod;
         if (Math.abs(bpmChange) == 10) {
             mod = currentBpm % 10;
@@ -1745,8 +1759,8 @@ public class YassTable extends JTable {
             else if (detectedEncoding.equals(Constants.CHARSET_WINDOWS_1252))
                 win++;
             else
-                System.out.println("enc = " + detectedEncoding);
-            System.out.println("ns=" + ns + " utf=" + utf + " win=" + win);
+                LOGGER.info("enc = " + detectedEncoding);
+            LOGGER.info("ns=" + ns + " utf=" + utf + " win=" + win);
         }
         isRelative = false;
         // saruta, Jan 2019: better UTF-8 detection method
@@ -1776,7 +1790,7 @@ public class YassTable extends JTable {
             // encoding = r.getEncoding();
             success = true;
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
             success = false;
         } finally {
             if (inputStream != null) {
@@ -1800,11 +1814,11 @@ public class YassTable extends JTable {
         }
 
         if (tm.getCommentRow("TITLE:") == null) {
-            // System.out.println("ERROR: No title tag in - "+filename);
+            // LOGGER.info("ERROR: No title tag in - "+filename);
             success = false;
         }
         if (tm.getCommentRow("ARTIST:") == null) {
-            // System.out.println("ERROR: No artist tag - "+filename);
+            // LOGGER.info("ERROR: No artist tag - "+filename);
             success = false;
         }
 
@@ -1835,16 +1849,16 @@ public class YassTable extends JTable {
             }
             inputStream.close();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
             return false;
         }
 
         if (tm.getCommentRow("TITLE:") == null) {
-            // System.out.println("ERROR: No title tag in - "+filename);
+            // LOGGER.info("ERROR: No title tag in - "+filename);
             return false;
         }
         if (tm.getCommentRow("ARTIST:") == null) {
-            // System.out.println("ERROR: No artist tag - "+filename);
+            // LOGGER.info("ERROR: No artist tag - "+filename);
             return false;
         }
 
@@ -1856,7 +1870,7 @@ public class YassTable extends JTable {
     }
 
     public boolean storeFile(String filename) {
-        // System.out.println("Storing "+tm.getCommentRow("ARTIST:").getComment()+" - "+tm.getCommentRow("TITLE:").getComment());
+        // LOGGER.info("Storing "+tm.getCommentRow("ARTIST:").getComment()+" - "+tm.getCommentRow("TITLE:").getComment());
 
         int relPageBreak = 0;
         boolean isRel = isRelative() && !prop.isUnityOrNewer();
@@ -1871,7 +1885,7 @@ public class YassTable extends JTable {
             new Exception().printStackTrace(new PrintWriter(errors));
             String msg = "Cannot store file: properties not initialized. Please send me the following stacktrace:\n"
                     + errors;
-            System.out.println(msg);
+            LOGGER.info(msg);
             JTextArea text = new JTextArea(msg);
             text.setOpaque(false);
             JOptionPane.showMessageDialog(null, text);
@@ -1908,9 +1922,12 @@ public class YassTable extends JTable {
             } else {
                 outputStream = new PrintWriter(new FileWriter(filename));
             }
-            setVersion();
-            handleDeprecations();
-            handleAudio();
+            // If this is an auto-save, don't deal with Tag-Versioning
+            if (!filename.endsWith(".bak")) {
+                setVersion();
+                handleDeprecations();
+                handleAudio();
+            }
             int rows = tm.getRowCount();
             String s;
             int lastPageBreak = 0;
@@ -1941,7 +1958,7 @@ public class YassTable extends JTable {
                 } else {
                     outputStream.println(s);
                 }
-                // System.out.println(tm.getRowAt(i).toString());
+                // LOGGER.info(tm.getRowAt(i).toString());
             }
             success = true;
             setPreventRelativeToAbsoluteConversion(false);
@@ -1949,8 +1966,7 @@ public class YassTable extends JTable {
             if (sheet != null) {
                 sheet.setMessage(I18.get("sheet_msg_write_error"));
             }
-            System.out.println("Write Error: " + e.getMessage());
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, "Write Error: " + e.getMessage(), e);
             success = false;
         } finally {
             try {
@@ -1967,7 +1983,7 @@ public class YassTable extends JTable {
                     fos.close();
                 }
             } catch (Exception ex) {
-                ex.printStackTrace();
+                LOGGER.log(Level.INFO, ex.getMessage(), ex);
             }
         }
         if (removeRelative) {
@@ -1977,11 +1993,11 @@ public class YassTable extends JTable {
         verify.init(prop);
         verify.loadFile(filename);
         if (!equalsData(verify)) {
-            System.out.println("###############################################");
-            System.out.println("Write Error: Written data could not be verified.");
-            System.out.println("File: " + filename);
-            System.out.println("Encoding: " + encoding);
-            System.out.println("###############################################");
+            LOGGER.info("###############################################");
+            LOGGER.info("Write Error: Written data could not be verified.");
+            LOGGER.info("File: " + filename);
+            LOGGER.info("Encoding: " + encoding);
+            LOGGER.info("###############################################");
             JOptionPane.showMessageDialog(null,
                                           "<html>Write Error: Written data could not be verified.<br>File: "
                                                   + filename, "Error", JOptionPane.ERROR_MESSAGE);
@@ -5528,7 +5544,7 @@ public class YassTable extends JTable {
 
             s = s.replace(YassRow.SPACE, ' ');
             outputStream.println(s);
-            // System.out.println(tm.getRowAt(i).toString());
+            // LOGGER.info(tm.getRowAt(i).toString());
         }
         return buffer.toString();
     }
@@ -5546,7 +5562,7 @@ public class YassTable extends JTable {
         txt = txt.replace('\r', ' ');
         txt = txt.replace(YassRow.HYPHEN, ' ');
         txt = txt.trim();
-        // System.out.println("###hasLyrics: \n" + txt + "\n###");
+        // LOGGER.info("###hasLyrics: \n" + txt + "\n###");
         return txt.length() > 0;
     }
 
@@ -5941,7 +5957,7 @@ public class YassTable extends JTable {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
             return null;
         }
         return trackTables;
@@ -6018,7 +6034,7 @@ public class YassTable extends JTable {
                 }
                 t.setGap(gapMs); // same gap on all tracks
                 if (rounded > 0)
-                    System.out.println("Rounded " + rounded + " times in track " + t.getDirFilename());
+                    LOGGER.info("Rounded " + rounded + " times in track " + t.getDirFilename());
             }
         }
 
@@ -6060,7 +6076,7 @@ public class YassTable extends JTable {
             resData.addElement(new YassRow("E", "", "", "", ""));
             return res;
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
         return null;
     }
@@ -6557,12 +6573,12 @@ public class YassTable extends JTable {
         }
         int period = prop.getIntProperty("options_autosave_interval");
         if (period == 0) {
-            System.out.println("Autosave disabled");
+            LOGGER.info("Autosave disabled");
             return;
         } 
         timer = new Timer();
         int periodMillis = Math.min(period, 600) * 1000;
-        System.out.println("Autosave initialized with " + Math.min(period, 600) + "s intervals.");
+        LOGGER.info("Autosave initialized with " + Math.min(period, 600) + "s intervals.");
         YassAutoSave autoSave = new YassAutoSave(this);
         timer.scheduleAtFixedRate(autoSave, 30000, periodMillis);
     }

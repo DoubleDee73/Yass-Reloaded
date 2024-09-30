@@ -27,6 +27,7 @@ import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.util.Enumeration;
 import java.util.Vector;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -34,6 +35,7 @@ import java.util.Vector;
  * @author Saruta
  */
 public class YassInput {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     static java.awt.Canvas dummy = new java.awt.Canvas();
     Vector<Controller> controllers = new Vector<>();
     Vector<Component> components = new Vector<>();
@@ -53,7 +55,7 @@ public class YassInput {
             ControllerEnvironment ce = ControllerEnvironment.getDefaultEnvironment();
             ce.getControllers();
         } catch (java.lang.UnsatisfiedLinkError e) {
-            System.out.println("No jinput-raw in java.library.path");
+            LOGGER.info("No jinput-raw in java.library.path");
         }
     }
 
@@ -79,15 +81,15 @@ public class YassInput {
                     public void keyPressed(KeyEvent e) {
                         int code = e.getKeyCode();
                         if (code == KeyEvent.VK_ESCAPE) {
-                            System.out.println("ESCAPE pressed");
+                            LOGGER.info("ESCAPE pressed");
                             input.stopPoll();
                         }
                         if (code == KeyEvent.VK_ENTER) {
                             int location = e.getKeyLocation();
                             if (location == KeyEvent.KEY_LOCATION_NUMPAD) {
-                                System.out.println("NUMPAD ENTER pressed");
+                                LOGGER.info("NUMPAD ENTER pressed");
                             } else {
-                                System.out.println("ENTER pressed");
+                                LOGGER.info("ENTER pressed");
                             }
                         }
                         e.consume();
@@ -97,7 +99,7 @@ public class YassInput {
                     public void keyReleased(KeyEvent e) {
                         int code = e.getKeyCode();
                         if (code == KeyEvent.VK_ENTER) {
-                            System.out.println("ENTER released");
+                            LOGGER.info("ENTER released");
                         }
                         e.consume();
                     }

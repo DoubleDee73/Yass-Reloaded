@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   ~ Yass Reloaded - Karaoke Editor
-  ~ Copyright (C) 2009-2023 Saruta / (C) 2023.5 DoubleDee
+  ~ Copyright (C) 2009-2023 Saruta / (C) 2023-2024 DoubleDee
   ~
   ~ This program is free software: you can redistribute it and/or modify
   ~ it under the terms of the GNU General Public License as published by
@@ -24,7 +24,7 @@
 
     <groupId>yass</groupId>
     <artifactId>Yass-Reloaded</artifactId>
-    <version>2024.9</version>
+    <version>2024.10</version>
     <dependencies>
         <dependency>
             <groupId>com.danielreese</groupId>
