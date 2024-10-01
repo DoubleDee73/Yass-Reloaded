@@ -4513,7 +4513,13 @@ public class YassTable extends JTable {
             int ret = 0;
             int index = 0;
             String[] rows = trstring.split("\n");
+            int startRow = -1;
+            int lastRow = 0;
             for (String row : rows) {
+                YassRow pasteRow = new YassRow(row);
+                if (!pasteRow.isNote()) {
+                    continue;
+                }
                 YassRow yassRow = sheet.getActiveTable().getRowAt(getSelectedRow() + index);
                 if (yassRow.isEnd()) {
                     break;
@@ -4525,11 +4531,14 @@ public class YassTable extends JTable {
                         break;
                     }
                 }
-                String[] rowContent = row.split("\t");
-                yassRow.setHeight(rowContent[3]);
+                if (startRow == -1) {
+                    startRow = getSelectedRow() + index;
+                }
+                lastRow = getSelectedRow() + index;
+                yassRow.setHeight(pasteRow.getHeight());
                 index++;
             }
-            sheet.updateActiveTable();
+            tm.fireTableRowsUpdated(startRow, lastRow);
             return ret;
         }
         return 0;
