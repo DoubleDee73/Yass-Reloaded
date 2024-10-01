@@ -4515,6 +4515,8 @@ public class YassTable extends JTable {
             String[] rows = trstring.split("\n");
             int startRow = -1;
             int lastRow = 0;
+            int pasteRowCount = 0;
+            int selectedRows = getSelectedRowCount();
             for (String row : rows) {
                 YassRow pasteRow = new YassRow(row);
                 if (!pasteRow.isNote()) {
@@ -4533,6 +4535,11 @@ public class YassTable extends JTable {
                 }
                 if (startRow == -1) {
                     startRow = getSelectedRow() + index;
+                }
+                pasteRowCount++;
+                // if more rows are to be pasted than rows selected, then we are jumping out now
+                if (selectedRows > 1 && pasteRowCount > selectedRows) {
+                    break;
                 }
                 lastRow = getSelectedRow() + index;
                 yassRow.setHeight(pasteRow.getHeight());
