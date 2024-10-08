@@ -6469,6 +6469,54 @@ public class YassTable extends JTable {
         setRowSelectionInterval(selectedRow, selectedRow);
     }
 
+    public void addSpace() {
+        int selectedRow = getSelectedRow();
+        if (selectedRow < 1) {
+            return;
+        }
+        YassRow row = getRowAt(selectedRow);
+        if (row == null || !row.isNote() || StringUtils.isEmpty(row.getTrimmedText())) {
+            return;
+        }
+        boolean trailingSpace = prop.isUncommonSpacingAfter();
+        if (trailingSpace && !row.endsWithSpace()) {
+            row.setText(row.getText() + YassRow.SPACE);
+        }
+        if (!trailingSpace && selectedRow < getRowCount()) {
+            YassRow nextRow = getRowAt(selectedRow + 1);
+            if (!nextRow.isNote() || nextRow.startsWithSpace()) {
+                return;
+            }
+            nextRow.setText(YassRow.SPACE + nextRow.getText());
+        }
+        fireTableTableDataChanged();
+        setRowSelectionInterval(selectedRow, selectedRow);
+    }
+
+    public void removeSpace() {
+        int selectedRow = getSelectedRow();
+        if (selectedRow < 1) {
+            return;
+        }
+        YassRow row = getRowAt(selectedRow);
+        if (row == null || !row.isNote() || StringUtils.isEmpty(row.getTrimmedText())) {
+            return;
+        }
+        boolean trailingSpace = prop.isUncommonSpacingAfter();
+        if (trailingSpace && row.endsWithSpace()) {
+            row.setText(StringUtils.abbreviate(row.getText(), row.getText().length() - 1));
+        }
+        if (!trailingSpace && selectedRow < getRowCount()) {
+            YassRow nextRow = getRowAt(selectedRow + 1);
+            if (!nextRow.isNote() || !nextRow.startsWithSpace() || nextRow.getText().length() == 1) {
+                return;
+            }
+            nextRow.setText(nextRow.getText().substring(1));
+        }
+        fireTableTableDataChanged();
+        setRowSelectionInterval(selectedRow, selectedRow);
+    }
+    
     public static class YassTableCellEditor extends AbstractCellEditor implements
             TableCellEditor {
         Dimension d = new Dimension(100, 100);

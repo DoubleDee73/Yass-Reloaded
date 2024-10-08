@@ -42,8 +42,9 @@ public class YassAutoCorrectLineCapitalization extends YassAutoCorrector {
             return false;
         }
         String text = currentRow.getText();
-        if (YassUtils.isPunctuation(text.substring(0, 1)) && text.length() > 1) {
-            text = text.substring(0, 1) + StringUtils.capitalize(text.substring(1));
+        int index = properties.isUncommonSpacingAfter() ? 0 : 1;
+        if (text.length() > 1 + index && YassUtils.isPunctuation(text.substring(index, 1 + index))) {
+            text = text.substring(index, index + 1) + StringUtils.capitalize(text.substring(1 + index));
         } else {
             text = StringUtils.capitalize(text);
         }

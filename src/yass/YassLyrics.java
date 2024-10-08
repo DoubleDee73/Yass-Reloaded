@@ -427,7 +427,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 		lyricsArea.getInputMap().put(
 				KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "nop");
 
-		lyricsArea.addKeyListener(new KeyListener() {
+			lyricsArea.addKeyListener(new KeyListener() {
 			public void keyPressed(KeyEvent e) {
 				if (!lyricsArea.isEditable() && sheet != null) {
 					char c = e.getKeyChar();

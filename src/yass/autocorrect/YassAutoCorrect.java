@@ -888,8 +888,7 @@ public class YassAutoCorrect {
                         continue;
                     }
                     String txt = currentRow.getText();
-                    boolean startswithspace = txt
-                            .startsWith(YassRow.SPACE + "");
+                    boolean startswithspace = txt.startsWith(YassRow.SPACE + "") && prop.isUncommonSpacingAfter();
                     if (txt.contains(YassRow.SPACE + "" + YassRow.SPACE)) {
                         currentRow.addMessage(YassRow.TOO_MUCH_SPACES);
                         table.addMessage(YassRow.TOO_MUCH_SPACES);
@@ -1156,8 +1155,8 @@ public class YassAutoCorrect {
         if (!linesStartUppercase() || StringUtils.isEmpty(currentRow.getText()) || currentRow.getText().length() < 1) {
             return;
         }
-        String text = currentRow.getText();
-        String first = text.substring(0, 1);
+        String text = currentRow.getTrimmedText();
+        String first = StringUtils.left(text, 1);
         if (YassUtils.isPunctuation(first) && text.length() > 1) {
             first = text.substring(1, 2);
         }

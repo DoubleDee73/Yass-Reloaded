@@ -1342,6 +1342,24 @@ public class YassActions implements DropTargetListener {
             table.removeRowsWithLyrics();
         }
     };
+    private final Action addSpace = new AbstractAction(I18.get("edit_add_space")) {
+        public void actionPerformed(ActionEvent e) {
+            if (lyrics.isEditable() || songList.isEditing()
+                    || isFilterEditing()) {
+                return;
+            }
+            table.addSpace();
+        }
+    };
+    private final Action removeSpace = new AbstractAction(I18.get("edit_remove_space")) {
+        public void actionPerformed(ActionEvent e) {
+            if (lyrics.isEditable() || songList.isEditing()
+                    || isFilterEditing()) {
+                return;
+            }
+            table.removeSpace();
+        }
+    };
     private final Action enableVideoPreview = new AbstractAction(I18.get("edit_playallvideo_toggle")) {
         public void actionPerformed(ActionEvent e) {
             // playAllVideoCBI
@@ -3471,11 +3489,11 @@ public class YassActions implements DropTargetListener {
         menu.addSeparator();
         menu.add(midiCBI = new JCheckBoxMenuItem(enableMidi));
         menu.add(audioCBI = new JCheckBoxMenuItem(enableAudio));
-        menu.add(clicksCBI = new JCheckBoxMenuItem(enableClicks));
-        menu.add(micCBI = new JCheckBoxMenuItem(enableMic));
         audioCBI.setState(true);
+        menu.add(clicksCBI = new JCheckBoxMenuItem(enableClicks));
         clicksCBI.setState(true);
-        micCBI.setState(true);
+//        menu.add(micCBI = new JCheckBoxMenuItem(enableMic));
+//        micCBI.setState(true);
 
         menu = new JMenu(I18.get("edit_view"));
         menu.setMnemonic(KeyEvent.VK_V);
@@ -3671,8 +3689,8 @@ public class YassActions implements DropTargetListener {
 
         menu = new JMenu(I18.get("lib_extras"));
         menu.setMnemonic(KeyEvent.VK_X);
-        menu.add(testMic);
-        menu.addSeparator();
+//        menu.add(testMic);
+//        menu.addSeparator();
         menu.add(createSyncerTags);        
         menu.addSeparator();
         menu.add(showOptions);
@@ -5167,7 +5185,7 @@ public class YassActions implements DropTargetListener {
         showVideo.setEnabled(isOpened);
         showNothing.setEnabled(isOpened);
         enableClicks.setEnabled(isOpened);
-        enableMic.setEnabled(isOpened);
+//        enableMic.setEnabled(isOpened);
 
         if (playAllVideoCBI != null) {
             playAllVideoCBI.setEnabled(isOpened);
@@ -6291,7 +6309,17 @@ public class YassActions implements DropTargetListener {
 
         for (YassTable t: openTables)
             songList.addOpened(t);
-
+        sheet.init(initMic());
+        sheet.initSongHeader(this);
+        table.initAutoSave();
+    }
+    
+    private YassSession initMic() {
+        YassSession session;
+        if (true) {
+            // TODO: Fix the mic!
+            return null;
+        }
         LOGGER.info("Searching for USB mic...");
         String device = prop.getProperty("control-mic");
         String[] devices = YassCaptureAudio.getDeviceNames();
@@ -6303,18 +6331,16 @@ public class YassActions implements DropTargetListener {
             }
         }
         if (found) {
-            YassSession session = table.createSession();
+            session = table.createSession();
             session.addTrack();
             session.getTrack(0).setActive(true);
             mp3.setDemo(false);
             mp3.setCapture(0, device, 0);
             mp3.setCapture(true);
-            sheet.init(session);
         } else {
-            sheet.init(null);
+            session = null;
         }
-        sheet.initSongHeader(this);
-        table.initAutoSave();
+        return session;
     }
 
     /**
@@ -7153,10 +7179,17 @@ public class YassActions implements DropTargetListener {
         am.put("playSelectionWithMIDI", playSelectionWithMIDI);
         playSelectionWithMIDI.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK));
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK), "playSelectionWithMIDIAudio");
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK), "playSelectionWithMIDIAudio");
         am.put("playSelectionWithMIDIAudio", playSelectionWithMIDIAudio);
         playSelectionWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK), "addSpace");
+        am.put("addSpace", addSpace);
+        addSpace.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK), "removeSpace");
+        am.put("removeSpace", removeSpace);
+        removeSpace.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK));
 
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, 0), "playPage");
         am.put("playPage", playPage);

@@ -111,7 +111,7 @@ public class YassPlayer {
             YassSynth.loadWav();
         });
 
-        initCapture();
+//        initCapture();
         synth.start();
     }
 

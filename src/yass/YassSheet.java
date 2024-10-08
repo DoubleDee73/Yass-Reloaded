@@ -2464,12 +2464,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         refreshing = true;
 
         Graphics2D db = image.createGraphics();
-        db.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-                RenderingHints.VALUE_ANTIALIAS_ON);
-        db.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
-                RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        db.setRenderingHint(RenderingHints.KEY_RENDERING,
-                RenderingHints.VALUE_RENDER_QUALITY);
+        db.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        db.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        db.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 
         clip = getClipBounds();
         db.setTransform(identity);
@@ -2522,8 +2519,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
         // message:
         // LYRICS POSITION
-        if (getComponentCount() > 0
-                && lyricsVisible) {
+        if (getComponentCount() > 0 && lyricsVisible) {
             Rectangle cr = lyrics.getBounds();
 
             db.translate(clip.x + clip.width - cr.width + cr.getX() - lyrics.getX(), cr.getY() - lyrics.getY() + 20);

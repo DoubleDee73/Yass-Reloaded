@@ -376,9 +376,7 @@ public class YassCaptureAudio {
         }
         try {
             Mixer mixer = AudioSystem.getMixer(mixerInfo[micIndex]);
-            TargetDataLine line = (TargetDataLine) mixer
-                    .getLine(new DataLine.Info(TargetDataLine.class,
-                            audioFormat));
+            TargetDataLine line = (TargetDataLine) mixer.getLine(new DataLine.Info(TargetDataLine.class, audioFormat));
             line.open(audioFormat);
             line.start();
             linesHash.put(name, line);
@@ -457,8 +455,7 @@ public class YassCaptureAudio {
             // LOGGER.info(audioFormat);
 
             Mixer mixer = AudioSystem.getMixer(mixerInfo[micIndex]);
-            line = (TargetDataLine) mixer.getLine(new DataLine.Info(
-                    TargetDataLine.class, audioFormat));
+            line = (TargetDataLine) mixer.getLine(new DataLine.Info(TargetDataLine.class, audioFormat));
             line.open(audioFormat);
             line.start();
         } catch (Exception e) {
