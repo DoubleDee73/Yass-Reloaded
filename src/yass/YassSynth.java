@@ -53,7 +53,7 @@ public class YassSynth {
     private static SourceDataLine sourceDataLine = null;
     private static SourceDataLine wavsourceDataLine = null;
     private static Vector<Byte> buffer = null;
-    private static int BUFFER_SIZE = 128000;
+    private static int BUFFER_SIZE = 512000;
     /**
      * Description of the Method
      */

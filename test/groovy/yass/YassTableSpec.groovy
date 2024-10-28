@@ -19,17 +19,19 @@
 
 package yass
 
+import net.davidashen.text.Hyphenator
 import spock.lang.Specification
 
 import javax.swing.*
-import javax.swing.table.TableModel
+import javax.swing.table.TableModel 
 
 class YassTableSpec extends Specification {
 
-    private final List<YassRow> LEADING_SPACE_END_TILDE_SONG = initSong1()
-    private final List<YassRow> TRAILING_SPACE_END_TILDE_SONG = initSong2()
-    private final List<YassRow> LEADING_SPACE_END_WORD_SONG = initSong3()
-    private final List<YassRow> TRAILING_SPACE_END_WORD_SONG = initSong4()
+    private final static List<YassRow> LEADING_SPACE_END_TILDE_SONG = initSong1()
+    private final static List<YassRow> TRAILING_SPACE_END_TILDE_SONG = initSong2()
+    private final static List<YassRow> LEADING_SPACE_END_WORD_SONG = initSong3()
+    private final static List<YassRow> TRAILING_SPACE_END_WORD_SONG = initSong4()
+    private final static List<YassRow> TILDE_SONG = initSong5()
 
     def 'isSongWithTrailingSpaces should check, if a song has trailing spaces'() {
         given:
@@ -531,8 +533,8 @@ class YassTableSpec extends Specification {
         String text = yassTable.getText()
 
         then:
-        verifyExpectation(yassTable, ['One', '~ ', 'two ', 'three ', '_', 'Four ', 'five', '~ ' ])
-        text == 'One-~ two three\nFour five-~'
+        verifyExpectation(yassTable, ['One', '~ ', 'two ', 'a ', '_', 'Four ', 'five', '~ '])
+        text == 'One-~ two a\nFour five-~'
     }
 
     def 'insertRowsAt should insert rows'() {
@@ -556,24 +558,26 @@ class YassTableSpec extends Specification {
             getRowCount() >> TRAILING_SPACE_END_TILDE_SONG.size()
         }
         YassHyphenator hyphenator = new YassHyphenator(null)
-        hyphenator.setFallbackHyphenations( ['hello': 'he•lo'])
-        yassTable.hyphenator =  hyphenator
+        hyphenator.hyphenator = new Hyphenator()
+        hyphenator.setFallbackHyphenations(['hello': 'he•lo'])
+        yassTable.hyphenator = hyphenator
+        yassTable.yassUtils = new YassUtils(hyphenator: hyphenator)
 
         when:
-        yassTable.insertRowsAt(textToInsert, startRow, false)
+        yassTable.insertRowsAt(textToInsert, startRow, true)
 
         then:
         verifyExpectation(yassTable, expectation)
 
         where:
         textToInsert                  | startRow || expectation
-        ':\t0\t4\t20\tHello '         | 7        || ['One', '~ ', 'two ', 'three ', '_', 'Hello ', '_', 'five', '~ ']
-        ':\t0\t8\t20\tHello '         | 7        || ['One', '~ ', 'two ', 'three ', '_', 'Hello ', '_', '~ ']
+        ':\t0\t4\t20\tHello '         | 7        || ['One', '~ ', 'two ', 'a ', '_', 'Hello ', '_', 'five', '~ ']
+        ':\t0\t8\t20\tHello '         | 7        || ['One', '~ ', 'two ', 'a ', '_', 'Hello ', '_', '~ ']
         ':\t0\t2\t20\ta \n' +
                 ':\t3\t2\t20\tb \n' +
                 ':\t6\t2\t20\tc \n' +
                 ':\t9\t3\t20\td \n' +
-                ':\t14\t2\t20\te \n'  | 7        || ['One', '~ ', 'two ', 'three ', '_', 'a ', 'b ', 'c ', 'd ', 'e ']
+                ':\t14\t2\t20\te \n'  | 7        || ['One', '~ ', 'two ', 'a ', '_', 'a ', 'b ', 'c ', 'd ', 'e ']
         ':\t0\t2\t20\ta \n' +
                 ':\t3\t2\t20\tb \n' +
                 ':\t6\t2\t20\tc \n' +
@@ -585,7 +589,7 @@ class YassTableSpec extends Specification {
     def 'calculateNewGap should add a Gap'() {
         expect:
         YassTable.calculateNewGap(gap, currentGap) == expected
-        
+
         where:
         currentGap | gap   || expected
         1234       | 10    || 1240
@@ -615,7 +619,156 @@ class YassTableSpec extends Specification {
         123d       | -200d || 0
         299.9d     | 0.1d  || 300d
     }
-    
+
+    def 'checkShiftEndingConditions'() {
+        given:
+        YassTableModel ytm = new YassTableModel()
+        song.each { row ->
+            ytm.addRow(row)
+        }
+
+        and:
+        I18.setDefaultLanguage()
+
+        and:
+        ListSelectionModel selectionModel = Stub(ListSelectionModel) {
+            getSelectedIndices() >> {
+                List<Integer> indices = []
+                if (minRow < maxRow) {
+                    (minRow..maxRow).each {
+                        indices.add(it)
+                    }
+                } else {
+                    indices = [minRow]
+                }
+                indices
+            }
+            getMinSelectionIndex() >> minRow
+            getMaxSelectionIndex() >> maxRow
+        }
+        and:
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> true
+        }
+        YassTable yassTable = new YassTable(ytm, props)
+        yassTable.selectionModel = selectionModel
+        yassTable.model = Stub(TableModel) {
+            getRowCount() >> song.size()
+        }
+
+        when:
+        boolean result = yassTable.checkShiftEndingConditions(toleft)
+
+        then:
+        result == expectation
+
+        where:
+        song                         | minRow | maxRow | toleft || expectation
+        TRAILING_SPACE_END_WORD_SONG | 0      | 1      | false  || true
+        TRAILING_SPACE_END_WORD_SONG | 0      | 2      | false  || false
+        TRAILING_SPACE_END_WORD_SONG | 0      | 0      | false  || false
+        TRAILING_SPACE_END_WORD_SONG | 2      | 3      | false  || false
+        TILDE_SONG                   | 0      | 2      | true   || false
+        TRAILING_SPACE_END_WORD_SONG | 4      | 5      | false  || false
+        TRAILING_SPACE_END_WORD_SONG | 5      | 6      | false  || false
+    }
+
+    def 'shiftEnding'() {
+        given:
+        YassTableModel ytm = new YassTableModel()
+        song.each { row ->
+            ytm.addRow(row)
+        }
+
+        and:
+        I18.setDefaultLanguage()
+
+        and:
+        ListSelectionModel selectionModel = Stub(ListSelectionModel) {
+            getSelectedIndices() >> {
+                List<Integer> indices = []
+                if (minRow < maxRow) {
+                    (minRow..maxRow).each {
+                        indices.add(it)
+                    }
+                } else {
+                    indices = [minRow]
+                }
+                indices
+            }
+            getMinSelectionIndex() >> minRow
+            getMaxSelectionIndex() >> maxRow
+        }
+        and:
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> true
+        }
+        YassTable yassTable = new YassTable(ytm, props)
+        yassTable.selectionModel = selectionModel
+        yassTable.model = Stub(TableModel) {
+            getRowCount() >> song.size()
+        }
+
+        when:
+        yassTable.shiftEnding()
+
+        then:
+        verifyExpectation(yassTable, expectation)
+
+        where:
+        song       | minRow | maxRow || expectation
+        TILDE_SONG | 0      | 3      || ['On', '~', '~', '~e.', 'SKIPALL']
+        TILDE_SONG | 9      | 11     || ['One', '~', '~', '~.', '_', 'T', '~', '~est', '_', 'Te', '~', '~st']
+    }
+
+
+    def 'shiftEndingLeft'() {
+        given:
+        YassTableModel ytm = new YassTableModel()
+        song.each { row ->
+            ytm.addRow(row)
+        }
+
+        and:
+        I18.setDefaultLanguage()
+
+        and:
+        ListSelectionModel selectionModel = Stub(ListSelectionModel) {
+            getSelectedIndices() >> {
+                List<Integer> indices = []
+                if (minRow < maxRow) {
+                    (minRow..maxRow).each {
+                        indices.add(it)
+                    }
+                } else {
+                    indices = [minRow]
+                }
+                indices
+            }
+            getMinSelectionIndex() >> minRow
+            getMaxSelectionIndex() >> maxRow
+        }
+        and:
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> true
+        }
+        YassTable yassTable = new YassTable(ytm, props)
+        yassTable.selectionModel = selectionModel
+        yassTable.model = Stub(TableModel) {
+            getRowCount() >> song.size()
+        }
+
+        when:
+        yassTable.shiftEndingLeft()
+
+        then:
+        verifyExpectation(yassTable, expectation)
+
+        where:
+        song       | minRow | maxRow || expectation
+        TILDE_SONG | 5      | 7      || ['One', '~', '~', '~.', '_', 'Te', '~', '~st', '_', 'Tes', '~', 't']
+        TILDE_SONG | 9      | 11     || ['One', '~', '~', '~.', '_', 'T', '~', '~est', '_', 'Test', '~', '~']
+    }
     private boolean verifyExpectation(YassTable yassTable, List<String> expectation) {
         int offset = 0
         YassRow yassRow = yassTable.getRowAt(offset)
@@ -623,17 +776,23 @@ class YassTableSpec extends Specification {
             yassRow = yassTable.getRowAt(++offset)
         }
         expectation.eachWithIndex { String entry, int i ->
-            yassRow = yassTable.getRowAt(i + offset)
-            if (yassRow.isPageBreak()) {
-                assert entry == '_'
+            if ('SKIPALL'.equals(entry)) {
+                return true
+            } else if ('SKIP'.equals(entry)) {
+                assert true
             } else {
-                String actual = yassRow.getText().replace(YassRow.SPACE, ' ' as char)
-                assert actual == entry
+                yassRow = yassTable.getRowAt(i + offset)
+                if (yassRow.isPageBreak()) {
+                    assert entry == '_'
+                } else {
+                    String actual = yassRow.getText().replace(YassRow.SPACE, ' ' as char)
+                    assert actual == entry
+                }
             }
         }
     }
 
-    private List<YassRow> initSong1() {
+    private static List<YassRow> initSong1() {
         List<YassRow> rows = [
                 new YassRow(':', '0', '5', '10', 'One'),
                 new YassRow(':', '6', '5', '10', '~'),
@@ -651,12 +810,12 @@ class YassTableSpec extends Specification {
         rows
     }
 
-    private List<YassRow> initSong2() {
+    private static List<YassRow> initSong2() {
         List<YassRow> rows = [
                 new YassRow(':', '0', '5', '10', 'One'),
                 new YassRow(':', '6', '5', '10', '~ '),
                 new YassRow(':', '12', '5', '10', 'two '),
-                new YassRow(':', '18', '5', '10', 'three '),
+                new YassRow(':', '18', '5', '10', 'a '),
                 new YassRow('-', '124', '', '', ''),
                 new YassRow(':', '126', '5', '10', 'Four '),
                 new YassRow(':', '132', '5', '10', 'five'),
@@ -669,7 +828,7 @@ class YassTableSpec extends Specification {
         rows
     }
 
-    private List<YassRow> initSong3() {
+    private static List<YassRow> initSong3() {
         List<YassRow> rows = [
                 new YassRow(':', '0', '5', '10', 'One'),
                 new YassRow(':', '6', '5', '10', '~'),
@@ -687,7 +846,7 @@ class YassTableSpec extends Specification {
         rows
     }
 
-    private List<YassRow> initSong4() {
+    private static List<YassRow> initSong4() {
         List<YassRow> rows = [
                 new YassRow(':', '0', '5', '10', 'One'),
                 new YassRow(':', '6', '5', '10', '~ '),
@@ -697,6 +856,28 @@ class YassTableSpec extends Specification {
                 new YassRow(':', '26', '5', '10', 'Four '),
                 new YassRow(':', '32', '5', '10', 'five '),
                 new YassRow(':', '38', '5', '10', 'six '),
+                new YassRow('E', '', '', '', '')
+        ]
+        rows.each { row ->
+            row.setText(row.getText().replace(' ' as char, YassRow.SPACE))
+        }
+        rows
+    }
+
+    private static List<YassRow> initSong5() {
+        List<YassRow> rows = [
+                new YassRow(':', '0', '5', '10', 'One'),
+                new YassRow(':', '6', '5', '10', '~'),
+                new YassRow(':', '12', '5', '10', '~'),
+                new YassRow(':', '18', '5', '10', '~.'),
+                new YassRow('-', '24', '', '', ''),
+                new YassRow(':', '26', '5', '10', 'T'),
+                new YassRow(':', '32', '5', '10', '~'),
+                new YassRow(':', '38', '5', '10', '~est'),
+                new YassRow('-', '44', '', '', ''),
+                new YassRow(':', '46', '5', '10', 'Tes'),
+                new YassRow(':', '52', '5', '10', '~'),
+                new YassRow(':', '58', '5', '10', 't'),
                 new YassRow('E', '', '', '', '')
         ]
         rows.each { row ->

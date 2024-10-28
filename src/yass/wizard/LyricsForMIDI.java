@@ -26,7 +26,10 @@ import yass.YassTable;
 import javax.swing.*;
 import javax.swing.text.html.HTMLDocument;
 import java.awt.*;
-import java.awt.event.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
 import java.net.URL;
 import java.util.StringTokenizer;
 import java.util.Vector;
@@ -47,8 +50,6 @@ public class LyricsForMIDI extends JPanel {
     private YassTable table = null;
     private YassHyphenator hyphenator = null;
     private JComboBox<String> langCombo = null;
-    private JCheckBox utf8 = null;
-
 
     /**
      * Constructor for the Lyrics object
@@ -89,19 +90,6 @@ public class LyricsForMIDI extends JPanel {
 
         JPanel buttons = new JPanel(new GridLayout(1, 3));
         JPanel hyPanel = new JPanel(new BorderLayout());
-        utf8 = new JCheckBox("UTF-8");
-        utf8.setSelected(wizard.getValue("encoding").equals("utf8"));
-        utf8.addItemListener(
-                new ItemListener() {
-                    public void itemStateChanged(ItemEvent e) {
-                        if (utf8.isSelected()) {
-                            wizard.setValue("encoding", "utf8");
-                        } else {
-                            wizard.setValue("encoding", "");
-                        }
-                    }
-                });
-        buttons.add(utf8);
         buttons.add(new JLabel(""));
         hyPanel.add("West", langCombo = new JComboBox<>());
         JButton hyphButton = new JButton(I18.get("create_lyrics_midi_hyphenate"));

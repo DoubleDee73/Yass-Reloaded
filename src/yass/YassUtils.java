@@ -18,15 +18,15 @@
 
 package yass;
 
-import org.tritonus.share.sampled.file.TAudioFileFormat;
+import net.bramp.ffmpeg.probe.FFmpegProbeResult;
+import org.apache.commons.lang3.StringUtils;
+import yass.ffmpeg.FFMPEGLocator;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
 import javax.imageio.ImageTypeSpecifier;
 import javax.imageio.stream.ImageInputStream;
-import javax.sound.sampled.AudioFileFormat;
-import javax.sound.sampled.AudioSystem;
 import javax.swing.*;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
@@ -39,6 +39,7 @@ import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeEvent;
 import java.io.*;
 import java.text.MessageFormat;
+import java.util.List;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -56,7 +57,11 @@ public class YassUtils {
     public final static int EAST = 2;
     public final static int WEST = 3;
     private static String msg = null;
-
+    private YassHyphenator hyphenator;
+    
+    private int defaultLength = 2;
+    private boolean spacingAfter = true;
+    
     /**
      * Gets the songDir attribute of the YassUtils class
      *
@@ -146,47 +151,48 @@ public class YassUtils {
         if (!f.exists()) {
             return null;
         }
+        String artist = null;
+        String title= null;
+        String genre = "unknown";
+        if (f.getName().contains(" - ")) {
+            String[] temp = f.getName().split("-");
+            artist = temp[0].trim();
+            title = temp[1].trim();
+            if (title.endsWith(".mp3") || title.endsWith(".m4a") || title.endsWith(".wav") || title.endsWith(".ogg")) {
+                title = title.substring(0, title.length() - 4);
+            }
+        }
         try {
-            AudioFileFormat baseFileFormat = AudioSystem.getAudioFileFormat(f);
-            if (baseFileFormat instanceof TAudioFileFormat) {
-                Map<?, ?> properties = baseFileFormat.properties();
-                String artist = (String) properties.get("author");
-                String title = (String) properties.get("title");
-
-                String genre;
-                s = f.getName();
-                int i = s.indexOf(" - ");
-                if (i >= 0) {
-                    if (artist == null || artist.trim().length() < 1) {
-                        artist = s.substring(0, i).trim();
-                    }
-                    if (title == null || title.trim().length() < 1) {
-                        title = s.substring(i + 3).trim();
-                        i = title.indexOf("[");
-                        if (i > 0) {
-                            title = title.substring(0, i).trim();
-                        }
-                        i = title.lastIndexOf(".");
-                        if (i > 0) {
-                            title = title.substring(0, i).trim();
-                        }
-                    }
+            FFMPEGLocator ffmpegLocator = FFMPEGLocator.getInstance();
+            if (ffmpegLocator == null || !ffmpegLocator.hasFFmpeg()) {
+                return null;
+            }
+            FFmpegProbeResult probeResult = ffmpegLocator.getFfprobe().probe(f.getAbsolutePath());
+            Map<String, String> properties = probeResult.getFormat().tags;
+            if (properties != null) {
+                if (StringUtils.isNotEmpty(properties.get("artist"))) {
+                    artist = properties.get("artist");
                 }
-
-                genre = (String) properties.get("mp3.id3tag.genre");
-                if (genre == null) {
-                    genre = "Unknown";
+                if (StringUtils.isNotEmpty(properties.get("title"))) {
+                    title = properties.get("title");
                 }
-
-                String data[] = new String[3];
-                data[0] = title;
-                data[1] = artist;
-                data[2] = genre;
-                return data;
+                if (properties.get("mp3.id3tag.genre") != null) {
+                    genre = properties.get("mp3.id3tag.genre");
+                }
             }
         } catch (Exception ignored) {
         }
-        return null;
+        if (artist == null) {
+            artist = f.getName();
+        }
+        if (title == null) {
+            title = f.getName();
+        }
+        String data[] = new String[3];
+        data[0] = title;
+        data[1] = artist;
+        data[2] = genre;
+        return data;
     }
 
     /**
@@ -248,7 +254,10 @@ public class YassUtils {
         //new song dir; move file & create empty txt
         File newdir = new File(dir, at);
         if (newdir.exists()) {
-            int ok = JOptionPane.showConfirmDialog(parent, "<html>" + MessageFormat.format(I18.get("create_error_msg_1"), newdir.getAbsolutePath()) + "</html>", I18.get("create_error_title"), JOptionPane.OK_CANCEL_OPTION);
+            int ok = JOptionPane.showConfirmDialog(parent,
+                                                   "<html>" + MessageFormat.format(I18.get("create_error_msg_1"),
+                                                                                   newdir.getAbsolutePath()) + "</html>",
+                                                   I18.get("create_error_title"), JOptionPane.OK_CANCEL_OPTION);
             if (ok == JOptionPane.OK_OPTION) {
                 deleteDir(newdir);
             } else {
@@ -262,7 +271,9 @@ public class YassUtils {
             File newmp3 = new File(newdir, at + ".mp3");
             File mp3 = new File(mp3filename);
             if (!copyFile(mp3, newmp3)) {
-                JOptionPane.showMessageDialog(parent, "<html>" + MessageFormat.format(I18.get("create_error_msg_1"), newdir.getAbsolutePath()) + "</html>", I18.get("create_error_title"), JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(parent, "<html>" + MessageFormat.format(I18.get("create_error_msg_1"),
+                                                                                      newdir.getAbsolutePath()) + "</html>",
+                                              I18.get("create_error_title"), JOptionPane.ERROR_MESSAGE);
             }
         }
 
@@ -594,7 +605,7 @@ public class YassUtils {
         }
         return success;
     }
-    
+
     /**
      * Description of the Method
      *
@@ -869,6 +880,7 @@ public class YassUtils {
 
     /**
      * Checks if file is a karaoke file.
+     *
      * @param file path to file
      * @return
      */
@@ -948,7 +960,8 @@ public class YassUtils {
 
     /**
      * Gets all karaoke files of the given folder.
-     * @param folder path to folder
+     *
+     * @param folder       path to folder
      * @param songFileType only files that end with this string
      * @return null if folder does not exist or is no folder
      */
@@ -969,8 +982,9 @@ public class YassUtils {
     /**
      * Gets number of bits for a given number n.
      * Examples:
-     *  n=3 --> 2 bits
-     *  n=4 --> 3 bits
+     * n=3 --> 2 bits
+     * n=4 --> 3 bits
+     *
      * @param n
      * @return
      */
@@ -986,17 +1000,18 @@ public class YassUtils {
     /**
      * Gets bit mask for a given number n.
      * Examples:
-     *  n=1 --> [0]
-     *  n=2 --> [1]
-     *  n=3 --> [0,1]
-     *  n=4 --> [2]
-     *  n=5 --> [0,2]
-     *  n=6 --> [1,2]
-     *  n=7 --> [0,1,2]
-     *  n=8 --> [3]
-     *  n=9 --> [0,3]
-     *  ...
-     *  n=15 --> [0,1,2,3]
+     * n=1 --> [0]
+     * n=2 --> [1]
+     * n=3 --> [0,1]
+     * n=4 --> [2]
+     * n=5 --> [0,2]
+     * n=6 --> [1,2]
+     * n=7 --> [0,1,2]
+     * n=8 --> [3]
+     * n=9 --> [0,3]
+     * ...
+     * n=15 --> [0,1,2,3]
+     *
      * @param n
      * @return
      */
@@ -1015,7 +1030,8 @@ public class YassUtils {
     /**
      * Gets [count] powers of two.
      * Examples:
-     *  n=4 --> [1,2,4,8]
+     * n=4 --> [1,2,4,8]
+     *
      * @param count
      * @return
      */
@@ -1067,14 +1083,99 @@ public class YassUtils {
             }
         };
         text.addPropertyChangeListener("document", (PropertyChangeEvent e) -> {
-            Document d1 = (Document)e.getOldValue();
-            Document d2 = (Document)e.getNewValue();
+            Document d1 = (Document) e.getOldValue();
+            Document d2 = (Document) e.getNewValue();
             if (d1 != null) d1.removeDocumentListener(dl);
             if (d2 != null) d2.addDocumentListener(dl);
             dl.changedUpdate(null);
         });
         Document d = text.getDocument();
         if (d != null) d.addDocumentListener(dl);
+    }
+
+    /**
+     * Creates txt rows from lyrics. The lyrics must be pre-split into an array of lines
+     * @param lines A whole line of lyrics
+     * @return
+     */
+    public List<String> splitLyricsToLines(String[] lines, int startBeat) {
+        List<String> textLines = new ArrayList<>();
+        for (String line : lines) {
+            List<String> rows = createRowsFromLine(line, startBeat);
+            textLines.addAll(rows);
+            YassRow tempRow = new YassRow(rows.get(rows.size() -1));
+            startBeat = tempRow.getBeatInt() + tempRow.getLengthInt() + 2;
+            textLines.add("-\t" + startBeat);
+            startBeat = startBeat + 1;
+        }
+        return textLines;
+    }
+
+    /**
+     * Create a list of rows
+     * @param line
+     * @param startBeat
+     * @return
+     */
+    private List<String> createRowsFromLine(String line, int startBeat) {
+        String[] words = line.split(" ");
+        List<String> rows = new ArrayList<>();
+        for (String word : words) {
+            List<String> syllables = createRowsFromWord(word, startBeat);
+            rows.addAll(syllables);
+            YassRow tempRow = new YassRow(syllables.get(syllables.size() - 1));
+            startBeat = tempRow.getBeatInt() + tempRow.getLengthInt() + 1;
+        }
+        return rows;
+    }
+
+    /**
+     * Creates a list of syllables from a word
+     * @param word
+     * @param startBeat
+     * @return
+     */
+    private List<String> createRowsFromWord(String word, int startBeat) {
+        List<String> rows = new ArrayList<>();
+        String[] syllables = hyphenator.hyphenateWord(word).split("\u00AD");
+        int i = 0;
+        for (String syllable : syllables) {
+            StringJoiner row = new StringJoiner("\t");
+            row.add(":");
+            row.add(Integer.toString(startBeat));
+            row.add(Integer.toString(getDefaultLength()));
+            row.add("6");
+            if (!isSpacingAfter() && i == 0) {
+                syllable = " " + syllable;
+            }
+            if (isSpacingAfter() && (++i == syllables.length)) {
+                syllable += " ";
+            }
+            row.add(syllable);
+            rows.add(row.toString());
+            startBeat = startBeat + getDefaultLength() + 1;
+        }
+        return rows;
+    }
+
+    public void setHyphenator(YassHyphenator hyphenator) {
+        this.hyphenator = hyphenator;
+    }
+
+    public int getDefaultLength() {
+        return defaultLength;
+    }
+
+    public void setDefaultLength(int defaultLength) {
+        this.defaultLength = defaultLength;
+    }
+
+    public boolean isSpacingAfter() {
+        return spacingAfter;
+    }
+
+    public void setSpacingAfter(boolean spacingAfter) {
+        this.spacingAfter = spacingAfter;
     }
 }
 

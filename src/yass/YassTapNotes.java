@@ -18,10 +18,12 @@
 
 package yass;
 
+import java.util.List;
 import java.util.Vector;
 
 public class YassTapNotes {
-    public static void evaluateTaps(YassTable table, Vector<Long> taps) {
+    public static final double REACTION_TIME = 200;
+    public static void evaluateTaps(YassTable table, Vector<Long> taps, List<Integer> pitches) {
         if (taps == null) return;
         int n = taps.size();
         if (n < 2) {
@@ -49,14 +51,20 @@ public class YassTapNotes {
         }
 
         int k = 0;
+        int i = 0;
         while (k < n && t < tn) {
             YassRow r = table.getRowAt(t++);
             if (r.isNote()) {
+                int note;
+                if (i < pitches.size()) {
+                    note = pitches.get(i++);
+                } else {
+                    note = Integer.MIN_VALUE;
+                }
                 long tapBeat = taps.elementAt(k++).longValue();
                 long tapBeat2 = taps.elementAt(k++).longValue();
-
-                double ms = tapBeat / 1000.0 - gap;
-                double ms2 = tapBeat2 / 1000.0 - gap;
+                double ms = tapBeat / 1000.0 - gap - REACTION_TIME;
+                double ms2 = tapBeat2 / 1000.0 - gap - REACTION_TIME;
                 int beat = (int) Math.round((4 * bpm * ms / (60 * 1000)));
                 int beat2 = (int) Math.round((4 * bpm * ms2 / (60 * 1000)));
 
@@ -65,6 +73,15 @@ public class YassTapNotes {
                 if (length < 1) length = 1;
                 r.setBeat(beat);
                 r.setLength(length);
+                if (note > Integer.MIN_VALUE + 10) {
+                    r.setHeight(note);
+                } else {
+                    if (note == YassActions.FREESTYLE_NOTE) {
+                        r.setType("F");
+                    } else if (note == YassActions.RAP_NOTE) {
+                        r.setType("R");
+                    }
+                }
             }
         }
 

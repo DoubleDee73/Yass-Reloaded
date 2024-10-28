@@ -19,17 +19,16 @@
 package yass.wizard;
 
 import com.nexes.wizard.Wizard;
-import yass.I18;
+import org.apache.commons.lang3.StringUtils;
+import yass.*;
 
 import javax.swing.*;
 import javax.swing.text.html.HTMLDocument;
 import java.awt.*;
-import java.awt.event.ItemEvent;
-import java.awt.event.ItemListener;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.URL;
-import java.util.StringTokenizer;
+import java.util.List;
 
 /**
  * Description of the Class
@@ -44,7 +43,8 @@ public class Lyrics extends JPanel {
     private static final long serialVersionUID = 2887575440389998645L;
     private Wizard wizard;
     private JTextArea lyricsArea = null;
-    private JCheckBox utf8 = null;
+    private JComboBox<String> language = null;
+    private YassProperties yassProperties;
 
 
     /**
@@ -52,8 +52,9 @@ public class Lyrics extends JPanel {
      *
      * @param w Description of the Parameter
      */
-    public Lyrics(Wizard w) {
+    public Lyrics(Wizard w, YassProperties yassProperties) {
         wizard = w;
+        this.yassProperties = yassProperties;
         JLabel iconLabel = new JLabel();
         setLayout(new BorderLayout());
         iconLabel.setIcon(new ImageIcon(this.getClass().getResource("clouds.jpg")));
@@ -82,28 +83,39 @@ public class Lyrics extends JPanel {
         content.add("Center", new JScrollPane(txt));
 
         JPanel buttons = new JPanel(new GridLayout(1, 3));
-        utf8 = new JCheckBox("UTF-8");
-        utf8.setSelected(wizard.getValue("encoding").equals("utf8"));
-        utf8.addItemListener(
-                new ItemListener() {
-                    public void itemStateChanged(ItemEvent e) {
-                        if (utf8.isSelected()) {
-                            wizard.setValue("encoding", "utf8");
-                        } else {
-                            wizard.setValue("encoding", "");
-                        }
-                    }
+        List<String> languages = YassLanguageUtils.getSupportedLanguages();
+        languages.add(0, "");
+        language = new JComboBox<>(languages.toArray(new String[0]));
+        try {
+            if (wizard.getValues().contains("language") && languages.contains(wizard.getValue("language"))) {
+                language.setSelectedItem(wizard.getValue("language"));
+            }
+        } catch (NoSuchMethodError nsme) {
+            // ignore
+        }
+        language.addItemListener(
+                e -> {
+                        wizard.setValue("language", (String)language.getSelectedItem());
                 });
-        buttons.add(utf8);
-        buttons.add(new JLabel(""));
+        buttons.add(new JLabel(I18.get("options_group1_language")));
+        buttons.add(language);
         buttons.add(new JLabel(""));
 
         lyricsArea = new JTextArea(10, 20);
+        YassUtils.addChangeListener(lyricsArea, e -> determineLanguage());
         JPanel pan = new JPanel(new BorderLayout());
         pan.add("Center", new JScrollPane(lyricsArea));
         pan.add("South", buttons);
         content.add("South", pan);
         return content;
+    }
+
+    private void determineLanguage() {
+        if (language != null && StringUtils.isEmpty((String)language.getSelectedItem()) && 
+                lyricsArea.getDocument().getLength() > 0) {
+            String detectedLanguage = new YassLanguageUtils().detectLanguage(lyricsArea.getText());
+            language.setSelectedItem(detectedLanguage);
+        }
     }
 
 
@@ -148,20 +160,16 @@ public class Lyrics extends JPanel {
         outputStream.println("#MP3:Unknown");
         outputStream.println("#BPM:300");
         outputStream.println("#GAP:0");
-        StringTokenizer st = new StringTokenizer(getText(), "\n");
-        int b = 0;
-        while (st.hasMoreTokens()) {
-            String line = st.nextToken();
-            StringTokenizer st2 = new StringTokenizer(line, " ");
-            boolean isFirst = true;
-            while (st2.hasMoreTokens()) {
-                outputStream.println(": " + b + " 2 6 " + (isFirst ? "" : " ") + st2.nextToken());
-                isFirst = false;
-                b += 4;
-            }
-            if (st.hasMoreTokens()) {
-                outputStream.println("- " + b);
-            }
+        YassHyphenator hyphenator = new YassHyphenator("DE|EN|ES|FR|IT|PL|PT|RU|TR|ZH");
+        hyphenator.setLanguage(new YassLanguageUtils().determineLanguageCode(wizard.getValue("language")));
+        hyphenator.setYassProperties(yassProperties);
+        YassUtils yassUtils = new YassUtils();
+        yassUtils.setHyphenator(hyphenator);
+        yassUtils.setDefaultLength(4);
+        yassUtils.setSpacingAfter(yassProperties.isUncommonSpacingAfter());
+        List<String> lyrics = yassUtils.splitLyricsToLines(getText().split("\n"), 0);
+        for (String line : lyrics) {
+            outputStream.println(line.replace("\t", " "));
         }
         outputStream.println("E");
         return buffer.toString();

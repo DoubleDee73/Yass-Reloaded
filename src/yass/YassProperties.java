@@ -88,7 +88,6 @@ public class YassProperties extends Properties {
             FileInputStream fis = new FileInputStream(propFile);
             loadFromXML(fis);
             fis.close();
-            loadDevices();
 
             if (getProperty("note-naming-h") == null)
                 setProperty("note-naming-h", "DE RU PL NO FI SE");

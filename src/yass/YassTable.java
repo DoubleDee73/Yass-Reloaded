@@ -70,6 +70,8 @@ public class YassTable extends JTable {
     private YassProperties prop = null;
     private YassHyphenator hyphenator;
     private YassLanguageUtils languageUtils;
+    private YassUtils yassUtils;
+    
     private String mp3 = null;
     private String audio = null;
     private String instrumental = null;
@@ -1718,6 +1720,9 @@ public class YassTable extends JTable {
         hyphenator = new YassHyphenator("DE|EN|ES|FR|IT|PL|PT|RU|TR|ZH");
         hyphenator.setLanguage(languageUtils.determineLanguageCode(getLanguage()));
         hyphenator.setYassProperties(prop);
+        yassUtils = new YassUtils();
+        yassUtils.setHyphenator(hyphenator);
+        yassUtils.setSpacingAfter(prop.isUncommonSpacingAfter());
         return true;
     }
 
@@ -3860,10 +3865,10 @@ public class YassTable extends JTable {
             // if (row==0) --> select START
         } else if (b > 0) {
             YassRow r = getRowAt(row);
-            while (r.isNote() && row < n - 1) {
+            while (r != null && r.isNote() && row < n - 1) {
                 r = getRowAt(++row);
             }
-            while ((!r.isNote()) && row < n - 1) {
+            while (r != null && (!r.isNote()) && row < n - 1) {
                 r = getRowAt(++row);
             }
             if (row == n - 1) { // select END --> no
@@ -3976,36 +3981,101 @@ public class YassTable extends JTable {
     }
 
     public void shiftEnding() {
+        if (!checkShiftEndingConditions(false)) {
+            return;
+        }
         int selectedRows = getSelectedRows().length;
-        if (selectedRows < 2) {
-            return;
-        }
         int selectedRowIndex = getSelectedRows()[0];
-        for (int i = 1; i < selectedRows; i++) {
-            YassRow tempSyllable = getRowAt(selectedRowIndex + i);
-            if (!tempSyllable.getTrimmedText()
-                             .startsWith("~") && i == selectedRows - 1 || (!tempSyllable.getTrimmedText()
-                                                                                        .equals("~") && i < selectedRows - 1)) {
-                return;
-            }
-        }
-        YassRow secondSyllable = getRowAt(selectedRowIndex + (selectedRows - 1));
-        if (!secondSyllable.isNote() && !secondSyllable.getTrimmedText().startsWith("~")) {
-            return;
-        }
-        YassRow firstSyllable = getRowAt(selectedRowIndex);
-        if (!firstSyllable.isNote() || firstSyllable.getTrimmedText().length() == 1 || firstSyllable.endsWithSpace()) {
-            return;
-        }
-        String newSecond = "~" + StringUtils.right(firstSyllable.getTrimmedText(), 1) + secondSyllable.getTrimmedText()
-                                                                                                      .substring(1);
-        String newFirst = StringUtils.left(firstSyllable.getText(), firstSyllable.getText().length() - 1);
-        secondSyllable.setText(newSecond + (secondSyllable.endsWithSpace() ? YassRow.SPACE : ""));
-        firstSyllable.setText(newFirst);
+        YassRow lastNote = getRowAt(selectedRowIndex + (selectedRows - 1));
+        YassRow firstNote = getRowAt(selectedRowIndex);
+        String oldLast = lastNote.getTrimmedText();
+        int tilde = oldLast.indexOf("~");
+        String newLast = "~" + StringUtils.right(firstNote.getTrimmedText(), 1) + oldLast.substring(tilde + 1);
+        String newFirst = StringUtils.left(firstNote.getTrimmedText(), firstNote.getTrimmedText().length() - 1);
+        lastNote.setText(newLast + (lastNote.endsWithSpace() ? YassRow.SPACE : ""));
+        firstNote.setText(newFirst);
+        trimMiddleTildes();
         tm.fireTableDataChanged();
         getSelectionModel().setSelectionInterval(selectedRowIndex, selectedRowIndex + (selectedRows - 1));
     }
 
+    private void trimMiddleTildes() {
+        int selectedRows = getSelectedRows().length;
+        if (selectedRows < 3) {
+            return;
+        }
+        int selectedRowIndex = getSelectedRows()[0];
+        for (int i = 0; i < selectedRows; i++) {
+            YassRow tempSyllable = getRowAt(selectedRowIndex + i);
+            String text = tempSyllable.getTrimmedText();
+            if (i > 0 && i < selectedRows - 1) {
+                tempSyllable.setText(text);
+            }
+        }
+    }
+
+    /**
+     * Shifts the first letter before a ~ of the last syllable to the right.
+     * Conditions:
+     * First syllable must end with a letter
+     * Last syllable must start with ~ and must have at least one letter after that
+     * All syllables between the first and the last must be a ~
+     */
+    public void shiftEndingLeft() {
+        if (!checkShiftEndingConditions(true)) {
+            return;
+        }
+        int selectedRows = getSelectedRows().length;
+        int selectedRowIndex = getSelectedRows()[0];
+        YassRow lastNote = getRowAt(selectedRowIndex + (selectedRows - 1));
+        YassRow firstNote = getRowAt(selectedRowIndex);
+        String oldLast = lastNote.getTrimmedText();
+        String newLast;
+        String characterToMove;
+        if (oldLast.length() == 1) {
+            newLast = "";
+            characterToMove = oldLast;
+        } else {
+            int tilde = oldLast.indexOf("~");
+            if (tilde + 1 == oldLast.length() && tilde - 1 >= 0) {
+                characterToMove = oldLast.substring(tilde - 1, 1);
+                newLast = oldLast.substring(tilde);
+            } else {
+                characterToMove = oldLast.substring(tilde + 1, tilde + 2);
+                newLast = oldLast.substring(tilde + 2);
+            }
+        }
+        String newFirst = firstNote.getTrimmedText() + characterToMove;
+        lastNote.setText("~" + newLast + (lastNote.endsWithSpace() ? YassRow.SPACE : ""));
+        firstNote.setText(newFirst);
+        trimMiddleTildes();
+        tm.fireTableDataChanged();
+        getSelectionModel().setSelectionInterval(selectedRowIndex, selectedRowIndex + (selectedRows - 1));
+    }
+    
+    private boolean checkShiftEndingConditions(boolean toLeft) {
+        int selectedRows = getSelectedRows().length;
+        if (selectedRows < 2) {
+            return false;
+        }
+        int selectedRowIndex = getSelectedRows()[0];
+        for (int i = 0; i < selectedRows; i++) {
+            YassRow tempSyllable = getRowAt(selectedRowIndex + i);
+            if (!tempSyllable.isNote()) {
+                return false;
+            }
+            String text = tempSyllable.getTrimmedText();
+            if (i == 0 && !toLeft && text.length() == 1) {
+                // First syllable is too short
+                return false;
+            } else if (i > 0 && i < (selectedRows - 1) && !text.equals("~")) {
+                // Syllables between are not ~
+                return false;
+            }
+        }
+        return true;
+    }
+    
     public void pasteRows() {
         int startRow = getSelectionModel().getMinSelectionIndex();
         if (startRow < 0) {
@@ -4026,12 +4096,16 @@ public class YassTable extends JTable {
                 pasteLyrics(trstring);
                 return;
             }
-            StringTokenizer st1 = new StringTokenizer(trstring, "\n");
-            int i;
+
+            List<String> lines = splitLinesAndStripPageBreaks(trstring);
+            int i = 0;
             int n = getRowCount();
             int pasteBeat = -1;
-            for (i = 0; st1.hasMoreTokens() && (startRow + i < n); i++) {
-                StringTokenizer st2 = new StringTokenizer(st1.nextToken(), "\t");
+            for (String line : lines) {
+                if (startRow + i >= n) {
+                    break;
+                }
+                StringTokenizer st2 = new StringTokenizer(line, "\t");
                 String type = st2.hasMoreTokens() ? st2.nextToken() : "";
                 String beat = st2.hasMoreTokens() ? st2.nextToken() : "";
                 if (pasteBeat == -1) {
@@ -4052,14 +4126,23 @@ public class YassTable extends JTable {
                     r2.setLength(length);
                     r2.setHeight(height);
                 }
+                i++;
             }
             tm.fireTableRowsUpdated(startRow, Math.min(startRow + i, n - 1));
         } catch (Exception ignored) {
         }
     }
 
+    private List<String> splitLinesAndStripPageBreaks(String trstring) {
+        List<String> lines = new ArrayList<>(Arrays.stream(trstring.split("\n")).toList());
+        if (!lines.isEmpty() && lines.get(lines.size() - 1).startsWith("-")) {
+            lines.remove(lines.size() - 1);
+        }
+        return lines;
+    }
+
     private void pasteLyrics(String trstring) {
-        String[] lines = splitTextToLines(trstring);
+        String[] lines = splitTextToLines(trstring, 0);
         for (int i = 0; i < getSelectionModel().getSelectedItemsCount(); i++) {
             YassRow row = getRowAt(i + getSelectedRow());
             if (i < lines.length) {
@@ -4324,14 +4407,21 @@ public class YassTable extends JTable {
             }
             startBeat = r.getBeatInt();
         }
-        String[] lines = splitTextToLines(trstring);
+        String[] lines = splitTextToLines(trstring, startBeat);
         int num = 0;
         if (startBeat >= 0) {
             YassRow firstRowToAdd = new YassRow(lines[0]);
             YassRow lastRowToAdd = new YassRow(lines[lines.length - 1]);
             int offset = lastRowToAdd.getBeatInt() - firstRowToAdd.getBeatInt();
-            int endRowNum = findRowThatDoesNotOverlap(startRow,
-                                                      startBeat + offset + lastRowToAdd.getLengthInt());
+            int lastBeat;
+            if (getSelectedRows().length == 1) {
+                // Only one row is selected over which to paste -> This is the starting row
+                lastBeat = startBeat + offset + lastRowToAdd.getLengthInt();
+            } else {
+                YassRow lastSelectedRow = getRowAt(getSelectedRows()[getSelectedRows().length - 1]);
+                lastBeat = lastSelectedRow.getBeatInt() + lastSelectedRow.getLengthInt();
+            }
+            int endRowNum = findRowThatDoesNotOverlap(startRow, lastBeat);
             List<YassRow> existingRowsToAppend;
             if (endRowNum >= startRow) {
                 existingRowsToAppend = copyRowsFrom(endRowNum);
@@ -4358,26 +4448,19 @@ public class YassTable extends JTable {
                 int beatInt = Integer.parseInt(beat);
                 lengthInt = StringUtils.isNumeric(length) ? Integer.parseInt(length) : 0;
                 boolean isSep = type.equals("-");
-                if (isSep && length.length() > 0) {
+                if (isSep && !length.isEmpty()) {
                     length = Integer.toString(lengthInt + startBeat);
                 }
                 currentBeat = startBeat + beatInt - pasteBeat;
+                if (currentBeat > lastBeat) {
+                    break;
+                }
                 tm.addRow(type, String.valueOf(currentBeat), length, height, txt);
                 hasPageBreak = "-".equals(type);
                 rowCounter++;
             }
             if (!existingRowsToAppend.isEmpty()) {
                 YassRow firstRowToAppend = existingRowsToAppend.get(0);
-                if (!hasPageBreak && !firstRowToAppend.isPageBreak()) {
-                    if (pasteBeat == -1) {
-                        pasteBeat = existingRowsToAppend.get(0).getBeatInt() - 1;
-                    } else {
-                        int lastNoteEnding = currentBeat + lengthInt;
-                        pasteBeat = lastNoteEnding + ((existingRowsToAppend.get(0).getBeatInt() - lastNoteEnding) / 2);
-                    }
-                    tm.addRow(new YassRow("-", Integer.toString(pasteBeat), StringUtils.EMPTY, StringUtils.EMPTY,
-                                          StringUtils.EMPTY));
-                }
                 int start = hasPageBreak && firstRowToAppend.isPageBreak() ? 1 : 0;
                 for (YassRow rowToAppend : existingRowsToAppend.subList(start, existingRowsToAppend.size())) {
                     tm.addRow(rowToAppend);
@@ -4410,7 +4493,7 @@ public class YassTable extends JTable {
         return copiedRows;
     }
 
-    private String[] splitTextToLines(String trstring) {
+    private String[] splitTextToLines(String trstring, int startBeat) {
         if (StringUtils.isEmpty(trstring)) {
             return new String[0];
         }
@@ -4421,46 +4504,10 @@ public class YassTable extends JTable {
         if (lines[0].contains("\t")) {
             return lines;
         }
-        List<String> textLines = new ArrayList<>();
-        int startBeat = 0;
-        for (String line : lines) {
-            List<String> rows = createRowsFromLine(line, startBeat);
-            textLines.addAll(rows);
-            startBeat = startBeat + (rows.size() * 2);
-            textLines.add("-\t" + startBeat);
-            startBeat = startBeat + 2;
-        }
+        List<String> textLines = yassUtils.splitLyricsToLines(lines, startBeat); 
         return textLines.toArray(textLines.toArray(new String[0]));
     }
-
-    private List<String> createRowsFromLine(String line, int startBeat) {
-        String[] words = line.split(" ");
-        List<String> rows = new ArrayList<>();
-        for (String word : words) {
-            List<String> syllables = createRowsFromWord(word, startBeat);
-            rows.addAll(syllables);
-            startBeat = startBeat + (syllables.size() * 2);
-        }
-        return rows;
-    }
-
-    private List<String> createRowsFromWord(String word, int startBeat) {
-        List<String> rows = new ArrayList<>();
-        String[] syllables = hyphenator.syllableficate(word).split("\u00AD");
-        int i = 0;
-        for (String syllable : syllables) {
-            StringJoiner row = new StringJoiner("\t");
-            row.add(":");
-            row.add(Integer.toString(startBeat));
-            row.add("1");
-            row.add("0");
-            row.add(syllable + (++i == syllables.length ? " " : ""));
-            rows.add(row.toString());
-            startBeat = startBeat + 2;
-        }
-        return rows;
-    }
-
+    
     private boolean endswithPageBreak(String line) {
         YassRow yassRow = new YassRow(line);
         for (YassRow row : tm.getData()) {
@@ -4492,8 +4539,11 @@ public class YassTable extends JTable {
                 return 0;
             }
 
-            int ret = insertRowsAt(trstring, getSelectedRow(), true);
+            int selectionStart = getSelectedRow();
+            int selectedRows = getSelectedRowCount();
+            int ret = insertRowsAt(trstring, selectionStart, true);
             sheet.updateActiveTable();
+            getSelectionModel().setSelectionInterval(selectionStart, selectionStart + selectedRows - 1);
             return ret;
         }
         return 0;
@@ -5288,6 +5338,13 @@ public class YassTable extends JTable {
             txt = txt.replace(YassRow.SPACE, ' ');
             sbf.append(txt);
             sbf.append("\n");
+        }
+        YassRow nextRow = null;
+        if (getSelectedRows().length + 1 < getRowCount()) {
+            nextRow = getRowAt(getSelectedRows().length + getSelectedRow());
+        }
+        if (nextRow != null && nextRow.isPageBreak()) {
+            sbf.append("-\t" + nextRow.getBeat() + "\t\t\t\n");
         }
         return sbf.toString();
     }
@@ -6504,7 +6561,7 @@ public class YassTable extends JTable {
         }
         boolean trailingSpace = prop.isUncommonSpacingAfter();
         if (trailingSpace && row.endsWithSpace()) {
-            row.setText(StringUtils.abbreviate(row.getText(), row.getText().length() - 1));
+            row.setText(StringUtils.truncate(row.getText(), row.getText().length() - 1));
         }
         if (!trailingSpace && selectedRow < getRowCount()) {
             YassRow nextRow = getRowAt(selectedRow + 1);

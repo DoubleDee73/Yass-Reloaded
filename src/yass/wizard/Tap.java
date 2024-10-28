@@ -85,7 +85,7 @@ public class Tap extends JPanel {
         table.setEnabled(false);
         content.add("Center", scroll = new JScrollPane(table));
         content.add("South", check = new JCheckBox(I18.get("create_tap_edit")));
-        check.setSelected(wizard.getValue("starteditor").equals("true"));
+        check.setSelected(true);
         check.addItemListener(
                 new ItemListener() {
                     public void itemStateChanged(ItemEvent e) {

@@ -21,6 +21,7 @@ package yass.wizard;
 import com.nexes.wizard.Wizard;
 import com.nexes.wizard.WizardPanelDescriptor;
 import yass.I18;
+import yass.YassProperties;
 import yass.YassTable;
 
 import javax.swing.*;
@@ -41,218 +42,214 @@ public class CreateSongWizard extends Wizard {
     LyricsForMIDI lyricsformidi = null;
     MIDI midi = null;
     Tap tap = null;
-
+    
+    private YassProperties yassProperties;
 
     /**
      * Constructor for the CreateSongWizard object
      *
      * @param parent Description of the Parameter
      */
-    public CreateSongWizard(Component parent) {
+    public CreateSongWizard(Component parent, YassProperties yassProperties) {
         super(JOptionPane.getFrameForComponent(parent));
         getDialog().setTitle(I18.get("create_title"));
+        this.yassProperties = yassProperties;
 
-        registerWizardPanel(Melody.ID,
-                new WizardPanelDescriptor(Melody.ID, melody = new Melody(this)) {
-                    public Object getNextPanelDescriptor() {
-                        if (melody.getFilename() != null && new File(melody.getFilename()).exists()) {
-                            return MIDI.ID;
+        registerWizardPanel(Melody.ID, new WizardPanelDescriptor(Melody.ID, melody = new Melody(this)) {
+            public Object getNextPanelDescriptor() {
+                if (melody.getFilename() != null && new File(melody.getFilename()).exists()) {
+                    return MIDI.ID;
+                }
+                return Lyrics.ID;
+            }
+
+
+            public Object getBackPanelDescriptor() {
+                return null;
+            }
+
+
+            public void aboutToDisplayPanel() {
+                melody.setFilename(getValue("melody"));
+            }
+        });
+        registerWizardPanel(Lyrics.ID, new WizardPanelDescriptor(Lyrics.ID, lyrics = new Lyrics(this, yassProperties)) {
+            public Object getNextPanelDescriptor() {
+                return MP3.ID;
+            }
+
+
+            public Object getBackPanelDescriptor() {
+                return Melody.ID;
+            }
+
+
+            public void aboutToDisplayPanel() {
+                setValue("melodytable", "");
+                lyrics.setText(getValue("lyrics"));
+            }
+
+
+            public void aboutToHidePanel() {
+                setValue("lyrics", lyrics.getText());
+                setValue("melodytable", lyrics.getTable());
+                setValue("bpm", "300");
+            }
+        });
+        registerWizardPanel(MIDI.ID, new WizardPanelDescriptor(MIDI.ID, midi = new MIDI(this)) {
+            public Object getNextPanelDescriptor() {
+                if (melody.getFilename() != null && new File(melody.getFilename()).exists()) {
+                    String txt = midi.getText();
+                    if (txt != null) {
+                        YassTable t = new YassTable();
+                        t.setText(txt);
+                        if (t.hasLyrics()) {
+                            setValue("haslyrics", "yes");
+                            return MP3.ID;
                         }
-                        return Lyrics.ID;
                     }
+                }
+                setValue("haslyrics", "no");
+                return LyricsForMIDI.ID;
+            }
 
 
-                    public Object getBackPanelDescriptor() {
-                        return null;
-                    }
+            public Object getBackPanelDescriptor() {
+                return Melody.ID;
+            }
 
 
-                    public void aboutToDisplayPanel() {
-                        melody.setFilename(getValue("melody"));
-                    }
-                });
-        registerWizardPanel(Lyrics.ID,
-                new WizardPanelDescriptor(Lyrics.ID, lyrics = new Lyrics(this)) {
-                    public Object getNextPanelDescriptor() {
-                        return MP3.ID;
-                    }
+            public void aboutToDisplayPanel() {
+                midi.setFilename(getValue("melody"));
+                setValue("melodytable", "");
+                midi.startRendering();
+            }
 
 
-                    public Object getBackPanelDescriptor() {
-                        return Melody.ID;
-                    }
-
-
-                    public void aboutToDisplayPanel() {
-                        setValue("melodytable", "");
-                        lyrics.setText(getValue("lyrics"));
-                    }
-
-
-                    public void aboutToHidePanel() {
-                        setValue("lyrics", lyrics.getText());
-                        setValue("melodytable", lyrics.getTable());
-                        setValue("bpm", "300");
-                    }
-                });
-        registerWizardPanel(MIDI.ID,
-                new WizardPanelDescriptor(MIDI.ID, midi = new MIDI(this)) {
-                    public Object getNextPanelDescriptor() {
-                        if (melody.getFilename() != null && new File(melody.getFilename()).exists()) {
-                            String txt = midi.getText();
-                            if (txt != null) {
-                                YassTable t = new YassTable();
-                                t.setText(txt);
-                                if (t.hasLyrics()) {
-                                    setValue("haslyrics", "yes");
+            public void aboutToHidePanel() {
+                if (melody.getFilename() != null && new File(melody.getFilename()).exists()) {
+                    setValue("melodytable", midi.getText());
+                    setValue("bpm", midi.getMaxBPM());
+                } else {
+                    setValue("melodytable", "");
+                }
+                midi.stopRendering();
+            }
+        });
+        registerWizardPanel(LyricsForMIDI.ID,
+                            new WizardPanelDescriptor(LyricsForMIDI.ID, lyricsformidi = new LyricsForMIDI(this)) {
+                                public Object getNextPanelDescriptor() {
                                     return MP3.ID;
                                 }
-                            }
-                        }
-                        setValue("haslyrics", "no");
-                        return LyricsForMIDI.ID;
-                    }
 
 
-                    public Object getBackPanelDescriptor() {
-                        return Melody.ID;
-                    }
+                                public Object getBackPanelDescriptor() {
+                                    return MIDI.ID;
+                                }
 
 
-                    public void aboutToDisplayPanel() {
-                        midi.setFilename(getValue("melody"));
-                        setValue("melodytable", "");
-                        midi.startRendering();
-                    }
+                                public void aboutToDisplayPanel() {
+                                    lyricsformidi.setHyphenations(getValue("hyphenations"));
+                                    lyricsformidi.setTable(getValue("melodytable"));
+                                    lyricsformidi.setText(getValue("lyrics"));
+                                    lyricsformidi.requestFocus();
+                                }
 
 
-                    public void aboutToHidePanel() {
-                        if (melody.getFilename() != null && new File(melody.getFilename()).exists()) {
-                            setValue("melodytable", midi.getText());
-                            setValue("bpm", midi.getMaxBPM());
-                        } else {
-                            setValue("melodytable", "");
-                        }
-                        midi.stopRendering();
-                    }
-                });
-        registerWizardPanel(LyricsForMIDI.ID,
-                new WizardPanelDescriptor(LyricsForMIDI.ID, lyricsformidi = new LyricsForMIDI(this)) {
-                    public Object getNextPanelDescriptor() {
-                        return MP3.ID;
-                    }
+                                public void aboutToHidePanel() {
+                                    setValue("lyrics", lyricsformidi.getText());
+                                    setValue("melodytable", lyricsformidi.getTable());
+                                }
+                            });
+        registerWizardPanel(MP3.ID, new WizardPanelDescriptor(MP3.ID, mp3 = new MP3(this)) {
+            public Object getNextPanelDescriptor() {
+                return Header.ID;
+            }
 
 
-                    public Object getBackPanelDescriptor() {
+            public Object getBackPanelDescriptor() {
+                if (melody.getFilename() != null && new File(melody.getFilename()).exists()) {
+                    String hasLyrics = getValue("haslyrics");
+                    if (hasLyrics != null && hasLyrics.equals("yes")) {
                         return MIDI.ID;
                     }
+                    return LyricsForMIDI.ID;
+                }
+                return Lyrics.ID;
+            }
 
 
-                    public void aboutToDisplayPanel() {
-                        lyricsformidi.setHyphenations(getValue("hyphenations"));
-                        lyricsformidi.setTable(getValue("melodytable"));
-                        lyricsformidi.setText(getValue("lyrics"));
-                        lyricsformidi.requestFocus();
-                    }
+            public void aboutToDisplayPanel() {
+                mp3.setFilename(getValue("filename"));
+            }
+        });
+        registerWizardPanel(Header.ID, new WizardPanelDescriptor(Header.ID, header = new Header(this)) {
+            public Object getNextPanelDescriptor() {
+                return Edition.ID;
+            }
 
 
-                    public void aboutToHidePanel() {
-                        setValue("lyrics", lyricsformidi.getText());
-                        setValue("melodytable", lyricsformidi.getTable());
-                    }
-                });
-        registerWizardPanel(MP3.ID,
-                new WizardPanelDescriptor(MP3.ID, mp3 = new MP3(this)) {
-                    public Object getNextPanelDescriptor() {
-                        return Header.ID;
-                    }
+            public Object getBackPanelDescriptor() {
+                return MP3.ID;
+            }
 
 
-                    public Object getBackPanelDescriptor() {
-                        if (melody.getFilename() != null && new File(melody.getFilename()).exists()) {
-                            String hasLyrics = getValue("haslyrics");
-                            if (hasLyrics != null && hasLyrics.equals("yes")) {
-                                return MIDI.ID;
-                            }
-                            return LyricsForMIDI.ID;
-                        }
-                        return Lyrics.ID;
-                    }
+            public void aboutToDisplayPanel() {
+                header.setGenres(getValue("genres"), getValue("genres-more"));
+                header.setLanguages(getValue("languages"), getValue("languages-more"), getValue("language"));
+                header.setLanguage(getValue("language"));
+                header.setTitle(getValue("title"));
+                header.setArtist(getValue("artist"));
+                header.setBPM(getValue("bpm"));
+                header.setGenre(getValue("genre"));
+            }
 
 
-                    public void aboutToDisplayPanel() {
-                        mp3.setFilename(getValue("filename"));
-                    }
-                });
-        registerWizardPanel(Header.ID,
-                new WizardPanelDescriptor(Header.ID, header = new Header(this)) {
-                    public Object getNextPanelDescriptor() {
-                        return Edition.ID;
-                    }
+            public void aboutToHidePanel() {
+                setValue("title", header.getTitle());
+                setValue("artist", header.getArtist());
+                setValue("genre", header.getGenre());
+                setValue("language", header.getLanguage());
+                setValue("bpm", header.getBPM());
+            }
+        });
+        registerWizardPanel(Edition.ID, new WizardPanelDescriptor(Edition.ID, edition = new Edition(this)) {
+            public Object getNextPanelDescriptor() {
+                return Tap.ID;
+            }
 
 
-                    public Object getBackPanelDescriptor() {
-                        return MP3.ID;
-                    }
+            public Object getBackPanelDescriptor() {
+                return Header.ID;
+            }
 
 
-                    public void aboutToDisplayPanel() {
-                        header.setGenres(getValue("genres"), getValue("genres-more"));
-                        header.setLanguages(getValue("languages"), getValue("languages-more"));
-                        header.setTitle(getValue("title"));
-                        header.setArtist(getValue("artist"));
-                        header.setBPM(getValue("bpm"));
-                        header.setGenre(getValue("genre"));
-                    }
+            public void aboutToDisplayPanel() {
+                edition.setSongDir(getValue("songdir"));
+                edition.setFolder(getValue("folder"));
+            }
 
 
-                    public void aboutToHidePanel() {
-                        setValue("title", header.getTitle());
-                        setValue("artist", header.getArtist());
-                        setValue("genre", header.getGenre());
-                        setValue("language", header.getLanguage());
-                        setValue("bpm", header.getBPM());
-                    }
-                });
-        registerWizardPanel(Edition.ID,
-                new WizardPanelDescriptor(Edition.ID, edition = new Edition(this)) {
-                    public Object getNextPanelDescriptor() {
-                        return Tap.ID;
-                    }
+            public void aboutToHidePanel() {
+                setValue("folder", edition.getFolder());
+                setValue("edition", edition.getEdition());
+            }
+        });
+        registerWizardPanel(Tap.ID, new WizardPanelDescriptor(Tap.ID, tap = new Tap(this)) {
+            public Object getNextPanelDescriptor() {
+                return FINISH;
+            }
 
 
-                    public Object getBackPanelDescriptor() {
-                        return Header.ID;
-                    }
+            public Object getBackPanelDescriptor() {
+                return Header.ID;
+            }
 
 
-                    public void aboutToDisplayPanel() {
-                        edition.setSongDir(getValue("songdir"));
-                        edition.setFolder(getValue("folder"));
-                    }
-
-
-                    public void aboutToHidePanel() {
-                        setValue("folder", edition.getFolder());
-                        setValue("edition", edition.getEdition());
-                    }
-                });
-        registerWizardPanel(Tap.ID,
-                new WizardPanelDescriptor(Tap.ID, tap = new Tap(this)) {
-                    public Object getNextPanelDescriptor() {
-                        return FINISH;
-                    }
-
-
-                    public Object getBackPanelDescriptor() {
-                        return Header.ID;
-                    }
-
-
-                    public void aboutToDisplayPanel() {
-                        tap.updateTable();
-                    }
-                });
+            public void aboutToDisplayPanel() {
+                tap.updateTable();
+            }
+        });
     }
 
 
@@ -282,6 +279,16 @@ public class CreateSongWizard extends Wizard {
      */
     public void hide() {
         getDialog().setVisible(false);
+    }
+
+    @Override
+    public String getValue(String s) {
+        return super.getValue(s);
+    }
+
+    @Override
+    public void setValue(String s, String val) {
+        super.setValue(s, val);
     }
 }
 

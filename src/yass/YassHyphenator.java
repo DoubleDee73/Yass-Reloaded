@@ -138,11 +138,9 @@ public class YassHyphenator {
         if (word.contains("-")) {
             return word.replace( "-", "–\u00AD");
         }
-        if (hyphenator != null) {
+        word = syllableficate(word);
+        if (hyphenator != null && word == null || !word.contains("\u00AD")) {
             word = hyphenator.hyphenate(word, 2, 2);
-            if (!word.contains("\u00AD")) {
-                word = syllableficate(word);
-            }
         }
         return word;
     }
@@ -150,7 +148,7 @@ public class YassHyphenator {
     public String syllableficate(String word) {
         word = fallbackHyphenation(word);
         if (!word.contains("\u00AD")) {
-            // Still couldn't hyphenate. Checking, if it's a word like Checkin'
+            // Couldn't hyphenate. Checking, if it's a word like Checkin'
             word = hyphenateWithApostrophe(word);
         }
         if (!word.contains("\u00AD") && word.length() == 2 && StringUtils.isAllUpperCase(word)) {
@@ -318,7 +316,7 @@ public class YassHyphenator {
         if (fallbackHyphenations == null) {
             String fallbackDictionary = getYassProperties().getProperty("hyphenations_" + getCurrentLanguage());
             if (StringUtils.isEmpty(fallbackDictionary)) {
-                fallbackHyphenations = null;
+                return word;
             }
             try {
                 fallbackHyphenations = new HashMap<>();

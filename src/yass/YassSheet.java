@@ -18,6 +18,7 @@
 
 package yass;
 
+import org.apache.commons.lang3.StringUtils;
 import yass.renderer.YassNote;
 import yass.renderer.YassPlayerNote;
 import yass.renderer.YassSession;
@@ -35,6 +36,7 @@ import java.awt.image.VolatileImage;
 import java.io.Serial;
 import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Vector;
 import java.util.logging.Logger;
 
@@ -204,10 +206,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     AffineTransform identity = new AffineTransform();
     String bufferlost = I18.get("sheet_msg_buffer_lost");
     VolatileImage backVolImage = null, plainVolImage = null;
-    String[] hNoteTable = new String[]{"C", "C#", "D", "D#", "E", "F", "F#",
-            "G", "G#", "A", "B", "H"};
-    String[] bNoteTable = new String[]{"C", "C#", "D", "D#", "E", "F", "F#",
-            "G", "G#", "A", "A#", "B"};
+    String[] hNoteTable = new String[]{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "B", "H"};
+    String[] bNoteTable = new String[]{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
     String[] actualNoteTable = bNoteTable;
     boolean paintHeights = false;
     boolean live = false;
@@ -298,6 +298,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private String equalsDigits = "";
     private boolean versionTextPainted = true;
     private final Vector<Long> tmpNotes = new Vector<>(1024);
+    private List<Integer> tmpPitches = new ArrayList<>();
     private final Dimension dim = new Dimension(1000, 100);
     private Graphics2D pgb = null;
     private int ppos = 0;
@@ -312,6 +313,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private SongHeader songHeader;
 
     private YassMain owner;
+    private List<Integer> noteMapping;
 
     public YassSheet() {
         super(false);
@@ -899,28 +901,27 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     YassTable.setZoomMode(YassTable.ZOOM_MULTI);
                 }
                 setErrorMessage("");
-                if (paintHeights) {
-                    if (x < clip.x + heightBoxWidth && y > TOP_LINE - 10
-                            && (y < clip.height - BOTTOM_BORDER)) {
-                        if (y < 0) {
-                            y = 0;
-                        }
-                        if (y > dim.height) {
-                            y = dim.height;
-                        }
-
-                        int dy;
-                        if (pan) {
-                            dy = (int) Math.round(hhPageMin
-                                    + (dim.height - y - BOTTOM_BORDER) / hSize);
-                        } else {
-                            dy = (int) Math.round(minHeight
-                                    + (dim.height - y - BOTTOM_BORDER) / hSize);
-                        }
-                        hiliteHeight = dy;
-                        repaint();
-                        return;
+                if (paintHeights && (x < clip.x + heightBoxWidth && y > TOP_LINE - 10
+                        && (y < clip.height - BOTTOM_BORDER))) {
+                    if (y < 0) {
+                        y = 0;
                     }
+                    if (y > dim.height) {
+                        y = dim.height;
+                    }
+
+                    int dy;
+                    if (pan) {
+                        dy = (int) Math.round(hhPageMin
+                                                      + (dim.height - y - BOTTOM_BORDER) / hSize);
+                    } else {
+                        dy = (int) Math.round(minHeight
+                                                      + (dim.height - y - BOTTOM_BORDER) / hSize);
+                    }
+                    hiliteHeight = dy;
+                    repaint();
+                    return;
+
                 }
                 if (x < clip.x + LEFT_BORDER && y > dim.height - BOTTOM_BORDER) {
                     hiliteCue = PREV_PAGE_PRESSED;
@@ -3291,10 +3292,14 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
      * @return The noteName value
      */
     public String getNoteName(int n) {
+        return actualNoteTable[n];
+    }
+    
+    public int normalizeNoteHeight(int n) {
         while (n < 0) {
             n += 12;
         }
-        return actualNoteTable[n % 12];
+        return n % 12;
     }
 
     /**
@@ -3335,12 +3340,19 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         g2.setFont(smallFont);
         FontMetrics metrics = g2.getFontMetrics();
         String str;
+        int pianoIdx = 0;
+        String pianoKey;
         if (pan) {
+            initNoteMapping(hhPageMin - 1);
             for (int h = 1; h < NORM_HEIGHT - 2; h++) {
                 line.y1 = line.y2 = dim.height - BOTTOM_BORDER - h * hSize + 4;
-                str = getNoteName(hhPageMin + h - 2 + 60);
-
-                boolean isWhite = isWhiteNote(hhPageMin + h - 2 + 60);
+                int noteHeight = normalizeNoteHeight(hhPageMin + h - 2 + 60);
+                boolean isWhite = isWhiteNote(noteHeight);
+                pianoKey = getLetterForNote(pianoIdx++);
+                if (StringUtils.isEmpty(pianoKey) || h == 1 && !isWhite) {
+                    pianoKey = getLetterForNote(pianoIdx++);
+                }
+                str = getNoteName(noteHeight);
                 if (isWhite) {
                     g2.setColor(Color.white);
                     g2.fillRect(x + 1, (int) line.y1 - (int) hSize / 2 - 2,
@@ -3366,11 +3378,11 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     g2.drawString(str, (float) (clip.x + 3), (float) (line.y1));
                 }
 
+                int strKey = metrics.stringWidth(pianoKey);
                 str = "" + (hhPageMin + h - 2);
                 int strw = metrics.stringWidth(str);
-                g2.drawString(str,
-                        (float) (clip.x + heightBoxWidth - strw - 3),
-                        (float) (line.y1));
+                g2.drawString(pianoKey, (float) clip.x + heightBoxWidth - strKey - strw - 3, (float) line.y1);
+                g2.drawString(str, (float) (clip.x + heightBoxWidth - strw - 3), (float) (line.y1));
             }
             if (hiliteHeight < 200) {
                 g2.setColor(blueDrag);
@@ -3384,12 +3396,18 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                                 * hSize), heightBoxWidth, (int) (2 * hSize));
             }
         } else {
+            initNoteMapping(minHeight + 1);
             for (int h = minHeight + 1; h < maxHeight - 2; h++) {
                 line.y1 = line.y2 = dim.height - BOTTOM_BORDER
                         - (h - minHeight) * hSize + 4;
-                str = getNoteName(h + 60);
+                int noteHeight = normalizeNoteHeight(h + 60);
+                boolean isWhite = isWhiteNote(noteHeight);
+                pianoKey = getLetterForNote(pianoIdx++);
+                if (StringUtils.isEmpty(pianoKey) || pianoIdx == 1 && !isWhite) {
+                    pianoKey = getLetterForNote(pianoIdx++);
+                }
+                str = getNoteName(noteHeight);
 
-                boolean isWhite = isWhiteNote(h + 60);
                 if (isWhite) {
                     g2.setColor(Color.white);
                     g2.fillRect(x + 1, (int) line.y1 - 9, whitew, 10);
@@ -3410,8 +3428,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 }
                 str = "" + h;
                 int strw = metrics.stringWidth(str);
-                g2.drawString(str, (float) (x + w - strw - 5),
-                        (float) (line.y1));
+                int strKey = metrics.stringWidth(pianoKey);
+                g2.drawString(pianoKey, (float) x + w - strKey - strw - 5, (float) line.y1);
+                g2.drawString(str, (float) (x + w - strw - 5), (float) (line.y1));
             }
             if (hiliteHeight < 200) {
                 g2.setColor(hiGray);
@@ -3765,7 +3784,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                                 if (showNoteHeightNum)
                                     hstr = pitch + "";
                                 else if (showNoteHeight) {
-                                    hstr = getNoteName(pitch + 60);
+                                    int noteHeight = normalizeNoteHeight(pitch + 60);
+                                    hstr = getNoteName(noteHeight);
                                     if (showNoteScale || paintHeights) {
                                         int scale = pitch >= 0 ? (pitch / 12 + 4) : (3 + (pitch + 1) / 12); // negative pitch requires special handling
                                         hstr += "" + scale;
@@ -5621,5 +5641,44 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
     public SongHeader getSongHeader() {
         return songHeader;
+    }
+
+    public List<Integer> getTmpPitches() {
+        return tmpPitches;
+    }
+
+    public void clearTempPitches() {
+        this.tmpPitches = new ArrayList<>();
+    }
+    public String getLetterForNote(int pianoIdx) {
+        if (pianoIdx >= noteMapping.size() || noteMapping.get(pianoIdx) == Integer.MIN_VALUE) {
+            return "";
+        }
+        return "[" + actions.getKeyboardLayout().getLetter(pianoIdx) + "]";
+    }
+
+    public void initNoteMapping(int lowestNote) {
+        noteMapping = new ArrayList<>();
+        int normalized = normalizeNoteHeight(lowestNote);
+        while (!isWhiteNote(normalized)) {
+            lowestNote--;
+            normalized = normalizeNoteHeight(lowestNote);
+        }
+        int i = 0;
+        boolean exit;
+        do {
+            noteMapping.add(i + lowestNote);
+            exit = noteMapping.size() == KeyboardMapping.QWERTZ.keys.size();
+            normalized = normalizeNoteHeight(lowestNote + i);
+            if (!exit && (normalized == 4 || normalized == 11)) {
+                noteMapping.add(Integer.MIN_VALUE);
+                exit = noteMapping.size() == KeyboardMapping.QWERTZ.keys.size();
+            }
+            i++;
+        } while (!exit);
+    }
+
+    public List<Integer> getNoteMapping() {
+        return noteMapping;
     }
 }

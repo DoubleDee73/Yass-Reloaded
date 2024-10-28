@@ -35,6 +35,7 @@ import javax.swing.text.html.HTMLDocument;
 import java.awt.*;
 import java.awt.dnd.*;
 import java.awt.event.*;
+import java.awt.im.InputContext;
 import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeListener;
 import java.io.File;
@@ -43,6 +44,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.net.URL;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.MessageFormat;
 import java.util.List;
@@ -53,6 +55,8 @@ import java.util.logging.Logger;
 public class YassActions implements DropTargetListener {
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+    public static final int FREESTYLE_NOTE = Integer.MIN_VALUE + 1;
+    public static final int RAP_NOTE = Integer.MIN_VALUE + 2;
     private final YassSheet sheet;
     public final static String VERSION = "2024.10";
     public final static String DATE = "10/2024";
@@ -127,6 +131,14 @@ public class YassActions implements DropTargetListener {
     private int x;
     private int y;
     private final RecordEventListener awt = new RecordEventListener();
+    
+    public static final KeyboardMapping CURRENT_MAPPING = determineMapping();
+
+    private static KeyboardMapping determineMapping() {
+        InputContext inputContext = InputContext.getInstance();
+        return KeyboardMapping.getKeyboardMapping(inputContext.getLocale());
+    }
+
     private final AWTEventListener awt2 = e -> {
         if (e instanceof KeyEvent k) {
             if (k.getID() == KeyEvent.KEY_RELEASED) {
@@ -255,6 +267,11 @@ public class YassActions implements DropTargetListener {
     private final Action shiftEnding = new AbstractAction(I18.get("edit_shiftEnding")) {
         public void actionPerformed(ActionEvent e) {
             table.shiftEnding();
+        }
+    };
+    private final Action shiftEndingLeft = new AbstractAction(I18.get("edit_shiftEndingLeft")) {
+        public void actionPerformed(ActionEvent e) {
+            table.shiftEndingLeft();
         }
     };
     private final Action findLyrics = new AbstractAction(I18.get("edit_lyrics_find")) {
@@ -2407,22 +2424,27 @@ public class YassActions implements DropTargetListener {
     private JCheckBoxMenuItem midiCBI = null;
     private final Action enableMidi = new AbstractAction(I18.get("edit_midi_toggle")) {
         public void actionPerformed(ActionEvent e) {
-            interruptPlay();
-
-            if (e.getSource() != midiButton) {
-                midiButton.setSelected(!midiButton.isSelected());
-            } else {
-                mp3.setMIDIEnabled(midiButton.isSelected());
-            }
-            if (midiCBI != null) {
-                midiCBI.setState(midiButton.isSelected());
-            }
-            sheet.setPaintHeights(midiButton.isSelected());
-            table.zoomPage();
-            updatePlayerPosition();
-            sheet.repaint();
+            enableMidi(e.getSource() != midiButton);
         }
     };
+
+    private void enableMidi(boolean isNotMidiButtonSource) {
+        interruptPlay();
+
+        if (isNotMidiButtonSource) {
+            midiButton.setSelected(!midiButton.isSelected());
+        } else {
+            mp3.setMIDIEnabled(midiButton.isSelected());
+        }
+        if (midiCBI != null) {
+            midiCBI.setState(midiButton.isSelected());
+        }
+        sheet.setPaintHeights(midiButton.isSelected());
+        table.zoomPage();
+        updatePlayerPosition();
+        sheet.repaint();
+    }
+
     Action absolute = new AbstractAction(I18.get("edit_align")) {
         // Align
         public void actionPerformed(ActionEvent e) {
@@ -2480,16 +2502,13 @@ public class YassActions implements DropTargetListener {
                 if (currentView == VIEW_EDIT) {
                     stopPlaying();
                     stopRecording();
-                    YassTapNotes.evaluateTaps(table, sheet.getTemporaryNotes());
+                    mp3.stopMIDI();
+                    YassTapNotes.evaluateTaps(table, sheet.getTemporaryNotes(), sheet.getTmpPitches());
                 } else if (currentView == VIEW_LIBRARY) {
                     if (!soonStarting) {
                         stopPlaySong();
                     }
                 }
-                // int i = sheet.nextElement();
-                // table.setRowSelectionInterval(i, i);
-                // updatePlayerPosition();
-                // sheet.repaint();
             }
         });
 
@@ -3566,6 +3585,7 @@ public class YassActions implements DropTargetListener {
 
         menu.add(reHyphenate);
         menu.add(shiftEnding);
+        menu.add(shiftEndingLeft);
         menu.add(findLyrics);
         menu.add(spellLyrics);
 
@@ -4972,6 +4992,7 @@ public class YassActions implements DropTargetListener {
             openEditor(false);
             updateSheetProperties();
         } else if (n == VIEW_LIBRARY) {
+            cleanUpFiles();
             YassSong s = songList.getFirstSelectedSong();
             songInfo.setSong(s);
             updateSongInfo(null);
@@ -4979,6 +5000,17 @@ public class YassActions implements DropTargetListener {
         }
         menuHolder.repaint();
         }
+
+    private void cleanUpFiles() {
+        for (int i = 2; i < 5; i++) {
+            Path tempPath = Path.of(YassPlayer.TEMP_PATH + i + "temp.wav");
+            try {
+                Files.deleteIfExists(tempPath);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
 
     /**
      * Ask user 'cancel' and not lose changes.
@@ -5837,7 +5869,8 @@ public class YassActions implements DropTargetListener {
 
     private void startRecording() {
         sheet.getTemporaryNotes().clear();
-
+        sheet.clearTempPitches();
+        sheet.initNoteMapping(0);
         awt.reset();
         java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK | AWTEvent.KEY_EVENT_MASK);
     }
@@ -6745,7 +6778,7 @@ public class YassActions implements DropTargetListener {
             songdir = "";
         }
 
-        CreateSongWizard wiz = new CreateSongWizard(tab);
+        CreateSongWizard wiz = new CreateSongWizard(tab, prop);
         wiz.setValue("songdir", songdir);
         wiz.setValue("folder", "");
         wiz.setValue("filename", "");
@@ -6765,6 +6798,7 @@ public class YassActions implements DropTargetListener {
         wiz.setValue("genres-more", prop.getProperty("genre-more-tag"));
         wiz.setValue("editions", prop.getProperty("edition-tag"));
         wiz.setValue("hyphenations", prop.getProperty("hyphenations"));
+        wiz.setValue("spaces", prop.getProperty("correct-uncommon-spacing", "after"));
         wiz.show();
 
         if (wiz.getReturnCode() != Wizard.FINISH_RETURN_CODE) {
@@ -6965,6 +6999,10 @@ public class YassActions implements DropTargetListener {
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.SHIFT_DOWN_MASK), "shiftEnding");
         am.put("shiftEnding", shiftEnding);
         shiftEnding.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.SHIFT_DOWN_MASK));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_W, InputEvent.SHIFT_DOWN_MASK), "shiftEndingLeft");
+        am.put("shiftEndingLeft", shiftEndingLeft);
+        shiftEndingLeft.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_W, InputEvent.SHIFT_DOWN_MASK));
 
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK), "selectAllSongs");
         am.put("selectAllSongs", selectAllSongs);
@@ -7179,9 +7217,9 @@ public class YassActions implements DropTargetListener {
         am.put("playSelectionWithMIDI", playSelectionWithMIDI);
         playSelectionWithMIDI.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK));
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK), "playSelectionWithMIDIAudio");
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_MASK | InputEvent.CTRL_MASK), "playSelectionWithMIDIAudio");
         am.put("playSelectionWithMIDIAudio", playSelectionWithMIDIAudio);
-        playSelectionWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK));
+        playSelectionWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_MASK | InputEvent.CTRL_DOWN_MASK));
 
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK), "addSpace");
         am.put("addSpace", addSpace);
@@ -7517,7 +7555,9 @@ public class YassActions implements DropTargetListener {
             boolean added = false;
             if (e instanceof KeyEvent) {
                 KeyEvent k = (KeyEvent) e;
-                if (k.getID() == KeyEvent.KEY_TYPED) {
+                int keyCode = k.getKeyCode();
+                if (k.getID() == KeyEvent.KEY_TYPED || keyCode == KeyEvent.VK_SHIFT 
+                        || keyCode == KeyEvent.VK_CONTROL) {
                     k.consume();
                     return;
                 }
@@ -7528,9 +7568,12 @@ public class YassActions implements DropTargetListener {
                 }
                 boolean pressed = k.getID() == KeyEvent.KEY_PRESSED;
                 if (pressed && !lastWasPressed) {
+                    int note = playNote(k);
                     sheet.getTemporaryNotes().addElement(mp3.getPosition());
+                    sheet.getTmpPitches().add(note);
                 }
                 if (!pressed && lastWasPressed) {
+                    mp3.stopNote();
                     sheet.getTemporaryNotes().addElement(mp3.getPosition());
                     added = true;
                 }
@@ -7563,6 +7606,33 @@ public class YassActions implements DropTargetListener {
                 }
             }
         }
+    }
+
+    private int playNote(KeyEvent keyEvent) {
+        int keyCode = keyEvent.getKeyCode();
+        int mapping = CURRENT_MAPPING.getPosition(keyCode);
+        if (keyCode == KeyEvent.VK_F) {
+            return keyEvent.isShiftDown() ? FREESTYLE_NOTE : RAP_NOTE;
+        }
+        int note;
+        if (mapping < 0 || sheet.getNoteMapping() == null || sheet.getNoteMapping().get(mapping) == null) {
+            note = Integer.MIN_VALUE;
+        } else {
+            note = sheet.getNoteMapping().get(mapping);
+            if (note  < 96 && keyEvent.isShiftDown()) {
+                note = note + 12;
+            } else if (note > 11 && keyEvent.isControlDown()) {
+                note = note - 12;
+            }
+        }
+        if (note == Integer.MIN_VALUE) {
+            mp3.stopNote();
+        } else {
+            if (midiButton != null && midiButton.isSelected()) {
+                mp3.playNote(note);
+            }
+        }
+        return note;
     }
 
     private class OwnerFrame extends JFrame {
@@ -7607,4 +7677,8 @@ public class YassActions implements DropTargetListener {
             }
         }
     };
+    
+    public KeyboardMapping getKeyboardLayout() {
+        return CURRENT_MAPPING;
+    }
 }

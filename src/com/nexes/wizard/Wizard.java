@@ -18,9 +18,18 @@ import java.util.ResourceBundle;
 
 public class Wizard extends WindowAdapter implements PropertyChangeListener{
     Hashtable<String, String> values = new Hashtable<>();
+
     // added by Saruta
-    public String getValue(String s) { Object o=values.get(s); if (o==null) return ""; return (String)o;}
-    public void setValue(String s, String val) { if (val==null) val=""; values.put(s,val); }
+    public String getValue(String s) {
+        Object o = values.get(s);
+        if (o == null) return "";
+        return (String) o;
+    }
+
+    public void setValue(String s, String val) {
+        if (val == null) val = "";
+        values.put(s, val);
+    }
     public Hashtable<String, String> getValues() { return values; }
 
     public static final int FINISH_RETURN_CODE = 0;

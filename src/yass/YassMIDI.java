@@ -36,8 +36,8 @@ public class YassMIDI {
     private final boolean DEBUG = false;
 
     public static final int VOLUME_MAX = 127;
-    public static final int VOLUME_MED = 100;
-    public static final int VOLUME_MIN = 70;
+    public static final int VOLUME_MED = 80;
+    public static final int VOLUME_MIN = 30;
     private int volume = VOLUME_MED;
     /**
      * Constructor for the YassMIDI object
