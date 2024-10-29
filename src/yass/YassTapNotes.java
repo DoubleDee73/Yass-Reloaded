@@ -23,7 +23,7 @@ import java.util.Vector;
 
 public class YassTapNotes {
     public static final double REACTION_TIME = 200;
-    public static void evaluateTaps(YassTable table, Vector<Long> taps, List<Integer> pitches) {
+    public static void evaluateTaps(YassTable table, Vector<Long> taps, List<Integer> pitches, Timebase timebase) {
         if (taps == null) return;
         int n = taps.size();
         if (n < 2) {
@@ -63,8 +63,12 @@ public class YassTapNotes {
                 }
                 long tapBeat = taps.elementAt(k++).longValue();
                 long tapBeat2 = taps.elementAt(k++).longValue();
-                double ms = tapBeat / 1000.0 - gap - REACTION_TIME;
-                double ms2 = tapBeat2 / 1000.0 - gap - REACTION_TIME;
+                double ms = tapBeat / 1000.0 - gap;
+                double ms2 = tapBeat2 / 1000.0 - gap;
+                if (timebase == Timebase.NORMAL) {
+                    ms = ms - REACTION_TIME;
+                    ms2 = ms2 - REACTION_TIME;
+                }
                 int beat = (int) Math.round((4 * bpm * ms / (60 * 1000)));
                 int beat2 = (int) Math.round((4 * bpm * ms2 / (60 * 1000)));
 

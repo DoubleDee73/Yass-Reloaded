@@ -96,6 +96,7 @@ public class YassPlayer {
     private Map<Integer, Media> LONG_NOTE_MAP;
     private Map<Integer, Media> SHORT_NOTE_MAP;
     private Integer lastNote = null;
+    private Timebase playrate = Timebase.NORMAL;
 
     private void initNoteMap() {
         lastNote = null;
@@ -542,7 +543,7 @@ public class YassPlayer {
      * @param clicks Description of the Parameter
      */
     public void playSelection(long in, long out, long clicks[][]) {
-        playSelection(in, out, clicks, 1);
+        playSelection(in, out, clicks, Timebase.NORMAL);
     }
 
     /**
@@ -560,7 +561,7 @@ public class YassPlayer {
      * @param clicks   Description of the Parameter
      * @param timebase Description of the Parameter
      */
-    public void playAll(long clicks[][], int timebase) {
+    public void playAll(long clicks[][], Timebase timebase) {
         playSelection(0, -1, clicks, timebase);
     }
 
@@ -572,7 +573,7 @@ public class YassPlayer {
      * @param clicks   Description of the Parameter
      * @param timebase Description of the Parameter
      */
-    public void playSelection(long in, long out, long clicks[][], int timebase) {
+    public void playSelection(long in, long out, long clicks[][], Timebase timebase) {
         if (filename == null) {
             return;
         }
@@ -963,7 +964,7 @@ public class YassPlayer {
         public boolean notInterrupted = true, finished = false,
                 started = false;
         long in, out, clicks[][];
-        int timebase = 1;
+        Timebase timebase;
 
         /**
          * Constructor for the PlayThread object
@@ -973,7 +974,7 @@ public class YassPlayer {
          * @param clicks   Description of the Parameter
          * @param timebase Description of the Parameter
          */
-        public PlayThread(long in, long out, long[][] clicks, int timebase) {
+        public PlayThread(long in, long out, long[][] clicks, Timebase timebase) {
             this.in = in;
             this.out = out;
             this.clicks = clicks;
@@ -996,26 +997,30 @@ public class YassPlayer {
          * @param timebase Description of the Parameter
          */
         private void playMP3(long inpoint, long outpoint, long[][] clicks,
-                             int timebase) {
+                             Timebase timebase) {
             finished = false;
             started = true;
-            boolean ffmpegFound = false;
             File mp3File;
-//            if (timebase == 1) {
+            double playrate = timebase.timerate;
+            if (timebase == Timebase.NORMAL) {
                 mp3File = new File(TEMP_WAV);
-//            } else {
-//                mp3File = new File(TEMP_PATH + timebase + "temp.wav");
-//                if (!mp3File.exists()) {
-//                    try {
-//                        mp3File = generateTemp(TEMP_PATH + "temp.wav", timebase);
-//                        ffmpegFound = true;
-//                    } catch (IOException | UnsupportedAudioFileException  | LineUnavailableException e) {
-//                        throw new RuntimeException(e);
-//                    }
-//                } else {
-//                    ffmpegFound = true;
-//                }
-//            }
+                setPlayrate(Timebase.NORMAL);
+            } else {
+                mp3File = new File(TEMP_PATH + timebase.id + "temp.wav");
+                if (!mp3File.exists()) {
+                    try {
+                        mp3File = generateTemp(TEMP_PATH + "temp.wav", timebase);
+                        playrate = 1;
+                        setPlayrate(timebase);
+                    } catch (IOException | UnsupportedAudioFileException  | LineUnavailableException e) {
+                        // Couldn't find slowed down ffmpeg conversion, we are using the ugly JavaFX-slow down
+                        setPlayrate(Timebase.NORMAL);
+                    }
+                } else {
+                    setPlayrate(timebase);
+                    playrate = 1;
+                }
+            }
             if (!mp3File.exists()) {
                 finished = true;
                 return;
@@ -1026,18 +1031,18 @@ public class YassPlayer {
                 LOGGER.info("out: " + outpoint);
                 for (int i = 0; i < clicks.length; i++) {
                     long duration = clicks[i][2] - clicks[i][0];
-                    System.out
-                            .println("click[" + i + "]=" + clicks[i][1]
-                                             + " (at:" + clicks[i][0] + " len:"
+                    System.out.println("click[" + i + "]=" + clicks[i][1] + " (at:" + clicks[i][0] + " len:"
                                              + duration + ")");
                 }
             }
-
-            long duration = getDuration();
+            double multiplier = getPlayrate().getMultiplier();
+            long duration = (long) (getDuration() * multiplier);
             if (outpoint < 0 || outpoint > duration) {
                 outpoint = duration;
+            } else {
+                outpoint = (long) (outpoint * multiplier);
             }
-            long inMillis = inpoint / 1000;
+            long inMillis = (long) (inpoint * multiplier) / 1000;
             long outMillis = outpoint / 1000;
             long off;
 
@@ -1045,9 +1050,9 @@ public class YassPlayer {
             int midiPitch = 0;
             int clicksPos = 0;
             int n = clicks != null ? clicks.length : 0;
-            long nextClick = clicks == null ? -1 : clicks[clicksPos][0];
+            long nextClick = clicks == null ? -1 : (long)(clicks[clicksPos][0] * multiplier);
             long nextClickPitch = clicks == null ? Integer.MIN_VALUE : clicks[clicksPos][1];
-            long nextClickEnd = clicks == null ? -1 : clicks[clicksPos][2];
+            long nextClickEnd = clicks == null ? -1 : (long)(clicks[clicksPos][2] * multiplier);
 
             if (DEBUG) {
                 LOGGER.info("playAudio:" + playAudio + "  ogg:" + ogg);
@@ -1119,11 +1124,9 @@ public class YassPlayer {
             }
             if (playAudio && !ogg) {
                 try {
-                    if (timebase > 1 && !ffmpegFound) {
-                        mediaPlayer.setRate((double) 1 / timebase);
-                    }
-                    new Play2Thread(mediaPlayer, (inMillis * (ffmpegFound ? timebase : 1)) + seekInOffsetMs,
-                                    (outMillis * (ffmpegFound ? timebase : 1)) + seekOutOffsetMs).start();
+                    mediaPlayer.setRate(playrate);
+                    new Play2Thread(mediaPlayer, inMillis + seekInOffsetMs, 
+                                    outMillis  + seekOutOffsetMs).start();
                 } catch (Exception e) {
                     LOGGER.log(Level.INFO, e.getMessage(), e);
                 }
@@ -1143,17 +1146,16 @@ public class YassPlayer {
             }
 
             long nanoStart = System.nanoTime() / 1000L;
-            position = inpoint;
+            position = (long)(inpoint * multiplier);
 
             long lastms = System.nanoTime();
 
             if (!notInterrupted) {
                 LOGGER.info("Playback interrupted.");
             }
-            int correctedTimeBase;
             while (notInterrupted) {
-                correctedTimeBase = ffmpegFound ? 1 : timebase;
-                position = (System.nanoTime() / 1000L - nanoStart) / correctedTimeBase + inpoint;
+                long tempdiff = (System.nanoTime() / 1000L) - nanoStart;
+                position = (long) (tempdiff + (inpoint * multiplier));
                 if (position >= outpoint) {
                     position = outpoint;
                     notInterrupted = false;
@@ -1168,6 +1170,7 @@ public class YassPlayer {
                     }
                     if (position >= nextClick) {
                         off = Math.abs(position - nextClick);
+//                        System.out.println("Playing note " + clicks[clicksPos][1] + " at " + position);
                         if (DEBUG)
                             LOGGER.info(off + " us offset  at line "
                                                        + clicksPos);
@@ -1200,53 +1203,43 @@ public class YassPlayer {
                         }
 
                         if (++clicksPos < n) {
-                            nextClick = clicks[clicksPos][0];
-                            nextClickEnd = clicks[clicksPos][2];
+                            nextClick = (long) (clicks[clicksPos][0] * multiplier);
+                            nextClickEnd = (long) (clicks[clicksPos][2] * multiplier);
                         }
                     }
                 }
 
                 if (hasPlaybackRenderer) {
-                    long currentMillis = (position / 1000);
+                    long currentMillis = (position / (long) (1000 * multiplier));
                     YassSession session = playbackRenderer.getSession();
                     if (session != null) {
                         session.updateSession(currentMillis);
 
                         if (demo) {
-                            YassPlayerNote note = new YassPlayerNote(
-                                    YassPlayerNote.NOISE, 1, currentMillis);
+                            YassPlayerNote note = new YassPlayerNote(YassPlayerNote.NOISE, 1, currentMillis);
 
                             int trackCount = session.getTrackCount();
                             for (int t = 0; t < trackCount; t++) {
-                                int currentNoteIndex = session.getTrack(t)
-                                                              .getCurrentNote();
-                                YassNote currentTrackNote = session.getTrack(t)
-                                                                   .getNote(currentNoteIndex);
-                                if (currentTrackNote.getStartMillis() <= currentMillis
-                                        && currentMillis <= currentTrackNote
-                                        .getEndMillis()) {
-                                    if (currentMillis < currentTrackNote
-                                            .getStartMillis() + 10) {
-                                        note.setStartMillis(currentTrackNote
-                                                                    .getStartMillis());
+                                int currentNoteIndex = session.getTrack(t).getCurrentNote();
+                                YassNote currentTrackNote = session.getTrack(t).getNote(currentNoteIndex);
+                                if (currentTrackNote.getStartMillis() <= currentMillis 
+                                        && currentMillis <= currentTrackNote.getEndMillis()) {
+                                    if (currentMillis < currentTrackNote.getStartMillis() + 10) {
+                                        note.setStartMillis(currentTrackNote.getStartMillis());
                                     }
-                                    if (currentMillis > currentTrackNote
-                                            .getEndMillis() - 10) {
-                                        note.setEndMillis(currentTrackNote
-                                                                  .getEndMillis());
+                                    if (currentMillis > currentTrackNote.getEndMillis() - 10) {
+                                        note.setEndMillis(currentTrackNote.getEndMillis());
                                     }
 
                                     int h = currentTrackNote.getHeight();
                                     note.setHeight(h);
                                 }
-                                session.getTrack(t).addPlayerNote(
-                                        new YassPlayerNote(note));
+                                session.getTrack(t).addPlayerNote(new YassPlayerNote(note));
 
                             }
                         } else if (useCapture) {
                             int d = 0;
-                            for (Enumeration<String> devEnum = devices
-                                    .elements(); devEnum.hasMoreElements(); ) {
+                            for (Enumeration<String> devEnum = devices.elements(); devEnum.hasMoreElements(); ) {
                                 String device = devEnum.nextElement();
                                 YassPlayerNote[] note = capture.query(device);
                                 playernote[d++] = note != null ? note[0] : null;
@@ -1258,35 +1251,26 @@ public class YassPlayer {
                                 if (playerdevice[t] < 0) {
                                     continue;
                                 }
-                                YassPlayerNote note = playernote[playerdevice[t]
-                                        + playerchannel[t]];
+                                YassPlayerNote note = playernote[playerdevice[t] + playerchannel[t]];
                                 if (note == null) {
                                     continue;
                                 }
                                 note.setStartMillis(currentMillis);
 
-                                int currentNoteIndex = session.getTrack(t)
-                                                              .getCurrentNote();
-                                YassNote currentTrackNote = session.getTrack(t)
-                                                                   .getNote(currentNoteIndex);
+                                int currentNoteIndex = session.getTrack(t).getCurrentNote();
+                                YassNote currentTrackNote = session.getTrack(t).getNote(currentNoteIndex);
                                 if (currentTrackNote.getStartMillis() <= currentMillis
-                                        && currentMillis <= currentTrackNote
-                                        .getEndMillis()) {
-                                    if (currentMillis < currentTrackNote
-                                            .getStartMillis() + 10) {
-                                        note.setStartMillis(currentTrackNote
-                                                                    .getStartMillis());
+                                        && currentMillis <= currentTrackNote.getEndMillis()) {
+                                    if (currentMillis < currentTrackNote.getStartMillis() + 10) {
+                                        note.setStartMillis(currentTrackNote.getStartMillis());
                                     }
-                                    if (currentMillis > currentTrackNote
-                                            .getEndMillis() - 10) {
-                                        note.setEndMillis(currentTrackNote
-                                                                  .getEndMillis());
+                                    if (currentMillis > currentTrackNote.getEndMillis() - 10) {
+                                        note.setEndMillis(currentTrackNote.getEndMillis());
                                     }
                                 } else {
                                     note.setHeight(YassPlayerNote.NOISE);
                                 }
-                                session.getTrack(t).addPlayerNote(
-                                        new YassPlayerNote(note));
+                                session.getTrack(t).addPlayerNote(new YassPlayerNote(note));
                             }
                         }
                     }
@@ -1360,9 +1344,9 @@ public class YassPlayer {
 
                 if (clicks != null && maxClickOffset / 1000.0 > 10) {
                     // greater 10 ms
-                    playbackRenderer.setErrorMessage(latency
-                                                             .format(new Object[]{Math
-                                                                     .round(maxClickOffset / 1000.0) + ""}));
+                    playbackRenderer.setErrorMessage(latency.format(new Object[]{
+                            Math.round(maxClickOffset / 1000.0) + ""
+                    }));
                 }
             }
             live = false;
@@ -1418,10 +1402,10 @@ public class YassPlayer {
     }
 
     public File generateTemp(String source) throws IOException, UnsupportedAudioFileException, LineUnavailableException {
-        return generateTemp(source, 1);
+        return generateTemp(source, Timebase.NORMAL);
     }
 
-    public File generateTemp(String source, int timeBase) throws IOException, UnsupportedAudioFileException, 
+    public File generateTemp(String source, Timebase timeBase) throws IOException, UnsupportedAudioFileException, 
             LineUnavailableException {
         if (FFMPEGLocator.getInstance().getFfmpeg() == null) {
             return null;
@@ -1432,19 +1416,11 @@ public class YassPlayer {
         FFmpegBuilder fFmpegBuilder = new FFmpegBuilder();
         fFmpegBuilder.addInput(fFmpegProbeResult);
         File tempFile;
-        if (timeBase == 1) {
+        if (timeBase == Timebase.NORMAL) {
             tempFile = new File(TEMP_WAV);
         } else {
-            tempFile = new File(TEMP_PATH + timeBase + "temp.wav");
-            String filter;
-            if (timeBase == 2) {
-                filter = "0.5";
-            } else if (timeBase == 3) {
-                filter = "0.67,atempo=0.5";
-            } else {
-                filter = "0.5,atemp=0.5";
-            }
-            fFmpegBuilder.setAudioFilter("atempo=" + filter);
+            tempFile = new File(TEMP_PATH + timeBase.getId() + "temp.wav");
+            fFmpegBuilder.setAudioFilter(timeBase.getFilter());
         }
         fFmpegBuilder.overrideOutputFiles(true)
                      .addOutput(tempFile.getAbsolutePath())
@@ -1487,5 +1463,13 @@ public class YassPlayer {
             return;
         }
         lastNote = null;
+    }
+
+    public Timebase getPlayrate() {
+        return playrate;
+    }
+
+    public void setPlayrate(Timebase playrate) {
+        this.playrate = playrate;
     }
 }

@@ -339,6 +339,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 char c = e.getKeyChar();
                 int code = e.getKeyCode();
+                if (actions.isMidiEnabled() && actions.getKeyboardLayout().getPosition(code) >= 0) {
+                    return;
+                }
                 if (equalsKeyMillis > 0) {
                     if (code == KeyEvent.VK_BACK_SPACE) {
                         equalsDigits = equalsDigits.substring(0,
@@ -363,8 +366,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 }
 
-                if (e.isControlDown() && e.isAltDown()
-                        && c == KeyEvent.CHAR_UNDEFINED) {
+                if (e.isControlDown() && e.isAltDown() && c == KeyEvent.CHAR_UNDEFINED) {
                     hiliteAction = ACTION_CONTROL_ALT;
                     repaint();
                 } else if (e.isControlDown() && c == KeyEvent.CHAR_UNDEFINED) {

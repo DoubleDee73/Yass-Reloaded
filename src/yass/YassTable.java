@@ -3862,7 +3862,9 @@ public class YassTable extends JTable {
             if (row > 0) {
                 row++;
             }
-            // if (row==0) --> select START
+            if (row == 0) {
+                return;
+            }
         } else if (b > 0) {
             YassRow r = getRowAt(row);
             while (r != null && r.isNote() && row < n - 1) {
@@ -6688,6 +6690,10 @@ public class YassTable extends JTable {
         tm.fireTableDataChanged();
     }
     
+    public void fireTableRowsUpdated(int firstRow, int lastRow) {
+        tm.fireTableRowsUpdated(firstRow, lastRow);
+    }
+
     public void initAutoSave() {
         if (sheet == null) {
             return;

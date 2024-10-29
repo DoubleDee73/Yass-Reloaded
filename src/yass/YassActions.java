@@ -20,6 +20,8 @@ package yass;
 import com.nexes.wizard.Wizard;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.lang3.tuple.Pair;
 import yass.autocorrect.YassAutoCorrect;
 import yass.extras.UsdbSyncerMetaTagCreator;
 import yass.renderer.YassSession;
@@ -82,7 +84,7 @@ public class YassActions implements DropTargetListener {
     private JTextPane helpPane = null;
     private int vmark = 0;
     private int recordLength = -1;
-    private int playTimebase = 1;
+    private Timebase playTimebase = Timebase.NORMAL;
     private long playAllStart = -1;
     private long[][] playAllClicks = null;
     private int beforeNextMs = 300;
@@ -130,8 +132,9 @@ public class YassActions implements DropTargetListener {
     private JToolBar videoToolbar = null;
     private int x;
     private int y;
-    private final RecordEventListener awt = new RecordEventListener();
-    
+    private final TapNoteListener awt = new TapNoteListener();
+    private Pair<Integer, Integer> tempSelection;
+    private boolean recording = false;
     public static final KeyboardMapping CURRENT_MAPPING = determineMapping();
 
     private static KeyboardMapping determineMapping() {
@@ -139,7 +142,7 @@ public class YassActions implements DropTargetListener {
         return KeyboardMapping.getKeyboardMapping(inputContext.getLocale());
     }
 
-    private final AWTEventListener awt2 = e -> {
+    private final AWTEventListener playbackStopListener = e -> {
         if (e instanceof KeyEvent k) {
             if (k.getID() == KeyEvent.KEY_RELEASED) {
                 return;
@@ -151,15 +154,13 @@ public class YassActions implements DropTargetListener {
                     return;
                 }
             }
-            if ((k.isControlDown() || k.isAltDown() || k.isShiftDown())
-                    && k.getKeyCode() == 0) {
+            if ((k.isControlDown() || k.isAltDown() || k.isShiftDown()) && k.getKeyCode() == 0) {
                 return;
             }
             stopPlaying();
 
             int c = k.getKeyCode();
-            if (c == KeyEvent.VK_P || c == KeyEvent.VK_ESCAPE
-                    || c == KeyEvent.VK_SPACE) {
+            if (c == KeyEvent.VK_P || c == KeyEvent.VK_ESCAPE || c == KeyEvent.VK_SPACE) {
                 k.consume();
             }
         }
@@ -1198,8 +1199,7 @@ public class YassActions implements DropTargetListener {
         final long[] inout = new long[2];
 
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isRecording()) {
                 return;
             }
             int i = table.getSelectionModel().getMinSelectionIndex();
@@ -1208,6 +1208,7 @@ public class YassActions implements DropTargetListener {
                 return;
             }
             int j = table.getSelectionModel().getMaxSelectionIndex();
+            tempSelection = new ImmutablePair<>(i, j);
             long[][] clicks = table.getSelection(i, j, inout, null, false);
             inout[0] = Math.max(0, inout[0] - 2000000);
             inout[1] = -1;// inout[1] + 2000000;
@@ -1221,27 +1222,27 @@ public class YassActions implements DropTargetListener {
                     def = Integer.parseInt(defbase) - 1;
                 }
 
-                Object[] speed = {"100%", "50%", "33%", "25%"};
+                Object[] speed = {"100%", "75%", "50%", "25%"};
                 String s = (String) JOptionPane.showInputDialog(
                         tab, "<html>"
                                 + MessageFormat.format(
                                 I18.get("edit_record_msg"), recordLength), I18.get("edit_record_title"), JOptionPane.INFORMATION_MESSAGE, null, speed, speed[def]);
 
-                if (s == null || s.length() < 1) {
+                if (s == null || s.isEmpty()) {
                     return;
                 }
 
-                int timebase = 1;
+                Timebase timebase = Timebase.NORMAL;
                 if (s.equals(speed[1])) {
-                    timebase = 2;
+                    timebase = Timebase.SLOWER;
                 }
                 if (s.equals(speed[2])) {
-                    timebase = 3;
+                    timebase = Timebase.SLOW;
                 }
                 if (s.equals(speed[3])) {
-                    timebase = 4;
+                    timebase = Timebase.SLOWEST;
                 }
-                prop.setProperty("record-timebase", String.valueOf(timebase));
+                prop.setProperty("record-timebase", String.valueOf(timebase.id));
                 prop.store();
 
                 // int ok = JOptionPane.showConfirmDialog(tab, "<html>" +
@@ -1261,20 +1262,18 @@ public class YassActions implements DropTargetListener {
 
     private final Action playSlower = new AbstractAction() {
         public void actionPerformed(ActionEvent e) {
-            if (playTimebase == 1) {
-                playTimebase = 2;
-                speedButton.setSelectedIcon(getIcon("speedtwo24Icon"));
-            } else if (playTimebase == 2) {
-                playTimebase = 3;
-                speedButton.setSelectedIcon(getIcon("speedthree24Icon"));
-            } else if (playTimebase == 3) {
-                playTimebase = 4;
+            if (playTimebase == Timebase.NORMAL) {
+                playTimebase = Timebase.SLOWER;
+            } else if (playTimebase == Timebase.SLOWER) {
+                playTimebase = Timebase.SLOW;
+            } else if (playTimebase == Timebase.SLOW) {
+                playTimebase = Timebase.SLOWEST;
                 speedButton.setSelectedIcon(getIcon("speedfour24Icon"));
             } else {
-                playTimebase = 1;
+                playTimebase = Timebase.NORMAL;
             }
-
-            speedButton.setSelected(playTimebase != 1);
+            speedButton.setSelectedIcon(getIcon(playTimebase.getIcon()));
+            speedButton.setSelected(playTimebase != Timebase.NORMAL);
         }
     };
 
@@ -1407,8 +1406,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action rollLeft = new AbstractAction(I18.get("edit_roll_left")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing()) {
                 return;
             }
             table.rollLeft();
@@ -1416,8 +1414,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action rollRight = new AbstractAction(I18.get("edit_roll_right")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing()) {
                 return;
             }
             table.rollRight();
@@ -2022,8 +2019,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action decGap = new AbstractAction(I18.get("edit_gap_sub_10")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing()) {
                 return;
             }
             table.addGap(-10);
@@ -2032,8 +2028,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action incGap2 = new AbstractAction(I18.get("edit_gap_add_1000")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing()) {
                 return;
             }
             table.addGap(+1000);
@@ -2042,8 +2037,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action decGap2 = new AbstractAction(I18.get("edit_gap_sub_1000")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing()) {
                 return;
             }
             table.addGap(-1000);
@@ -2503,7 +2497,11 @@ public class YassActions implements DropTargetListener {
                     stopPlaying();
                     stopRecording();
                     mp3.stopMIDI();
-                    YassTapNotes.evaluateTaps(table, sheet.getTemporaryNotes(), sheet.getTmpPitches());
+                    YassTapNotes.evaluateTaps(table, sheet.getTemporaryNotes(), sheet.getTmpPitches(),
+                                              mp3.getPlayrate());
+                    if (tempSelection != null) {
+                        table.setRowSelectionInterval(tempSelection.getLeft(), tempSelection.getRight());
+                    }
                 } else if (currentView == VIEW_LIBRARY) {
                     if (!soonStarting) {
                         stopPlaySong();
@@ -3772,7 +3770,7 @@ public class YassActions implements DropTargetListener {
         speedButton.setToolTipText(speedButton.getText());
         speedButton.setText("");
         speedButton.setIcon(getIcon("speedone24Icon"));
-        speedButton.setSelected(playTimebase != 1);
+        speedButton.setSelected(playTimebase != Timebase.NORMAL);
         speedButton.setFocusable(false);
         speedButton.setOpaque(false);
 
@@ -5238,7 +5236,7 @@ public class YassActions implements DropTargetListener {
 
         if (speedButton != null) {
             speedButton.setEnabled(isOpened);
-            speedButton.setSelected(playTimebase != 1);
+            speedButton.setSelected(playTimebase != Timebase.NORMAL);
         }
 
         autoCorrect.setEnabled(isOpened);
@@ -5870,22 +5868,27 @@ public class YassActions implements DropTargetListener {
     private void startRecording() {
         sheet.getTemporaryNotes().clear();
         sheet.clearTempPitches();
-        sheet.initNoteMapping(0);
+        if (!midiButton.isSelected()) {
+            sheet.initNoteMapping(0);
+        }
         awt.reset();
-        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK | AWTEvent.KEY_EVENT_MASK);
+        setRecording(true);
+        Toolkit.getDefaultToolkit().addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK | AWTEvent.KEY_EVENT_MASK);
     }
 
     private void stopRecording() {
         mp3.interruptMP3();
-        java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(awt);
+        setRecording(false);
+        Toolkit.getDefaultToolkit().removeAWTEventListener(awt);
     }
 
     public void startPlaying() {
-        java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(awt2, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK | AWTEvent.KEY_EVENT_MASK);
+        Toolkit.getDefaultToolkit().addAWTEventListener(playbackStopListener, AWTEvent.MOUSE_EVENT_MASK | 
+                AWTEvent.MOUSE_MOTION_EVENT_MASK | AWTEvent.KEY_EVENT_MASK);
     }
 
     public void stopPlaying() {
-        java.awt.Toolkit.getDefaultToolkit().removeAWTEventListener(awt2);
+        Toolkit.getDefaultToolkit().removeAWTEventListener(playbackStopListener);
         mp3.interruptMP3();
     }
 
@@ -7544,7 +7547,7 @@ public class YassActions implements DropTargetListener {
         }
     }
 
-    class RecordEventListener implements AWTEventListener {
+    class TapNoteListener implements AWTEventListener {
         private boolean lastWasPressed = false;
 
         public void reset() {
@@ -7567,14 +7570,15 @@ public class YassActions implements DropTargetListener {
                     return;
                 }
                 boolean pressed = k.getID() == KeyEvent.KEY_PRESSED;
+                long currentPosition = (long) (mp3.getPosition() * mp3.getPlayrate().getTimerate());
                 if (pressed && !lastWasPressed) {
                     int note = playNote(k);
-                    sheet.getTemporaryNotes().addElement(mp3.getPosition());
+                    sheet.getTemporaryNotes().addElement(currentPosition);
                     sheet.getTmpPitches().add(note);
                 }
                 if (!pressed && lastWasPressed) {
                     mp3.stopNote();
-                    sheet.getTemporaryNotes().addElement(mp3.getPosition());
+                    sheet.getTemporaryNotes().addElement(currentPosition);
                     added = true;
                 }
                 lastWasPressed = pressed;
@@ -7680,5 +7684,17 @@ public class YassActions implements DropTargetListener {
     
     public KeyboardMapping getKeyboardLayout() {
         return CURRENT_MAPPING;
+    }
+
+    public boolean isRecording() {
+        return recording;
+    }
+
+    public void setRecording(boolean recording) {
+        this.recording = recording;
+    }
+    
+    public boolean isMidiEnabled() {
+        return midiButton.isSelected();
     }
 }
