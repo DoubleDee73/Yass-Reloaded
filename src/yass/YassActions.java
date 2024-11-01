@@ -60,8 +60,8 @@ public class YassActions implements DropTargetListener {
     public static final int FREESTYLE_NOTE = Integer.MIN_VALUE + 1;
     public static final int RAP_NOTE = Integer.MIN_VALUE + 2;
     private final YassSheet sheet;
-    public final static String VERSION = "2024.10";
-    public final static String DATE = "10/2024";
+    public final static String VERSION = "2024.11";
+    public final static String DATE = "11/2024";
 
     static int VIEW_LIBRARY = 1;
     static int VIEW_EDIT = 2;
