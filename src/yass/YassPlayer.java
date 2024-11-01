@@ -103,7 +103,7 @@ public class YassPlayer {
         LONG_NOTE_MAP = new HashMap<>();
         SHORT_NOTE_MAP = new HashMap<>();
         Media note;
-        for (int i = 21; i < 89; i++) {
+        for (int i = 21; i < 109; i++) {
             note = createNotePlayer("yass/resources/samples/longnotes/" + i + ".mp3");
             if (note != null) {
                 LONG_NOTE_MAP.put(i, note);
@@ -1051,7 +1051,7 @@ public class YassPlayer {
             int clicksPos = 0;
             int n = clicks != null ? clicks.length : 0;
             long nextClick = clicks == null ? -1 : (long)(clicks[clicksPos][0] * multiplier);
-            long nextClickPitch = clicks == null ? Integer.MIN_VALUE : clicks[clicksPos][1];
+            long nextClickPitch = (clicks == null || clicks.length < 2) ? Integer.MIN_VALUE : clicks[clicksPos][1];
             long nextClickEnd = clicks == null ? -1 : (long)(clicks[clicksPos][2] * multiplier);
 
             if (DEBUG) {
@@ -1442,7 +1442,8 @@ public class YassPlayer {
         Media noteMedia;
         int lengthFactor;
         int currentNote = note + 60;
-        if (length > 1000 && note != nextNote) {
+//        if (length > 1000 && note != nextNote) {
+        if (length > 1000) {
             noteMedia = LONG_NOTE_MAP.get(currentNote);
             lengthFactor = 1000;
         } else {
@@ -1453,6 +1454,7 @@ public class YassPlayer {
             lastNote = currentNote * lengthFactor;
             MediaPlayer notePlayer = new MediaPlayer(noteMedia);
             notePlayer.setVolume((double)midi.getVolume() / 127);
+            notePlayer.setStopTime(Duration.millis(length + 100));
             notePlayer.setOnEndOfMedia(notePlayer::dispose);
             notePlayer.setAutoPlay(true);
         }

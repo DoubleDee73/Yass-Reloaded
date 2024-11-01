@@ -4077,6 +4077,42 @@ public class YassTable extends JTable {
         }
         return true;
     }
+
+    public void toggleCase() {
+        int selectedRows = getSelectedRows().length;
+        int selectedRowIndex = getSelectedRows()[0];
+        StringBuilder lyrics = new StringBuilder();
+        YassRow row;
+        for (int i = 0; i < selectedRows; i++) {
+            row = getRowAt(selectedRowIndex + i);
+            lyrics.append(row.getText());
+        }
+        String text = lyrics.toString();
+        boolean allCaps = text.equals(text.toUpperCase());
+        boolean allLower = text.equals(text.toLowerCase());
+        boolean titleCase;
+        if (text.length() > 1) {
+            titleCase = text.substring(0, 1).equals(text.toUpperCase().substring(0, 1)) && text.substring(1)
+                                                                                               .equals(text.substring(1)
+                                                                                                           .toLowerCase());
+        } else {
+            titleCase = allCaps;
+        }
+        for (int i = 0; i < selectedRows; i++) {
+            row = getRowAt(selectedRowIndex + i);
+            text = row.getText();
+            if (allCaps) {
+                row.setText(text.toLowerCase());
+            } else if (allLower && i == 0) {
+                row.setText(StringUtils.capitalize(text));
+            } else if (titleCase) {
+                row.setText(text.toUpperCase());
+            }
+        }
+        tm.fireTableDataChanged();
+        getSelectionModel().setSelectionInterval(selectedRowIndex, selectedRowIndex + (selectedRows - 1));
+    }
+
     
     public void pasteRows() {
         int startRow = getSelectionModel().getMinSelectionIndex();
@@ -6068,7 +6104,7 @@ public class YassTable extends JTable {
         Vector<YassTable> tables2 = new Vector<>();
         for (YassTable t : tables) {
             YassTable t2 = new YassTable();
-            t.init(prop);
+            t2.init(prop);
             t2.loadTable(t, true);
             tables2.add(t2);
         }

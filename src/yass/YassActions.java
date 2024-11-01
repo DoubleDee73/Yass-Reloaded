@@ -2397,6 +2397,11 @@ public class YassActions implements DropTargetListener {
             }
         }
     };
+    private final Action toggleCase = new AbstractAction(I18.get("edit_toggle_case")) {
+        public void actionPerformed(ActionEvent e) {
+            table.toggleCase();
+        }
+    };
     private JCheckBoxMenuItem clicksCBI = null;
     private final Action enableClicks = new AbstractAction(I18.get("edit_clicks_toggle")) {
         public void actionPerformed(ActionEvent e) {
@@ -6233,6 +6238,7 @@ public class YassActions implements DropTargetListener {
 
         for (YassTable t2 : tables) {
             YassTable t = createNextTable();
+            t.init(prop);
             t.setPreventUndo(true);
             t.removeAllRows();
             t.loadTable(t2, true);
@@ -7245,6 +7251,10 @@ public class YassActions implements DropTargetListener {
         am.put("playPageWithMIDIAudio", playPageWithMIDIAudio);
         playPageWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK));
 
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK), "playPageWithMIDIAudio");
+        am.put("playPageWithMIDIAudio", playPageWithMIDIAudio);
+        playPageWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK));
+
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_B, 0), "playBefore");
         am.put("playNext", playBefore);
         playBefore.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_B, 0));
@@ -7439,6 +7449,12 @@ public class YassActions implements DropTargetListener {
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.ALT_MASK), "darkmode");
         am.put("darkmode", darkmode);
         darkmode.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.ALT_MASK));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+               "toggleCase");
+        am.put("toggleCase", toggleCase);
+        enableAudio.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_U,
+                                                                                    InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
     }
 
 
