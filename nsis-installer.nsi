@@ -1,6 +1,6 @@
 ﻿Name "Yass"
 
-OutFile ".\target\yass-installer-2024.9.exe"
+OutFile ".\target\yass-installer-2024.10.exe"
 
 Unicode true
 SetCompressor lzma
@@ -115,10 +115,10 @@ Function .onInit
 uninst:
   # workaround: cleanup previous start menu entries (all users)
   SetShellVarContext all
-  RMDir /r "$SMPROGRAMS\Yass Reloaded 1.9.0"
-  RMDir /r "$SMPROGRAMS\Yass Reloaded 1.8.1"
-  RMDir /r "$SMPROGRAMS\Yass Reloaded 1.8.0"
-  RMDir /r "$SMPROGRAMS\Yass Reloaded 1.7.1"
+  RMDir /r "$SMPROGRAMS\Yass 1.9.0"
+  RMDir /r "$SMPROGRAMS\Yass 1.8.1"
+  RMDir /r "$SMPROGRAMS\Yass 1.8.0"
+  RMDir /r "$SMPROGRAMS\Yass 1.7.1"
 
   ClearErrors
   ExecWait $R0

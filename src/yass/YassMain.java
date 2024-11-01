@@ -20,6 +20,7 @@ package yass;
 
 import org.apache.commons.lang3.StringUtils;
 import yass.ffmpeg.FFMPEGLocator;
+import yass.logger.YassLogger;
 import yass.stats.YassStats;
 
 import javax.sound.midi.MidiUnavailableException;
@@ -33,6 +34,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Vector;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -58,7 +60,10 @@ public class YassMain extends JFrame {
     private JPanel groupsPanel, songPanel, playlistPanel, sheetInfoPanel;
     private JComponent editToolbar;
 
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+
     public static void main(String[] argv) {
+        YassLogger.init(System.getProperty("user.home") + File.separator + ".yass" + File.separator + "log.txt");
         checkAudio();
         initLater(argv);
     }
@@ -68,32 +73,30 @@ public class YassMain extends JFrame {
             final YassMain y = new YassMain();
             y.parseCommandLine(argv);
 
-            System.out.println("Init... Yass Reloaded " + YassActions.VERSION);
+            LOGGER.info("Init... Yass Reloaded " + YassActions.VERSION);
             y.init();
-            System.out.println("Initialized.");
-
+            LOGGER.info("Initialized.");
             y.initConvert();
-
             y.onShow();
 
-            System.out.println("Starting...");
+            LOGGER.info("Starting...");
             y.load();
 
             y.initFrame();
             if (y.refreshLibrary()) {
-                System.out.println("Song Library was refreshed...");
+                LOGGER.info("Song Library was refreshed...");
             }
-            System.out.println("Ready. Let's go.");
+            LOGGER.info("Ready. Let's go.");
         });
     }
 
     private static void checkAudio() {
         try {
             if (javax.sound.midi.MidiSystem.getSequencer() == null)
-                System.out.println("MidiSystem sequencer unavailable.");
+                LOGGER.info("MidiSystem sequencer unavailable.");
             else if (javax.sound.sampled.AudioSystem.getMixer(null) == null)
-                System.out.println("AudioSystem unavailable.");
-            System.out.println("AudioSystem and MidiSystem Sequencer found.");
+                LOGGER.info("AudioSystem unavailable.");
+            LOGGER.info("AudioSystem and MidiSystem Sequencer found.");
         } catch (MidiUnavailableException e) {
             System.err.println("Midi system sequencer not available.");
         }
@@ -238,11 +241,10 @@ public class YassMain extends JFrame {
 
     public void init() {
         prop = new YassProperties();
-
         initLanguage();
         checkVersion();
         initTempDir();
-
+        
         JPanel mainPanel = new JPanel();
         mainPanel.setLayout(new BorderLayout());
 
@@ -275,10 +277,12 @@ public class YassMain extends JFrame {
 
         sheet.setLayout(null);
         sheet.add(lyrics);
+        
         YassErrors errors = new YassErrors(actions, prop, actions.createErrorToolbar());
         actions.setErrors(errors);
 
-        actions.setPanels(this, mainPanel, songListPanel, songInfo, songPanel, playlistPanel, sheetPanel, sheetInfoPanel);
+        actions.setPanels(this, mainPanel, songListPanel, songInfo, songPanel, playlistPanel, sheetPanel,
+                          sheetInfoPanel);
 
         Container c = getContentPane();
         c.setLayout(new BorderLayout());
@@ -286,20 +290,9 @@ public class YassMain extends JFrame {
     }
 
     private void initLyricsLayout() {
-        String layout = prop.getProperty("editor-layout");
-        if (layout == null)
-            layout = "East";
-
-        String lyricsWidthString = prop.getProperty("lyrics-width");
-        String lyricsHeightString = prop.getProperty("lyrics-min-height");
-        int lyricsWidth = Integer.parseInt(lyricsWidthString);
-        int lyricsMinHeight = Integer.parseInt(lyricsHeightString);
-
-        if (layout.equals("East")) {
-            lyrics.setBounds(500, 30, lyricsWidth, lyricsMinHeight);
-        } else if (layout.equals("West")) {
-            lyrics.setBounds(0, 30, lyricsWidth, lyricsMinHeight);
-        }
+        int lyricsWidth = 450;
+        int lyricsMinHeight = 120;
+        lyrics.setBounds(500, 30, lyricsWidth, lyricsMinHeight);
     }
 
     private void initTempDir() {
@@ -307,19 +300,23 @@ public class YassMain extends JFrame {
         if (td.exists()) {
             YassUtils.deleteDir(td);
         }
-        if (! td.mkdirs()) {
-            System.out.println("Warning: Cannot create temp-dir: "+td.getAbsolutePath());
+        if (!td.mkdirs()) {
+            LOGGER.info("Warning: Cannot create temp-dir: " + td.getAbsolutePath());
         }
     }
 
     private void checkVersion() {
         if (prop.checkVersion()) {
             String dir = prop.getUserDir();
-            int ok = JOptionPane.showConfirmDialog(null, "<html>" + I18.get("incompatible_version") + "<br>" + dir + "<br><br>" + I18.get("remove_version"), I18.get("incompatible_version") + " - Yass", JOptionPane.YES_NO_OPTION);
+            int ok = JOptionPane.showConfirmDialog(null, "<html>" + I18.get(
+                                                           "incompatible_version") + "<br>" + dir + "<br><br>" + I18.get("remove_version"),
+                                                   I18.get("incompatible_version") + " - Yass",
+                                                   JOptionPane.YES_NO_OPTION);
             if (ok == JOptionPane.OK_OPTION) {
                 boolean verify = !dir.contains(".yass");
                 if (verify || !(new File(dir).exists()) || !(new File(dir).isDirectory())) {
-                    JOptionPane.showMessageDialog(null, I18.get("remove_version_error"), I18.get("incompatible_version"), JOptionPane.WARNING_MESSAGE);
+                    JOptionPane.showMessageDialog(null, I18.get("remove_version_error"),
+                                                  I18.get("incompatible_version"), JOptionPane.WARNING_MESSAGE);
                 } else {
                     YassUtils.deleteDir(new File(dir));
                 }
@@ -333,7 +330,7 @@ public class YassMain extends JFrame {
         if (lang == null || lang.equals("default")) {
             lang = Locale.getDefault().getLanguage();
         }
-        System.out.println("Setting Language: " + lang);
+        LOGGER.info("Setting Language: " + lang);
         I18.setLanguage(lang);
     }
 
@@ -408,8 +405,8 @@ public class YassMain extends JFrame {
         String spacing = prop.getProperty("correct-uncommon-spacing");
         if (StringUtils.isEmpty(spacing)) {
             int ok = JOptionPane.showConfirmDialog(this, "<html>"
-                            + I18.get("tool_prefs_spacing") + "</html>", I18.get("tool_prefs_spacing_title"),
-                    JOptionPane.OK_CANCEL_OPTION, JOptionPane.INFORMATION_MESSAGE);
+                                                           + I18.get("tool_prefs_spacing") + "</html>", I18.get("tool_prefs_spacing_title"),
+                                                   JOptionPane.OK_CANCEL_OPTION, JOptionPane.INFORMATION_MESSAGE);
             if (ok != JOptionPane.OK_OPTION) {
                 prop.setProperty("correct-uncommon-spacing", "before");
             } else {
@@ -441,12 +438,12 @@ public class YassMain extends JFrame {
     private boolean checkFfmpeg(boolean store) {
         String ffmpegPath = prop.getProperty("ffmpegPath");
         if (StringUtils.isEmpty(ffmpegPath)) {
-            System.out.println("Could not find FFmpeg path in user.xml");
+            LOGGER.info("Could not find FFmpeg path in user.xml");
             // No ffmpeg path is configured in properties
             FFMPEGLocator ffmpegLocator = FFMPEGLocator.getInstance();
             store = store || validateFfmpeg(ffmpegLocator);
         } else {
-            System.out.println("Using FFmpeg path " + ffmpegPath + " from user.xml");
+            LOGGER.info("Using FFmpeg path " + ffmpegPath + " from user.xml");
             // ffmpeg path is configured in properties, checking, if it is valid
             FFMPEGLocator ffmpegLocator = FFMPEGLocator.getInstance(ffmpegPath);
             if (!validateFfmpeg(ffmpegLocator, true)) {
@@ -462,7 +459,7 @@ public class YassMain extends JFrame {
     private boolean validateFfmpeg(FFMPEGLocator ffmpegLocator) {
         return validateFfmpeg(ffmpegLocator, false);
     }
-    
+
     private boolean validateFfmpeg(FFMPEGLocator ffmpegLocator, boolean hideHint) {
         if (ffmpegLocator == null || ffmpegLocator.getFfmpeg() == null || ffmpegLocator.getFfprobe() == null) {
             if (!hideHint) {
@@ -474,12 +471,16 @@ public class YassMain extends JFrame {
             }
             return false;
         } else {
-            System.out.println("Found ffmpeg in path " + ffmpegLocator.getPath() + ". Writing to user.xml");
-            prop.setProperty("ffmpegPath", ffmpegLocator.getPath());
-            return true;
+            String propPath = prop.getProperty("ffmpegPath");
+            if (StringUtils.isEmpty(propPath) || !propPath.equals(ffmpegLocator.getPath())) {
+                LOGGER.info("Found ffmpeg in path " + ffmpegLocator.getPath() + ". Writing to user.xml");
+                prop.setProperty("ffmpegPath", ffmpegLocator.getPath());
+                return true;
+            }
         }
+        return false;
     }
-    
+
     public void stop() {
         askStop();
     }
@@ -501,71 +502,46 @@ public class YassMain extends JFrame {
         JScrollPane sheetPane = new JScrollPane(sheet);
 
         sheetPane.getViewport().addChangeListener(e -> {
-                    JViewport v = (JViewport) e.getSource();
-                    Point p = v.getViewPosition();
-                    Dimension r = v.getExtentSize();
+            JViewport v = (JViewport) e.getSource();
+            Point p = v.getViewPosition();
+            Dimension r = v.getExtentSize();
 
-                    // LYRICS POSITION
-                    String layout = prop.getProperty("editor-layout");
-                    if (layout == null) {
-                        layout = "East";
-                    }
+            // LYRICS POSITION
+            int lyricsWidth = 450;
+            int newx = (int) p.getX() + r.width - lyricsWidth;
+            int newy = (int) p.getY() + 20;
+            Point p2 = lyrics.getLocation();
+            if (p2.x != newx || p2.y != newy) {
+                lyrics.setLocation(newx, newy);
+                sheet.revalidate();
+                sheet.update();
+            }
+        });
+        sheetPane.getViewport().addComponentListener(new ComponentAdapter() {
+            public void componentResized(ComponentEvent e) {
+                actions.stopPlaying();
 
-                    String lyricsWidthString = prop.getProperty("lyrics-width");
-                    int lyricsWidth = Integer.parseInt(lyricsWidthString);
+                JViewport v = (JViewport) e.getSource();
+                Point p = v.getViewPosition();
+                Dimension r = v.getExtentSize();
 
-                    int newx = (int) p.getX() + r.width - lyricsWidth;
-                    if (layout.equals("East")) {
-                        newx = (int) p.getX() + r.width - lyricsWidth;
-                    } else if (layout.equals("West")) {
-                        newx = (int) p.getX();
-                    }
-                    int newy = (int) p.getY() + 20;
-                    Point p2 = lyrics.getLocation();
-                    if (p2.x != newx || p2.y != newy) {
-                        lyrics.setLocation(newx, newy);
-                        sheet.revalidate();
-                        sheet.update();
-                    }
-                });
-        sheetPane.getViewport().addComponentListener(
-                new ComponentAdapter() {
-                    public void componentResized(ComponentEvent e) {
-                        actions.stopPlaying();
-
-                        JViewport v = (JViewport) e.getSource();
-                        Point p = v.getViewPosition();
-                        Dimension r = v.getExtentSize();
-
-                        // LYRICS POSITION
-                        String layout = prop.getProperty("editor-layout");
-                        if (layout == null) {
-                            layout = "East";
-                        }
-
-                        String lyricsWidthString = prop.getProperty("lyrics-width");
-                        int lyricsWidth = Integer.parseInt(lyricsWidthString);
-
-                        int newx = (int) p.getX() + r.width - lyricsWidth;
-                        if (layout.equals("East")) {
-                            newx = (int) p.getX() + r.width - lyricsWidth;
-                        } else if (layout.equals("West")) {
-                            newx = (int) p.getX();
-                        }
-                        int newy = (int) p.getY() + 20;
-                        Point p2 = lyrics.getLocation();
-                        if (p2.x != newx || p2.y != newy) {
-                            lyrics.setLocation(newx, newy);
-                            sheet.revalidate();
-                            sheet.update();
-                        } else {
-                            sheet.updateHeight();
-                            actions.revalidateLyricsArea();
-                        }
-                        YassTable t = actions.getTable();
-                        if (t != null) t.zoomPage();
-                    }
-                });
+                // LYRICS POSITION
+                int lyricsWidth = 450;
+                int newx = (int) p.getX() + r.width - lyricsWidth;
+                int newy = (int) p.getY() + 20;
+                Point p2 = lyrics.getLocation();
+                if (p2.x != newx || p2.y != newy) {
+                    lyrics.setLocation(newx, newy);
+                    sheet.revalidate();
+                    sheet.update();
+                } else {
+                    sheet.updateHeight();
+                    actions.revalidateLyricsArea();
+                }
+                YassTable t = actions.getTable();
+                if (t != null) t.zoomPage();
+            }
+        });
 
 
         sheetPane.setWheelScrollingEnabled(false);
@@ -584,24 +560,24 @@ public class YassMain extends JFrame {
         sheetPanel.add("Center", sheetPane);
 
         YassSheetInfo sheetInfo = new YassSheetInfo(sheet, 0);
-        sheetInfoPanel = new JPanel(new GridLayout(1,1));
+        sheetInfoPanel = new JPanel(new GridLayout(1, 1));
         sheetInfoPanel.add(sheetInfo);
         sheetPanel.add("South", sheetInfoPanel);
 
         // dark mode buttons
         Border emptyBorder = BorderFactory.createCompoundBorder(
                 BorderFactory.createEtchedBorder(EtchedBorder.RAISED),
-                BorderFactory.createEmptyBorder(4,4,4,4));
+                BorderFactory.createEmptyBorder(4, 4, 4, 4));
         Border rolloverBorder = BorderFactory.createCompoundBorder(
                 BorderFactory.createEtchedBorder(EtchedBorder.RAISED),
-                BorderFactory.createEmptyBorder(4,4,4,4));
-        for (Component c: editToolbar.getComponents()) {
+                BorderFactory.createEmptyBorder(4, 4, 4, 4));
+        for (Component c : editToolbar.getComponents()) {
             if (c instanceof JButton) {
                 ((JButton) c).getModel().addChangeListener(e -> {
                     ButtonModel model = (ButtonModel) e.getSource();
                     c.setBackground(model.isRollover()
-                            ? (YassSheet.BLUE)
-                            : (sheet.darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.HI_GRAY_2));
+                                            ? (YassSheet.BLUE)
+                                            : (sheet.darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.HI_GRAY_2));
                     ((JButton) c).setBorder(model.isRollover() ? rolloverBorder : emptyBorder);
                 });
             }
@@ -609,8 +585,8 @@ public class YassMain extends JFrame {
                 ((JToggleButton) c).getModel().addChangeListener(e -> {
                     ButtonModel model = (ButtonModel) e.getSource();
                     c.setBackground(model.isRollover()
-                            ? (YassSheet.BLUE)
-                            : (sheet.darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.HI_GRAY_2));
+                                            ? (YassSheet.BLUE)
+                                            : (sheet.darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.HI_GRAY_2));
                     ((JToggleButton) c).setBorder(model.isRollover() ? rolloverBorder : emptyBorder);
                 });
             }
@@ -618,14 +594,18 @@ public class YassMain extends JFrame {
 
         sheet.addYassSheetListener(new YassSheetListener() {
             @Override
-            public void posChanged(YassSheet source, double posMs) { }
+            public void posChanged(YassSheet source, double posMs) {
+            }
+
             @Override
-            public void rangeChanged(YassSheet source, int minHeight, int maxHeight, int minBeat, int maxBeat) { }
+            public void rangeChanged(YassSheet source, int minHeight, int maxHeight, int minBeat, int maxBeat) {
+            }
+
             @Override
             public void propsChanged(YassSheet source) {
                 editToolbar.setBackground(sheet.darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.HI_GRAY_2);
-                editToolbar.setBorder(BorderFactory.createEmptyBorder(3,3,3,3));
-                for (Component c: editToolbar.getComponents()) {
+                editToolbar.setBorder(BorderFactory.createEmptyBorder(3, 3, 3, 3));
+                for (Component c : editToolbar.getComponents()) {
                     if (c instanceof JButton || c instanceof JToggleButton) {
                         c.setBackground(sheet.darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.HI_GRAY_2);
                         ((JComponent) c).setBorder(emptyBorder);
@@ -635,7 +615,7 @@ public class YassMain extends JFrame {
         });
         editToolbar.setBackground(sheet.darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.HI_GRAY_2);
         editToolbar.setBorder(BorderFactory.createLineBorder(sheet.darkMode ? YassSheet.HI_GRAY_2_DARK_MODE :
-                YassSheet.HI_GRAY_2, 3));
+                                                                     YassSheet.HI_GRAY_2, 3));
 
         sheetPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         sheetPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
@@ -926,6 +906,7 @@ public class YassMain extends JFrame {
         actions.registerLibraryActions(panel);
         return panel;
     }
+
     private boolean refreshLibrary() {
         if (prop.getBooleanProperty("options_dir_refresh") && actions != null) {
             actions.refreshLibrary();

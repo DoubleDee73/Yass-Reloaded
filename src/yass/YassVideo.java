@@ -24,6 +24,7 @@ import javax.media.control.TrackControl;
 import javax.media.format.VideoFormat;
 import javax.swing.*;
 import java.awt.image.BufferedImage;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -31,6 +32,7 @@ import java.awt.image.BufferedImage;
  * @author Saruta
  */
 public class YassVideo {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     YassProperties prop;
     Processor mediaPlayer = null;
     //Player mediaPlayer = null;
@@ -102,7 +104,7 @@ public class YassVideo {
     public void muteVideo(boolean onoff) {
         if (mediaPlayer != null && gain != null) {
             gain.setLevel(onoff ? 0 : .7f);
-            // System.out.println("video mute " + onoff);
+            // LOGGER.info("video mute " + onoff);
         }
     }
 
@@ -207,14 +209,14 @@ public class YassVideo {
         try {
             mediaPlayer = Manager.createProcessor(new javax.media.MediaLocator("file:" + vdFile));
         } catch (Exception e) {
-            System.out.println("Cannot create video player");
+            LOGGER.info("Cannot create video player");
             noVideo();
             return;
         }
 
         boolean result = waitForState(mediaPlayer, Processor.Configured);
         if (!result) {
-            System.out.println("Cannot configure video player");
+            LOGGER.info("Cannot configure video player");
             noVideo();
             return;
         }
@@ -240,7 +242,7 @@ public class YassVideo {
 
         result = waitForState(mediaPlayer, Processor.Realized);
         if (!result) {
-            System.out.println("Cannot realize video player");
+            LOGGER.info("Cannot realize video player");
             noVideo();
             return;
         }

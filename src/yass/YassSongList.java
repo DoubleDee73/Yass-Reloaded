@@ -20,6 +20,7 @@ package yass;
 
 import org.apache.commons.lang3.StringUtils;
 import org.tritonus.share.sampled.file.TAudioFileFormat;
+import yass.autocorrect.YassAutoCorrect;
 import yass.filter.YassFilter;
 import yass.stats.YassStats;
 
@@ -40,11 +41,14 @@ import java.nio.file.Paths;
 import java.text.MessageFormat;
 import java.util.List;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static yass.UltrastarHeaderTag.*;
 
 public class YassSongList extends JTable {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public final static int TILE = 0;
     public final static int DETAILS = 1;
 
@@ -564,17 +568,17 @@ public class YassSongList extends JTable {
         addKeyListener(
                 new KeyAdapter() {
                     public void keyTyped(KeyEvent e) {
-                        //System.out.println("typed " + e.getKeyChar());
+                        //LOGGER.info("typed " + e.getKeyChar());
                     }
 
 
                     public void keyReleased(KeyEvent e) {
-                        //System.out.println("released " + e.getKeyChar());
+                        //LOGGER.info("released " + e.getKeyChar());
                     }
 
 
                     public void keyPressed(KeyEvent e) {
-                        //System.out.println("pressed " + e.getKeyChar());
+                        //LOGGER.info("pressed " + e.getKeyChar());
 
                         if (e.isConsumed()) {
                             return;
@@ -830,7 +834,7 @@ public class YassSongList extends JTable {
             lockedIcon = new ImageIcon(getClass().getResource("/yass/resources/img/Locked.gif")).getImage();
 
             for (int i = 0; i < langIcons.length; i++) {
-                // System.out.println("language: " + langID[i]);
+                // LOGGER.info("language: " + langID[i]);
                 langIcons[i] = new ImageIcon(getClass().getResource("/yass/resources/img/"+langID[i].toLowerCase() + ".gif")).getImage();
             }
             err_minorpage_icon = new ImageIcon(getClass().getResource("/yass/resources/img/MinorPageError.gif")).getImage();
@@ -839,7 +843,7 @@ public class YassSongList extends JTable {
             err_tags_icon = new ImageIcon(getClass().getResource("/yass/resources/img/TagError.gif")).getImage();
             err_text_icon = new ImageIcon(getClass().getResource("/yass/resources/img/TextError.gif")).getImage();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
     }
 
@@ -2492,7 +2496,7 @@ public class YassSongList extends JTable {
             if (k > 1) {
                 String txt = s.getFilename();
                 File f = new File(dir + File.separator + txt);
-                if (!f.delete()) {
+                if (!YassUtils.deleteFile(f)) {
                     JOptionPane.showMessageDialog(actions.getTab(), I18.get("mpop_remove_error"), I18.get("mpop_remove_title"), JOptionPane.ERROR_MESSAGE);
                     break;
                 }
@@ -2971,7 +2975,7 @@ public class YassSongList extends JTable {
                 s.setIcon(new ImageIcon(bufferedImage));
                 return true;
             } catch (Exception e) {
-                //System.out.println("error at " + s.getFilename());
+                //LOGGER.info("error at " + s.getFilename());
                 s.setIcon(noCover);
                 return true;
                 // may happen for multipe txts in one directory, one with video, others not
@@ -3691,7 +3695,7 @@ public class YassSongList extends JTable {
             File plcache = new File(plcacheName);
             if (plcache.exists()) {
                 if (!plcache.delete()) {
-                    System.out.println("Error: Cannot delete playlist cache.");
+                    LOGGER.info("Error: Cannot delete playlist cache.");
                 }
             }
             File pp = plcache.getParentFile();
@@ -3965,8 +3969,8 @@ public class YassSongList extends JTable {
             }
             outputStream.close();
         } catch (Exception ex) {
-            System.out.println("Metadata Write Error:" + ex.getMessage());
-            ex.printStackTrace();
+            LOGGER.info("Metadata Write Error:" + ex.getMessage());
+            LOGGER.log(Level.INFO, ex.getMessage(), ex);
         }
     }
 
@@ -4035,7 +4039,7 @@ public class YassSongList extends JTable {
             YassTable t = new YassTable();
             t.init(prop);
             while ((line = inputStream.readLine()) != null) {
-                //System.out.println("line: "+line);
+                //LOGGER.info("line: "+line);
                 ci = 0;
                 if (line.startsWith("#")) {
                     line = line.substring(1);
@@ -4089,11 +4093,11 @@ public class YassSongList extends JTable {
                     continue;
                 }
 				/*
-				 *  System.out.println("extract genre: "+genre);
-				 *  System.out.println("extract edition: "+edition);
-				 *  System.out.println("extract language: "+language);
-				 *  System.out.println("extract year: "+year);
-				 *  System.out.println();
+				 *  LOGGER.info("extract genre: "+genre);
+				 *  LOGGER.info("extract edition: "+edition);
+				 *  LOGGER.info("extract language: "+language);
+				 *  LOGGER.info("extract year: "+year);
+				 *  LOGGER.info();
 				 */
                 Vector<YassSong> v = findSong(artist, title);
                 for (Enumeration<YassSong> en = v.elements(); en.hasMoreElements(); ) {
@@ -4108,7 +4112,7 @@ public class YassSongList extends JTable {
                         if (!genre.equals(old)) {
                             changed = true;
                             s.setGenre(genre);
-                            //System.out.println("new genre: "+s.getArtist()+" - "+s.getTitle()+":" + s.getGenre());
+                            //LOGGER.info("new genre: "+s.getArtist()+" - "+s.getTitle()+":" + s.getGenre());
                         }
                     }
                     if (useEdition) {
@@ -4119,7 +4123,7 @@ public class YassSongList extends JTable {
                         if (!edition.equals(old)) {
                             changed = true;
                             s.setEdition(edition);
-                            //System.out.println("new edition: "+s.getArtist()+" - "+s.getTitle()+":" + s.getEdition());
+                            //LOGGER.info("new edition: "+s.getArtist()+" - "+s.getTitle()+":" + s.getEdition());
                         }
                     }
                     if (useLanguage) {
@@ -4130,7 +4134,7 @@ public class YassSongList extends JTable {
                         if (!language.equals(old)) {
                             changed = true;
                             s.setLanguage(language);
-                            //System.out.println("new language: "+s.getArtist()+" - "+s.getTitle()+":" + s.getLanguage());
+                            //LOGGER.info("new language: "+s.getArtist()+" - "+s.getTitle()+":" + s.getLanguage());
                         }
                     }
                     if (useYear) {
@@ -4141,7 +4145,7 @@ public class YassSongList extends JTable {
                         if (!year.equals(old)) {
                             changed = true;
                             s.setYear(year);
-                            //System.out.println("new year: "+s.getArtist()+" - "+s.getTitle()+":" + s.getYear());
+                            //LOGGER.info("new year: "+s.getArtist()+" - "+s.getTitle()+":" + s.getYear());
                         }
                     }
                     if (useAlbum) {
@@ -4174,8 +4178,8 @@ public class YassSongList extends JTable {
             sm.fireTableDataChanged();
             storeCache();
         } catch (Exception ex) {
-            System.out.println("Metadata Read Error:" + ex.getMessage());
-            ex.printStackTrace();
+            LOGGER.info("Metadata Read Error:" + ex.getMessage());
+            LOGGER.log(Level.INFO, ex.getMessage(), ex);
         }
     }
 
@@ -4625,7 +4629,7 @@ public class YassSongList extends JTable {
             r.close();
             fis.close();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
             return false;
         }
         return true;
@@ -4887,7 +4891,7 @@ public class YassSongList extends JTable {
                 } else {
                     if (namelow.endsWith(".txt") && quickCheck(dir1)) {
                         if (t.get(dir1.getAbsolutePath()) == null) {
-                            //System.out.println("new file: " + dirs[i].getAbsolutePath());
+                            //LOGGER.info("new file: " + dirs[i].getAbsolutePath());
                             return true;
                         }
                         actions.setProgress(I18.get("lib_msg_search"), d.getPath());
@@ -4952,7 +4956,7 @@ public class YassSongList extends JTable {
                         inputStream.close();
                         return true;
                     } else {
-                        System.out.println("Invalid Header Tag for " + f.getName());
+                        LOGGER.info("Invalid Header Tag for " + f.getName());
                     }
                     line = inputStream.readLine();
                 }
@@ -5114,7 +5118,7 @@ public class YassSongList extends JTable {
                     continue;
                 }
 
-                System.out.println("Process: " + s.getArtist() + " - " + s.getFilename());
+                LOGGER.info("Process: " + s.getArtist() + " - " + s.getFilename());
                 filename = s.getDirectory() + File.separator + s.getFilename();
                 t.removeAllRows();
                 t.init(prop);

@@ -34,6 +34,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 public class YassLanguageUtils {
 
@@ -41,11 +42,13 @@ public class YassLanguageUtils {
 
     private LanguageDetector detector;
 
-    private List<Locale> SUPPORTED_LOCALES = Arrays.asList(Locale.ENGLISH, Locale.GERMAN, Locale.FRENCH,
-                                                           Locale.ITALIAN, Locale.forLanguageTag("es"),
-                                                           Locale.forLanguageTag("pt"), Locale.forLanguageTag("pl"),
-                                                           Locale.forLanguageTag("tr"), Locale.forLanguageTag("hu"),
-                                                           Locale.CHINESE, Locale.forLanguageTag("ru"));
+    public static final List<Locale> SUPPORTED_LOCALES = Arrays.asList(Locale.ENGLISH, Locale.GERMAN, Locale.FRENCH,
+                                                                       Locale.ITALIAN, Locale.forLanguageTag("es"),
+                                                                       Locale.forLanguageTag("pt"),
+                                                                       Locale.forLanguageTag("pl"),
+                                                                       Locale.forLanguageTag("tr"),
+                                                                       Locale.forLanguageTag("hu"),
+                                                                       Locale.CHINESE, Locale.forLanguageTag("ru"));
 
     public YassLanguageUtils() {
         try {
@@ -100,5 +103,10 @@ public class YassLanguageUtils {
         }
         return false;
     }
-
+    
+    public static List<String> getSupportedLanguages() {
+        return SUPPORTED_LOCALES.stream()
+                                .map(locale -> locale.getDisplayLanguage(Locale.ENGLISH))
+                                .collect(Collectors.toList());
+    }
 }

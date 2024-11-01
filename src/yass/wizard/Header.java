@@ -242,7 +242,7 @@ public class Header extends JPanel {
      * @param l The new languages value
      * @param m The new languages value
      */
-    public void setLanguages(String l, String m) {
+    public void setLanguages(String l, String m, String current) {
         JComboBox<String> langBox = new JComboBox<>();
         langBox.setEditable(true);
         StringTokenizer lang = new StringTokenizer(l, "|");
@@ -259,6 +259,7 @@ public class Header extends JPanel {
                 lang.nextToken();
             }
         }
+        langBox.setSelectedItem(current);
         langEditor = new DefaultCellEditor(langBox);
     }
 

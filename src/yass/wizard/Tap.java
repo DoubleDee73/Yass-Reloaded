@@ -85,7 +85,7 @@ public class Tap extends JPanel {
         table.setEnabled(false);
         content.add("Center", scroll = new JScrollPane(table));
         content.add("South", check = new JCheckBox(I18.get("create_tap_edit")));
-        check.setSelected(wizard.getValue("starteditor").equals("true"));
+        check.setSelected(true);
         check.addItemListener(
                 new ItemListener() {
                     public void itemStateChanged(ItemEvent e) {
@@ -117,7 +117,6 @@ public class Tap extends JPanel {
         table.getCommentRow("GENRE:").setComment(wizard.getValue("genre"));
         table.getCommentRow("LANGUAGE:").setComment(wizard.getValue("language"));
         wizard.setValue("melodytable", table.getPlainText());
-        //System.out.println(wizard.getValue("melodytable"));
         table.getColumnModel().getColumn(0).setPreferredWidth(10);
         table.getColumnModel().getColumn(0).setMaxWidth(10);
         table.setEnabled(false);

@@ -29,12 +29,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Collections;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 public class YassFileUtils {
 
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private UniversalDetector detector = new UniversalDetector();
 
     public synchronized YassFile loadTextFile(String filename) {
@@ -66,7 +68,7 @@ public class YassFileUtils {
             }
             writer.close();
         } catch (IOException ioex) {
-            System.out.println("Failed to write contents to " + path.toString());
+            LOGGER.info("Failed to write contents to " + path.toString());
             throw new RuntimeException(ioex);
         }
     }
@@ -86,13 +88,13 @@ public class YassFileUtils {
             detector.dataEnd();
             enc = detector.getDetectedCharset();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         } finally {
             if (input != null) {
                 try {
                     input.close();
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    LOGGER.log(Level.INFO, e.getMessage(), e);
                 }
             }
         }

@@ -17,9 +17,13 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-package yass;
+package yass.autocorrect;
 
 import org.apache.commons.lang3.StringUtils;
+import yass.YassProperties;
+import yass.YassRow;
+import yass.YassTable;
+import yass.YassUtils;
 
 public class YassAutoCorrectLineCapitalization extends YassAutoCorrector {
     public YassAutoCorrectLineCapitalization(YassProperties properties) {
@@ -38,8 +42,9 @@ public class YassAutoCorrectLineCapitalization extends YassAutoCorrector {
             return false;
         }
         String text = currentRow.getText();
-        if (YassUtils.isPunctuation(text.substring(0, 1)) && text.length() > 1) {
-            text = text.substring(0, 1) + StringUtils.capitalize(text.substring(1));
+        int index = properties.isUncommonSpacingAfter() ? 0 : 1;
+        if (text.length() > 1 + index && YassUtils.isPunctuation(text.substring(index, 1 + index))) {
+            text = text.substring(index, index + 1) + StringUtils.capitalize(text.substring(1 + index));
         } else {
             text = StringUtils.capitalize(text);
         }

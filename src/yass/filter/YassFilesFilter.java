@@ -81,7 +81,7 @@ public class YassFilesFilter extends YassFilter {
                 backgroundRatio = Integer.parseInt((String) p.get("background-ratio"));
                 checkBackgroundRatio = p.get("use-background-ratio").equals("true");
             } catch (Exception e) {
-                System.out.println("Files Errors: Cannot parse properties.");
+                LOGGER.info("Files Errors: Cannot parse properties.");
                 //e.printStackTrace();
             }
         }
@@ -282,8 +282,8 @@ public class YassFilesFilter extends YassFilter {
             name = name.substring(i + 1);
             String std = (video != null) ? at + " " + videodirID : at;
             if (!name.equals(std)) {
-                // System.out.println("Uncommon foldername: " + name);
-                // System.out.println("Standard foldername: " + std);
+                // LOGGER.info("Uncommon foldername: " + name);
+                // LOGGER.info("Standard foldername: " + std);
                 return true;
             }
 
@@ -293,7 +293,7 @@ public class YassFilesFilter extends YassFilter {
             extension = extension.toLowerCase();
             std = at + extension;
             if (!text.equals(std)) {
-                // System.out.println("Uncommon karaoke filename: " + text);
+                // LOGGER.info("Uncommon karaoke filename: " + text);
                 return true;
             }
 
@@ -303,7 +303,7 @@ public class YassFilesFilter extends YassFilter {
                 extension = extension.toLowerCase();
                 std = at + " [CO]" + extension;
                 if (!cover.equals(std)) {
-                    // System.out.println("Uncommon cover filename: " + cover);
+                    // LOGGER.info("Uncommon cover filename: " + cover);
                     return true;
                 }
             }
@@ -313,7 +313,7 @@ public class YassFilesFilter extends YassFilter {
                 extension = extension.toLowerCase();
                 std = at + " [BG]" + extension;
                 if (!background.equals(std)) {
-                    // System.out.println("Uncommon background filename: " + background);
+                    // LOGGER.info("Uncommon background filename: " + background);
                     return false;
                 }
             }
@@ -323,7 +323,7 @@ public class YassFilesFilter extends YassFilter {
                 extension = extension.toLowerCase();
                 std = at + extension;
                 if (!audio.equals(std)) {
-                    // System.out.println("Uncommon audio filename: " + audio);
+                    // LOGGER.info("Uncommon audio filename: " + audio);
                     return true;
                 }
             }
@@ -333,7 +333,7 @@ public class YassFilesFilter extends YassFilter {
                 extension = extension.toLowerCase();
                 std = at + " [VD#" + videogap + "]" + extension;
                 if (!video.equals(std)) {
-                    // System.out.println("Uncommon video filename: " + video);
+                    // LOGGER.info("Uncommon video filename: " + video);
                     return true;
                 }
             }

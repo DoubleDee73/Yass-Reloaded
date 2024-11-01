@@ -25,6 +25,7 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.util.StringTokenizer;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -32,6 +33,7 @@ import java.util.StringTokenizer;
  * @author Saruta
  */
 public class YassLibOptions extends JDialog {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static final long serialVersionUID = -7342966934700458895L;
     private JTextField songdirInput, playlistdirInput, coverdirInput;
     private JComboBox<String> defaults = null;
@@ -81,7 +83,7 @@ public class YassLibOptions extends JDialog {
         defaults.addItem("");
         String def = p.getProperty("default-programs");
         def = def.replaceAll("[/\\\\]+", "\\" + File.separator);
-        //System.out.println(def);
+        //LOGGER.info(def);
         int selIndex = -1;
         StringTokenizer st = new StringTokenizer(def, "|");
         int i = 0;
@@ -452,7 +454,7 @@ public class YassLibOptions extends JDialog {
                             dispose();
 
                             actions.refreshLibrary();
-                            //System.out.println("load lib");
+                            //LOGGER.info("load lib");
                         } else if (value == JOptionPane.CANCEL_OPTION) {
                             dispose();
                         }

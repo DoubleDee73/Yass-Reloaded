@@ -28,6 +28,7 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
 import java.util.Objects;
+import java.util.logging.Logger;
 
 public class SongHeader extends JDialog {
 
@@ -39,10 +40,10 @@ public class SongHeader extends JDialog {
     private JTextField bpmField;
     private JComboBox<String> audioSelector;
     private YassActions actions;
-
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public SongHeader(JFrame owner, YassActions actions, YassTable table) {
         super(owner);
-        System.out.println("Init Songheader");
+        LOGGER.info("Init Songheader");
         if (isVisible()) {
             return;
         }
@@ -184,7 +185,8 @@ public class SongHeader extends JDialog {
         panel.add(startSpinner);
         panel.add(Box.createHorizontalStrut(30));
         int end = table.getEnd() > 0 ? (int) table.getEnd() : 10000;
-        endSpinner = new TimeSpinner(I18.get("mpop_audio_end"), end, Math.max(10000, duration));
+        
+        endSpinner = new TimeSpinner(I18.get("mpop_audio_end"), Math.min(duration, end), Math.max(10000, duration));
         endSpinner.setLabelSize(midDimension);
         endSpinner.setSpinnerWidth(100);
         endSpinner.getSpinner().setFocusable(false);

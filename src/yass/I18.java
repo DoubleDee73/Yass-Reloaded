@@ -26,6 +26,8 @@ import java.io.InputStream;
 import java.net.URL;
 import java.util.Locale;
 import java.util.ResourceBundle;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -41,7 +43,9 @@ public class I18 {
     private static String lang = "en";
 
     private static String userdir = System.getProperty("user.home") + File.separator + ".yass" + File.separator + "i18";
-
+    
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+    
     /**
      * Description of the Method
      *
@@ -77,14 +81,14 @@ public class I18 {
                 bundle = ResourceBundle.getBundle("yass", loc,
                         java.net.URLClassLoader.newInstance(new URL[]{new File(userdir).toURI().toURL()}));
             } catch (Exception e) {
-                System.out.println("Cannot set language " + lang);
+                LOGGER.fine("Cannot set language " + lang);
                 setDefaultLanguage();
             }
         } else {
             try {
                 bundle = ResourceBundle.getBundle("yass.resources.i18.yass", loc);
             } catch (Exception e) {
-                System.out.println("Cannot set language " + lang);
+                LOGGER.fine("Cannot set language " + lang);
                 setDefaultLanguage();
             }
         }
@@ -95,7 +99,7 @@ public class I18 {
         try {
             bundle = ResourceBundle.getBundle("yass.resources.i18.yass", loc);
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
     }
 
@@ -122,7 +126,7 @@ public class I18 {
         try {
             uc = url.openConnection();
             if (uc.getContentLength() > 0) {
-                // System.out.println("i18 " + filename);
+                // LOGGER.info("i18 " + filename);
                 return url;
             }
         } catch (Exception e) {
@@ -138,7 +142,7 @@ public class I18 {
             }
         }
         filename = "/yass/resources/i18/default/" + s;
-        // System.out.println("i18 " + filename);
+        // LOGGER.info("i18 " + filename);
         return I18.class.getResource(filename);
     }
 
@@ -158,11 +162,11 @@ public class I18 {
         if (is != null) return is;
 
         filename = "/yass/resources/i18/default/" + s;
-        // System.out.println("i18 " + filename);
+        // LOGGER.info("i18 " + filename);
         is = I18.class.getResourceAsStream(filename);
         if (is != null) return is;
 
-        System.out.println("not found: " + s);
+        LOGGER.info("not found: " + s);
         return null;
     }
 
@@ -170,7 +174,7 @@ public class I18 {
         if (new File(userdir).exists()) {
             File f = new File(userdir + File.separator + lang + File.separator + s);
             try {
-                //System.out.println("reading " + f.getAbsolutePath());
+                //LOGGER.info("reading " + f.getAbsolutePath());
                 return ImageIO.read(f);
             } catch (Exception e) {}
         }
@@ -179,7 +183,7 @@ public class I18 {
         InputStream is = I18.class.getResourceAsStream(filename);
         if (is != null) {
             try {
-                //System.out.println("reading " + filename);
+                //LOGGER.info("reading " + filename);
                 return ImageIO.read(is);
             } catch (Exception e) {
             } finally {
@@ -193,7 +197,7 @@ public class I18 {
         is = I18.class.getResourceAsStream(filename);
         if (is != null) {
             try {
-                //System.out.println("reading " + filename);
+                //LOGGER.info("reading " + filename);
                 return ImageIO.read(is);
             } catch (Exception e) {
             } finally {
@@ -203,7 +207,7 @@ public class I18 {
                 }
             }
         }
-        System.out.println("not found: " + s);
+        LOGGER.info("not found: " + s);
         return null;
     }
 
@@ -218,7 +222,7 @@ public class I18 {
         sb.append("<html><body><font style=\"font-family: Arial; font-size:2em\"><u>Yass</u> Reloaded</font> by DoubleDee<br>Version: " + version + " (" + date + ")<br>");
         sb.append("<a href=\"https://github.com/DoubleDee73/Yass\">https://github.com/DoubleDee73/Yass</a><br>");
         sb.append("<br>");
-        sb.append("Copyright (C) 2023 DoubleDee<br>");
+        sb.append("Copyright (C) 2024 DoubleDee<br>");
         sb.append("<br>");
         sb.append("Forked from <a href=\"https://yass-along.com/\">Yass 2.4.3</a> by Saruta<br>");
         sb.append("This program is free software: you can redistribute it and/or modify<br>");

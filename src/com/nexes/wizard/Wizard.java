@@ -1,11 +1,10 @@
 package com.nexes.wizard;
 
-import java.awt.BorderLayout;
-import java.awt.CardLayout;
-import java.awt.Component;
-import java.awt.Dialog;
-import java.awt.Frame;
-import java.awt.Insets;
+import yass.I18;
+
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.beans.PropertyChangeEvent;
@@ -16,24 +15,21 @@ import java.util.MissingResourceException;
 import java.util.PropertyResourceBundle;
 import java.util.ResourceBundle;
 
-import javax.swing.Box;
-import javax.swing.BoxLayout;
-import javax.swing.Icon;
-import javax.swing.ImageIcon;
-import javax.swing.JButton;
-import javax.swing.JDialog;
-import javax.swing.JPanel;
-import javax.swing.JSeparator;
-import javax.swing.border.EmptyBorder;
-
-import yass.I18;
-
 
 public class Wizard extends WindowAdapter implements PropertyChangeListener{
     Hashtable<String, String> values = new Hashtable<>();
+
     // added by Saruta
-    public String getValue(String s) { Object o=values.get(s); if (o==null) return ""; return (String)o;}
-    public void setValue(String s, String val) { if (val==null) val=""; values.put(s,val); }
+    public String getValue(String s) {
+        Object o = values.get(s);
+        if (o == null) return "";
+        return (String) o;
+    }
+
+    public void setValue(String s, String val) {
+        if (val == null) val = "";
+        values.put(s, val);
+    }
     public Hashtable<String, String> getValues() { return values; }
 
     public static final int FINISH_RETURN_CODE = 0;

@@ -20,6 +20,8 @@ package yass;
 
 import javax.sound.midi.*;
 import javax.sound.sampled.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -27,14 +29,15 @@ import javax.sound.sampled.*;
  * @author Saruta
  */
 public class YassMIDI {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     Synthesizer synth = null;
     MidiChannel[] mc = null;
 
     private final boolean DEBUG = false;
 
     public static final int VOLUME_MAX = 127;
-    public static final int VOLUME_MED = 100;
-    public static final int VOLUME_MIN = 70;
+    public static final int VOLUME_MED = 80;
+    public static final int VOLUME_MIN = 30;
     private int volume = VOLUME_MED;
     /**
      * Constructor for the YassMIDI object
@@ -47,20 +50,20 @@ public class YassMIDI {
                 for (Mixer.Info mi : mis) {
                     Mixer mixer = AudioSystem.getMixer(mi);
                     // e.g. com.sun.media.sound.DirectAudioDevice
-                    System.out.println("Mixer: " + mixer.getClass().getName());
+                    LOGGER.info("Mixer: " + mixer.getClass().getName());
                     Line.Info[] lis = mixer.getSourceLineInfo();
                     for (Line.Info li : lis) {
-                        System.out.println("    Source line: " + li.toString());
+                        LOGGER.info("    Source line: " + li.toString());
                         showFormats(li);
                     }
                     lis = mixer.getTargetLineInfo();
                     for (Line.Info li : lis) {
-                        System.out.println("    Target line: " + li.toString());
+                        LOGGER.info("    Target line: " + li.toString());
                         showFormats(li);
                     }
                     Control[] cs = mixer.getControls();
                     for (Control c : cs) {
-                        System.out.println("    Control: " + c.toString());
+                        LOGGER.info("    Control: " + c.toString());
                     }
                 }
             }
@@ -70,54 +73,54 @@ public class YassMIDI {
             synth = MidiSystem.getSynthesizer();
             Instrument[] instr = synth.getAvailableInstruments();
             MidiDevice.Info info = synth.getDeviceInfo();
-            System.out.println("Synthesizer found: "+info.getName() + " v" + info.getVersion() + " " + info.getVendor());
+            LOGGER.info("Synthesizer found: "+info.getName() + " v" + info.getVersion() + " " + info.getVendor());
 
             // changed: load instrument before opening synthesizer
             //synth.loadInstrument(instr[n]);
 
-            if (DEBUG) System.out.println("Open synthesizer...");
+            if (DEBUG) LOGGER.info("Open synthesizer...");
             synth.open();
-            if (DEBUG) System.out.println("Synthesizer opened. Now load instrument...");
+            if (DEBUG) LOGGER.info("Synthesizer opened. Now load instrument...");
             synth.loadInstrument(instr[n]);
 
-            if (DEBUG) System.out.println("Getting channels...");
+            if (DEBUG) LOGGER.info("Getting channels...");
             mc = synth.getChannels();
-            if (DEBUG) System.out.println("Available channels: " + mc.length);
+            if (DEBUG) LOGGER.info("Available channels: " + mc.length);
 
-            if (DEBUG) System.out.println("Program channel: set instrument");
+            if (DEBUG) LOGGER.info("Program channel: set instrument");
             mc[4].allNotesOff();
             mc[4].programChange(n);
-            if (DEBUG) System.out.println("Program channel: set volume");
+            if (DEBUG) LOGGER.info("Program channel: set volume");
             mc[4].controlChange(7, volume);
             mc[4].controlChange(91, 1);
             mc[4].controlChange(93, 1);
-            System.out.println("Soundbank ready.");
+            LOGGER.info("Soundbank ready.");
 
         } catch (IllegalArgumentException e) {
             /* The soft synthesizer appears to be throwing
              * non-checked exceptions through from the sampled
 		     * audio system. Ignore them and only them. */
             if (e.getMessage().startsWith("No line matching")) {
-                System.out.println(
+                LOGGER.info(
                         "Warning: Ignoring soft synthesizer exception from the sampled audio system: "+e.getMessage());
                 return;
             }
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         } catch (MidiUnavailableException e) {
             Throwable t = e.getCause();
             if (t instanceof IllegalArgumentException) {
                 IllegalArgumentException e2 = (IllegalArgumentException) t;
                 if (e2.getMessage().startsWith("No line matching")) {
-                    System.out.println(
+                    LOGGER.info(
                             "Warning: Ignoring soft synthesizer exception from the sampled audio system: "+e2.getMessage());
                     return;
                 }
-                e.printStackTrace();
+                LOGGER.log(Level.INFO, e.getMessage(), e);
             }
 
         } catch (Exception e) {
             System.err.println("Error: Soundbank preparation failed.");
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
     }
 
@@ -125,7 +128,7 @@ public class YassMIDI {
         if (li instanceof DataLine.Info) {
             AudioFormat[] afs = ((DataLine.Info) li).getFormats();
             for (AudioFormat af : afs) {
-                System.out.println("        " + af.toString());
+                LOGGER.info("        " + af.toString());
             }
         }
     }

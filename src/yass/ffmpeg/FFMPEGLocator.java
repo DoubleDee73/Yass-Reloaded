@@ -27,9 +27,10 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.logging.Logger;
 
 public class FFMPEGLocator {
-
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static FFMPEGLocator INSTANCE;
 
     private FFmpeg ffmpeg;
@@ -62,7 +63,7 @@ public class FFMPEGLocator {
                                                  new FFprobe(ffmpegPath + File.separator + "ffprobe"));
                     INSTANCE.setPath(ffmpegPath);
                 } catch (IOException e) {
-                    System.out.println("Could not find ffmpeg at the given location " + ffmpegPath);
+                    LOGGER.info("Could not find ffmpeg at the given location " + ffmpegPath);
                 }
             } else {
                 INSTANCE = new FFMPEGLocator(null, null);

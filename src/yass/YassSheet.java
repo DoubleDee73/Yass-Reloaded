@@ -18,6 +18,7 @@
 
 package yass;
 
+import org.apache.commons.lang3.StringUtils;
 import yass.renderer.YassNote;
 import yass.renderer.YassPlayerNote;
 import yass.renderer.YassSession;
@@ -35,10 +36,13 @@ import java.awt.image.VolatileImage;
 import java.io.Serial;
 import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Vector;
+import java.util.logging.Logger;
 
 public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRenderer {
 
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public final static int NORM_HEIGHT = 20;
 
     // gray, blue, golden, freestyle, red
@@ -202,10 +206,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     AffineTransform identity = new AffineTransform();
     String bufferlost = I18.get("sheet_msg_buffer_lost");
     VolatileImage backVolImage = null, plainVolImage = null;
-    String[] hNoteTable = new String[]{"C", "C#", "D", "D#", "E", "F", "F#",
-            "G", "G#", "A", "B", "H"};
-    String[] bNoteTable = new String[]{"C", "C#", "D", "D#", "E", "F", "F#",
-            "G", "G#", "A", "A#", "B"};
+    String[] hNoteTable = new String[]{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "B", "H"};
+    String[] bNoteTable = new String[]{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
     String[] actualNoteTable = bNoteTable;
     boolean paintHeights = false;
     boolean live = false;
@@ -227,8 +229,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private boolean messageMemory = false;
     private final int[] keycodes = new int[19];
     private long equalsKeyMillis = 0;
-    private String layout = "East";
-
     private Paint tex, bgtex;
     private BufferedImage bgImage = null;
     private boolean showVideo = false, showBackground = false;
@@ -298,6 +298,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private String equalsDigits = "";
     private boolean versionTextPainted = true;
     private final Vector<Long> tmpNotes = new Vector<>(1024);
+    private List<Integer> tmpPitches = new ArrayList<>();
     private final Dimension dim = new Dimension(1000, 100);
     private Graphics2D pgb = null;
     private int ppos = 0;
@@ -312,6 +313,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private SongHeader songHeader;
 
     private YassMain owner;
+    private List<Integer> noteMapping;
 
     public YassSheet() {
         super(false);
@@ -337,6 +339,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 char c = e.getKeyChar();
                 int code = e.getKeyCode();
+                if (actions.isMidiEnabled() && actions.getKeyboardLayout().getPosition(code) >= 0) {
+                    return;
+                }
                 if (equalsKeyMillis > 0) {
                     if (code == KeyEvent.VK_BACK_SPACE) {
                         equalsDigits = equalsDigits.substring(0,
@@ -347,7 +352,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                         equalsKeyMillis = 0;
                         repaint();
                     } else if (code == KeyEvent.VK_ENTER) {
-                        if (equalsDigits.length() > 0)
+                        if (!equalsDigits.isEmpty())
                             setCurrentLineTo(Integer.valueOf(equalsDigits)
                                     .intValue());
                         equalsDigits = "";
@@ -361,8 +366,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 }
 
-                if (e.isControlDown() && e.isAltDown()
-                        && c == KeyEvent.CHAR_UNDEFINED) {
+                if (e.isControlDown() && e.isAltDown() && c == KeyEvent.CHAR_UNDEFINED) {
                     hiliteAction = ACTION_CONTROL_ALT;
                     repaint();
                 } else if (e.isControlDown() && c == KeyEvent.CHAR_UNDEFINED) {
@@ -546,7 +550,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 }
 
-                if (Character.isDigit(c) && e.isAltDown() && !e.isControlDown()) {
+                if (Character.isDigit(c) && c != '0' && c != '9' && e.isAltDown() && !e.isControlDown()) {
                     String cstr = Character.toString(c);
                     long currentTime = System.currentTimeMillis();
                     if (currentTime < lastTime + 700) {
@@ -639,7 +643,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 }
 
-                if (Character.isDigit(c) && !e.isControlDown()) {
+                // change length of note, except 0 and 9 which are reserved for GAP
+                if (Character.isDigit(c) && c != '0' && c != '9' && !e.isControlDown()) {
                     boolean changed = false;
                     String cstr = Character.toString(c);
                     int n = -1;
@@ -835,12 +840,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 boolean one = e.getClickCount() == 1;
 
                 // LYRICS POSITION
-                boolean notInLyrics = true;
-                if (layout.equals("East")) {
-                    notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
-                } else if (layout.equals("West")) {
-                    notInLyrics = (x - getViewPosition().x) > lyricsWidth;
-                }
+                boolean notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
 
                 if (y > clip.height - BOTTOM_BORDER + 20
                         || (y > 20 && y < TOP_LINE - 10 && notInLyrics)) {
@@ -903,28 +903,27 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     YassTable.setZoomMode(YassTable.ZOOM_MULTI);
                 }
                 setErrorMessage("");
-                if (paintHeights) {
-                    if (x < clip.x + heightBoxWidth && y > TOP_LINE - 10
-                            && (y < clip.height - BOTTOM_BORDER)) {
-                        if (y < 0) {
-                            y = 0;
-                        }
-                        if (y > dim.height) {
-                            y = dim.height;
-                        }
-
-                        int dy;
-                        if (pan) {
-                            dy = (int) Math.round(hhPageMin
-                                    + (dim.height - y - BOTTOM_BORDER) / hSize);
-                        } else {
-                            dy = (int) Math.round(minHeight
-                                    + (dim.height - y - BOTTOM_BORDER) / hSize);
-                        }
-                        hiliteHeight = dy;
-                        repaint();
-                        return;
+                if (paintHeights && (x < clip.x + heightBoxWidth && y > TOP_LINE - 10
+                        && (y < clip.height - BOTTOM_BORDER))) {
+                    if (y < 0) {
+                        y = 0;
                     }
+                    if (y > dim.height) {
+                        y = dim.height;
+                    }
+
+                    int dy;
+                    if (pan) {
+                        dy = (int) Math.round(hhPageMin
+                                                      + (dim.height - y - BOTTOM_BORDER) / hSize);
+                    } else {
+                        dy = (int) Math.round(minHeight
+                                                      + (dim.height - y - BOTTOM_BORDER) / hSize);
+                    }
+                    hiliteHeight = dy;
+                    repaint();
+                    return;
+
                 }
                 if (x < clip.x + LEFT_BORDER && y > dim.height - BOTTOM_BORDER) {
                     hiliteCue = PREV_PAGE_PRESSED;
@@ -1152,7 +1151,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             }
 
             public void mouseEntered(MouseEvent e) {
-                // System.out.println("sheet entered");
+                // LOGGER.info("sheet entered");
             }
 
             public void mouseExited(MouseEvent e) {
@@ -1281,26 +1280,15 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 }
                 // LYRICS POSITION
-                boolean notInLyrics = true;
-                if (layout.equals("East")) {
-                    notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
-                } else if (layout.equals("West")) {
-                    notInLyrics = (x - getViewPosition().x) > lyricsWidth;
-                }
+                boolean notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
                 if (!notInLyrics && getComponentCount() > 0 && lyricsVisible) {
                     // dirty bugfix for lost bounds
                     Point p2 = lyrics.getLocation();
-                    if ((layout.equals("East") && (x - p2.x > 500))
-                            || (layout.equals("West") && x < lyricsWidth)) {
+                    if ((x - p2.x) > 500) {
                         Point p = ((JViewport) getParent()).getViewPosition();
                         Dimension vr = ((JViewport) getParent()).getExtentSize();
 
                         int newx = (int) p.getX() + vr.width - lyricsWidth;
-                        if (layout.equals("East")) {
-                            newx = (int) p.getX() + vr.width - lyricsWidth;
-                        } else if (layout.equals("West")) {
-                            newx = (int) p.getX();
-                        }
 
                         int newy = (int) p.getY() + 50;
                         if (p2.x != newx || p2.y != newy) {
@@ -1856,10 +1844,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         autoTrim = onoff;
     }
 
-    public void setLyricsLayout(String s) {
-        layout = s;
-    }
-
     public int getTopLine() {
         return TOP_LINE;
     }
@@ -1983,11 +1967,11 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
 		/*
          * System.out.print("p.x"); for (int i = 0; i < sketchPos; i++) {
-		 * System.out.print(" " + sketch[i].x); } System.out.println();
+		 * System.out.print(" " + sketch[i].x); } LOGGER.info();
 		 * System.out.print("p.y"); for (int i = 0; i < sketchPos; i++) {
-		 * System.out.print(" " + sketch[i].y); } System.out.println();
+		 * System.out.print(" " + sketch[i].y); } LOGGER.info();
 		 * System.out.print("dir"); for (int i = 1; i < dirPos; i++) {
-		 * System.out.print(" " + sketchDirs[i]); } System.out.println();
+		 * System.out.print(" " + sketchDirs[i]); } LOGGER.info();
 		 */
         return true;
     }
@@ -2007,7 +1991,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     }
 
     private int executeSketch() {
-        // System.out.println("execute");
+        // LOGGER.info("execute");
 
         if (sketchDirs == null) {
             return 0;
@@ -2021,55 +2005,55 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
         if (compareWithGesture(sketchDirs, GESTURE_RIGHT_LEFT_RIGHT)) {
             firePropertyChange("rollRight", null, 1);
-            // System.out.println("gesture right-left-right");
+            // LOGGER.info("gesture right-left-right");
             return 1;
         } else if (compareWithGesture(sketchDirs, GESTURE_LEFT_RIGHT_LEFT)) {
             firePropertyChange("rollLeft", null, -1);
-            // System.out.println("gesture left-right-left");
+            // LOGGER.info("gesture left-right-left");
             return 1;
         } else if (compareWithGesture(sketchDirs, GESTURE_UP_DOWN_UP)) {
             firePropertyChange("removePageBreak", null, 1);
-            // System.out.println("gesture up-down-up");
+            // LOGGER.info("gesture up-down-up");
             return 1;
         } else if (compareWithGesture(sketchDirs, GESTURE_DOWN_UP_DOWN)) {
             firePropertyChange("addPageBreak", null, 1);
-            // System.out.println("gesture up-down-up");
+            // LOGGER.info("gesture up-down-up");
             return 1;
         } else if (compareWithGesture(sketchDirs, GESTURE_RIGHT_LEFT)) {
             firePropertyChange("relRight", null, 1);
-            // System.out.println("gesture right-left");
+            // LOGGER.info("gesture right-left");
             return 2;
         } else if (compareWithGesture(sketchDirs, GESTURE_LEFT_RIGHT)) {
             firePropertyChange("relRight", null, -1);
-            // System.out.println("gesture left-right");
+            // LOGGER.info("gesture left-right");
             return 2;
         } else if (compareWithGesture(sketchDirs, GESTURE_UP_DOWN)) {
             firePropertyChange("join", null, 0.5d);
-            // System.out.println("gesture up-down");
+            // LOGGER.info("gesture up-down");
             return 1;
         } else if (compareWithGesture(sketchDirs, GESTURE_DOWN_UP)) {
             firePropertyChange("split", null, 0.5d);
-            // System.out.println("gesture down-up");
+            // LOGGER.info("gesture down-up");
             return 1;
         }
 
         if (compareWithGesture(sketchDirs, GESTURE_LEFT)) {
             firePropertyChange("relBeat", null, -1);
             table.updatePlayerPosition();
-            // System.out.println("gesture left");
+            // LOGGER.info("gesture left");
             return 2;
         } else if (compareWithGesture(sketchDirs, GESTURE_RIGHT)) {
             firePropertyChange("relBeat", null, 1);
             table.updatePlayerPosition();
-            // System.out.println("gesture right");
+            // LOGGER.info("gesture right");
             return 2;
         } else if (compareWithGesture(sketchDirs, GESTURE_UP)) {
             firePropertyChange("relHeight", null, 1);
-            // System.out.println("gesture up");
+            // LOGGER.info("gesture up");
             return 3;
         } else if (compareWithGesture(sketchDirs, GESTURE_DOWN)) {
             firePropertyChange("relHeight", null, -1);
-            // System.out.println("gesture down");
+            // LOGGER.info("gesture down");
             return 3;
         }
         return 0;
@@ -2483,12 +2467,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         refreshing = true;
 
         Graphics2D db = image.createGraphics();
-        db.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-                RenderingHints.VALUE_ANTIALIAS_ON);
-        db.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
-                RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        db.setRenderingHint(RenderingHints.KEY_RENDERING,
-                RenderingHints.VALUE_RENDER_QUALITY);
+        db.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        db.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        db.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 
         clip = getClipBounds();
         db.setTransform(identity);
@@ -2536,30 +2517,19 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             int usedHeap = occHeap - freeHeap;
             String info = usedHeap + " of " + maxHeap + "Mb in use" + ", "
                     + occHeap + "Mb reserved.";
-            if (layout.equals("East")) {
-                db.drawString(info, clip.x + 10, 40);
-            } else if (layout.equals("West")) {
-                db.drawString(info, clip.x + 10 + lyricsWidth, 40);
-            }
+            db.drawString(info, clip.x + 10, 40);
         }
 
         // message:
         // LYRICS POSITION
-        if (getComponentCount() > 0
-                && lyricsVisible) {
+        if (getComponentCount() > 0 && lyricsVisible) {
             Rectangle cr = lyrics.getBounds();
 
-            if (layout.equals("East")) {
-                db.translate(
-                        clip.x + clip.width - cr.width + cr.getX()
-                                - lyrics.getX(), cr.getY() - lyrics.getY() + 20);
-            } else if (layout.equals("West")) {
-                db.translate(clip.x, cr.getY() - lyrics.getY() + 20);
-            }
+            db.translate(clip.x + clip.width - cr.width + cr.getX() - lyrics.getX(), cr.getY() - lyrics.getY() + 20);
 
-            // System.out.println("refresh print");
+            // LOGGER.info("refresh print");
             lyrics.print(db);
-            // System.out.println("refresh print done");
+            // LOGGER.info("refresh print done");
         }
         // paintText(db);
 
@@ -2617,7 +2587,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             if (!backVolImage.contentsLost()) {
                 return;
             }
-            System.out.println("contents lost (" + i + ")");
+            LOGGER.info("contents lost (" + i + ")");
         }
         g.drawImage(image, clip.x, clip.y, clip.x + clip.width, clip.y
                 + clip.height, 0, 0, clip.width, clip.height, white, this);
@@ -2667,7 +2637,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             if (!backVolImage.contentsLost()) {
                 return;
             }
-            System.out.println("contents lost (" + i + ")");
+            LOGGER.info("contents lost (" + i + ")");
         }
         g.drawImage(image, clip.x, clip.y, clip.x + clip.width, clip.y
                 + clip.height, 0, 0, clip.width, clip.height, white, this);
@@ -2715,13 +2685,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             // LYRICS POSITION
 
             if (lyricsVisible) {
-                if (layout.equals("East")) {
-                    g2.fillRect(clip.x, TOP_BORDER, clip.width - lyricsWidth,
-                            TOP_LINE - 10 - TOP_BORDER - 1);
-                } else if (layout.equals("West")) {
-                    g2.fillRect(clip.x + lyricsWidth, TOP_BORDER, clip.width
-                            - lyricsWidth, TOP_LINE - 10 - TOP_BORDER - 1);
-                }
+                g2.fillRect(clip.x, TOP_BORDER, clip.width - lyricsWidth, TOP_LINE - 10 - TOP_BORDER - 1);
                 if (live) {
                     g2.fillRect(clip.x, dim.height - BOTTOM_BORDER + 16,
                             clip.width, BOTTOM_BORDER + 16);
@@ -3330,10 +3294,14 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
      * @return The noteName value
      */
     public String getNoteName(int n) {
+        return actualNoteTable[n];
+    }
+    
+    public int normalizeNoteHeight(int n) {
         while (n < 0) {
             n += 12;
         }
-        return actualNoteTable[n % 12];
+        return n % 12;
     }
 
     /**
@@ -3374,12 +3342,19 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         g2.setFont(smallFont);
         FontMetrics metrics = g2.getFontMetrics();
         String str;
+        int pianoIdx = 0;
+        String pianoKey;
         if (pan) {
+            initNoteMapping(hhPageMin - 1);
             for (int h = 1; h < NORM_HEIGHT - 2; h++) {
                 line.y1 = line.y2 = dim.height - BOTTOM_BORDER - h * hSize + 4;
-                str = getNoteName(hhPageMin + h - 2 + 60);
-
-                boolean isWhite = isWhiteNote(hhPageMin + h - 2 + 60);
+                int noteHeight = normalizeNoteHeight(hhPageMin + h - 2 + 60);
+                boolean isWhite = isWhiteNote(noteHeight);
+                pianoKey = getLetterForNote(pianoIdx++);
+                if (StringUtils.isEmpty(pianoKey) || h == 1 && !isWhite) {
+                    pianoKey = getLetterForNote(pianoIdx++);
+                }
+                str = getNoteName(noteHeight);
                 if (isWhite) {
                     g2.setColor(Color.white);
                     g2.fillRect(x + 1, (int) line.y1 - (int) hSize / 2 - 2,
@@ -3405,11 +3380,11 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     g2.drawString(str, (float) (clip.x + 3), (float) (line.y1));
                 }
 
+                int strKey = metrics.stringWidth(pianoKey);
                 str = "" + (hhPageMin + h - 2);
                 int strw = metrics.stringWidth(str);
-                g2.drawString(str,
-                        (float) (clip.x + heightBoxWidth - strw - 3),
-                        (float) (line.y1));
+                g2.drawString(pianoKey, (float) clip.x + heightBoxWidth - strKey - strw - 3, (float) line.y1);
+                g2.drawString(str, (float) (clip.x + heightBoxWidth - strw - 3), (float) (line.y1));
             }
             if (hiliteHeight < 200) {
                 g2.setColor(blueDrag);
@@ -3423,12 +3398,18 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                                 * hSize), heightBoxWidth, (int) (2 * hSize));
             }
         } else {
+            initNoteMapping(minHeight + 1);
             for (int h = minHeight + 1; h < maxHeight - 2; h++) {
                 line.y1 = line.y2 = dim.height - BOTTOM_BORDER
                         - (h - minHeight) * hSize + 4;
-                str = getNoteName(h + 60);
+                int noteHeight = normalizeNoteHeight(h + 60);
+                boolean isWhite = isWhiteNote(noteHeight);
+                pianoKey = getLetterForNote(pianoIdx++);
+                if (StringUtils.isEmpty(pianoKey) || pianoIdx == 1 && !isWhite) {
+                    pianoKey = getLetterForNote(pianoIdx++);
+                }
+                str = getNoteName(noteHeight);
 
-                boolean isWhite = isWhiteNote(h + 60);
                 if (isWhite) {
                     g2.setColor(Color.white);
                     g2.fillRect(x + 1, (int) line.y1 - 9, whitew, 10);
@@ -3449,8 +3430,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 }
                 str = "" + h;
                 int strw = metrics.stringWidth(str);
-                g2.drawString(str, (float) (x + w - strw - 5),
-                        (float) (line.y1));
+                int strKey = metrics.stringWidth(pianoKey);
+                g2.drawString(pianoKey, (float) x + w - strKey - strw - 5, (float) line.y1);
+                g2.drawString(str, (float) (x + w - strw - 5), (float) (line.y1));
             }
             if (hiliteHeight < 200) {
                 g2.setColor(hiGray);
@@ -3804,7 +3786,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                                 if (showNoteHeightNum)
                                     hstr = pitch + "";
                                 else if (showNoteHeight) {
-                                    hstr = getNoteName(pitch + 60);
+                                    int noteHeight = normalizeNoteHeight(pitch + 60);
+                                    hstr = getNoteName(noteHeight);
                                     if (showNoteScale || paintHeights) {
                                         int scale = pitch >= 0 ? (pitch / 12 + 4) : (3 + (pitch + 1) / 12); // negative pitch requires special handling
                                         hstr += "" + scale;
@@ -5301,7 +5284,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         // quick hack to get actual size on screen
         int d = ((JViewport) getParent()).getExtentSize().width - 2;
         if (d < 0) {
-            System.out.println("warning: invalid sheet width");
+            LOGGER.info("warning: invalid sheet width");
         }
         d -= LEFT_BORDER + RIGHT_BORDER;
         if (paintHeights)
@@ -5660,5 +5643,44 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
     public SongHeader getSongHeader() {
         return songHeader;
+    }
+
+    public List<Integer> getTmpPitches() {
+        return tmpPitches;
+    }
+
+    public void clearTempPitches() {
+        this.tmpPitches = new ArrayList<>();
+    }
+    public String getLetterForNote(int pianoIdx) {
+        if (pianoIdx >= noteMapping.size() || noteMapping.get(pianoIdx) == Integer.MIN_VALUE) {
+            return "";
+        }
+        return "[" + actions.getKeyboardLayout().getLetter(pianoIdx) + "]";
+    }
+
+    public void initNoteMapping(int lowestNote) {
+        noteMapping = new ArrayList<>();
+        int normalized = normalizeNoteHeight(lowestNote);
+        while (!isWhiteNote(normalized)) {
+            lowestNote--;
+            normalized = normalizeNoteHeight(lowestNote);
+        }
+        int i = 0;
+        boolean exit;
+        do {
+            noteMapping.add(i + lowestNote);
+            exit = noteMapping.size() == KeyboardMapping.QWERTZ.keys.size();
+            normalized = normalizeNoteHeight(lowestNote + i);
+            if (!exit && (normalized == 4 || normalized == 11)) {
+                noteMapping.add(Integer.MIN_VALUE);
+                exit = noteMapping.size() == KeyboardMapping.QWERTZ.keys.size();
+            }
+            i++;
+        } while (!exit);
+    }
+
+    public List<Integer> getNoteMapping() {
+        return noteMapping;
     }
 }

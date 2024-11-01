@@ -31,10 +31,12 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 public class YassProperties extends Properties {
     private static final long serialVersionUID = -8189893110989853544L;
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private final String userDir = System.getProperty("user.home");
     private final String yassDir = ".yass";
     private final String userProps = "user.xml";
@@ -80,13 +82,12 @@ public class YassProperties extends Properties {
 
     public void load() {
         String propFile = userDir + File.separator + yassDir + File.separator + userProps;
-        System.out.println("Loading properties: " + propFile);
+        LOGGER.info("Loading properties: " + propFile);
 
         try {
             FileInputStream fis = new FileInputStream(propFile);
             loadFromXML(fis);
             fis.close();
-            loadDevices();
 
             if (getProperty("note-naming-h") == null)
                 setProperty("note-naming-h", "DE RU PL NO FI SE");
@@ -149,8 +150,8 @@ public class YassProperties extends Properties {
             put("control-mics", newMics);
             store();
         }
-        System.out.println("Mics: " + newMics);
-        System.out.println("Selecting Mic: " + mic);
+        LOGGER.info("Mics: " + newMics);
+        LOGGER.info("Selecting Mic: " + mic);
     }
 
     public void setDefaultProperties(Hashtable<Object,Object> p) {
@@ -244,10 +245,6 @@ public class YassProperties extends Properties {
         p.putIfAbsent("control-mics", "");
 
         //editor
-        p.putIfAbsent("editor-layout", "East");
-        p.putIfAbsent("editor-layouts", "East|West");
-        p.putIfAbsent("lyrics-width", "450");
-        p.putIfAbsent("lyrics-min-height", "120");
         p.putIfAbsent("lyrics-font-size", "14");
 
         p.putIfAbsent("note-color-8", "#dd9966"); // warning
@@ -311,6 +308,7 @@ public class YassProperties extends Properties {
         //p.put("duet-sequential", "true");
 
         p.putIfAbsent("floatable", "false");
+        p.putIfAbsent("options_autosave_interval", "300");
 
         p.putIfAbsent("mouseover", "false");
         p.putIfAbsent("sketching", "false");
@@ -543,13 +541,13 @@ public class YassProperties extends Properties {
     public void setupHyphenationDictionaries() {
         String hyphenationLanguages = getProperty("hyphenations");
         if (StringUtils.isEmpty(hyphenationLanguages)) {
-            System.out.println("No hyphenation languages have been setup, skipping this now...");
+            LOGGER.info("No hyphenation languages have been setup, skipping this now...");
             return;
         }
         Map<String, String> languageMap = initLanguageMap();
         Set<Path> paths = findPath(List.of("UltraStar-Creator"));
         if (paths == null || paths.isEmpty()) {
-            System.out.println("No valid program paths were found, skipping this now...");
+            LOGGER.info("No valid program paths were found, skipping this now...");
             return;
         }
         String[] languages = hyphenationLanguages.split("\\|");
@@ -557,18 +555,18 @@ public class YassProperties extends Properties {
         for (String language : languages) {
             String prop = getProperty("hyphenations_" + language);
             if (StringUtils.isEmpty(prop)) {
+                if (languageMap.get(language) == null) {
+                    LOGGER.fine("Language " + language + " is not supported, skipping this now...");
+                    continue;
+                }
                 for (Path path : paths) {
-                    if (languageMap.get(language) == null) {
-                        System.out.println("Language " + language + " is not supported, skipping this now...");
-                        continue;
-                    }
                     Path dictionary = Path.of(path.toString(), languageMap.get(language));
                     if (Files.exists(dictionary)) {
                         changes = true;
                         setProperty("hyphenations_" + language, dictionary.toString());
                         continue;
                     }
-                    System.out.println("Dictionary for " + language + " was not supported, skipping this now...");
+                    LOGGER.info("Dictionary for " + language + " was not supported, skipping this now...");
                 }
             }
         }

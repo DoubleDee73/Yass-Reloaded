@@ -20,6 +20,7 @@ package yass;
 
 import com.swabunga.spell.engine.SpellDictionaryHashMap;
 import com.swabunga.spell.swing.JTextComponentSpellChecker;
+import yass.autocorrect.YassAutoCorrect;
 
 import javax.swing.*;
 import javax.swing.event.*;
@@ -33,6 +34,8 @@ import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.StringTokenizer;
 import java.util.Vector;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -43,6 +46,7 @@ import java.util.regex.Pattern;
  */
 public class YassLyrics extends JPanel implements TabChangeListener, YassSheetListener {
 	private static final long serialVersionUID = -2873881715263100606L;
+	private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 	private JTextPane lyricsArea = null;
 	private JScrollPane lyricsScrollPane;
 	private YassAutoCorrect auto;
@@ -222,7 +226,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 		DefaultStyledDocument doc = new DefaultStyledDocument(sc);
 
 		// Ok, line not too long
-
 		notLongStyle = sc.addStyle(null, null);
 		StyleConstants.setLeftIndent(notLongStyle, 5);
 		StyleConstants.setRightIndent(notLongStyle, 10);
@@ -230,7 +233,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 		StyleConstants.setFontSize(notLongStyle, fontSize);
 		StyleConstants.setSpaceAbove(notLongStyle, 0);
 		StyleConstants.setSpaceBelow(notLongStyle, 0);
-		// StyleConstants.setForeground(notLongStyle, dkGray); --> see propsChanged
 		StyleConstants.setStrikeThrough(notLongStyle, false);
 
 		// Line too long
@@ -238,12 +240,8 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 		StyleConstants.setStrikeThrough(longStyle, true);
 		// not selected
 		notSelectStyle = sc.addStyle(null, null);
-		//StyleConstants.setForeground(notSelectStyle, dkGray); --> see propsChanged
-		//StyleConstants.setBackground(notSelectStyle, nofontBG); --> see propsChanged
 		// selected
 		selectStyle = sc.addStyle(null, null);
-		// StyleConstants.setForeground(selectStyle, black); --> see propsChanged
-		// StyleConstants.setBackground(selectStyle, lyricsArea.getSelectionColor()); --> see propsChanged
 		// golden
 		goldenStyle = sc.addStyle(null, null);
 		StyleConstants.setBold(goldenStyle, true);
@@ -352,11 +350,11 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 		lyricsArea.addCaretListener(caretListener);
 		lyricsArea.addFocusListener(new FocusListener() {
 			public void focusGained(FocusEvent e) {
-				// System.out.println("lyrics focus gained");
+				// LOGGER.info("lyrics focus gained");
 			}
 
 			public void focusLost(FocusEvent e) {
-				// System.out.println("lyrics focus lost");
+				// LOGGER.info("lyrics focus lost");
 				if (spellCheckerComp != null) {
 					if (spellCheckerComp.getHandler().getPopup() != null
 							&& spellCheckerComp.getHandler().getPopup()
@@ -370,21 +368,10 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 				}
 			}
 		});
-		/*
-		 * addMouseMotionListener( new MouseMotionListener() { public void
-		 * mouseMoved(MouseEvent e) { Component p = getParent();
-		 * p.dispatchEvent(e); } public void mouseDragged(MouseEvent e) { } });
-		 * lyricsArea.addMouseMotionListener( new MouseMotionListener() { public
-		 * void mouseMoved(MouseEvent e) { Component p = getParent();
-		 * p.dispatchEvent(e); } public void mouseDragged(MouseEvent e) { } });
-		 * lineNumbers.addMouseMotionListener( new MouseMotionListener() {
-		 * public void mouseMoved(MouseEvent e) { Component p = getParent();
-		 * p.dispatchEvent(e); } public void mouseDragged(MouseEvent e) { } });
-		 */
 		lyricsArea.addMouseListener(new MouseAdapter() {
 
 			public void mouseExited(MouseEvent e) {
-				// System.out.println("lyrics exited");
+				// LOGGER.info("lyrics exited");
 			}
 
 			public void mouseClicked(MouseEvent e) {
@@ -407,7 +394,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 														.getLength(),
 												notSelectStyle, false);
 							} catch (Exception ex) {
-								ex.printStackTrace();
+								LOGGER.log(Level.INFO, ex.getMessage(), ex);
 							}
 						}
 					};
@@ -440,7 +427,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 		lyricsArea.getInputMap().put(
 				KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "nop");
 
-		lyricsArea.addKeyListener(new KeyListener() {
+			lyricsArea.addKeyListener(new KeyListener() {
 			public void keyPressed(KeyEvent e) {
 				if (!lyricsArea.isEditable() && sheet != null) {
 					char c = e.getKeyChar();
@@ -888,7 +875,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 			String country = st.hasMoreTokens() ? st.nextToken() : "";
 			String lc = country.length() > 0 ? language + "_" + country : language;
 
-			// System.out.println("# remove spell check");
+			// LOGGER.info("# remove spell check");
 			if (spellCheckerComp != null) {
 				spellCheckerComp.stopAutoSpellCheck(lyricsArea);
 			}
@@ -909,7 +896,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 							is = getClass().getResourceAsStream(
 									"/yass/resources/spell/" + sc + ".dic");
 						}
-						// System.out.println("/spell/"+sc+".dic");
+						// LOGGER.info("/spell/"+sc+".dic");
 						SpellDictionaryHashMap dict = new SpellDictionaryHashMap(new InputStreamReader(is));
 						String user = prop.getProperty("user-dicts")
 								+ File.separator + "user_" + sc + ".dic";
@@ -924,19 +911,19 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 						} catch (IOException e) {
 						}
 						SpellDictionaryHashMap dict_user = new SpellDictionaryHashMap(userfile);
-						// System.out.println("# add spell check");
+						// LOGGER.info("# add spell check");
 						spellCheckerComp = new JTextComponentSpellChecker(dict,
 								dict_user, I18.get("tool_spellcheck"));
 						spellCheckers.put(sc, spellCheckerComp);
 					} catch (Exception e) {
-						// e.printStackTrace();
+						// LOGGER.log(Level.INFO, e.getMessage(), e);
 					}
 				} else {
 					spellCheckerComp = (JTextComponentSpellChecker) sc;
 				}
 			}
 
-			// System.out.println("# start spell check");
+			// LOGGER.info("# start spell check");
 			try {
 				if (spellCheckerComp != null) {
 					isSpellChecking = true;
@@ -961,7 +948,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 					tableListener.tableChanged(null);
 				}
 			} catch (Exception e) {
-				// System.out.println("startup bug spellchecker during setLanguage");
+				// LOGGER.info("startup bug spellchecker during setLanguage");
 			}
 		}
 	}
@@ -1082,19 +1069,19 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 			table.getModel().addTableModelListener(tableListener);
 		}
 		if (table == null) {
+			resetFindReplaceMatcher();
 			return;
 		}
 
 		preventFireUpdate = true;
 
 		lyricsArea.setText(table.getText());
-
 		try {
 			if (spellCheckerComp != null && lyricsArea.isVisible()) {
 				spellCheckerComp.getHandler().markupSpelling(lyricsArea);
 			}
 		} catch (Exception e) {
-			// System.out.println("startup bug spellchecker during setTable");
+			// LOGGER.info("startup bug spellchecker during setTable");
 		}
 		// startup problems
 
@@ -1136,7 +1123,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 					spellCheckerComp.getHandler().markupSpelling(lyricsArea);
 				}
 			} catch (Exception ex) {
-				// System.out.println("startup bug spellchecker during tableUpdate");
+				// LOGGER.info("startup bug spellchecker during tableUpdate");
 			}
 			lyricsArea.addCaretListener(caretListener);
 			table.getSelectionModel().addListSelectionListener(
@@ -1178,7 +1165,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 				}
 				errLines.clear();
 			} catch (Exception ex) {
-				ex.printStackTrace();
+				LOGGER.log(Level.INFO, ex.getMessage(), ex);
 			}
 		}
 	};
@@ -1202,7 +1189,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 								0, lyricsArea.getStyledDocument().getLength(),
 								notSelectStyle, false);
 					} catch (Exception ex) {
-						ex.printStackTrace();
+						LOGGER.log(Level.INFO, ex.getMessage(), ex);
 					}
 				}
 			};
@@ -1279,7 +1266,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 					}
 					errLines.clear();
 				} catch (Exception e) {
-					e.printStackTrace();
+					LOGGER.log(Level.INFO, e.getMessage(), e);
 				}
 			}
 		};
@@ -2236,6 +2223,12 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 			lyricsArea.addCaretListener(caretListener);
 			table.getSelectionModel().addListSelectionListener(
 					tableSelectionListener);
+		}
+	}
+	
+	public void resetFindReplaceMatcher() {
+		if (frDialog != null) {
+			frDialog.m = null;
 		}
 	}
 }

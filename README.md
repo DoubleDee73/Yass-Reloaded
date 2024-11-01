@@ -35,7 +35,7 @@ If you install Yass Reloaded with the Windows installer, you can simply run <cod
 
 Alternatively, you can download the jar file and start it from the console:
 
-On Windows, you can simply do this: <code>java -jar Yass-Reloaded-2024.9.jar</code>
+On Windows, you can simply do this: <code>java -jar Yass-Reloaded-2024.10.jar</code>
 
 On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
@@ -43,7 +43,7 @@ On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
 and then start the jar like so:
 
-<code>java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2024.9.jar</code>
+<code>java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2024.10.jar</code>
 
 # Developers
 
@@ -53,6 +53,7 @@ Basic setup is described in the Wiki: https://github.com/SarutaSan72/Yass/wiki/D
 - Java FX
 - Java Look & Feel Graphics Repository
 - FFmpeg
+- [FFmpeg CLI Wrapper for Java](https://github.com/bramp/ffmpeg-cli-wrapper)
 - iText
 - Jazzy Spell Checker
 - JInput
@@ -68,7 +69,7 @@ Speed measure 'Inverse Duration' based on Marcel Taeumel's approach (http://uman
 
 # License
 
-Copyright (C) 2009-2022 Saruta, 2024 DoubleDee 
+Copyright (C) 2009-2023 Saruta, 2023-2024 DoubleDee 
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -84,6 +85,14 @@ You should have received a copy of the GNU General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 # Troubleshooting
+## Yass Reloaded does nothing after showing the splash screen
+- Have you checked your Java version? 
+  - Open a command line window and type in <code>java -version</code>. 
+  - You should have Java 21
+- Have you tried opening it as a jar?
+  - Download the jar, open a command line window and type in <code>java -jar Yass-Reloaded-2024.10.jar</code>
+  - Any error messages are then printed out in the command line window for debugging
+
 ## Cannot find FFmpeg?
 Yass Reloaded has a built-in auto-detection for FFmpeg. 
 It will look in any PATH environment variables and try to find both ffmpeg and ffprobe.  

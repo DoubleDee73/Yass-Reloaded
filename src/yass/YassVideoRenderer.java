@@ -28,6 +28,7 @@ import javax.media.util.ImageToBuffer;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.image.*;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -35,6 +36,7 @@ import java.awt.image.*;
  * @author Saruta
  */
 public class YassVideoRenderer implements VideoRenderer, FrameGrabbingControl {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private JComponent comp = null;
 
     private RGBFormat vf;
@@ -57,7 +59,7 @@ public class YassVideoRenderer implements VideoRenderer, FrameGrabbingControl {
      * @param isSelected The new value value
      */
     void setValue(Object aValue, boolean isSelected) {
-        //System.out.println(aValue.getClass().getName());
+        //LOGGER.info(aValue.getClass().getName());
     }
 
 
@@ -78,7 +80,7 @@ public class YassVideoRenderer implements VideoRenderer, FrameGrabbingControl {
      * @return Description of the Return Value
      */
     public Format setInputFormat(Format format) {
-        //System.out.println("Fobs Java2DRenderer: setInputFormat");
+        //LOGGER.info("Fobs Java2DRenderer: setInputFormat");
 //        FobsConfiguration.videoFrameFormat = FobsConfiguration.RGBA;
 
         vf = (RGBFormat) format;
@@ -112,7 +114,7 @@ public class YassVideoRenderer implements VideoRenderer, FrameGrabbingControl {
      * Description of the Method
      */
     public void start() {
-        System.out.println("Fobs Java2DRenderer: start");
+        LOGGER.info("Fobs Java2DRenderer: start");
     }
 
 
@@ -120,7 +122,7 @@ public class YassVideoRenderer implements VideoRenderer, FrameGrabbingControl {
      * Description of the Method
      */
     public void stop() {
-        System.out.println("Fobs Java2DRenderer: stop");
+        LOGGER.info("Fobs Java2DRenderer: stop");
     }
 
 

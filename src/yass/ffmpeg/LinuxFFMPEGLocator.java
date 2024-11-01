@@ -51,7 +51,7 @@ public class LinuxFFMPEGLocator extends AbstractFFMPEGLocator {
             p.waitFor();
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
-            System.out.println("Error occured");
+            LOGGER.info("Error occured");
             ffmpeg = null;
         } finally {
             p.destroy();

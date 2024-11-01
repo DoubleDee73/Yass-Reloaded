@@ -19,6 +19,7 @@
 package yass;
 
 import org.apache.commons.lang3.StringUtils;
+import yass.autocorrect.YassAutoCorrect;
 
 import javax.swing.*;
 import javax.swing.event.ListSelectionEvent;

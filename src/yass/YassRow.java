@@ -345,6 +345,9 @@ public class YassRow implements Cloneable, Comparable<Object> {
     }
 
     public void setText(String val) {
+        if (val != null) {
+            val = val.replace("~~", "~");
+        }
         s[4] = val;
     }
 

@@ -22,9 +22,10 @@ package yass.ffmpeg;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.logging.Logger;
 
 public abstract class AbstractFFMPEGLocator {
-
+    final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public static final String CURRENT_OS = System.getProperty("os.name").toLowerCase();
     public static final String PATH = System.getenv("PATH");
 
@@ -58,7 +59,7 @@ public abstract class AbstractFFMPEGLocator {
             }
         }
         if (returnPath != null) {
-            System.out.println("Found FFmpeg in path " + returnPath);
+            LOGGER.info("Found FFmpeg in path " + returnPath);
         }
         return returnPath;
     }

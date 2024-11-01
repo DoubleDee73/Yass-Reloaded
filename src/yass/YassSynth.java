@@ -26,6 +26,8 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ShortBuffer;
 import java.util.Vector;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -33,6 +35,7 @@ import java.util.Vector;
  * @author Saruta
  */
 public class YassSynth {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     /**
      * Description of the Field
      */
@@ -50,7 +53,7 @@ public class YassSynth {
     private static SourceDataLine sourceDataLine = null;
     private static SourceDataLine wavsourceDataLine = null;
     private static Vector<Byte> buffer = null;
-    private static int BUFFER_SIZE = 128000;
+    private static int BUFFER_SIZE = 512000;
     /**
      * Description of the Method
      */
@@ -82,14 +85,14 @@ public class YassSynth {
             //audioInputStream[i] = cash(data[i], null);
         }
         t = System.nanoTime() / 1000000L - s;
-        System.out.println("Sound creation took " + t + "ms.");
+        LOGGER.info("Sound creation took " + t + "ms.");
 
         openLine();
         openWavLine();
         s = System.nanoTime() / 1000000L;
         for (int i = 60; i < 128; i++) {
             t = System.nanoTime() / 1000000L - s;
-            System.out.println("n=" + i + " " + getFrequency(i));
+            LOGGER.info("n=" + i + " " + getFrequency(i));
 
             //clips[i].setMicrosecondPosition(0);
             //clips[i].start();
@@ -100,7 +103,7 @@ public class YassSynth {
             try {
                 Thread.sleep(100);
             } catch (Exception e) {
-                e.printStackTrace();
+                LOGGER.log(Level.INFO, e.getMessage(), e);
             }
         }
         closeLine();
@@ -191,7 +194,7 @@ public class YassSynth {
             sourceDataLine.open(audioFormat);
             sourceDataLine.start();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
 
     }
@@ -213,7 +216,7 @@ public class YassSynth {
             wavsourceDataLine.start();
         } catch (Exception e) {
             System.err.println("YassSynth: Cannot open line");
-            //e.printStackTrace();
+            //LOGGER.log(Level.INFO, e.getMessage(), e);
         }
 
     }
@@ -240,9 +243,9 @@ public class YassSynth {
         try {
             InputStream istream = YassSynth.class.getResourceAsStream("/yass/resources/samples/click.wav");
             AudioInputStream ostream = AudioSystem.getAudioInputStream(new BufferedInputStream(istream));
-            //System.out.println(ostream.getFormat());
+            //LOGGER.info(ostream.getFormat());
             AudioInputStream stream = AudioSystem.getAudioInputStream(wavaudioFormat, ostream);
-            //System.out.println(stream.getFormat());
+            //LOGGER.info(stream.getFormat());
             long len = stream.getFrameLength() * wavaudioFormat.getFrameSize();
             //stream.read(wavdata, 0, (int) len);
 
@@ -253,9 +256,9 @@ public class YassSynth {
                 try {
                     nBytesRead = stream.read(abData, 0, abData.length - 1);
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    LOGGER.log(Level.INFO, e.getMessage(), e);
                 }
-                //System.out.println("   Number of bytes read: "+nBytesRead);
+                //LOGGER.info("   Number of bytes read: "+nBytesRead);
                 if (nBytesRead >= 0) {
                     for (int i = 1; i <= nBytesRead; i++) {
                         buffer.add(abData[i]);
@@ -266,7 +269,7 @@ public class YassSynth {
             ostream.close();
             istream.close();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
     }
 
@@ -279,7 +282,7 @@ public class YassSynth {
         try {
             if (sourceDataLine != null) sourceDataLine.write(dat, 0, dat.length);
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
 
     }
@@ -291,7 +294,7 @@ public class YassSynth {
         try {
             if (sourceDataLine!= null) sourceDataLine.close();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
     }
 
@@ -302,7 +305,7 @@ public class YassSynth {
         try {
             if (wavsourceDataLine != null) wavsourceDataLine.close();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
     }
 
@@ -328,13 +331,13 @@ public class YassSynth {
 		 *  clip.open(din);
 		 *  }
 		 *  catch (Exception e) {
-		 *  e.printStackTrace();
+		 *  LOGGER.log(Level.INFO, e.getMessage(), e);
 		 *  return null;
 		 *  }
 		 *  return clip;
 		 *  }
 		 *  catch (Exception e) {
-		 *  e.printStackTrace();
+		 *  LOGGER.log(Level.INFO, e.getMessage(), e);
 		 *  }
 		 *  return null;
 		 */
@@ -342,7 +345,7 @@ public class YassSynth {
             InputStream byteArrayInputStream = new ByteArrayInputStream(audioData);
             return new AudioInputStream(byteArrayInputStream, audioFormat, audioData.length / audioFormat.getFrameSize());
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.log(Level.INFO, e.getMessage(), e);
         }
         return null;
     }
@@ -368,7 +371,7 @@ public class YassSynth {
         byte[] frame = new byte[frame_size];
         Byte sample;
         for (int i = 0; i < frame_size; i++) {
-            // System.out.println("   -frameNum: "+frameNum+" framePos "+framePos+" i "+i);
+            // LOGGER.info("   -frameNum: "+frameNum+" framePos "+framePos+" i "+i);
             sample = buffer.get(framePos + i + 1);
             frame[i] = sample.byteValue();
         }

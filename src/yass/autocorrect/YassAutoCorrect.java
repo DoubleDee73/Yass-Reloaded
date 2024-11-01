@@ -1,7 +1,7 @@
 /*
-/*
- * Yass - Karaoke Editor
- * Copyright (C) 2009 Saruta
+ * Yass Reloaded - Karaoke Editor
+ * Copyright (C) 2009-2023 Saruta
+ * Copyright (C) 2023 DoubleDee
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,9 +17,10 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-package yass;
+package yass.autocorrect;
 
 import org.apache.commons.lang3.StringUtils;
+import yass.*;
 
 import javax.swing.*;
 import java.awt.*;
@@ -27,6 +28,7 @@ import java.awt.image.BufferedImage;
 import java.io.*;
 import java.text.MessageFormat;
 import java.util.*;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -34,6 +36,7 @@ import java.util.*;
  * @author Saruta
  */
 public class YassAutoCorrect {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static int FIXED_PAGE_BREAK = 0;
 
     int[] fontWidth = null;
@@ -52,6 +55,7 @@ public class YassAutoCorrect {
         tempAutoCorrectors.put(YassRow.UNCOMMON_SPACING, new YassAutoCorrectUncommonSpacing(prop));
         tempAutoCorrectors.put(YassRow.LOWERCASE_ROWSTART, new YassAutoCorrectLineCapitalization(prop));
         tempAutoCorrectors.put(YassRow.BORING_APOSTROPHE, new YassAutoCorrectApostrophes(prop));
+        tempAutoCorrectors.put(YassRow.UNCOMMON_PAGE_BREAK, new YassAutoCorrectUncommonPageBreaks(prop));
         return tempAutoCorrectors;
     }
 
@@ -884,8 +888,7 @@ public class YassAutoCorrect {
                         continue;
                     }
                     String txt = currentRow.getText();
-                    boolean startswithspace = txt
-                            .startsWith(YassRow.SPACE + "");
+                    boolean startswithspace = txt.startsWith(YassRow.SPACE + "") && prop.isUncommonSpacingAfter();
                     if (txt.contains(YassRow.SPACE + "" + YassRow.SPACE)) {
                         currentRow.addMessage(YassRow.TOO_MUCH_SPACES);
                         table.addMessage(YassRow.TOO_MUCH_SPACES);
@@ -981,7 +984,7 @@ public class YassAutoCorrect {
                                         ? prop.getProperty("font-file-custom")
                                         : prop.getProperty("font-file");
 
-                                // System.out.println(percentFree + " outside");
+                                // LOGGER.info(percentFree + " outside");
                                 int pf = -(int) (percentFree * 100);
                                 if (pf == 0) {
                                     currentRow.addMessage(
@@ -1152,8 +1155,8 @@ public class YassAutoCorrect {
         if (!linesStartUppercase() || StringUtils.isEmpty(currentRow.getText()) || currentRow.getText().length() < 1) {
             return;
         }
-        String text = currentRow.getText();
-        String first = text.substring(0, 1);
+        String text = currentRow.getTrimmedText();
+        String first = StringUtils.left(text, 1);
         if (YassUtils.isPunctuation(first) && text.length() > 1) {
             first = text.substring(1, 2);
         }
@@ -1273,6 +1276,7 @@ public class YassAutoCorrect {
         YassTableModel tm = (YassTableModel) table.getModel();
         Vector<?> data = tm.getData();
         YassAutoCorrector autoCorrector = autoCorrectorMap.get(currentMessage);
+        YassAutoCorrector pageBreakCorrector = autoCorrectorMap.get(YassRow.UNCOMMON_PAGE_BREAK);
         for (int k = 0; k < n; k++) {
             int i = rows[k];
             YassRow r = table.getRowAt(i);
@@ -1454,16 +1458,7 @@ public class YassAutoCorrect {
                 case YassRow.EARLY_PAGE_BREAK:
                 case YassRow.LATE_PAGE_BREAK:
                 case YassRow.UNCOMMON_PAGE_BREAK: {
-                    int comm[] = new int[2];
-                    comm[0] = table.getRowAt(i - 1).getBeatInt()
-                            + table.getRowAt(i - 1).getLengthInt();
-                    comm[1] = table.getRowAt(i + 1).getBeatInt();
-                    int pause = getCommonPageBreak(comm, table.getBPM(), null);
-                    if (pause >= 0) {
-                        r.setBeat(comm[0]);
-                        r.setSecondBeat(comm[1]);
-                        changed = true;
-                    }
+                    changed = changed || pageBreakCorrector.autoCorrect(table, i, table.getRowCount());
                     break;
                 }
                 case YassRow.SHORT_PAGE_BREAK: {
@@ -1525,7 +1520,7 @@ public class YassAutoCorrect {
             }
             stringWidth += fontWidth[ascii] * fontSize / 256.0 + charSpacing;
         }
-        //System.out.println(s.substring(0,5) + " = " + (int)stringWidth + " px" + "  " + (int)(100*(stringWidth)/800.0));
+        //LOGGER.info(s.substring(0,5) + " = " + (int)stringWidth + " px" + "  " + (int)(100*(stringWidth)/800.0));
         return (int) stringWidth;
     }
 
@@ -1567,7 +1562,7 @@ public class YassAutoCorrect {
             s = os.toString("UTF-8");
             is.close();
         } catch (Exception e) {
-            System.out.println("Font file not found: " + font);
+            LOGGER.info("Font file not found: " + font);
             e.printStackTrace();
         }
 
@@ -1578,7 +1573,7 @@ public class YassAutoCorrect {
         {
             if (! st.startsWith("["))
             {
-                //System.out.println((i) + " = " + st);
+                //LOGGER.info((i) + " = " + st);
                 fontWidth[i] = Integer.parseInt(st);
                 i++;
                 if (i>255) break;
@@ -1606,10 +1601,10 @@ public class YassAutoCorrect {
                 if (i==173) c= "shy";
                 if (i>=32) s += " ["+i+"]["+c+"] "+ fw2[i];
             }
-            // System.out.println(font + " = " + s);
+            // LOGGER.info(font + " = " + s);
             g.dispose();
         } catch (Exception e) {
-            System.out.println("Font file not found: " + font);
+            LOGGER.info("Font file not found: " + font);
             e.printStackTrace();
         }
     }
