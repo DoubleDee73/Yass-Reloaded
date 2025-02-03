@@ -253,7 +253,8 @@ public class YassUtils {
 
         //new song dir; move file & create empty txt
         File newdir = new File(dir, at);
-        if (newdir.exists()) {
+        File newtxt = new File(newdir, at + ".txt");
+        if (newdir.exists() && newtxt.exists()) {
             int ok = JOptionPane.showConfirmDialog(parent,
                                                    "<html>" + MessageFormat.format(I18.get("create_error_msg_1"),
                                                                                    newdir.getAbsolutePath()) + "</html>",
@@ -264,20 +265,20 @@ public class YassUtils {
                 return null;
             }
         }
-
-        newdir.mkdir();
-
-        if (mp3filename != null && mp3filename.trim().length() > 0) {
+        if (!newdir.exists()) {
+            newdir.mkdir();
+        }
+        if (mp3filename != null && !mp3filename.trim().isEmpty()) {
             File newmp3 = new File(newdir, at + ".mp3");
             File mp3 = new File(mp3filename);
-            if (!copyFile(mp3, newmp3)) {
+            boolean exists = newmp3.getAbsolutePath().equalsIgnoreCase(mp3.getAbsolutePath());
+            if (!exists && !copyFile(mp3, newmp3)) {
                 JOptionPane.showMessageDialog(parent, "<html>" + MessageFormat.format(I18.get("create_error_msg_1"),
                                                                                       newdir.getAbsolutePath()) + "</html>",
                                               I18.get("create_error_title"), JOptionPane.ERROR_MESSAGE);
             }
         }
 
-        File newtxt = new File(newdir, at + ".txt");
         YassTable table = new YassTable();
         table.init(prop);
         table.removeAllRows();
@@ -1176,6 +1177,22 @@ public class YassUtils {
 
     public void setSpacingAfter(boolean spacingAfter) {
         this.spacingAfter = spacingAfter;
+    }
+
+    /**
+     * Determines a Locale for a given display language in English
+     * @param displayLanguage e. g. "English", "German" and not "Englisch", "Deutsch"
+     * @return the first locale found. Beware, could be en_US or en_UK, or something completely different
+     */
+    public static Locale determineLocale(String displayLanguage) {
+        return Locale.availableLocales()
+                     .filter(loc -> loc.getDisplayLanguage(Locale.ENGLISH).equals(displayLanguage))
+                     .findFirst()
+                     .orElse(null);
+    }
+
+    public static String determineDisplayLanguage(String language) {
+        return Locale.of(language).getDisplayLanguage(Locale.ENGLISH);
     }
 }
 

@@ -383,7 +383,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     }
 
     private String getCombinedValue(String key, List<JSpinner> spinners) {
-        return getCombinedValue(key, spinners, false);
+        return getCombinedValue(key, spinners, true);
     }
 
     private String getCombinedValue(String key, List<JSpinner> spinners, boolean includeZero) {
@@ -397,7 +397,8 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
                 joiner.add(temp);
             }
         }
-        if (includeZero && joiner.toString().equalsIgnoreCase("0-0")) {
+        if (includeZero && (joiner.toString().equalsIgnoreCase("0-0") || 
+                joiner.toString().equals("0-0-0-0"))) {
             return null;
         }
         return key + "=" + joiner;

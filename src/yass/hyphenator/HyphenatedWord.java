@@ -17,35 +17,34 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-package yass;
+package yass.hyphenator;
 
-import java.math.BigDecimal;
+import org.jetbrains.annotations.NotNull;
 
-public class UsdbFile {
-    private String fname;
-    private BigDecimal mtime;
-    private String resource;
-    public String getFname() {
-        return fname;
+public class HyphenatedWord implements Comparable<HyphenatedWord> {
+    private final String unHyphenated;
+    private final String hyphenated;
+
+    public HyphenatedWord(String unHyphenated, String hyphenated) {
+        this.unHyphenated = unHyphenated;
+        this.hyphenated = hyphenated;
     }
 
-    public void setFname(String fname) {
-        this.fname = fname;
+    public String getUnHyphenated() {
+        return unHyphenated;
     }
 
-    public BigDecimal getMtime() {
-        return mtime;
+    public String getHyphenated() {
+        return hyphenated;
     }
 
-    public void setMtime(BigDecimal mtime) {
-        this.mtime = mtime;
+    @Override
+    public String toString() {
+        return hyphenated;
     }
 
-    public String getResource() {
-        return resource;
-    }
-
-    public void setResource(String resource) {
-        this.resource = resource;
+    @Override
+    public int compareTo(@NotNull HyphenatedWord o) {
+        return this.getHyphenated().compareTo(o.getHyphenated());
     }
 }

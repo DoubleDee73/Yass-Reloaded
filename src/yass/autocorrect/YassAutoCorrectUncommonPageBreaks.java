@@ -23,7 +23,7 @@ import yass.YassProperties;
 import yass.YassRow;
 import yass.YassTable;
 
-public class YassAutoCorrectUncommonPageBreaks extends YassAutoCorrector{
+public class YassAutoCorrectUncommonPageBreaks extends YassAutoCorrector {
 
     public YassAutoCorrectUncommonPageBreaks(YassProperties properties) {
         super(properties);
@@ -34,6 +34,10 @@ public class YassAutoCorrectUncommonPageBreaks extends YassAutoCorrector{
         YassRow currentRow = table.getRowAt(currentRowIdx);
         YassRow previousRow = table.getRowAt(currentRowIdx - 1);
         YassRow nextRow = table.getRowAt(currentRowIdx + 1);
+        if (nextRow.isEnd()) {
+            table.getModelData().removeElementAt(currentRowIdx);
+            return true;
+        }
         int comm[] = new int[2];
         comm[0] = previousRow.getBeatInt() + previousRow.getLengthInt();
         comm[1] = nextRow.getBeatInt();

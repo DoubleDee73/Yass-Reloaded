@@ -24,7 +24,7 @@
 
     <groupId>yass</groupId>
     <artifactId>Yass-Reloaded</artifactId>
-    <version>2024.10</version>
+    <version>2025.2</version>
     <dependencies>
         <dependency>
             <groupId>com.danielreese</groupId>
@@ -122,7 +122,7 @@
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
-            <version>3.14.0</version>
+            <version>3.17.0</version>
         </dependency>
         <dependency>
             <groupId>org.spockframework</groupId>
@@ -147,7 +147,7 @@
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
-            <version>33.0.0-jre</version>
+            <version>33.4.0-jre</version>
         </dependency>
         <dependency>
             <groupId>com.optimaize.languagedetector</groupId>
@@ -157,13 +157,13 @@
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-swing</artifactId>
-            <version>21.0.2</version>
+            <version>23.0.2</version>
             <classifier>linux</classifier>
         </dependency>
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-media</artifactId>
-            <version>21.0.2</version>
+            <version>23.0.2</version>
             <classifier>linux</classifier>
         </dependency>
         <!-- https://mvnrepository.com/artifact/org.apache.commons/commons-math3 -->
@@ -176,7 +176,7 @@
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
-            <version>2.11.0</version>
+            <version>2.12.1</version>
         </dependency>
         <!-- https://mvnrepository.com/artifact/org.apache.commons/commons-exec -->
         <dependency>
