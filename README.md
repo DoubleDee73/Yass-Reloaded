@@ -84,6 +84,11 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+# Support
+If you like this  app, feel free (but not pressured!) to buy me coffee. Any support is very much appreciated!
+
+<a target="_blank" rel="noopener noreferrer" href="https://www.buymeacoffee.com/DoubleDee73"><img src="https://github.com/user-attachments/assets/a40f851a-2ef1-46ce-a6d6-0bf6fd0ffb95" alt="image" style="max-width: 100%; width: 200px;"></a>
+
 # Troubleshooting
 ## Yass Reloaded does nothing after showing the splash screen
 - Have you checked your Java version? 
