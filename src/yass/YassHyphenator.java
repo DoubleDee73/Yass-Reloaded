@@ -139,7 +139,7 @@ public class YassHyphenator {
             return word.replace( "-", "–\u00AD");
         }
         word = syllableficate(word);
-        if (hyphenator != null && word == null || !word.contains("\u00AD")) {
+        if (hyphenator != null && (word == null || !word.contains("\u00AD"))) {
             word = hyphenator.hyphenate(word, 2, 2);
         }
         return word;
@@ -228,7 +228,8 @@ public class YassHyphenator {
             return original;
         }
         if (shortened) {
-            newSyllables[newSyllables.length - 1] = newSyllables[newSyllables.length - 1].replace("ing", "in" + apostrophe);
+            newSyllables[newSyllables.length - 1] = newSyllables[newSyllables.length - 1].replace("ing",
+                                                                                                  "in" + apostrophe);
         }
         return Arrays.stream(newSyllables).toList();
     }
@@ -314,17 +315,8 @@ public class YassHyphenator {
 
     public String fallbackHyphenation(String word) {
         if (fallbackHyphenations == null) {
-            String fallbackDictionary = getYassProperties().getProperty("hyphenations_" + getCurrentLanguage());
-            if (StringUtils.isEmpty(fallbackDictionary)) {
+            if (!initFallbackHyphenations()) {
                 return word;
-            }
-            try {
-                fallbackHyphenations = new HashMap<>();
-                for (String line : Files.readAllLines(Paths.get(fallbackDictionary))) {
-                    fallbackHyphenations.put(line.replace("•", ""), line);
-                }
-            } catch (IOException e) {
-                fallbackHyphenations = null;
             }
         }
         if (fallbackHyphenations != null) {
@@ -346,6 +338,23 @@ public class YassHyphenator {
         }
 
         return word;
+    }
+
+    public boolean initFallbackHyphenations() {
+        String fallbackDictionary = getYassProperties().getProperty("hyphenations_" + getCurrentLanguage());
+        if (StringUtils.isEmpty(fallbackDictionary)) {
+            return false;
+        }
+        try {
+            fallbackHyphenations = new HashMap<>();
+            for (String line : Files.readAllLines(Paths.get(fallbackDictionary))) {
+                fallbackHyphenations.put(line.replace("•", ""), line);
+            }
+        } catch (IOException e) {
+            fallbackHyphenations = null;
+            return false;
+        }
+        return true;
     }
 
     public Map<String, String> getFallbackHyphenations() {

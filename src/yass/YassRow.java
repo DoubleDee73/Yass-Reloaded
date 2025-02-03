@@ -609,17 +609,7 @@ public class YassRow implements Cloneable, Comparable<Object> {
 
     public boolean equals(Object o) {
         YassRow r = (YassRow) o;
-        if (!s[0].equals(r.s[0]))
-            return false;
-        if (!s[1].equals(r.s[1]))
-            return false;
-        if (!s[2].equals(r.s[2]))
-            return false;
-        if (!s[3].equals(r.s[3]))
-            return false;
-        if (!s[4].equals(r.s[4]))
-            return false;
-        return true;
+        return toString().equals(r.toString());
     }
 
     public boolean startsWithSpace() {

@@ -63,7 +63,13 @@ public class YassMain extends JFrame {
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
     public static void main(String[] argv) {
-        YassLogger.init(System.getProperty("user.home") + File.separator + ".yass" + File.separator + "log.txt");
+        File userDir = new File(System.getProperty("user.home") + File.separator + ".yass");
+        if (!userDir.exists()) {
+            if (userDir.mkdir()) {
+                System.out.println("Created User-Dir " + userDir.getAbsolutePath());
+            }
+        }
+        YassLogger.init( userDir.getAbsolutePath() + File.separator + "log.txt");
         checkAudio();
         initLater(argv);
     }
@@ -380,7 +386,6 @@ public class YassMain extends JFrame {
             } else {
                 actions.closeAllTables();
             }
-            actions.setView(YassActions.VIEW_EDIT);
             sheet.requestFocusInWindow();
             return;
         }

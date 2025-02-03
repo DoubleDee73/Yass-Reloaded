@@ -24,6 +24,7 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import yass.autocorrect.YassAutoCorrect;
 import yass.extras.UsdbSyncerMetaTagCreator;
+import yass.hyphenator.HyphenatorDictionary;
 import yass.renderer.YassSession;
 import yass.wizard.CreateSongWizard;
 
@@ -60,11 +61,11 @@ public class YassActions implements DropTargetListener {
     public static final int FREESTYLE_NOTE = Integer.MIN_VALUE + 1;
     public static final int RAP_NOTE = Integer.MIN_VALUE + 2;
     private final YassSheet sheet;
-    public final static String VERSION = "2024.11";
-    public final static String DATE = "11/2024";
+    public final static String VERSION = "2025.2";
+    public final static String DATE = "02/2025";
 
-    static int VIEW_LIBRARY = 1;
-    static int VIEW_EDIT = 2;
+    public static int VIEW_LIBRARY = 1;
+    public static int VIEW_EDIT = 2;
     private int currentView = 0;
     private final Vector<YassTable> openTables = new Vector<>();
     private JPanel main = null;
@@ -136,6 +137,8 @@ public class YassActions implements DropTargetListener {
     private Pair<Integer, Integer> tempSelection;
     private boolean recording = false;
     public static final KeyboardMapping CURRENT_MAPPING = determineMapping();
+    
+    public HyphenatorDictionary hyphenatorDictionary = null;
 
     private static KeyboardMapping determineMapping() {
         InputContext inputContext = InputContext.getInstance();
@@ -265,6 +268,15 @@ public class YassActions implements DropTargetListener {
           table.rehyphenate();
       }
     };
+
+    private final Action addHyphenatedWord = new AbstractAction(I18.get("edit_add_hyphened_word")) {
+        public void actionPerformed(ActionEvent e) {
+            if (currentView == VIEW_EDIT) {
+                table.addHyphenatedWord();
+            }
+        }
+    };
+    
     private final Action shiftEnding = new AbstractAction(I18.get("edit_shiftEnding")) {
         public void actionPerformed(ActionEvent e) {
             table.shiftEnding();
@@ -3587,6 +3599,7 @@ public class YassActions implements DropTargetListener {
         menu.addSeparator();
 
         menu.add(reHyphenate);
+        menu.add(addHyphenatedWord);
         menu.add(shiftEnding);
         menu.add(shiftEndingLeft);
         menu.add(findLyrics);
@@ -3606,6 +3619,7 @@ public class YassActions implements DropTargetListener {
         menu.add(autoCorrectSpacing);
         menu.add(autoCorrectTransposed);
         menu.addSeparator();
+        menu.add(editHyphenations);
         menu.add(showOptions);
 
         menu = new JMenu(I18.get("edit_help"));
@@ -3714,7 +3728,8 @@ public class YassActions implements DropTargetListener {
         menu.setMnemonic(KeyEvent.VK_X);
 //        menu.add(testMic);
 //        menu.addSeparator();
-        menu.add(createSyncerTags);        
+        menu.add(createSyncerTags);
+        menu.add(editHyphenations);
         menu.addSeparator();
         menu.add(showOptions);
         menuBar.add(menu);
@@ -5884,6 +5899,7 @@ public class YassActions implements DropTargetListener {
     private void stopRecording() {
         mp3.interruptMP3();
         setRecording(false);
+        tempSelection = null;
         Toolkit.getDefaultToolkit().removeAWTEventListener(awt);
     }
 
@@ -6183,7 +6199,9 @@ public class YassActions implements DropTargetListener {
             if (YassUtils.isKaraokeFile(f)) {
                 all.add(f);
             } else {
-                removed++;
+                if (new File(f).isFile()) {
+                    removed++;
+                }
             }
         }
         if (removed > 0) {
@@ -7005,6 +7023,10 @@ public class YassActions implements DropTargetListener {
         am.put("reHyphenate", reHyphenate);
         reHyphenate.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_H, InputEvent.CTRL_DOWN_MASK));
 
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_H, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), "addHyphenatedWord");
+        am.put("addHyphenatedWord", addHyphenatedWord);
+        addHyphenatedWord.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_H, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
+
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.SHIFT_DOWN_MASK), "shiftEnding");
         am.put("shiftEnding", shiftEnding);
         shiftEnding.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.SHIFT_DOWN_MASK));
@@ -7698,6 +7720,22 @@ public class YassActions implements DropTargetListener {
         }
     };
     
+    public final Action editHyphenations = new AbstractAction(I18.get("lib_edit_hyphenations")) {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            initHyphenatorDictionary(true);
+        }
+    };
+    
+    public void initHyphenatorDictionary(boolean visible) {
+        if (hyphenatorDictionary == null) {
+            hyphenatorDictionary = new HyphenatorDictionary(YassActions.this, visible);
+        } else {
+            hyphenatorDictionary.clearTextFields();
+            hyphenatorDictionary.reinitWords();
+            hyphenatorDictionary.setVisible(visible);
+        }
+    }
     public KeyboardMapping getKeyboardLayout() {
         return CURRENT_MAPPING;
     }

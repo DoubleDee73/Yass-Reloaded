@@ -1019,18 +1019,22 @@ public class YassAutoCorrect {
                     // check & autocorrect EARLY, LATE, UNCOMMON, OVERLAPPING page breaks
                     int beat = currentRow.getBeatInt();
 
-                    YassRow r2 = (i > 0) ? table.getRowAt(i - 1) : null;
-                    YassRow r3 = (i < n - 1) ? table.getRowAt(i + 1) : null;
+                    YassRow prevRow = (i > 0) ? table.getRowAt(i - 1) : null;
+                    YassRow followingRow = (i < n - 1) ? table.getRowAt(i + 1) : null;
 
-                    if (r2 != null && r3 != null) {
+                    if (prevRow != null && followingRow != null) {
                         int beat2 = currentRow.getSecondBeatInt();
                         int comm[] = new int[]{0, 0};
-                        if (r2.isNote()) {
-                            comm[0] = r2.getBeatInt() + r2.getLengthInt();
+                        if (prevRow.isNote()) {
+                            comm[0] = prevRow.getBeatInt() + prevRow.getLengthInt();
                         }
-                        if (r3.isNote()) {
-                            comm[1] = r3.getBeatInt();
+                        if (followingRow.isNote()) {
+                            comm[1] = followingRow.getBeatInt();
                             firstonpage = true;
+                        } else if (followingRow.isEnd()) {
+                            currentRow.addMessage(YassRow.UNCOMMON_PAGE_BREAK, I18.get("correct_pagebreak_before_end"));
+                            table.addMessage(YassRow.UNCOMMON_PAGE_BREAK);
+                            continue;
                         }
                         if (comm[0] != 0 && comm[1] != 0) {
                             if (beat < comm[0] || beat2 > comm[1]) {
@@ -1058,8 +1062,8 @@ public class YassAutoCorrect {
                                     currentRow.addMessage(YassRow.EARLY_PAGE_BREAK, details);
                                     table.addMessage(YassRow.EARLY_PAGE_BREAK);
                                 }
-                                else if (r2.isNote() && r2.getLengthInt() > 1) {
-                                    r2.addMessage(YassRow.SHORT_PAGE_BREAK, details);
+                                else if (prevRow.isNote() && prevRow.getLengthInt() > 1) {
+                                    prevRow.addMessage(YassRow.SHORT_PAGE_BREAK, details);
                                     table.addMessage(YassRow.SHORT_PAGE_BREAK);
                                 }
                             } else if (late) {
@@ -1067,8 +1071,8 @@ public class YassAutoCorrect {
                                     currentRow.addMessage(YassRow.LATE_PAGE_BREAK, details);
                                     table.addMessage(YassRow.LATE_PAGE_BREAK);
                                 }
-                                else if (r2.isNote() && r2.getLengthInt() > 1){
-                                    r2.addMessage(YassRow.SHORT_PAGE_BREAK, details);
+                                else if (prevRow.isNote() && prevRow.getLengthInt() > 1){
+                                    prevRow.addMessage(YassRow.SHORT_PAGE_BREAK, details);
                                     table.addMessage(YassRow.SHORT_PAGE_BREAK);
                                 }
                             } else if (canchange) {
@@ -1277,9 +1281,13 @@ public class YassAutoCorrect {
         Vector<?> data = tm.getData();
         YassAutoCorrector autoCorrector = autoCorrectorMap.get(currentMessage);
         YassAutoCorrector pageBreakCorrector = autoCorrectorMap.get(YassRow.UNCOMMON_PAGE_BREAK);
+        boolean singleRow = table.getSelectedRowCount() == 1;
         for (int k = 0; k < n; k++) {
             int i = rows[k];
             YassRow r = table.getRowAt(i);
+            if (r == null) {
+                continue;
+            }
             Vector<?> msg = r.getMessages();
             if (msg == null || msg.size() < 1) {
                 continue;
@@ -1458,7 +1466,9 @@ public class YassAutoCorrect {
                 case YassRow.EARLY_PAGE_BREAK:
                 case YassRow.LATE_PAGE_BREAK:
                 case YassRow.UNCOMMON_PAGE_BREAK: {
-                    changed = changed || pageBreakCorrector.autoCorrect(table, i, table.getRowCount());
+                    if (singleRow && pageBreakCorrector.autoCorrect(table, i, table.getRowCount())) {
+                        changed = true;
+                    }
                     break;
                 }
                 case YassRow.SHORT_PAGE_BREAK: {

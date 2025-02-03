@@ -97,6 +97,7 @@ public class YassPlayer {
     private Map<Integer, Media> SHORT_NOTE_MAP;
     private Integer lastNote = null;
     private Timebase playrate = Timebase.NORMAL;
+    private File tempFile;
 
     private void initNoteMap() {
         lastNote = null;
@@ -399,6 +400,7 @@ public class YassPlayer {
         File file;
         try {
             file = generateTemp(filename);
+            tempFile = file;
         } catch (IOException | UnsupportedAudioFileException | LineUnavailableException e) {
             throw new RuntimeException(e);
         }
@@ -1415,6 +1417,11 @@ public class YassPlayer {
         FFmpegProbeResult fFmpegProbeResult = fFprobe.probe(source);
         FFmpegBuilder fFmpegBuilder = new FFmpegBuilder();
         fFmpegBuilder.addInput(fFmpegProbeResult);
+        if (fFmpegProbeResult != null && fFmpegProbeResult.getStreams() != null && !fFmpegProbeResult.getStreams()
+                                                                                                     .isEmpty()) {
+           audioBytesSampleRate = fFmpegProbeResult.getStreams().get(0).sample_rate;
+           audioBytesChannels = fFmpegProbeResult.getStreams().get(0).channels;
+        }
         File tempFile;
         if (timeBase == Timebase.NORMAL) {
             tempFile = new File(TEMP_WAV);
@@ -1473,5 +1480,17 @@ public class YassPlayer {
 
     public void setPlayrate(Timebase playrate) {
         this.playrate = playrate;
+    }
+
+    public File getTempFile() {
+        return tempFile;
+    }
+
+    public int getAudioBytesChannels() {
+        return audioBytesChannels;
+    }
+
+    public float getAudioBytesSampleRate() {
+        return audioBytesSampleRate;
     }
 }
