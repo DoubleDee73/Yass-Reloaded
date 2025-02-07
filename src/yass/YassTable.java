@@ -4834,7 +4834,7 @@ public class YassTable extends JTable {
         if (words > 1) {
             f = (words - 1) / (double) words;
         }
-        split(f);
+        split(f, false);
     }
 
     /**
@@ -5507,7 +5507,7 @@ public class YassTable extends JTable {
      *
      * @param percent Description of the Parameter
      */
-    public void split(double percent) {
+    public void split(double percent, boolean splitByMouse) {
         if (skipRollingOrSplitting()) {
             return;
         }
@@ -5519,7 +5519,7 @@ public class YassTable extends JTable {
         if (!currentRow.isNote()) {
             return;
         }
-
+        
         String[] textPunctuationPair = splitTextFromPunctuation(currentRow);
         String hyphenated = hyphenator.hyphenateWord(textPunctuationPair[0]);
         int hyphenPos = hyphenated.indexOf("\u00AD");
@@ -5532,7 +5532,7 @@ public class YassTable extends JTable {
         String currentText;
         if (hyphenPos >= 0) {
             String[] syllables = hyphenated.split("\u00AD");
-            if (currentRow.getLengthInt() > 2 && syllables.length > 2) {
+            if (currentRow.getLengthInt() > 2 && syllables.length > 2 && !splitByMouse) {
                 percent = 1d / syllables.length;
             }
             currentText = hyphenated.substring(0, hyphenPos);
