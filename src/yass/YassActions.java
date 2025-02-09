@@ -2574,7 +2574,7 @@ public class YassActions implements DropTargetListener {
             } else if (p.equals("one")) {
                 onePage.actionPerformed(null);
             } else if (p.equals("split")) {
-                table.split(((Double) e.getNewValue()).doubleValue());
+                table.split(((Double) e.getNewValue()).doubleValue(), true);
             } else if (p.equals("joinLeft")) {
                 table.joinLeft();
             } else if (p.equals("joinRight")) {
