@@ -23,12 +23,11 @@ import yass.YassProperties;
 import yass.YassRow;
 import yass.YassTable;
 
-import java.util.Arrays;
 import java.util.List;
 
 public class YassAutoCorrectApostrophes extends YassAutoCorrector {
 
-    public static final List<String> BORING_APOSTROPHES = Arrays.asList("'", "′", "´", "`", "‵", "ʹ", "＇");
+    public static final List<String> BORING_APOSTROPHES = List.of("'", "′", "´", "`", "‵", "ʹ", "＇");
 
     public YassAutoCorrectApostrophes(YassProperties properties) {
         super(properties);

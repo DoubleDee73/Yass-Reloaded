@@ -19,6 +19,7 @@
 package yass;
 
 import org.apache.commons.lang3.StringUtils;
+import yass.musicalkey.MusicalKeyEnum;
 import yass.renderer.YassNote;
 import yass.renderer.YassPlayerNote;
 import yass.renderer.YassSession;
@@ -3465,7 +3466,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             if (r.isPageBreak()) {
                 pn = r.getPageNumber();
             }
-
             Color borderCol = col;
             if (r.x < clip.x + clip.width && r.x + r.width > clip.x) {
                 if (!r.isPageBreak())
@@ -3755,8 +3755,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     }
 
                     borderCol = hilite == i ? colorSet[YassSheet.COLOR_ACTIVE] : borderCol;
-
-                    g2.setColor(borderCol);
+                    g2.setColor(r.isInKey() ? borderCol : Color.ORANGE);
 
                     if (wSize < 10) {
                         g2.setStroke(stdStroke);
@@ -4576,6 +4575,13 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         double timelineGap = t.getGap() * 4 / (60 * 1000 / t.getBPM());
         if (r.isNote()) {
             int pageMin = r.getHeightInt();
+            boolean isInKey;
+            MusicalKeyEnum key;
+            if (t.getActions() != null && t.getActions().getMP3() != null) {
+                key = t.getActions().getMP3().getKey();
+            } else {
+                key = MusicalKeyEnum.UNDEFINED;
+            }
             if (pan) {
                 int j = i - 1;
                 YassRow p = t.getRowAt(j);
@@ -4593,15 +4599,15 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             int beat = r.getBeatInt();
             int length = r.getLengthInt();
             int height = r.getHeightInt();
+            // Freestyle and Rap-Notes are always "in key"
+            rr.setInKey(r.isFreeStyle() || r.isRap() || r.isRapGolden() || key.isInKey(height));
             rr.x = (timelineGap + beat) * wSize + 1;
             if (paintHeights)
                 rr.x += heightBoxWidth;
             if (pan) {
-                rr.y = dim.height - (height - pageMin + 2) * hSize - hSize
-                        - BOTTOM_BORDER + 1;
+                rr.y = dim.height - (height - pageMin + 2) * hSize - hSize - BOTTOM_BORDER + 1;
             } else {
-                rr.y = dim.height - (height - minHeight) * hSize - hSize
-                        - BOTTOM_BORDER + 1;
+                rr.y = dim.height - (height - minHeight) * hSize - hSize - BOTTOM_BORDER + 1;
             }
             rr.width = length * wSize - 2;
             if (rr.width < 1)

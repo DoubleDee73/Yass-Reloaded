@@ -31,7 +31,6 @@ import com.optimaize.langdetect.text.TextObject;
 import com.optimaize.langdetect.text.TextObjectFactory;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
@@ -42,7 +41,7 @@ public class YassLanguageUtils {
 
     private LanguageDetector detector;
 
-    public static final List<Locale> SUPPORTED_LOCALES = Arrays.asList(Locale.ENGLISH, Locale.GERMAN, Locale.FRENCH,
+    public static final List<Locale> SUPPORTED_LOCALES = List.of(Locale.ENGLISH, Locale.GERMAN, Locale.FRENCH,
                                                                        Locale.ITALIAN, Locale.forLanguageTag("es"),
                                                                        Locale.forLanguageTag("pt"),
                                                                        Locale.forLanguageTag("pl"),
@@ -80,7 +79,7 @@ public class YassLanguageUtils {
     private void initLanguageDetector() throws IOException {
         List<LanguageProfile> languageProfiles;
         languageProfiles = new LanguageProfileReader()
-                .read(Arrays.asList("en", "de", "es", "fr", "it", "pt", "pl", "tr", "zh-CN"));
+                .read(List.of("en", "de", "es", "fr", "it", "pt", "pl", "tr", "zh-CN"));
         this.detector = LanguageDetectorBuilder.create(NgramExtractors.standard())
                                                .withProfiles(languageProfiles)
                                                .build();

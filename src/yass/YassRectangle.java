@@ -40,6 +40,8 @@ public class YassRectangle extends RoundRectangle2D.Double implements Cloneable 
     int pn = -1;
     private int pageMin = 0;
 
+    private boolean inKey = true;
+    
     public YassRectangle() {
         super(0, 0, 0, 0, 10, 10);
         type = DEFAULT;
@@ -63,6 +65,15 @@ public class YassRectangle extends RoundRectangle2D.Double implements Cloneable 
     public void setType(int t) {
         type = t;
     }
+
+    public boolean isInKey() {
+        return inKey;
+    }
+
+    public void setInKey(boolean inKey) {
+        this.inKey = inKey;
+    }
+
     public boolean hasType(int t) {
         return (type & t) != 0;
     }
@@ -87,5 +98,7 @@ public class YassRectangle extends RoundRectangle2D.Double implements Cloneable 
     public Object clone() {
         return new YassRectangle(this);
     }
+    
+    
 }
 

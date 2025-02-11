@@ -249,19 +249,19 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
             }
             result.add(getSpinnerValue("co-resize", coverResize));
             result.add(getCombinedValue("co-crop",
-                                        Arrays.asList(coverCropLeft, coverCropTop, coverCropWidth, coverCropHeight)));
+                                        List.of(coverCropLeft, coverCropTop, coverCropWidth, coverCropHeight)));
         }
         if (StringUtils.isNotEmpty(backgroundUrl.getText())) {
             result.add(getTextValue("bg", backgroundUrl));
-            result.add(getCombinedValue("bg-resize", Arrays.asList(backgroundResizeWidth, backgroundResizeHeight)));
+            result.add(getCombinedValue("bg-resize", List.of(backgroundResizeWidth, backgroundResizeHeight)));
             result.add(getCombinedValue("bg-crop",
-                                        Arrays.asList(backgroundCropLeft, backgroundCropTop, backgroundCropWidth,
+                                        List.of(backgroundCropLeft, backgroundCropTop, backgroundCropWidth,
                                                       backgroundCropHeight)));
         }
         result.add(getTextValue("p1", player1));
         result.add(getTextValue("p2", player2));
         result.add(getSpinnerValue("preview", preview));
-        result.add(getCombinedValue("medley", Arrays.asList(medleyStart, medleyEnd), true));
+        result.add(getCombinedValue("medley", List.of(medleyStart, medleyEnd), true));
         String tagLine = result.stream().filter(StringUtils::isNotEmpty).collect(Collectors.joining(","));
         if (tagLine.isEmpty()) {
             resultLine.setText(StringUtils.EMPTY);
