@@ -33,7 +33,7 @@ public enum MusicalKeyEnum {
     E_CSHARP("musical.key.4", 12, "E", "C#m", Collections.emptyList(), List.of(1, 3, 4, 6, 8, 9, 11)),
     B_GSHARP("musical.key.5", 1, "B", "G#m", List.of("Cb", "Abm"), List.of(1, 3, 4, 6, 8, 10, 11)),
     FSHARP_DSHARP("musical.key.6", 2, "F#", "D#m", List.of("Gb", "Ebm"), List.of(1, 3, 5, 6, 8, 10, 11)),
-    CSHARP_ASHARP("musical.key.7", 3, "C#", "A#m", List.of("Db", "Bbm"), List.of(1, 3, 5, 6, 8, 10, 12)),
+    CSHARP_ASHARP("musical.key.7", 3, "C#", "A#m", List.of("Db", "Bbm"), List.of(0, 1, 3, 5, 6, 8, 10)),
     F_D("musical.key.-1", 7, "F", "Dm", Collections.emptyList(), List.of(0, 2, 4, 5, 7, 9, 10)),
     BFLAT_G("musical.key.-2", 6, "Bb", "Gm", List.of("A#"), List.of(0, 2, 3, 5, 7, 9, 10)),
     EFLAT_C("musical.key.-3", 5, "Eb", "Cm", List.of("D#"), List.of(0, 2, 3, 5, 7, 8, 10)),
@@ -113,6 +113,9 @@ public enum MusicalKeyEnum {
     public boolean isInKey(int note) {
         if (this == UNDEFINED) {
             return true;
+        }
+        if (note < 0) {
+            note = note + 120;
         }
         return notes.contains(note % 12);
     }

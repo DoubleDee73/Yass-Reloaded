@@ -1519,6 +1519,7 @@ public class YassPlayer {
         if (musicalKeyEnum == null || musicalKeyEnum == MusicalKeyEnum.UNDEFINED || musicalKeyEnum == getKey()) {
             return;
         }
+        this.key = musicalKeyEnum;
         AudioFile audioFile;
         try {
             audioFile = AudioFileIO.read(new File(filename));
@@ -1537,7 +1538,7 @@ public class YassPlayer {
             audioFile = AudioFileIO.read(new File(filename));
             Tag tag = audioFile.getTag();
             TagField tagField = tag.getFirstField(FieldKey.KEY);
-            if (!tagField.isEmpty()) {
+            if (tagField != null && !tagField.isEmpty()) {
                 return MusicalKeyEnum.findKey(((ID3v23Frame) tagField).getContent());
             }
         } catch (CannotReadException | IOException | TagException | ReadOnlyFileException | InvalidAudioFrameException e) {
