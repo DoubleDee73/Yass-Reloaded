@@ -77,6 +77,7 @@ public class MusicalKey extends JDialog {
 
     private void onOK() {
         actions.getMP3().saveKey((MusicalKeyEnum) cboKey.getSelectedItem());
+        actions.getTable().fireTableTableDataChanged();
         dispose();
     }
 

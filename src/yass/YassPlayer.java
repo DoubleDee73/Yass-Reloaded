@@ -38,7 +38,7 @@ import org.jaudiotagger.tag.FieldKey;
 import org.jaudiotagger.tag.Tag;
 import org.jaudiotagger.tag.TagException;
 import org.jaudiotagger.tag.TagField;
-import org.jaudiotagger.tag.id3.ID3v23Frame;
+import org.jaudiotagger.tag.id3.AbstractID3v2Frame;
 import org.tritonus.share.sampled.file.TAudioFileFormat;
 import yass.ffmpeg.FFMPEGLocator;
 import yass.musicalkey.MusicalKeyEnum;
@@ -1516,10 +1516,10 @@ public class YassPlayer {
     }
 
     public void saveKey(MusicalKeyEnum musicalKeyEnum) {
+        this.key = musicalKeyEnum;
         if (musicalKeyEnum == null || musicalKeyEnum == MusicalKeyEnum.UNDEFINED || musicalKeyEnum == getKey()) {
             return;
         }
-        this.key = musicalKeyEnum;
         AudioFile audioFile;
         try {
             audioFile = AudioFileIO.read(new File(filename));
@@ -1539,7 +1539,7 @@ public class YassPlayer {
             Tag tag = audioFile.getTag();
             TagField tagField = tag.getFirstField(FieldKey.KEY);
             if (tagField != null && !tagField.isEmpty()) {
-                return MusicalKeyEnum.findKey(((ID3v23Frame) tagField).getContent());
+                return MusicalKeyEnum.findKey(((AbstractID3v2Frame) tagField).getContent());
             }
         } catch (CannotReadException | IOException | TagException | ReadOnlyFileException | InvalidAudioFrameException e) {
             throw new RuntimeException(e);
