@@ -350,6 +350,11 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 char c = e.getKeyChar();
                 int code = e.getKeyCode();
+                int shift = KeyEvent.SHIFT_DOWN_MASK;
+                int ctrl = KeyEvent.CTRL_DOWN_MASK;
+                int alt = KeyEvent.ALT_DOWN_MASK;
+                int ctrlShift = ctrl | shift;
+                int ctrlShiftAlt = ctrlShift | alt;
                 if (actions.isMidiEnabled() && actions.getKeyboardLayout().getPosition(code) >= 0) {
                     return;
                 }
@@ -694,6 +699,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     return;
                 } else if (c == '\'') {
                     table.toggleApostropheEnd();
+                } else if (c == '~') {
+                    table.toggleTildeStart();
                 }
                 dispatch();
             }
@@ -4646,7 +4653,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             else
                 rr.resetType();
             rr.setPageNumber(0);
-        } else if (r.isComment() && r.getCommentTag().equals("GAP:")) {
+        } else if (r.isComment() && r.getHeaderCommentTag().equals("GAP:")) {
             // choose correct index i
             rr.x = timelineGap * wSize - 10;
             if (paintHeights)
@@ -4656,7 +4663,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             rr.y = 0;
             rr.setType(YassRectangle.GAP);
         } else if (r.isComment()
-                && (r.getCommentTag().equals("START:") || r.getCommentTag().equals("TITLE:"))) {
+                && (r.getHeaderCommentTag().equals("START:") || r.getHeaderCommentTag().equals("TITLE:"))) {
             double start = t.getStart() * 4 / (60 * 1000 / t.getBPM());
             // choose correct index i
             rr.x = start * wSize;
@@ -5123,9 +5130,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 end = beat + r.getLengthInt();
             } else if (r.isPageBreak()) {
                 end = r.getSecondBeatInt();
-            } else if (r.isComment() && !r.getCommentTag().equals("END:")) {
+            } else if (r.isComment() && !r.getHeaderCommentTag().equals("END:")) {
                 beat = table.msToBeat(0);
-                if (r.getCommentTag().equals("GAP:"))
+                if (r.getHeaderCommentTag().equals("GAP:"))
                     end = 0;
             } else if (r.isEnd()) {
                 beat = Math.max(outgap - 1, 0);

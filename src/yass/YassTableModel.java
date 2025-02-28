@@ -322,7 +322,7 @@ public class YassTableModel extends AbstractTableModel {
         int i = 0;
         while (i < n) {
             YassRow r = data.elementAt(i++);
-            if (r.isComment() && r.getCommentTag().equals(ctype)) {
+            if (r.isComment() && r.getHeaderCommentTag().equals(ctype)) {
                 return r;
             }
         }

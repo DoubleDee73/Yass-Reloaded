@@ -77,8 +77,8 @@ public class SongHeader extends JDialog {
                 if (e.getStateChange() == ItemEvent.SELECTED) {
                     YassRow mp3Row = table.getCommentRow(e.getItem() + ":");
                     if (mp3Row != null) {
-                        mp3.setText(mp3Row.getComment());
-                        actions.openMp3(table.getDir() + File.separator + mp3Row.getComment());
+                        mp3.setText(mp3Row.getHeaderComment());
+                        actions.openMp3(table.getDir() + File.separator + mp3Row.getHeaderComment());
                     } else {
                         mp3.setText(StringUtils.EMPTY);
                     }

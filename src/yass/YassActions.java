@@ -62,8 +62,8 @@ public class YassActions implements DropTargetListener {
     public static final int FREESTYLE_NOTE = Integer.MIN_VALUE + 1;
     public static final int RAP_NOTE = Integer.MIN_VALUE + 2;
     private final YassSheet sheet;
-    public final static String VERSION = "2025.2";
-    public final static String DATE = "02/2025";
+    public final static String VERSION = VersionUtils.getVersion();
+    public final static String DATE = VersionUtils.getReleaseDate();
 
     public static int VIEW_LIBRARY = 1;
     public static int VIEW_EDIT = 2;
@@ -3470,12 +3470,14 @@ public class YassActions implements DropTargetListener {
         icons.put("speedfour24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/SpeedFour24.gif")));
         icons.put("info16Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/general/Information16.gif")));
         icons.put("info24Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/general/Information24.gif")));
+        icons.put("createSyncerTagsIcon", new ImageIcon(getClass().getResource("/yass/resources/img/usdb_syncer_icon.png")));
         enableLyrics.putValue(AbstractAction.SMALL_ICON, getIcon("lyrics16Icon"));
         showPlaylistMenu.putValue(AbstractAction.SMALL_ICON, getIcon("playlist16Icon"));
         showSongInfo.putValue(AbstractAction.SMALL_ICON, getIcon("info16Icon"));
         detailLibrary.putValue(AbstractAction.SMALL_ICON, getIcon("notiles16Icon"));
         showSongInfoBackground.putValue(AbstractAction.SMALL_ICON, getIcon("empty16Icon"));
-
+        createSyncerTags.putValue(AbstractAction.SMALL_ICON, getResizedIcon("createSyncerTagsIcon", 16));
+        editHyphenations.putValue(AbstractAction.SMALL_ICON, getIcon("hyphenate24Icon"));
         updateActions();
     }
 
@@ -5747,7 +5749,7 @@ public class YassActions implements DropTargetListener {
                 }
                 return;
             }
-            if (r.isComment() && r.getCommentTag().equals("START:")) {
+            if (r.isComment() && r.getHeaderCommentTag().equals("START:")) {
                 String input = JOptionPane.showInputDialog(tab, I18.get("edit_lyrics_edit_start_msg"), (int) (table.getStart()) + "");
                 try {
                     int val = Integer.parseInt(input);
@@ -5756,7 +5758,7 @@ public class YassActions implements DropTargetListener {
                 return;
             }
             if (r.isEnd()
-                    || (r.isComment() && r.getCommentTag().equals("END:"))) {
+                    || (r.isComment() && r.getHeaderCommentTag().equals("END:"))) {
                 String input = JOptionPane.showInputDialog(tab, I18.get("edit_lyrics_edit_end_msg"), (int) (table.getEnd()) + "");
                 try {
                     int val = Integer.parseInt(input);
@@ -6355,7 +6357,9 @@ public class YassActions implements DropTargetListener {
     }
     
     public void openMp3(String filename) {
-        mp3.reinitSynth();
+        if (!prop.getBooleanProperty("use-sample")) {
+            mp3.reinitSynth(prop.getBooleanProperty("use-sample"));
+        }
         mp3.openMP3(filename);
     }
 
@@ -6366,7 +6370,7 @@ public class YassActions implements DropTargetListener {
             return;
         updateTrackComponent();
         storeRecentFiles();
-        mp3.reinitSynth();
+        mp3.reinitSynth(prop.getBooleanProperty("use-sample"));
         mp3.openMP3(table.getDirMP3());
         updateTitle();
 
@@ -6597,7 +6601,7 @@ public class YassActions implements DropTargetListener {
 
             YassTableModel tm = (YassTableModel) table.getModel();
             YassRow r = tm.getCommentRow("VIDEO:");
-            String v = r != null ? r.getComment() : null;
+            String v = r != null ? r.getHeaderComment() : null;
             if (v != null) {
                 vd = d + File.separator + v;
             }
@@ -7834,5 +7838,17 @@ public class YassActions implements DropTargetListener {
     
     public boolean isMidiEnabled() {
         return midiButton.isSelected();
+    }
+    
+    public ImageIcon getResizedIcon(String image, int size) {
+        ImageIcon imageIcon = getIcon(image);
+        BufferedImage resizedImg = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = resizedImg.createGraphics();
+
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g2.drawImage(imageIcon.getImage(), 0, 0, size, size, null);
+        g2.dispose();
+
+        return new ImageIcon(resizedImg);
     }
 }

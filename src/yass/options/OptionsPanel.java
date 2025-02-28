@@ -98,6 +98,9 @@ public class OptionsPanel extends JPanel {
             if (!resetContextMenu && RESET_CONTEXT_MENU_OPTIONS.contains(key) && !old.equals(val)) {
                 resetContextMenu = true;
             }
+            if ("use-sample".equals(key) && !old.equals(val)) {
+                actions.getMP3().reinitSynth("true".equals(val));
+            }
             prop.put(key, val);
         }
         if (resetContextMenu) {

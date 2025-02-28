@@ -142,7 +142,27 @@ public class YassHyphenator {
         if (hyphenator != null && (word == null || !word.contains("\u00AD"))) {
             word = hyphenator.hyphenate(word, 2, 2);
         }
+        if (word.contains("\u00AD")) {
+            word = fixConsonants(word);
+        }
         return word;
+    }
+
+    private String fixConsonants(String word) {
+        StringJoiner fixed = new StringJoiner("\u00AD");
+        StringBuilder temp = new StringBuilder();
+        String[] splitWord = word.split("\u00AD");
+        for (String current : splitWord) {
+            temp.append(current);
+            if (!current.toUpperCase().matches("[QWRTYPSDFGHJKLZXCVBNM]+") ) {
+                fixed.add(temp);
+                temp = new StringBuilder();
+            }
+        }
+        if (!temp.isEmpty()) {
+            fixed.add(temp);
+        }
+        return fixed.toString();
     }
 
     public String syllableficate(String word) {
@@ -181,9 +201,6 @@ public class YassHyphenator {
     }
 
     public List<String> rehyphenate(List<String> original) {
-        if (hyphenator == null) {
-            return original;
-        }
         String word = String.join("", original);
         if (original.size() == 2 && original.get(1).equals("~")) {
             List<String> apostropheTilde = splitAtApostrophe(original.get(0));
@@ -197,7 +214,7 @@ public class YassHyphenator {
         if (shortened) {
             word = word.substring(0, word.length() - 1) + "g";
         }
-        String hyphenated = hyphenator.hyphenate(word, 2, 2);
+        String hyphenated = hyphenator != null ? hyphenator.hyphenate(word, 2, 2) : word;
         String[] newSyllables = hyphenated.split("\u00AD");
         if (newSyllables.length < 2) {
             triedFallback = true;

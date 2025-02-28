@@ -256,7 +256,7 @@ public class YassMain extends JFrame {
 
         sheet = new YassSheet();
         sheet.setOwner(this);
-        mp3 = new YassPlayer(sheet);
+        mp3 = new YassPlayer(sheet, !prop.getBooleanProperty("use-sample"), prop.getBooleanProperty("debug-audio"));
 
         lyrics = new YassLyrics(prop);
         lyrics.setSheet(sheet);

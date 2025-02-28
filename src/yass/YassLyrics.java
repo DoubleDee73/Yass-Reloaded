@@ -429,6 +429,14 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 
 			lyricsArea.addKeyListener(new KeyListener() {
 			public void keyPressed(KeyEvent e) {
+				boolean shift = e.isShiftDown() && !e.isAltDown() && !e.isControlDown();
+				boolean ctrlShift = e.isShiftDown() && e.isControlDown() && !e.isAltDown();
+				boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isShiftDown();
+				boolean alt = e.isAltDown() && !e.isControlDown() && !e.isShiftDown();
+				boolean altShift = e.isAltDown() && e.isShiftDown() && !e.isControlDown();
+				boolean ctrlAltShift = e.isShiftDown() && e.isControlDown() && e.isAltDown();
+//				System.out.printf("Shift %b, Ctrl %b, Alt %b, CtrlShift %b, AltShift %b, CtrlAltShift %b%n",
+//								  shift, ctrl, alt, ctrlShift, altShift, ctrlAltShift);
 				if (!lyricsArea.isEditable() && sheet != null) {
 					char c = e.getKeyChar();
 					if (e.isControlDown() && e.isAltDown()
@@ -689,8 +697,14 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 						lastTime = currentTime;
 						lyricsArea.repaint();
 						e.consume();
-					} else if (e.isControlDown() && keyCode == KeyEvent.VK_H) {
+					} else if (ctrlShift && keyCode == KeyEvent.VK_H) {
+						table.addHyphenatedWord();
+					} else if (ctrl && keyCode == KeyEvent.VK_H) {
 						table.rehyphenate();
+					} else if (c == '\'') {
+						table.toggleApostropheEnd();
+					} else if (c == '~') {
+						table.toggleTildeStart();
 					} else {
 						table.dispatchEvent(e);
 					}

@@ -69,7 +69,6 @@ public class YassMIDI {
             }
 
             int n = 0;// default jdk soundbank.gm 1 piano 56 trumpet
-
             synth = MidiSystem.getSynthesizer();
             Instrument[] instr = synth.getAvailableInstruments();
             MidiDevice.Info info = synth.getDeviceInfo();
@@ -226,9 +225,7 @@ public class YassMIDI {
         if (mc == null) {
             return;
         }
-        if (volume >= VOLUME_MIN && volume <= VOLUME_MAX) {
-            this.volume = volume;
-            mc[4].controlChange(7, volume);
-        }
+        this.volume = volume;
+        mc[4].controlChange(7, volume);
     }
 }

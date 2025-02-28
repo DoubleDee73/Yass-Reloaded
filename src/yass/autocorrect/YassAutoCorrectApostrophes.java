@@ -39,7 +39,7 @@ public class YassAutoCorrectApostrophes extends YassAutoCorrector {
             return false;
         }
         YassRow currentRow = table.getRowAt(currentRowIndex);
-        String text = currentRow.isComment() ? currentRow.getComment() : currentRow.getText();
+        String text = currentRow.isComment() ? currentRow.getHeaderComment() : currentRow.getText();
         String newText = text;
         for (String apostrophe : BORING_APOSTROPHES) {
             newText = newText.replace(apostrophe, "’");

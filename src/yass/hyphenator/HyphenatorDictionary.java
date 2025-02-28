@@ -31,7 +31,6 @@ import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
 import java.io.IOException;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -60,6 +59,8 @@ public class HyphenatorDictionary extends JDialog {
     private YassActions yassActions;
 
     private YassHyphenator yassHyphenator;
+    private boolean saveAndClose = false;
+    private boolean separatorTyped = false;
 
     public HyphenatorDictionary(YassActions yassActions) {
         this(yassActions, true);
@@ -67,8 +68,7 @@ public class HyphenatorDictionary extends JDialog {
 
     public HyphenatorDictionary(YassActions yassActions, boolean visible) {
         setTitle(I18.get("lib_edit_hyphenations"));
-        URL icon = this.getClass().getResource("/yass/resources/img/Hyphenate24.gif");
-        setIconImage(new ImageIcon(icon).getImage());
+        setIconImage(yassActions.getIcon("hyphenate24Icon").getImage());
         this.yassActions = yassActions;
         this.yassProperties = yassActions.getProperties();
         this.lblLanguage.setText(I18.get("hyphenator_language"));
@@ -99,12 +99,42 @@ public class HyphenatorDictionary extends JDialog {
         lstWords.addListSelectionListener(wordSelected());
         btnSeparator.addActionListener(toggleSeparator());
         btnSave.addActionListener(saveWord());
+        btnSave.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyReleased(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+                    saveDictionaries();
+                    setSaveAndClose(false);
+                    close();
+                }
+            }
+        });
         addWindowListener(hideWindow());
         txtSearch.addKeyListener(new KeyAdapter() {
             @Override
             public void keyReleased(KeyEvent e) {
                 if (e.getKeyCode() == KeyEvent.VK_ENTER) {
                     doSearch();
+                }
+            }
+        });
+        txtNewWord.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyReleased(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+                    btnSave.requestFocus();
+                }
+            }
+
+            @Override
+            public void keyPressed(KeyEvent e) {
+                separatorTyped = e.getKeyChar() == '|';
+            }
+
+            @Override
+            public void keyTyped(KeyEvent e) {
+                if (separatorTyped) {
+                    e.setKeyChar('•');
                 }
             }
         });
@@ -179,6 +209,10 @@ public class HyphenatorDictionary extends JDialog {
                                                                 Collectors.toMap(Map.Entry::getKey,
                                                                                  Map.Entry::getValue));
             initWords(filter);
+            if (filter.isEmpty()) {
+                txtNewWord.setText(searchTerm);
+                txtNewWord.requestFocus();
+            }
         }
     }
 
@@ -236,7 +270,10 @@ public class HyphenatorDictionary extends JDialog {
                 return;
             }
             initWords(currentLanguage.getHyphenations());
-
+            if (saveAndClose) {
+                setSaveAndClose(false);
+                close();
+            }
         };
     }
 
@@ -357,6 +394,10 @@ public class HyphenatorDictionary extends JDialog {
                 break;
             }
         }
+    }
+
+    public void focusTxtWord() {
+        txtNewWord.requestFocus();
     }
 
     private void close() {
@@ -529,5 +570,10 @@ public class HyphenatorDictionary extends JDialog {
             });
             thread.start();
         }
+    }
+
+    public void setSaveAndClose(boolean saveAndClose) {
+        btnSave.setText(I18.get(saveAndClose ? "hyphenator_save_close" : "hyphenator_save"));
+        this.saveAndClose = saveAndClose;
     }
 }

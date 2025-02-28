@@ -66,7 +66,7 @@ import java.util.logging.Logger;
  */
 public class YassPlayer {
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
-    public static final boolean DEBUG = false;
+    public boolean DEBUG = false;
     byte[] memcache = null;
     byte[] clickmemcache = null;
     boolean midiEnabled = false, midisEnabled = false;
@@ -110,6 +110,8 @@ public class YassPlayer {
     private Integer lastNote = null;
     private Timebase playrate = Timebase.NORMAL;
     private File tempFile;
+    
+    private int pianoVolume;
 
     private MusicalKeyEnum key;
 
@@ -122,6 +124,8 @@ public class YassPlayer {
             note = createNotePlayer("yass/resources/samples/longnotes/" + i + ".mp3");
             if (note != null) {
                 LONG_NOTE_MAP.put(i, note);
+            } else {
+                if (DEBUG) LOGGER.info("Failed to create piano note " + i);
             }
             note = createNotePlayer("yass/resources/samples/shortnotes/" + i + ".mp3");
             if (note != null) {
@@ -143,12 +147,15 @@ public class YassPlayer {
 
     public static final String TEMP_WAV = TEMP_PATH + "temp.wav";
 
-    public YassPlayer(YassPlaybackRenderer s) {
+    public YassPlayer(YassPlaybackRenderer s, boolean initMidi, boolean debugAudio) {
         JFXPanel jfxPanel = new JFXPanel();
         jfxPanel.setVisible(false);
         playbackRenderer = s;
-        midi = new YassMIDI();
         initNoteMap();
+        if (initMidi) {
+            midi = new YassMIDI();
+        }
+        DEBUG = debugAudio;
         Thread synth = new Thread(() -> {
             midis = new byte[128][];
             for (int i = 0; i < 128; i++) {
@@ -158,9 +165,8 @@ public class YassPlayer {
 
             YassSynth.loadWav();
         });
-
-//        initCapture();
         synth.start();
+//        initCapture();
     }
 
     /**
@@ -436,6 +442,9 @@ public class YassPlayer {
                     AudioFormat baseFormat = in.getFormat();
                     fps = baseFormat.getFrameRate();
                 }
+                if (createWaveform) {
+                    createWaveForm(in);
+                }
             }
         } catch (Exception e) {
             String s = e.getMessage();
@@ -706,6 +715,9 @@ public class YassPlayer {
      * @param midiPitch Description of the Parameter
      */
     public void playMIDI(int midiPitch) {
+        if (midi == null) {
+            return;
+        }
         midiPitch += 60;
         if (midiPitch > 127) {
             midiPitch = 127;
@@ -715,6 +727,9 @@ public class YassPlayer {
     }
 
     public void stopMIDI() {
+        if (midi == null) {
+            return;
+        }
         midi.stopPlay();
     }
 
@@ -1181,7 +1196,7 @@ public class YassPlayer {
                 }
                 if (clicks != null && clicksPos < n) {
                     if (position >= nextClickEnd) {
-                        if (midiEnabled) {
+                        if (midiEnabled && midi != null) {
                             midi.stopPlay();
                         }
                     }
@@ -1215,7 +1230,9 @@ public class YassPlayer {
                                 playNote((int) clicks[clicksPos][1], (double) (nextClickEnd - nextClick) / 1000,
                                          (int) nextClickPitch);
                             } else {
-                                midi.playNote(midiPitch, (nextClickEnd - nextClick) / 1000);
+                                if (midi != null) {
+                                    midi.playNote(midiPitch, (nextClickEnd - nextClick) / 1000);
+                                }
                             }
                         }
 
@@ -1315,7 +1332,7 @@ public class YassPlayer {
 
             }
 
-            if (midiEnabled) {
+            if (midiEnabled && midi != null) {
                 midi.stopPlay();
             }
             notInterrupted = false;
@@ -1375,11 +1392,24 @@ public class YassPlayer {
     }
 
     public void setPianoVolume(int vol) {
-        midi.setVolume(vol);
+        int volume;
+        if (vol >= YassMIDI.VOLUME_MIN && vol <= YassMIDI.VOLUME_MAX) {
+            volume = vol;
+        } else {
+            volume = YassMIDI.VOLUME_MED;
+        }
+        this.pianoVolume = volume;
+        if (midi != null) {
+            midi.setVolume(volume);
+        }
     }
 
-    public void reinitSynth() {
-        midi = new YassMIDI();
+    public void reinitSynth(boolean useSamples) {
+        if (useSamples) {
+            midi = null;
+        } else {
+            midi = new YassMIDI();
+        }
     }
 
     class MidiThread extends Thread {
@@ -1461,6 +1491,7 @@ public class YassPlayer {
 
     public void playNote(int note, double length, int nextNote) {
         if (lastNote != null && note == lastNote) {
+            if (DEBUG) LOGGER.info("playNote: StopNote");
             stopNote();
         }
         Media noteMedia;
@@ -1475,12 +1506,19 @@ public class YassPlayer {
             lengthFactor = 1;
         }
         if (noteMedia != null) {
+            if (DEBUG) LOGGER.info("playNote: Playing " + note);
             lastNote = currentNote * lengthFactor;
-            MediaPlayer notePlayer = new MediaPlayer(noteMedia);
-            notePlayer.setVolume((double) midi.getVolume() / 127);
-            notePlayer.setStopTime(Duration.millis(length + 100));
-            notePlayer.setOnEndOfMedia(notePlayer::dispose);
-            notePlayer.setAutoPlay(true);
+            try {
+                MediaPlayer notePlayer = new MediaPlayer(noteMedia);
+                notePlayer.setVolume((double) this.pianoVolume / 127);
+                notePlayer.setStopTime(Duration.millis(length + 100));
+                notePlayer.setOnEndOfMedia(notePlayer::dispose);
+                notePlayer.setAutoPlay(true);
+            } catch (Exception ex) {
+                LOGGER.throwing("YassPlayer", "playNote", ex);
+            }
+        } else {
+            if (DEBUG) LOGGER.info("playNote: Couldn't find note " + note);
         }
     }
 
@@ -1516,10 +1554,11 @@ public class YassPlayer {
     }
 
     public void saveKey(MusicalKeyEnum musicalKeyEnum) {
-        this.key = musicalKeyEnum;
         if (musicalKeyEnum == null || musicalKeyEnum == MusicalKeyEnum.UNDEFINED || musicalKeyEnum == getKey()) {
+            this.key = MusicalKeyEnum.UNDEFINED;
             return;
         }
+        this.key = musicalKeyEnum;
         AudioFile audioFile;
         try {
             audioFile = AudioFileIO.read(new File(filename));
@@ -1537,12 +1576,15 @@ public class YassPlayer {
         try {
             audioFile = AudioFileIO.read(new File(filename));
             Tag tag = audioFile.getTag();
+            if (tag == null) {
+                return MusicalKeyEnum.UNDEFINED;
+            }
             TagField tagField = tag.getFirstField(FieldKey.KEY);
             if (tagField != null && !tagField.isEmpty()) {
                 return MusicalKeyEnum.findKey(((AbstractID3v2Frame) tagField).getContent());
             }
         } catch (CannotReadException | IOException | TagException | ReadOnlyFileException | InvalidAudioFrameException e) {
-            throw new RuntimeException(e);
+            LOGGER.info("Could not determine key for " + filename);   
         }
         return MusicalKeyEnum.UNDEFINED;
     }

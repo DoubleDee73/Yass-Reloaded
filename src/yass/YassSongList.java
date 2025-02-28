@@ -544,7 +544,7 @@ public class YassSongList extends JTable {
                 YassRow r = tm.getCommentRow("ARTIST:");
                 if (r != null) {
                     String a1 = s.getArtist();
-                    String olda = r.getComment();
+                    String olda = r.getHeaderComment();
                     if (!a1.equals(olda)) {
                         r.setComment(a1);
                         t.storeFile(filename);
@@ -554,7 +554,7 @@ public class YassSongList extends JTable {
                 YassRow r = tm.getCommentRow("TITLE:");
                 if (r != null) {
                     String a1 = s.getTitle();
-                    String olda = r.getComment();
+                    String olda = r.getHeaderComment();
                     if (!a1.equals(olda)) {
                         r.setComment(a1);
                         t.storeFile(filename);
@@ -3391,65 +3391,65 @@ public class YassSongList extends JTable {
 
             YassTableModel tm = (YassTableModel) t.getModel();
             YassRow r = tm.getCommentRow(TITLE);
-            title = r != null ? r.getComment() : "";
+            title = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(ARTIST);
-            artist = r != null ? r.getComment() : "";
+            artist = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(MP3);
-            mp3 = r != null ? r.getComment() : "";
+            mp3 = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(COVER);
-            cover = r != null ? r.getComment() : "";
+            cover = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(BACKGROUND);
-            background = r != null ? r.getComment() : "";
+            background = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(VIDEO);
-            video = r != null ? r.getComment() : "";
+            video = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(EDITION);
-            edition = r != null ? r.getComment() : "";
+            edition = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(GENRE);
-            genre = r != null ? r.getComment() : "";
+            genre = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(LANGUAGE);
-            language = r != null ? r.getComment() : "";
+            language = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(YEAR);
-            year = r != null ? r.getComment() : "";
+            year = r != null ? r.getHeaderComment() : "";
 
             r = tm.getCommentRow(VIDEOGAP);
-            vgap = r != null ? r.getComment() : "";
+            vgap = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(START);
-            start = r != null ? r.getComment() : "";
+            start = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(END);
-            end = r != null ? r.getComment() : "";
+            end = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(RELATIVE);
-            rel = r != null ? r.getComment() : "";
+            rel = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(BPM);
-            bpm = r != null ? r.getComment() : "";
+            bpm = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(GAP);
-            gap = r != null ? r.getComment() : "";
+            gap = r != null ? r.getHeaderComment() : "";
 
             r = tm.getCommentRow(ALBUM);
-            album = r != null ? r.getComment() : "";
+            album = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow("ID:");
-            id = r != null ? r.getComment() : "";
+            id = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow("VERSION:");
-            versionid = r != null ? r.getComment() : "";
+            versionid = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow("LENGTH:");
-            length = r != null ? r.getComment() : "";
+            length = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow("PREVIEWSTART:");
-            previewstart = r != null ? r.getComment() : "";
+            previewstart = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow("MEDLEYSTARTBEAT:");
-            medleystartbeat = r != null ? r.getComment() : "";
+            medleystartbeat = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow("MEDLEYENDBEAT:");
-            medleyendbeat = r != null ? r.getComment() : "";
+            medleyendbeat = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(CALCMEDLEY.getTagName());
-            calcMedley = r != null ? r.getComment() : "";
+            calcMedley = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(AUDIO.getTagName());
-            audio = r != null ? r.getComment() : "";
+            audio = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(INSTRUMENTAL.getTagName());
-            instrumental = r != null ? r.getComment() : "";
+            instrumental = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(VOCALS.getTagName());
-            vocals = r != null ? r.getComment() : "";
+            vocals = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(TAGS.getTagName());
-            tags = r != null ? r.getComment() : "";
+            tags = r != null ? r.getHeaderComment() : "";
             r = tm.getCommentRow(PROVIDEDBY.getTagName());
-            providedBy = r != null ? r.getComment() : "";
+            providedBy = r != null ? r.getHeaderComment() : "";
 
             multiplayer = t.getPlayerCount();
             String multiplayerString = "";
