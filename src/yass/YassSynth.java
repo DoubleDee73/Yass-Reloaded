@@ -268,6 +268,7 @@ public class YassSynth {
             stream.close();
             ostream.close();
             istream.close();
+            LOGGER.info("Loaded click noise");
         } catch (Exception e) {
             LOGGER.log(Level.INFO, e.getMessage(), e);
         }

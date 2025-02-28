@@ -29,16 +29,19 @@ import javax.swing.text.DefaultFormatter;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
-import java.net.URL;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.List;
 import java.util.*;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class UsdbSyncerMetaTagCreator extends JDialog {
+
+
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private YassActions actions;
     private YassTable song;
 
@@ -65,12 +68,15 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     private final JSpinner preview = new JSpinner();
     private final JSpinner medleyStart = new JSpinner();
     private final JSpinner medleyEnd = new JSpinner();
+    private final JTextField tags = new JTextField();
     private final JTextField resultLine = new JTextField();
 
     private final Map<String, JSpinner> cropSpinners = new HashMap<>();
     private final Map<String, JTextField> textfields = new HashMap<>();
-    
+
     private Map<String, String> prefilledTags = new HashMap<>();
+
+    private static List<String> SYNCER_TAGS = List.of("v", "a", "co", "bg", "preview", "medley", "tags", "p1");
 
     public UsdbSyncerMetaTagCreator(YassActions a) {
         actions = a;
@@ -84,22 +90,58 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
             song = new YassTable();
             songList.loadSongDetails(songList.getFirstSelectedSong(), song);
         }
-//        YassProperties prop = actions.getProperties();
+        YassProperties prop = actions.getProperties();
+        song.init(prop);
+        checkExistingUsdbSyncerTags();
         setModal(true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         Dimension dim = this.getToolkit().getScreenSize();
-        setSize(700, 620);
+        setSize(700, 660);
         setLocation(dim.width / 2 - 350, dim.height / 2 - 320);
         setTitle(I18.get("usdb_syncer_title"));
         setLayout(new BorderLayout());
-        URL icon = this.getClass().getResource("/yass/resources/img/usdb_syncer_icon.png");
-        setIconImage(new ImageIcon(icon).getImage());
+        setIconImage(actions.getIcon("createSyncerTagsIcon").getImage());
         initPrefilledMap();
         initSpinners();
         initTextFields();
         add(initPanel(), BorderLayout.PAGE_START);
         updateResultline();
         setVisible(true);
+    }
+
+    private void checkExistingUsdbSyncerTags() {
+        if (StringUtils.isEmpty(song.getVideo())) {
+            return;
+        }
+        String videoLine = song.getVideo();
+        if (SYNCER_TAGS.stream().noneMatch(tag -> videoLine.startsWith(tag + "="))) {
+            return;
+        }
+        if (StringUtils.isNotEmpty(song.getCommentTag()) && song.getCommentTag()
+                                                                .startsWith(
+                                                                        "#" + UltrastarHeaderTag.VIDEO.getTagName())) {
+            int ok = JOptionPane.showConfirmDialog(this, I18.get("usdb_syncer_restore_desc"),
+                                                   I18.get("usdb_syncer_restore_title"),
+                                                   JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+            if (ok == JOptionPane.YES_OPTION) {
+                String video = song.getCommentTag().substring(UltrastarHeaderTag.VIDEO.getTagName().length() + 1);
+                String tempComment;
+                if (video.contains("|")) {
+                    tempComment = video.substring(video.indexOf("|") + 1);
+                    video = video.substring(0, video.indexOf("|"));
+                } else {
+                    tempComment = "";
+                }
+                song.setCommentTag(tempComment);
+                song.setVideo(video);
+                song.storeFile(song.getDirFilename());
+                JOptionPane.showConfirmDialog(this, I18.get("usdb_syncer_restored"),
+                                              I18.get("usdb_syncer_restore_title"),
+                                              JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE);
+            } else if (ok == JOptionPane.CANCEL_OPTION) {
+                dispose();
+            }
+        }
     }
 
     private void initPrefilledMap() {
@@ -189,6 +231,8 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         addDocumentListener(player1);
         player2.setText(extractValue("p2"));
         addDocumentListener(player2);
+        tags.setText(extractValue("tags"));
+        addDocumentListener(tags);
     }
 
     private String extractValue(String key) {
@@ -211,7 +255,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         }
         return Integer.parseInt(prefilledTags.get(key));
     }
-    
+
     private void addDocumentListener(JTextField textfield) {
         textfield.getDocument().addDocumentListener(onChangeTextfield());
     }
@@ -249,19 +293,20 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
             }
             result.add(getSpinnerValue("co-resize", coverResize));
             result.add(getCombinedValue("co-crop",
-                                        Arrays.asList(coverCropLeft, coverCropTop, coverCropWidth, coverCropHeight)));
+                                        List.of(coverCropLeft, coverCropTop, coverCropWidth, coverCropHeight)));
         }
         if (StringUtils.isNotEmpty(backgroundUrl.getText())) {
             result.add(getTextValue("bg", backgroundUrl));
-            result.add(getCombinedValue("bg-resize", Arrays.asList(backgroundResizeWidth, backgroundResizeHeight)));
+            result.add(getCombinedValue("bg-resize", List.of(backgroundResizeWidth, backgroundResizeHeight)));
             result.add(getCombinedValue("bg-crop",
-                                        Arrays.asList(backgroundCropLeft, backgroundCropTop, backgroundCropWidth,
-                                                      backgroundCropHeight)));
+                                        List.of(backgroundCropLeft, backgroundCropTop, backgroundCropWidth,
+                                                backgroundCropHeight)));
         }
         result.add(getTextValue("p1", player1));
         result.add(getTextValue("p2", player2));
         result.add(getSpinnerValue("preview", preview));
-        result.add(getCombinedValue("medley", Arrays.asList(medleyStart, medleyEnd), true));
+        result.add(getCombinedValue("medley", List.of(medleyStart, medleyEnd), true));
+        result.add(getTextValue("tags", tags));
         String tagLine = result.stream().filter(StringUtils::isNotEmpty).collect(Collectors.joining(","));
         if (tagLine.isEmpty()) {
             resultLine.setText(StringUtils.EMPTY);
@@ -283,7 +328,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         } else {
             textValue = textField.getText();
         }
-        return key + "=" + textValue;
+        return key + "=" + textValue.replace(",", "%2C");
     }
 
     private String determineImageLink(String url) {
@@ -397,7 +442,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
                 joiner.add(temp);
             }
         }
-        if (includeZero && (joiner.toString().equalsIgnoreCase("0-0") || 
+        if (includeZero && (joiner.toString().equalsIgnoreCase("0-0") ||
                 joiner.toString().equals("0-0-0-0"))) {
             return null;
         }
@@ -444,6 +489,8 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         line = duetLine(gbc, line, main);
         // --------------------------------------------------------
         line = previewMedleyLine(gbc, line, main);
+        // --------------------------------------------------------
+        line = tagsLine(gbc, line, main);
         // --------------------------------------------------------
         line = resultLine(gbc, line, main);
         main.setSize(1200, 600);
@@ -679,6 +726,34 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         return ++line;
     }
 
+    private int tagsLine(GridBagConstraints gbc, int line, JPanel main) {
+        gbc.gridwidth = 12;
+        gbc.gridx = 0;
+        gbc.gridy = line;
+        main.add(Box.createVerticalStrut(10), gbc);
+        line++;
+        // --------------------------------------------------------
+        gbc.gridwidth = 12;
+        gbc.gridx = 0;
+        gbc.gridy = line;
+        main.add(createGroupHeaderPanel(I18.get("usdb_syncer_tags")), gbc);
+        line++;
+        // --------------------------------------------------------
+        gbc.gridwidth = 1;
+        gbc.gridx = 0;
+        gbc.gridy = line;
+        main.add(new JLabel(I18.get("usdb_syncer_tags_label")), gbc);
+        gbc.gridwidth = 11;
+        gbc.gridx = 1;
+        gbc.gridy = line;
+        main.add(tags, gbc);
+        if (StringUtils.isNotEmpty(song.getTags())) {
+            tags.setText(song.getTags());
+        }
+        line++;
+        return line;
+    }
+
     private int resultLine(GridBagConstraints gbc, int line, JPanel main) {
         gbc.gridwidth = 12;
         gbc.gridx = 0;
@@ -686,21 +761,55 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         main.add(Box.createVerticalStrut(50), gbc);
         line++;
         // --------------------------------------------------------
-        gbc.gridwidth = 11;
+        gbc.gridwidth = 10;
         gbc.gridx = 0;
         gbc.gridy = line;
         main.add(resultLine, gbc);
         gbc.gridwidth = 1;
-        gbc.gridx = 11;
+        gbc.gridx = 10;
         gbc.gridy = line;
-        JButton toClipboard = new JButton(I18.get("usdb_syncer_clipboard"));
+        JButton toClipboard = new JButton();
+        toClipboard.setToolTipText(I18.get("usdb_syncer_clipboard"));
+        toClipboard.setIcon(actions.getIcon("pasteMelody16Icon"));
         toClipboard.addActionListener(e -> {
             StringSelection stringSelection = new StringSelection(resultLine.getText());
             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
             clipboard.setContents(stringSelection, null);
         });
         main.add(toClipboard, gbc);
+        gbc.gridwidth = 1;
+        gbc.gridx = 11;
+        gbc.gridy = line;
+        JButton btnSave = new JButton();
+        btnSave.setToolTipText(I18.get("usdb_syncer_save"));
+        btnSave.setIcon(actions.getIcon("save16Icon"));
+        btnSave.addActionListener(e -> {
+            String result = resultLine.getText();
+            if (StringUtils.isEmpty(result)) {
+                LOGGER.finer("Skipped saving USDB Syncer Tags " + song.getDirFilename() + ". No result line");
+            }
+            if (result.startsWith("#VIDEO:")) {
+                result = resultLine.getText().substring(7);
+            }
+            saveSong(result);
+        });
+        main.add(btnSave, gbc);
         return ++line;
+    }
+
+    private void saveSong(String text) {
+        if (StringUtils.isNotEmpty(song.getVideo())) {
+            String tempComment = song.getCommentTag();
+            StringJoiner newComment = new StringJoiner("|");
+            newComment.add("#" + UltrastarHeaderTag.VIDEO.getTagName() + song.getVideo());
+            if (StringUtils.isNotEmpty(tempComment)) {
+                newComment.add(tempComment);
+            }
+            song.setCommentTag(newComment.toString());
+        }
+        song.setVideo(text);
+        song.storeFile(song.getDirFilename());
+        dispose();
     }
 
     private JSpinner createResizeSpinner(String key) {

@@ -299,7 +299,7 @@ public class YassAutoCorrect {
             int j = 0;
             while ((r3 = tm.getRowAt(j)) != null && r3.isComment()) {
                 j++;
-                if (r3.getCommentTag().equals("MP3:")) {
+                if (r3.getHeaderCommentTag().equals("MP3:")) {
                     break;
                 }
             }
@@ -325,10 +325,10 @@ public class YassAutoCorrect {
             int k = 0;
             while ((r3 = tm.getRowAt(j)) != null && r3.isComment()) {
                 j++;
-                if (r3.getCommentTag().equals("MP3:")) {
+                if (r3.getHeaderCommentTag().equals("MP3:")) {
                     k = j;
                 }
-                if (r3.getCommentTag().equals("COVER:")) {
+                if (r3.getHeaderCommentTag().equals("COVER:")) {
                     k = j;
                     break;
                 }
@@ -358,10 +358,10 @@ public class YassAutoCorrect {
             int j = 0;
             while ((r3 = tm.getRowAt(j)) != null && r3.isComment()) {
                 j++;
-                if (r3.getCommentTag().equals("COVER:")) {
+                if (r3.getHeaderCommentTag().equals("COVER:")) {
                     coverIndex = j;
                 }
-                if (r3.getCommentTag().equals("BACKGROUND:")) {
+                if (r3.getHeaderCommentTag().equals("BACKGROUND:")) {
                     break;
                 }
             }
@@ -705,7 +705,7 @@ public class YassAutoCorrect {
                     table.addMessage(YassRow.INVALID_LINE);
                 }
 
-                if (currentRow.isEnd() && currentRow.getComment().length() > 0) {
+                if (currentRow.isEnd() && currentRow.getHeaderComment().length() > 0) {
                     currentRow.addMessage(YassRow.COMMENT_AFTER_END);
                     table.addMessage(YassRow.COMMENT_AFTER_END);
                 }
@@ -720,9 +720,9 @@ public class YassAutoCorrect {
                         continue;
                     }
 
-                    String tag = currentRow.getCommentTag();
+                    String tag = currentRow.getHeaderCommentTag();
                     int tagLength = tag.length();
-                    int commentLength = currentRow.getComment().length();
+                    int commentLength = currentRow.getHeaderComment().length();
 
                     if (tagLength < 1 && commentLength < 1) {
                         currentRow.addMessage(YassRow.EMPTY_LINE);
@@ -739,7 +739,7 @@ public class YassAutoCorrect {
                     } else if (tag.equals("TITLE:")) {
                         checkTitleRelevantErros(table, currentRow, tm, dir);
                     } else if (tag.equals("MP3:")) {
-                        String filename = currentRow.getComment();
+                        String filename = currentRow.getHeaderComment();
                         if (!new File(dir + File.separator + filename).exists()) {
                             File mp3 = YassUtils.getFileWithExtension(dir, null, audioExtensions);
                             if (mp3 != null) {
@@ -752,7 +752,7 @@ public class YassAutoCorrect {
                             }
                         }
                     } else if (tag.equals("COVER:")) {
-                        String filename = currentRow.getComment();
+                        String filename = currentRow.getHeaderComment();
                         if (!new File(dir + File.separator + filename).exists()) {
                             File co = YassUtils.getFileWithExtension(dir, coverID, imageExtensions);
                             if (co != null) {
@@ -765,7 +765,7 @@ public class YassAutoCorrect {
                             }
                         }
                     } else if (tag.equals("BACKGROUND:")) {
-                        String filename = currentRow.getComment();
+                        String filename = currentRow.getHeaderComment();
                         if (!new File(dir + File.separator + filename).exists()) {
                             File bg = YassUtils.getFileWithExtension(dir, backgroundID, imageExtensions);
                             if (bg != null) {
@@ -778,7 +778,7 @@ public class YassAutoCorrect {
                             }
                         }
                     } else if (tag.equals("VIDEO:")) {
-                        String filename = currentRow.getComment();
+                        String filename = currentRow.getHeaderComment();
                         if (!new File(dir + File.separator + filename).exists()) {
                             File vd = YassUtils.getFileWithExtension(dir, videoID, videoExtensions);
                             if (vd != null) {
@@ -808,7 +808,7 @@ public class YassAutoCorrect {
                             }
                         }
                     } else if (tag.equals("MEDLEYSTARTBEAT:")) {
-                        String medleyStartString = currentRow.getComment();
+                        String medleyStartString = currentRow.getHeaderComment();
                         int medleyStart = -1;
                         try {
                             medleyStart = Integer.parseInt(medleyStartString);
@@ -824,7 +824,7 @@ public class YassAutoCorrect {
                            }
                         }
                     } else if (tag.equals("MEDLEYENDBEAT:")) {
-                        String medleyEndString = currentRow.getComment();
+                        String medleyEndString = currentRow.getHeaderComment();
                         int medleyEnd = -1;
                         try {
                             medleyEnd = Integer.parseInt(medleyEndString);
@@ -1146,7 +1146,7 @@ public class YassAutoCorrect {
         if (!niceApostrophes()) {
             return;
         }
-        String txt = currentRow.isComment() ? currentRow.getComment() : currentRow.getText();
+        String txt = currentRow.isComment() ? currentRow.getHeaderComment() : currentRow.getText();
         boolean containsBoringApostrophe = YassAutoCorrectApostrophes.BORING_APOSTROPHES.stream()
                                                                                         .anyMatch(txt::contains);
         if (containsBoringApostrophe) {
@@ -1171,7 +1171,7 @@ public class YassAutoCorrect {
     }
 
     private void checkTitleRelevantErros(YassTable table, YassRow currentRow, YassTableModel tm, String dir) {
-        if (currentRow.getCommentTag().equals("TITLE:")) {
+        if (currentRow.getHeaderCommentTag().equals("TITLE:")) {
             checkNiceApostrophes(currentRow, table);
         }
         YassRow r2 = tm.getCommentRow("MP3:");
@@ -1312,13 +1312,13 @@ public class YassAutoCorrect {
                 return true;
             }
             if (currentMessage.equals(YassRow.WRONG_MEDLEY_START_BEAT)) {
-                int medleyStart = Integer.parseInt(r.getComment());
+                int medleyStart = Integer.parseInt(r.getHeaderComment());
                 YassRow r2 = table.getNoteBeforeBeat(medleyStart);
                 table.setMedleyStartBeat(r2.getBeatInt());
                 return true;
             }
             if (currentMessage.equals(YassRow.WRONG_MEDLEY_END_BEAT)) {
-                int medleyEnd = Integer.parseInt(r.getComment());
+                int medleyEnd = Integer.parseInt(r.getHeaderComment());
                 YassRow r2 = table.getNoteEndingBeforeBeat(medleyEnd);
                 table.setMedleyEndBeat(r2.getBeatInt() + r2.getLengthInt());
                 return true;
@@ -1358,7 +1358,7 @@ public class YassAutoCorrect {
                     tm.getData().remove(r);
                     return true;
                 case YassRow.FILE_FOUND:
-                    String tag = r.getCommentTag();
+                    String tag = r.getHeaderCommentTag();
 
                     boolean isTitle = tag.equals("TITLE:");
                     if (isTitle || tag.equals("MP3:")) {
@@ -1411,7 +1411,7 @@ public class YassAutoCorrect {
                     break;
                 case YassRow.WRONG_VIDEOGAP:
                     // msg set on video tag, so comment is filename
-                    String filename = r.getComment();
+                    String filename = r.getHeaderComment();
                     String vg = YassUtils.getWildcard(filename, videoID);
                     if (vg != null) {
                         table.setVideoGap(vg);

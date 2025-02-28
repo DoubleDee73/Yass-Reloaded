@@ -222,7 +222,7 @@ public class I18 {
         sb.append("<html><body><font style=\"font-family: Arial; font-size:2em\"><u>Yass</u> Reloaded</font> by DoubleDee<br>Version: " + version + " (" + date + ")<br>");
         sb.append("<a href=\"https://github.com/DoubleDee73/Yass\">https://github.com/DoubleDee73/Yass</a><br>");
         sb.append("<br>");
-        sb.append("Copyright (C) 2024 DoubleDee<br>");
+        sb.append("Copyright ©2025 DoubleDee<br>");
         sb.append("<br>");
         sb.append("Forked from <a href=\"https://yass-along.com/\">Yass 2.4.3</a> by Saruta<br>");
         sb.append("This program is free software: you can redistribute it and/or modify<br>");
@@ -239,8 +239,8 @@ public class I18 {
         sb.append("along with this program. If not, see <a href=\"https://www.gnu.org/licenses/\">https://www.gnu.org/licenses/</a>.<br>");
         sb.append("<br>");
         sb.append("Yass uses: ");
-        sb.append("Java Look & Feel Graphics Repository, JavaZoom JLayer/MP3SPI/VorbisSPI<br>");
-        sb.append("and Tritonus Sequencer, iText, Jazzy Spell Checker, TeX Hyphenator, JInput,<br>");
+        sb.append("Java Look & Feel Graphics Repository, JavaFX<br>");
+        sb.append("iText, Jazzy Spell Checker, TeX Hyphenator, JInput, JAudioTagger, FFmpeg, FFmpeg CLI Wrapper, <br>");
         sb.append("Java Media Framework (JMF), Robert Eckstein's Wizard code,<br>");
         sb.append("juniversalchardet, Optimaize Language Detector<br>");
         sb.append("Speed measure 'Inverse Duration' based on Marcel Taeumel's approach (http://uman.sf.net).<br>");

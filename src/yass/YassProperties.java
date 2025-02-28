@@ -297,7 +297,7 @@ public class YassProperties extends Properties {
 
         p.putIfAbsent("group-min", "3");
 
-        p.putIfAbsent("hyphenations", "EN|DE|ES|FR|IT|PL|PT|RU|TR|ZH");
+        p.putIfAbsent("hyphenations", "EN|DE|ES|FR|IT|PL|PT|RU|SV|TR|ZH");
         p.putIfAbsent("dicts", "EN|DE");
         p.putIfAbsent("dict-map", "English|EN|German|DE|French|EN|Croatian|EN|Hungarian|EN|Italian|EN|Japanese|EN|Polish|EN|Russian|EN|Spanish|EN|Swedish|EN|Turkish|EN");
         p.putIfAbsent("user-dicts", userDir + File.separator + yassDir);
@@ -508,6 +508,7 @@ public class YassProperties extends Properties {
             storeToXML(fos, null);
             fos.flush();
             fos.close();
+            LOGGER.info("Stored " + propDirFile);
         } catch (Exception e) {
             JOptionPane.showMessageDialog(null, "Error in storing properties to " + propFile, "Store properties", JOptionPane.ERROR_MESSAGE);
         }
@@ -544,7 +545,6 @@ public class YassProperties extends Properties {
             LOGGER.info("No hyphenation languages have been setup, skipping this now...");
             return;
         }
-        Map<String, String> languageMap = initLanguageMap();
         Set<Path> paths = findPath(List.of("UltraStar-Creator"));
         if (paths == null || paths.isEmpty()) {
             LOGGER.info("No valid program paths were found, skipping this now...");
@@ -552,20 +552,22 @@ public class YassProperties extends Properties {
         }
         String[] languages = hyphenationLanguages.split("\\|");
         boolean changes = false;
+        boolean found;
         for (String language : languages) {
+            found = false;
             String prop = getProperty("hyphenations_" + language);
             if (StringUtils.isEmpty(prop)) {
-                if (languageMap.get(language) == null) {
-                    LOGGER.fine("Language " + language + " is not supported, skipping this now...");
-                    continue;
-                }
+                String displayLanguage = Locale.of(language).getDisplayLanguage(Locale.ENGLISH);
                 for (Path path : paths) {
-                    Path dictionary = Path.of(path.toString(), languageMap.get(language));
+                    Path dictionary = Path.of(path.toString(), displayLanguage + ".txt");
                     if (Files.exists(dictionary)) {
                         changes = true;
                         setProperty("hyphenations_" + language, dictionary.toString());
+                        found = true;
                         continue;
                     }
+                }
+                if (!found) {
                     LOGGER.info("Dictionary for " + language + " was not supported, skipping this now...");
                 }
             }
@@ -574,20 +576,7 @@ public class YassProperties extends Properties {
             store();
         }
     }
-
-    private Map<String, String> initLanguageMap() {
-        Map<String, String> languageMap = new HashMap<>();
-        languageMap.put("EN", "English.txt");
-        languageMap.put("FR", "French.txt");
-        languageMap.put("DE", "German.txt");
-        languageMap.put("IT", "Italian.txt");
-        languageMap.put("PL", "Polish.txt");
-        languageMap.put("PT", "Portuguese.txt");
-        languageMap.put("ES", "Spanish.txt");
-        languageMap.put("SE", "Swedish.txt");
-        return languageMap;
-    }
-
+    
     private Set<Path> findPath(List<String> additionalPrograms) {
         String defaultPaths = getProperty("default-programs");
         if (StringUtils.isEmpty(defaultPaths)) {

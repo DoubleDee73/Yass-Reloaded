@@ -23,12 +23,11 @@ import yass.YassProperties;
 import yass.YassRow;
 import yass.YassTable;
 
-import java.util.Arrays;
 import java.util.List;
 
 public class YassAutoCorrectApostrophes extends YassAutoCorrector {
 
-    public static final List<String> BORING_APOSTROPHES = Arrays.asList("'", "′", "´", "`", "‵", "ʹ", "＇");
+    public static final List<String> BORING_APOSTROPHES = List.of("'", "′", "´", "`", "‵", "ʹ", "＇");
 
     public YassAutoCorrectApostrophes(YassProperties properties) {
         super(properties);
@@ -40,7 +39,7 @@ public class YassAutoCorrectApostrophes extends YassAutoCorrector {
             return false;
         }
         YassRow currentRow = table.getRowAt(currentRowIndex);
-        String text = currentRow.isComment() ? currentRow.getComment() : currentRow.getText();
+        String text = currentRow.isComment() ? currentRow.getHeaderComment() : currentRow.getText();
         String newText = text;
         for (String apostrophe : BORING_APOSTROPHES) {
             newText = newText.replace(apostrophe, "’");

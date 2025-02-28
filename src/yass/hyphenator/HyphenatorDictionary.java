@@ -19,6 +19,8 @@
 
 package yass.hyphenator;
 
+import com.intellij.uiDesigner.core.GridConstraints;
+import com.intellij.uiDesigner.core.GridLayoutManager;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import yass.*;
@@ -29,7 +31,6 @@ import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
 import java.io.IOException;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -58,14 +59,16 @@ public class HyphenatorDictionary extends JDialog {
     private YassActions yassActions;
 
     private YassHyphenator yassHyphenator;
+    private boolean saveAndClose = false;
+    private boolean separatorTyped = false;
 
     public HyphenatorDictionary(YassActions yassActions) {
         this(yassActions, true);
     }
+
     public HyphenatorDictionary(YassActions yassActions, boolean visible) {
         setTitle(I18.get("lib_edit_hyphenations"));
-        URL icon = this.getClass().getResource("/yass/resources/img/Hyphenate24.gif");
-        setIconImage(new ImageIcon(icon).getImage());
+        setIconImage(yassActions.getIcon("hyphenate24Icon").getImage());
         this.yassActions = yassActions;
         this.yassProperties = yassActions.getProperties();
         this.lblLanguage.setText(I18.get("hyphenator_language"));
@@ -96,12 +99,42 @@ public class HyphenatorDictionary extends JDialog {
         lstWords.addListSelectionListener(wordSelected());
         btnSeparator.addActionListener(toggleSeparator());
         btnSave.addActionListener(saveWord());
+        btnSave.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyReleased(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+                    saveDictionaries();
+                    setSaveAndClose(false);
+                    close();
+                }
+            }
+        });
         addWindowListener(hideWindow());
         txtSearch.addKeyListener(new KeyAdapter() {
             @Override
             public void keyReleased(KeyEvent e) {
                 if (e.getKeyCode() == KeyEvent.VK_ENTER) {
                     doSearch();
+                }
+            }
+        });
+        txtNewWord.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyReleased(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+                    btnSave.requestFocus();
+                }
+            }
+
+            @Override
+            public void keyPressed(KeyEvent e) {
+                separatorTyped = e.getKeyChar() == '|';
+            }
+
+            @Override
+            public void keyTyped(KeyEvent e) {
+                if (separatorTyped) {
+                    e.setKeyChar('•');
                 }
             }
         });
@@ -176,6 +209,10 @@ public class HyphenatorDictionary extends JDialog {
                                                                 Collectors.toMap(Map.Entry::getKey,
                                                                                  Map.Entry::getValue));
             initWords(filter);
+            if (filter.isEmpty()) {
+                txtNewWord.setText(searchTerm);
+                txtNewWord.requestFocus();
+            }
         }
     }
 
@@ -195,12 +232,12 @@ public class HyphenatorDictionary extends JDialog {
             }
         };
     }
-    
+
     private void changeLanguage(HyphenatedLanguage currentLanguage) {
         if (currentLanguage.getHyphenations() == null || currentLanguage.getHyphenations().isEmpty()) {
             currentLanguage.init(yassHyphenator);
         }
-        initWords(currentLanguage.getHyphenations());   
+        initWords(currentLanguage.getHyphenations());
     }
 
     public void changeLanguage(String language) {
@@ -219,24 +256,27 @@ public class HyphenatorDictionary extends JDialog {
             }
         }
     }
-    
+
     private ActionListener saveWord() {
         return e -> {
             HyphenatedLanguage currentLanguage = getCurrentLanguage();
             if (currentLanguage == null) {
                 return;
             }
-            
+
             String wordToSave = txtNewWord.getText();
             String unhyphenated = addWordToDictionary(wordToSave);
             if (StringUtils.isEmpty(unhyphenated)) {
                 return;
             }
             initWords(currentLanguage.getHyphenations());
-            
+            if (saveAndClose) {
+                setSaveAndClose(false);
+                close();
+            }
         };
     }
-    
+
     public void selectWord(String word) {
         for (int i = 0; i < lstWords.getModel().getSize(); i++) {
             if (lstWords.getModel().getElementAt(i).getUnHyphenated().equals(word.replace("•", ""))) {
@@ -246,11 +286,11 @@ public class HyphenatorDictionary extends JDialog {
             }
         }
     }
-    
+
     public HyphenatedLanguage getCurrentLanguage() {
         return (HyphenatedLanguage) cboLanguage.getSelectedItem();
     }
-    
+
     public String addWordToDictionary(String word) {
         HyphenatedLanguage currentLanguage = getCurrentLanguage();
         String wordToSave = word.toLowerCase().trim();
@@ -287,7 +327,7 @@ public class HyphenatorDictionary extends JDialog {
     public void reinitWords() {
         initWords(getCurrentLanguage().getHyphenations());
     }
-    
+
     private void initWords(Map<String, String> fallbackHyphenations) {
         DefaultListModel<HyphenatedWord> wordModel = new DefaultListModel<>();
         if (fallbackHyphenations == null) {
@@ -356,6 +396,10 @@ public class HyphenatorDictionary extends JDialog {
         }
     }
 
+    public void focusTxtWord() {
+        txtNewWord.requestFocus();
+    }
+
     private void close() {
         setVisible(false);
     }
@@ -405,6 +449,108 @@ public class HyphenatorDictionary extends JDialog {
         }
     }
 
+    {
+// GUI initializer generated by IntelliJ IDEA GUI Designer
+// >>> IMPORTANT!! <<<
+// DO NOT EDIT OR ADD ANY CODE HERE!
+        $$$setupUI$$$();
+    }
+
+    /**
+     * Method generated by IntelliJ IDEA GUI Designer
+     * >>> IMPORTANT!! <<<
+     * DO NOT edit this method OR call it in your code!
+     *
+     * @noinspection ALL
+     */
+    private void $$$setupUI$$$() {
+        mainPanel = new JPanel();
+        mainPanel.setLayout(new GridLayoutManager(5, 4, new Insets(5, 5, 5, 5), -1, -1));
+        mainPanel.setPreferredSize(new Dimension(600, 400));
+        lblLanguage = new JLabel();
+        lblLanguage.setText("Language");
+        mainPanel.add(lblLanguage,
+                      new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE,
+                                          GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
+                                          null, null, 0, false));
+        cboLanguage = new JComboBox();
+        final DefaultComboBoxModel defaultComboBoxModel1 = new DefaultComboBoxModel();
+        cboLanguage.setModel(defaultComboBoxModel1);
+        mainPanel.add(cboLanguage,
+                      new GridConstraints(0, 1, 1, 3, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                          GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                          null, null, 0, false));
+        lblSearch = new JLabel();
+        lblSearch.setText("Search Term");
+        mainPanel.add(lblSearch, new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE,
+                                                     GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED,
+                                                     null, null, null, 0, false));
+        txtSearch = new JTextField();
+        mainPanel.add(txtSearch,
+                      new GridConstraints(1, 1, 1, 2, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                          GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                          new Dimension(150, -1), null, 0, false));
+        lblEditWord = new JLabel();
+        lblEditWord.setText("Add/Edit Word");
+        mainPanel.add(lblEditWord,
+                      new GridConstraints(3, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE,
+                                          GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
+                                          null, null, 0, false));
+        txtNewWord = new JTextField();
+        mainPanel.add(txtNewWord,
+                      new GridConstraints(3, 1, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                          GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                          new Dimension(150, -1), null, 0, false));
+        btnSeparator = new JButton();
+        btnSeparator.setText("Separator");
+        mainPanel.add(btnSeparator,
+                      new GridConstraints(3, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL,
+                                          GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                          GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        btnDeleteWord = new JButton();
+        btnDeleteWord.setText("Delete Word");
+        mainPanel.add(btnDeleteWord,
+                      new GridConstraints(3, 3, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL,
+                                          GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                          GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        btnSave = new JButton();
+        btnSave.setText("Save");
+        mainPanel.add(btnSave,
+                      new GridConstraints(4, 2, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL,
+                                          GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                          GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        btnClose = new JButton();
+        btnClose.setText("Close");
+        mainPanel.add(btnClose,
+                      new GridConstraints(4, 3, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL,
+                                          GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                          GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+        final JScrollPane scrollPane1 = new JScrollPane();
+        mainPanel.add(scrollPane1,
+                      new GridConstraints(2, 1, 1, 3, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH,
+                                          GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW,
+                                          GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_WANT_GROW,
+                                          null, null, null, 0, false));
+        lstWords = new JList();
+        final DefaultListModel defaultListModel1 = new DefaultListModel();
+        lstWords.setModel(defaultListModel1);
+        lstWords.setVisibleRowCount(50);
+        scrollPane1.setViewportView(lstWords);
+        btnSearch = new JButton();
+        btnSearch.setText("Search");
+        mainPanel.add(btnSearch,
+                      new GridConstraints(1, 3, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_HORIZONTAL,
+                                          GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                          GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+    }
+
+    /**
+     * @noinspection ALL
+     */
+    public JComponent $$$getRootComponent$$$() {
+        return mainPanel;
+    }
+
     private static class DictionarySaver {
         private final Thread thread;
 
@@ -424,5 +570,10 @@ public class HyphenatorDictionary extends JDialog {
             });
             thread.start();
         }
+    }
+
+    public void setSaveAndClose(boolean saveAndClose) {
+        btnSave.setText(I18.get(saveAndClose ? "hyphenator_save_close" : "hyphenator_save"));
+        this.saveAndClose = saveAndClose;
     }
 }

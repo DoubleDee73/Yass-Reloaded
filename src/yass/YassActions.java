@@ -25,6 +25,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import yass.autocorrect.YassAutoCorrect;
 import yass.extras.UsdbSyncerMetaTagCreator;
 import yass.hyphenator.HyphenatorDictionary;
+import yass.musicalkey.MusicalKey;
 import yass.renderer.YassSession;
 import yass.wizard.CreateSongWizard;
 
@@ -61,8 +62,8 @@ public class YassActions implements DropTargetListener {
     public static final int FREESTYLE_NOTE = Integer.MIN_VALUE + 1;
     public static final int RAP_NOTE = Integer.MIN_VALUE + 2;
     private final YassSheet sheet;
-    public final static String VERSION = "2025.2";
-    public final static String DATE = "02/2025";
+    public final static String VERSION = VersionUtils.getVersion();
+    public final static String DATE = VersionUtils.getReleaseDate();
 
     public static int VIEW_LIBRARY = 1;
     public static int VIEW_EDIT = 2;
@@ -1691,7 +1692,33 @@ public class YassActions implements DropTargetListener {
             }
         }
     };
-
+    private final Action musicalKey = new AbstractAction(I18.get("musical.key.label")) {
+        public void actionPerformed(ActionEvent e) {
+            interruptPlay();
+            MusicalKey musicalKeyDialog = new MusicalKey(table.getActions());
+            musicalKeyDialog.setUndecorated(true);
+            musicalKeyDialog.pack();
+            int x;
+            Component musicalKey = findComponentByName("musicalKeyDialog", editTools.getComponents());
+            if (musicalKey != null) {
+                x = musicalKey.getLocation().x;
+            } else {
+                x = 950;
+            }
+            musicalKeyDialog.setLocation(getX() + x + 8, getY() + 94);
+            musicalKeyDialog.setResizable(false);
+            musicalKeyDialog.setVisible(true);
+        }
+    };
+    
+    private Component findComponentByName(String name, Component[] components) {
+        for (Component sub : components) {
+            if (name.equals(sub.getName())) {
+                return sub;
+            }
+        }
+        return null;
+    }
     private void exchangeTracks(int[] order) {
         YassTable[] tracks = getOpenTables(table).toArray(new YassTable[0]);
         YassTable[] t = new YassTable[tracks.length];
@@ -1872,9 +1899,25 @@ public class YassActions implements DropTargetListener {
             table.shiftHeight(+1);
         }
     };
+    private final Action incHeightPlay = new AbstractAction(I18.get("edit_height_inc")) {
+        public void actionPerformed(ActionEvent e) {
+            if (table.getSelectedRowCount() > 0) {
+                table.shiftHeight(+1);
+                playSelection(2);
+            }
+        }
+    };
     private final Action incHeightOctave = new AbstractAction(I18.get("edit_height_inc_octave")) {
         public void actionPerformed(ActionEvent e) {
             table.shiftHeight(+12);
+        }
+    };
+    private final Action incHeightOctavePlay = new AbstractAction(I18.get("edit_height_inc_octave")) {
+        public void actionPerformed(ActionEvent e) {
+            if (table.getSelectedRowCount() > 0) {
+                table.shiftHeight(+12);
+                playSelection(2);
+            }
         }
     };
     private final Action decHeight = new AbstractAction(I18.get("edit_height_dec")) {
@@ -1882,9 +1925,25 @@ public class YassActions implements DropTargetListener {
             table.shiftHeight(-1);
         }
     };
+    private final Action decHeightPlay = new AbstractAction(I18.get("edit_height_dec")) {
+        public void actionPerformed(ActionEvent e) {
+            if (table.getSelectedRowCount() > 0) {
+                table.shiftHeight(-1);
+                playSelection(2);
+            }
+        }
+    };
     private final Action decHeightOctave = new AbstractAction(I18.get("edit_height_dec_octave")) {
         public void actionPerformed(ActionEvent e) {
             table.shiftHeight(-12);
+        }
+    };
+    private final Action decHeightOctavePlay = new AbstractAction(I18.get("edit_height_dec_octave")) {
+        public void actionPerformed(ActionEvent e) {
+            if (table.getSelectedRowCount() > 0) {
+                table.shiftHeight(-12);
+                playSelection(2);
+            }
         }
     };
     private final Action incLeft = new AbstractAction(I18.get("edit_length_left_inc")) {
@@ -2574,7 +2633,7 @@ public class YassActions implements DropTargetListener {
             } else if (p.equals("one")) {
                 onePage.actionPerformed(null);
             } else if (p.equals("split")) {
-                table.split(((Double) e.getNewValue()).doubleValue());
+                table.split(((Double) e.getNewValue()).doubleValue(), true);
             } else if (p.equals("joinLeft")) {
                 table.joinLeft();
             } else if (p.equals("joinRight")) {
@@ -3343,6 +3402,7 @@ public class YassActions implements DropTargetListener {
         icons.put("gap24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/Gap24.gif")));
         icons.put("help16Icon", new ImageIcon(getClass().getResource("/yass/resources/img/Help16.gif")));
         icons.put("help24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/Help24.gif")));
+        icons.put("key24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/key_24.gif")));
         copyRows.putValue(AbstractAction.SMALL_ICON, getIcon("copy16Icon"));
         pasteRows.putValue(AbstractAction.SMALL_ICON, getIcon("pasteMelody16Icon"));
         pasteNotes.putValue(AbstractAction.SMALL_ICON, getIcon("paste16Icon"));
@@ -3410,12 +3470,14 @@ public class YassActions implements DropTargetListener {
         icons.put("speedfour24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/SpeedFour24.gif")));
         icons.put("info16Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/general/Information16.gif")));
         icons.put("info24Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/general/Information24.gif")));
+        icons.put("createSyncerTagsIcon", new ImageIcon(getClass().getResource("/yass/resources/img/usdb_syncer_icon.png")));
         enableLyrics.putValue(AbstractAction.SMALL_ICON, getIcon("lyrics16Icon"));
         showPlaylistMenu.putValue(AbstractAction.SMALL_ICON, getIcon("playlist16Icon"));
         showSongInfo.putValue(AbstractAction.SMALL_ICON, getIcon("info16Icon"));
         detailLibrary.putValue(AbstractAction.SMALL_ICON, getIcon("notiles16Icon"));
         showSongInfoBackground.putValue(AbstractAction.SMALL_ICON, getIcon("empty16Icon"));
-
+        createSyncerTags.putValue(AbstractAction.SMALL_ICON, getResizedIcon("createSyncerTagsIcon", 16));
+        editHyphenations.putValue(AbstractAction.SMALL_ICON, getIcon("hyphenate24Icon"));
         updateActions();
     }
 
@@ -4000,6 +4062,15 @@ public class YassActions implements DropTargetListener {
         b.setFocusable(false);
         b.setOpaque(false);
 
+        t.addSeparator();
+        t.add(b = new JButton());
+        b.setAction(musicalKey);
+        b.setName("musicalKeyDialog");
+        b.setToolTipText(b.getText());
+        b.setText("");
+        b.setIcon(getIcon("key24Icon"));
+        b.setFocusable(false);
+        b.setOpaque(false);
         return t;
     }
 
@@ -5678,7 +5749,7 @@ public class YassActions implements DropTargetListener {
                 }
                 return;
             }
-            if (r.isComment() && r.getCommentTag().equals("START:")) {
+            if (r.isComment() && r.getHeaderCommentTag().equals("START:")) {
                 String input = JOptionPane.showInputDialog(tab, I18.get("edit_lyrics_edit_start_msg"), (int) (table.getStart()) + "");
                 try {
                     int val = Integer.parseInt(input);
@@ -5687,7 +5758,7 @@ public class YassActions implements DropTargetListener {
                 return;
             }
             if (r.isEnd()
-                    || (r.isComment() && r.getCommentTag().equals("END:"))) {
+                    || (r.isComment() && r.getHeaderCommentTag().equals("END:"))) {
                 String input = JOptionPane.showInputDialog(tab, I18.get("edit_lyrics_edit_end_msg"), (int) (table.getEnd()) + "");
                 try {
                     int val = Integer.parseInt(input);
@@ -6286,7 +6357,9 @@ public class YassActions implements DropTargetListener {
     }
     
     public void openMp3(String filename) {
-        mp3.reinitSynth();
+        if (!prop.getBooleanProperty("use-sample")) {
+            mp3.reinitSynth(prop.getBooleanProperty("use-sample"));
+        }
         mp3.openMP3(filename);
     }
 
@@ -6297,7 +6370,7 @@ public class YassActions implements DropTargetListener {
             return;
         updateTrackComponent();
         storeRecentFiles();
-        mp3.reinitSynth();
+        mp3.reinitSynth(prop.getBooleanProperty("use-sample"));
         mp3.openMP3(table.getDirMP3());
         updateTitle();
 
@@ -6528,7 +6601,7 @@ public class YassActions implements DropTargetListener {
 
             YassTableModel tm = (YassTableModel) table.getModel();
             YassRow r = tm.getCommentRow("VIDEO:");
-            String v = r != null ? r.getComment() : null;
+            String v = r != null ? r.getHeaderComment() : null;
             if (v != null) {
                 vd = d + File.separator + v;
             }
@@ -7039,7 +7112,7 @@ public class YassActions implements DropTargetListener {
         am.put("selectAllSongs", selectAllSongs);
         selectAllSongs.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK));
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.ALT_MASK), "fullscreen");
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.ALT_DOWN_MASK), "fullscreen");
         c.getActionMap().put("fullscreen", fullscreen);
         fullscreen.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.ALT_MASK));
     }
@@ -7108,18 +7181,33 @@ public class YassActions implements DropTargetListener {
         am.put("decHeight", decHeight);
         decHeight.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK));
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK ), "decHeightOctave");
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK), "decHeightPlay");
+        am.put("decHeightPlay", decHeightPlay);
+        incHeight.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK));
 
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK ), "decHeightOctave");
         am.put("decHeightOctave", decHeightOctave);
         decHeightOctave.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK ));
 
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK ), "decHeightOctavePlay");
+        am.put("decHeightOctavePlay", decHeightOctavePlay);
+        decHeightOctavePlay.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK ));
+
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK), "incHeight");
         am.put("incHeight", incHeight);
+        incHeight.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK), "incHeightPlay");
+        am.put("incHeightPlay", incHeightPlay);
         incHeight.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK));
 
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), "incHeightOctave");
         am.put("incHeightOctave", incHeightOctave);
         incHeightOctave.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), "incHeightOctavePlay");
+        am.put("incHeightOctavePlay", incHeightOctavePlay);
+        incHeightOctavePlay.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
 
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK), "decLeft");
         am.put("decLeft", decLeft);
@@ -7750,5 +7838,17 @@ public class YassActions implements DropTargetListener {
     
     public boolean isMidiEnabled() {
         return midiButton.isSelected();
+    }
+    
+    public ImageIcon getResizedIcon(String image, int size) {
+        ImageIcon imageIcon = getIcon(image);
+        BufferedImage resizedImg = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = resizedImg.createGraphics();
+
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g2.drawImage(imageIcon.getImage(), 0, 0, size, size, null);
+        g2.dispose();
+
+        return new ImageIcon(resizedImg);
     }
 }

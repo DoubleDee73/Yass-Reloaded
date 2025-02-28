@@ -2142,7 +2142,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             YassRow r = table.getRowAt(i++);
             if (r.isComment()) {
                 tm.addRow(r);
-                String tag = r.getCommentTag();
+                String tag = r.getHeaderCommentTag();
                 YassRow r2 = table2.getCommentRow(tag);
                 if (r2 != null) {
                     tm2.addRow(r2);
@@ -2157,7 +2157,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
         while (i2 < n2) {
             YassRow r = table2.getRowAt(i2++);
             if (r.isComment()) {
-                String tag = r.getCommentTag();
+                String tag = r.getHeaderCommentTag();
                 YassRow r2 = table.getCommentRow(tag);
                 if (r2 == null) {
                     tm2.addRow(r);
@@ -2223,12 +2223,12 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             YassRow r = tm.getRowAt(i);
             YassRow r2 = t2.getRowAt(i++);
             if (r.isComment() && isHeader) {
-                String tag = r.isHidden() ? r2.getCommentTag() : r
-                        .getCommentTag();
+                String tag = r.isHidden() ? r2.getHeaderCommentTag() : r
+                        .getHeaderCommentTag();
                 tag = tag.substring(0, tag.length() - 1);
                 tag = tag.toUpperCase();
-                boolean same = r2.getComment().trim()
-                                 .equals(r.getComment().trim());
+                boolean same = r2.getHeaderComment().trim()
+                                 .equals(r.getHeaderComment().trim());
                 if (same || tag.equals("TITLE") || tag.equals("ARTIST")) {
                     updatePanel.add(label = new JLabel(""));
                     label.setPreferredSize(new Dimension(140, h));
@@ -2238,7 +2238,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                 if (r2.isHidden()) {
                     tag = I18.get("mpop_update_remove");
                 } else {
-                    tag = r2.getComment();
+                    tag = r2.getHeaderComment();
                 }
 
                 JCheckBox check = new JCheckBox(tag);
@@ -2247,7 +2247,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                 checks.addElement(check);
                 changedTags++;
             } else if (r.isHidden() && isHeader) {
-                String tag = r2.getComment();
+                String tag = r2.getHeaderComment();
                 JCheckBox check = new JCheckBox(tag);
                 check.setPreferredSize(new Dimension(140, h));
                 updatePanel.add(check);
@@ -2348,12 +2348,12 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
                         YassRow r = t.getRowAt(i);
                         YassRow r2 = t2.getRowAt(i++);
                         if (r.isComment() && isHeader) {
-                            String tag = r.isHidden() ? r2.getCommentTag() : r
-                                    .getCommentTag();
+                            String tag = r.isHidden() ? r2.getHeaderCommentTag() : r
+                                    .getHeaderCommentTag();
                             tag = tag.substring(0, tag.length() - 1);
                             tag = tag.toUpperCase();
-                            boolean same = r2.getComment().trim()
-                                             .equals(r.getComment().trim());
+                            boolean same = r2.getHeaderComment().trim()
+                                             .equals(r.getHeaderComment().trim());
                             if (same || tag.equals("TITLE")
                                     || tag.equals("ARTIST")) {
                                 tm3.addRow(r);

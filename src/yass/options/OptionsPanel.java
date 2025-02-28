@@ -44,7 +44,7 @@ public class OptionsPanel extends JPanel {
     private int labelWidth = 80;
     private Vector<String> panelProps = new Vector<>();
     private JPanel contentPanel = null;
-    private static final List<String> RESET_CONTEXT_MENU_OPTIONS = Arrays.asList("options_tags_compatibility");
+    private static final List<String> RESET_CONTEXT_MENU_OPTIONS = List.of("options_tags_compatibility");
     private static YassActions actions = null;
 
 
@@ -97,6 +97,9 @@ public class OptionsPanel extends JPanel {
             String old = prop.getProperty(key);
             if (!resetContextMenu && RESET_CONTEXT_MENU_OPTIONS.contains(key) && !old.equals(val)) {
                 resetContextMenu = true;
+            }
+            if ("use-sample".equals(key) && !old.equals(val)) {
+                actions.getMP3().reinitSynth("true".equals(val));
             }
             prop.put(key, val);
         }

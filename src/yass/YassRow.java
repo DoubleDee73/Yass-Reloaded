@@ -296,11 +296,11 @@ public class YassRow implements Cloneable, Comparable<Object> {
         return s[1];
     }
 
-    public String getCommentTag() {
+    public String getHeaderCommentTag() {
         return s[1].toUpperCase();
     }
 
-    public String getComment() {
+    public String getHeaderComment() {
         return s[2];
     }
 
@@ -587,12 +587,12 @@ public class YassRow implements Cloneable, Comparable<Object> {
             if (!isComment()) {
                 return 1;
             }
-            String tag = getCommentTag().trim();
+            String tag = getHeaderCommentTag().trim();
             if (tag.length() < 1) {
                 return 1;
             }
             int tagPos = validTags.indexOf(" " + tag.substring(0, tag.length() - 1) + " ");
-            String tag2 = r.getCommentTag().trim();
+            String tag2 = r.getHeaderCommentTag().trim();
             if (tag2.length() < 1) {
                 return -1;
             }

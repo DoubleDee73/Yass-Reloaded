@@ -1194,5 +1194,24 @@ public class YassUtils {
     public static String determineDisplayLanguage(String language) {
         return Locale.of(language).getDisplayLanguage(Locale.ENGLISH);
     }
+    
+    public static String findFirstKeyInMap(Map<String, String> map, List<String> keys) {
+        String val;
+        for (String key : keys) {
+            val = map.get(key);
+            if (val != null) {
+                return val;
+            }
+            val = map.get(key.toUpperCase());
+            if (val != null) {
+                return val;
+            }
+            val = map.get(key.toLowerCase());
+            if (val != null) {
+                return val;
+            }
+        }
+        return null;
+    }
 }
 

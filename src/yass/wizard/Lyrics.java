@@ -160,7 +160,7 @@ public class Lyrics extends JPanel {
         outputStream.println("#MP3:Unknown");
         outputStream.println("#BPM:300");
         outputStream.println("#GAP:0");
-        YassHyphenator hyphenator = new YassHyphenator("DE|EN|ES|FR|IT|PL|PT|RU|TR|ZH");
+        YassHyphenator hyphenator = new YassHyphenator("DE|EN|ES|FR|IT|PL|PT|RU|SV|TR|ZH");
         hyphenator.setLanguage(new YassLanguageUtils().determineLanguageCode(wizard.getValue("language")));
         hyphenator.setYassProperties(yassProperties);
         YassUtils yassUtils = new YassUtils();

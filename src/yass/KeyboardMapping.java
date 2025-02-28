@@ -20,21 +20,20 @@
 package yass;
 
 import java.awt.event.KeyEvent;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
 public enum KeyboardMapping {
-    QWERTY(Arrays.asList(KeyEvent.VK_Q, KeyEvent.VK_2, KeyEvent.VK_W, KeyEvent.VK_3, KeyEvent.VK_E, KeyEvent.VK_4,
+    QWERTY(List.of(KeyEvent.VK_Q, KeyEvent.VK_2, KeyEvent.VK_W, KeyEvent.VK_3, KeyEvent.VK_E, KeyEvent.VK_4,
                          KeyEvent.VK_R, KeyEvent.VK_5, KeyEvent.VK_T, KeyEvent.VK_6, KeyEvent.VK_Y, KeyEvent.VK_7,
                          KeyEvent.VK_U, KeyEvent.VK_8, KeyEvent.VK_I, KeyEvent.VK_9, KeyEvent.VK_O, KeyEvent.VK_0,
                          KeyEvent.VK_P)),
 
-    QWERTZ(Arrays.asList(KeyEvent.VK_Q, KeyEvent.VK_2, KeyEvent.VK_W, KeyEvent.VK_3, KeyEvent.VK_E, KeyEvent.VK_4,
+    QWERTZ(List.of(KeyEvent.VK_Q, KeyEvent.VK_2, KeyEvent.VK_W, KeyEvent.VK_3, KeyEvent.VK_E, KeyEvent.VK_4,
                          KeyEvent.VK_R, KeyEvent.VK_5, KeyEvent.VK_T, KeyEvent.VK_6, KeyEvent.VK_Z, KeyEvent.VK_7,
                          KeyEvent.VK_U, KeyEvent.VK_8, KeyEvent.VK_I, KeyEvent.VK_9, KeyEvent.VK_O, KeyEvent.VK_0,
                          KeyEvent.VK_P)),
-    AZERTY(Arrays.asList(KeyEvent.VK_A, KeyEvent.VK_2, KeyEvent.VK_Z, KeyEvent.VK_3, KeyEvent.VK_E, KeyEvent.VK_4,
+    AZERTY(List.of(KeyEvent.VK_A, KeyEvent.VK_2, KeyEvent.VK_Z, KeyEvent.VK_3, KeyEvent.VK_E, KeyEvent.VK_4,
                          KeyEvent.VK_R, KeyEvent.VK_5, KeyEvent.VK_T, KeyEvent.VK_6, KeyEvent.VK_Y, KeyEvent.VK_7,
                          KeyEvent.VK_U, KeyEvent.VK_8, KeyEvent.VK_I, KeyEvent.VK_9, KeyEvent.VK_O, KeyEvent.VK_0,
                          KeyEvent.VK_P));
