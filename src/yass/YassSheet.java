@@ -4584,7 +4584,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             int pageMin = r.getHeightInt();
             boolean isInKey;
             MusicalKeyEnum key;
-            if (t.getActions() != null && t.getActions().getMP3() != null) {
+            YassActions yassActions = t.getActions();
+            if (yassActions != null && yassActions.getMP3() != null && yassActions.getMP3().getKey() != null) {
                 key = t.getActions().getMP3().getKey();
             } else {
                 key = MusicalKeyEnum.UNDEFINED;

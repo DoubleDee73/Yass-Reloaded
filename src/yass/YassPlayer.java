@@ -1550,7 +1550,7 @@ public class YassPlayer {
     }
 
     public MusicalKeyEnum getKey() {
-        return key;
+        return key == null ? MusicalKeyEnum.UNDEFINED : key;
     }
 
     public void saveKey(MusicalKeyEnum musicalKeyEnum) {
