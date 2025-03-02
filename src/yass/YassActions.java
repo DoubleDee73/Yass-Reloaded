@@ -2232,6 +2232,7 @@ public class YassActions implements DropTargetListener {
                 return;
             }
             YassTable lastTable = table;
+            table.removeAutoSave();
             closeAllTables();
             video.closeVideo();
             setView(VIEW_LIBRARY);
@@ -2900,7 +2901,8 @@ public class YassActions implements DropTargetListener {
         for (YassTable currentTable : openTables) {
             File autosaveFile = new File(currentTable.getDirFilename() + ".bak");
             File currentFile = new File(currentTable.getDirFilename());
-            if (autosaveFile.exists() && autosaveFile.lastModified() < currentFile.lastModified()) {
+            if (autosaveFile.exists() && (autosaveFile.lastModified() < currentFile.lastModified() || 
+                    currentTable.isAutosaved())) {
                 try {
                     FileUtils.delete(autosaveFile);
                 } catch (IOException e) {

@@ -6480,6 +6480,11 @@ public class YassTable extends JTable {
         return session;
     }
 
+    public void alignQuarterNoteGrid() {
+        int currentRow = getSelectedRow();
+        System.out.println(currentRow);
+    }
+    
     public void sortRows() {
         Collections.sort(tm.getData());
     }
@@ -6891,5 +6896,13 @@ public class YassTable extends JTable {
         LOGGER.info("Autosave initialized with " + Math.min(period, 600) + "s intervals.");
         YassAutoSave autoSave = new YassAutoSave(this);
         timer.scheduleAtFixedRate(autoSave, 30000, periodMillis);
+    }
+    
+    public void removeAutoSave() {
+        setAutosaved(true);
+        if (sheet == null || timer == null) {
+            return;
+        }
+        timer.cancel();
     }
 }

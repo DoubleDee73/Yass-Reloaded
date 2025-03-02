@@ -28,7 +28,7 @@ public enum MusicalKeyEnum {
     UNDEFINED(null, 0, null, null, Collections.emptyList(), Collections.emptyList()),
     C_A("musical.key.0", 8, "C", "Am", Collections.emptyList(), List.of(0, 2, 4, 5, 7, 9, 11)),
     G_E("musical.key.1", 9, "G", "Em", Collections.emptyList(), List.of(0, 2, 4, 6, 7, 9, 11)),
-    D_H("musical.key.2", 10, "D", "Bm", Collections.emptyList(), List.of(1, 2, 4, 6, 7, 9, 11)),
+    D_B("musical.key.2", 10, "D", "Bm", Collections.emptyList(), List.of(1, 2, 4, 6, 7, 9, 11)),
     A_FSHARP("musical.key.3", 11, "A", "F#m", Collections.emptyList(), List.of(1, 2, 4, 6, 8, 9, 11)),
     E_CSHARP("musical.key.4", 12, "E", "C#m", Collections.emptyList(), List.of(1, 3, 4, 6, 8, 9, 11)),
     B_GSHARP("musical.key.5", 1, "B", "G#m", List.of("Cb", "Abm"), List.of(1, 3, 4, 6, 8, 10, 11)),
