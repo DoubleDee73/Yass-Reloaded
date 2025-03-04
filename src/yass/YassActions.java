@@ -51,8 +51,8 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.MessageFormat;
-import java.util.List;
 import java.util.*;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -2483,6 +2483,14 @@ public class YassActions implements DropTargetListener {
             }
         }
     };
+    private final Action alignToGrid = new AbstractAction(I18.get("edit_align_to_grid")) {
+        public void actionPerformed(ActionEvent e) {
+            if (currentView == VIEW_LIBRARY) {
+                return;
+            }
+            table.alignQuarterNoteGrid();
+        }
+    };
     private JCheckBoxMenuItem micCBI = null;
     private final Action enableMic = new AbstractAction(I18.get("edit_mic_toggle")) {
         public void actionPerformed(ActionEvent e) {
@@ -3473,6 +3481,8 @@ public class YassActions implements DropTargetListener {
         icons.put("info16Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/general/Information16.gif")));
         icons.put("info24Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/general/Information24.gif")));
         icons.put("createSyncerTagsIcon", new ImageIcon(getClass().getResource("/yass/resources/img/usdb_syncer_icon.png")));
+        icons.put("quantize16Icon", new ImageIcon(getClass().getResource("/yass/resources/img/quantize_16.png")));
+        icons.put("quantize24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/quantize_24.png")));
         enableLyrics.putValue(AbstractAction.SMALL_ICON, getIcon("lyrics16Icon"));
         showPlaylistMenu.putValue(AbstractAction.SMALL_ICON, getIcon("playlist16Icon"));
         showSongInfo.putValue(AbstractAction.SMALL_ICON, getIcon("info16Icon"));
@@ -3480,6 +3490,7 @@ public class YassActions implements DropTargetListener {
         showSongInfoBackground.putValue(AbstractAction.SMALL_ICON, getIcon("empty16Icon"));
         createSyncerTags.putValue(AbstractAction.SMALL_ICON, getResizedIcon("createSyncerTagsIcon", 16));
         editHyphenations.putValue(AbstractAction.SMALL_ICON, getIcon("hyphenate24Icon"));
+        alignToGrid.putValue(AbstractAction.SMALL_ICON, getIcon("quantize16Icon"));
         updateActions();
     }
 
@@ -3552,6 +3563,7 @@ public class YassActions implements DropTargetListener {
         showCopyCBI.setState(false);
         menu.addSeparator();
         menu.add(removeRowsWithLyrics);
+        menu.add(alignToGrid);
         menu.addSeparator();
 
         gapSpinner = new TimeSpinner(I18.get("mpop_gap"), 0, 10000);
@@ -7466,7 +7478,11 @@ public class YassActions implements DropTargetListener {
         im.put(KeyStroke.getKeyStroke("~"), "addEndian");
         am.put("addEndian", addEndian);
         addEndian.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0));
-
+        
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_DOWN_MASK), "alignGrid");
+        am.put("alignGrid", alignToGrid);
+        alignToGrid.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_DOWN_MASK));
+        
         // umlaute not working
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_9, 0), "decGap");
         am.put("decGap", decGap);
