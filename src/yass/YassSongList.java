@@ -36,11 +36,13 @@ import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.lang.reflect.Method;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.MessageFormat;
-import java.util.List;
 import java.util.*;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -130,6 +132,12 @@ public class YassSongList extends JTable {
             setCalcMedley();
         }
     };
+    Action editVisitUsdb = new AbstractAction(I18.get("lib_visit_usdb")) {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            visitUsdb((String)editVisitUsdb.getValue("usdb"));
+        }
+    };
     Action createNewEdition = new AbstractAction(I18.get("lib_edition_set")) {
                 public void actionPerformed(ActionEvent e) {
                     newEdition();
@@ -204,7 +212,6 @@ public class YassSongList extends JTable {
         actions = a;
         auto = a.getAutoCorrect();
         prop = a.getProperties();
-
         setOpaque(false);
         setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
         setShowGrid(false);
@@ -227,6 +234,9 @@ public class YassSongList extends JTable {
         JMenu cedition;
         JMenu ctags;
         JMenuItem menuItem;
+        JMenuItem visitUrl = new JMenuItem(editVisitUsdb);
+        visitUrl.setName("visitUsdb");
+        toggleVisitUrlVisibility(visitUrl);
         combinedPopup.add(new JMenuItem(editArtist));
         getInputMap().put(KeyStroke.getKeyStroke("F2"), "editArtist");
         getActionMap().put("editArtist", editArtist);
@@ -269,24 +279,10 @@ public class YassSongList extends JTable {
         menuItem.addActionListener(e -> undoSelection());
         combinedPopup.add(menuItem = new JMenuItem(I18.get("lib_save_selected")));
         menuItem.addActionListener(e -> storeSelection());
-
-		/*
-         *  combinedPopup.addSeparator();
-		 *  combinedPopup.add(menuItem = new JMenuItem(I18.get("lib_open_folder")));
-		 *  menuItem.addActionListener(
-		 *  new ActionListener() {
-		 *  public void actionPerformed(ActionEvent e) {
-		 *  openSongFolder();
-		 *  }
-		 *  });
-		 *  combinedPopup.add(menuItem = new JMenuItem(I18.get("lib_remove")));
-		 *  menuItem.addActionListener(
-		 *  new ActionListener() {
-		 *  public void actionPerformed(ActionEvent e) {
-		 *  removeSelectedSongs();
-		 *  }
-		 *  });
-		 */
+        if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+            combinedPopup.addSeparator();
+            combinedPopup.add(visitUrl);
+        }
         languagePopup = new JMenu(I18.get("lib_language"));
 
         Vector<String> langVector = new Vector<>();
@@ -514,7 +510,9 @@ public class YassSongList extends JTable {
                             for (MenuElement element : combinedPopup.getSubElements()) {
                                 if (element instanceof JMenuItem) {
                                     JMenuItem item = (JMenuItem) element;
-                                    if (UltrastarHeaderTag.deprecatedTags(prop.getUsFormatVersion())
+                                    if ("visitUsdb".equals(item.getName())) {
+                                        toggleVisitUrlVisibility(item);
+                                    } else if (UltrastarHeaderTag.deprecatedTags(prop.getUsFormatVersion())
                                                           .contains(item.getName())) {
                                         item.setVisible(!prop.isUnityOrNewer());
                                     }
@@ -844,6 +842,20 @@ public class YassSongList extends JTable {
             err_text_icon = new ImageIcon(getClass().getResource("/yass/resources/img/TextError.gif")).getImage();
         } catch (Exception e) {
             LOGGER.log(Level.INFO, e.getMessage(), e);
+        }
+    }
+
+    private void toggleVisitUrlVisibility(JMenuItem visitUrl) {
+        if (getFirstSelectedSong() == null) {
+            visitUrl.setEnabled(false);
+        } else {
+            String url = getFirstSelectedSong().getUsdbUrl();
+            if (StringUtils.isNotEmpty(url)) {
+                visitUrl.setEnabled(true);
+                editVisitUsdb.putValue("usdb", url);
+            } else {
+                visitUrl.setEnabled(false);
+            }
         }
     }
 
@@ -4379,6 +4391,17 @@ public class YassSongList extends JTable {
         repaint();
     }
 
+    public void visitUsdb(String usdbUrl) {
+        int i = getSelectedRow();
+        if (i < 0) {
+            return;
+        }
+        try {
+            Desktop.getDesktop().browse(new URI(usdbUrl));
+        } catch (IOException | URISyntaxException e) {
+            throw new RuntimeException(e);
+        }
+    }
     /**
      * Description of the Method
      */

@@ -19,6 +19,7 @@ package yass;
 
 import com.nexes.wizard.Wizard;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
@@ -154,7 +155,7 @@ public class YassActions implements DropTargetListener {
 
             if (k.getID() == KeyEvent.KEY_TYPED) {
                 char ch = k.getKeyChar();
-                if (ch == 'p' || ch == 'P' || ch == ' ') {
+                if (ch == 'p' || ch == 'P' || ch == ' ' || ch == 'b' || ch == 'n') {
                     return;
                 }
             }
@@ -164,7 +165,8 @@ public class YassActions implements DropTargetListener {
             stopPlaying();
 
             int c = k.getKeyCode();
-            if (c == KeyEvent.VK_P || c == KeyEvent.VK_ESCAPE || c == KeyEvent.VK_SPACE) {
+            if (c == KeyEvent.VK_P || c == KeyEvent.VK_ESCAPE || c == KeyEvent.VK_SPACE
+                    || c == KeyEvent.VK_B|| c == KeyEvent.VK_N) {
                 k.consume();
             }
         }
@@ -674,7 +676,17 @@ public class YassActions implements DropTargetListener {
         @Override
         public void actionPerformed(ActionEvent e) {
             JFileChooser chooser = new JFileChooser();
-            FileNameExtensionFilter fileFilter = new FileNameExtensionFilter("Audio Files", "mp3", "m4a", "wav", "ogg", "opus", "flac");
+            String tempExtensions = prop.getProperty("audio-files");
+            String[] extensions;
+            if (StringUtils.isEmpty(tempExtensions)) {
+                extensions = List.of("mp3", "m4a", "wav", "ogg", "opus", "flac").toArray(new String[0]);
+            } else {
+                extensions = Arrays.stream(tempExtensions.split("\\|"))
+                                   .map(it -> it.replace(".", ""))
+                                   .toList()
+                                   .toArray(new String[0]);
+            }
+            FileNameExtensionFilter fileFilter = new FileNameExtensionFilter("Audio Files", extensions);
             chooser.setFileFilter(fileFilter);
             chooser.addChoosableFileFilter(fileFilter);
             String fileField = (String)this.getValue("fileField");
@@ -690,12 +702,17 @@ public class YassActions implements DropTargetListener {
                 }
             } else {
                 textField = null;
+                chooser.setCurrentDirectory(Path.of(prop.getProperty("song-directory")).toFile());
             }
             int showOpenDialog = chooser.showOpenDialog(sheet);
-            if (showOpenDialog == JFileChooser.APPROVE_OPTION && textField != null) {
+            if (showOpenDialog == JFileChooser.APPROVE_OPTION) {
                 YassTable activeTable = sheet.getActiveTable();
+                if (activeTable == null) {
+                    activeTable = sheet.getTable(0);
+                }
                 String currentFile;
-                UltrastarHeaderTag audioTag = UltrastarHeaderTag.valueOf(songHeader.getSelectedAudio());
+                UltrastarHeaderTag audioTag = songHeader != null ? UltrastarHeaderTag.valueOf(
+                        songHeader.getSelectedAudio()) : UltrastarHeaderTag.AUDIO;
                 if (audioTag == UltrastarHeaderTag.AUDIO) {
                     currentFile = table.getAudio();
                 } else if (audioTag == UltrastarHeaderTag.INSTRUMENTAL) {
@@ -710,7 +727,9 @@ public class YassActions implements DropTargetListener {
                 if (currentFile != null && currentFile.equals(filename) && activeTable.getMP3().equals(filename)) {
                     return;
                 }
-                textField.setText(filename);
+                if (textField != null) {
+                    textField.setText(filename);
+                }
                 activeTable.setMP3(filename);
                 if (audioTag == UltrastarHeaderTag.AUDIO) {
                     activeTable.setAudio(filename);
@@ -1287,6 +1306,7 @@ public class YassActions implements DropTargetListener {
             }
             speedButton.setSelectedIcon(getIcon(playTimebase.getIcon()));
             speedButton.setSelected(playTimebase != Timebase.NORMAL);
+            mp3.clearAudioBytes();
         }
     };
 
@@ -2396,6 +2416,7 @@ public class YassActions implements DropTargetListener {
                 mp3.setSeekOutOffsetMs(Integer.parseInt(seekOutOffsetMs));
             } catch (Exception ignored) {
             }
+            mp3.setTargetDbfs(prop.getProperty("dbfs"));
 
             String newDir = prop.getProperty("song-directory");
             String newpDir = prop.getProperty("playlist-directory");
@@ -2890,7 +2911,6 @@ public class YassActions implements DropTargetListener {
         lyrics.setTable(null);
         sheet.setActiveTable(null);
         songList.closeOpened();
-        mp3.disposeMediaPlayer();
         sheet.disposeSongHeader();
         isUpdating = true;
         updateLyrics();
@@ -3590,10 +3610,10 @@ public class YassActions implements DropTargetListener {
         menu.add(playPage);
         menu.add(playFrozen);
         menu.add(interruptPlay);
+        menu.add(playAll);
+        menu.add(playAllFromHere);
         if (YassVideoUtils.useFOBS) {
             menu.addSeparator();
-            menu.add(playAll);
-            menu.add(playAllFromHere);
             menu.add(playAllVideoCBI = new JCheckBoxMenuItem(enableVideoPreview));
         }
         menu.addSeparator();
@@ -5920,16 +5940,19 @@ public class YassActions implements DropTargetListener {
         int beat = r.getBeatInt();
         long end = (long) table.beatToMs(beat);
 
-        long pos;
-        YassRow r0 = table.getRowAt(i - 1);
-        if (mode == 1 || !r0.isNoteOrPageBreak()) {
-            pos = end - beforeNextMs;
-            if (pos < 0) pos = 0;
-        } else if (r0.isNote()) {
-            pos = (long) table.beatToMs(r0.getBeatInt() + r0.getLengthInt());
-        }
-        else { // if (r0.isPageBreak())
-            pos = (long) sheet.getLeftMs();
+        long pos = -1;
+        while (pos < 0) {
+            YassRow r0 = table.getRowAt(i - 1);
+            if (mode == 1 || !r0.isNoteOrPageBreak()) {
+                pos = end - beforeNextMs;
+                if (pos < 0) pos = 0;
+            } else if (r0.isNote()) {
+                pos = (long) table.beatToMs(r0.getBeatInt() + r0.getLengthInt());
+            } else if (r0.isPageBreak() && sheet.isVisible(i - 1)) {
+                i--;
+            } else {
+                pos = (long) sheet.getLeftMs();
+            }
         }
         startPlaying();
 
@@ -5960,8 +5983,15 @@ public class YassActions implements DropTargetListener {
             end = pos + beforeNextMs;
         else if (r1.isNote())
             end = (long) table.beatToMs(r1.getBeatInt());
-        else // if (r1.isPageBreak()
-            end = (long) sheet.getMaxVisibleMs();
+        else {
+            // if (r1.isPageBreak()
+            r1 = table.getRowAt(i + 2);
+            if (r1 != null) {
+                end = (long) table.beatToMs(r1.getBeatInt());
+            } else {
+                end = (long) sheet.getMaxVisibleMs();
+            }
+        }
 
         startPlaying();
 
@@ -6047,20 +6077,14 @@ public class YassActions implements DropTargetListener {
     }
 
     public void previewEdit(boolean onoff) {
-        if (onoff) {
-            if (editMenu != null) {
-                editMenu.setVisible(false);
-            }
-            if (editTools != null) {
-                editTools.setVisible(false);
-            }
-        } else {
-            if (editMenu != null) {
-                editMenu.setVisible(true);
-            }
-            if (editTools != null) {
-                editTools.setVisible(true);
-            }
+        if (editMenu != null) {
+            editMenu.setVisible(!onoff);
+        }
+        if (editTools != null) {
+            editTools.setVisible(!onoff);
+        }
+        if (sheet != null && sheet.getSongHeader() != null) {
+            sheet.getSongHeader().setVisible(!onoff);
         }
     }
 
@@ -6385,6 +6409,10 @@ public class YassActions implements DropTargetListener {
         updateTrackComponent();
         storeRecentFiles();
         mp3.reinitSynth(prop.getBooleanProperty("use-sample"));
+        File file = new File(table.getDirMP3());
+        if (!file.exists()) {
+            selectAudioFile.actionPerformed(null);
+        }
         mp3.openMP3(table.getDirMP3());
         updateTitle();
 
@@ -6395,9 +6423,21 @@ public class YassActions implements DropTargetListener {
         if (video != null && vd != null) {
             video.setVideo(table.getDir() + File.separator + vd);
         }
+        if (StringUtils.isEmpty(vd)) {
+            File temp = findFile(file.getParentFile(), List.of(".mp4", ".mkv", ".avi"));
+            if (temp != null) {
+                table.setVideo(temp.getName());
+            }
+        }
+        if (StringUtils.isEmpty(table.getCover())) {
+            File temp = findFile(file.getParentFile(), List.of("[co]"));
+            if (temp != null) {
+                table.setCover(temp.getName());
+            }
+        }
         String bg = table.getBackgroundTag();
         if (bg != null) {
-            File file = new File(table.getDir() + File.separator + bg);
+            file = new File(table.getDir() + File.separator + bg);
             BufferedImage img = null;
             if (file.exists()) {
                 try {
@@ -6459,6 +6499,17 @@ public class YassActions implements DropTargetListener {
         sheet.init(initMic());
         sheet.initSongHeader(this);
         table.initAutoSave();
+    }
+    
+    private File findFile(File parentFile, List<String> qualifiers) {
+        if (ArrayUtils.isNotEmpty(parentFile.listFiles())) {
+            for (File temp: parentFile.listFiles()) {
+                if (qualifiers.stream().anyMatch(qualifier -> temp.getName().toLowerCase().contains(qualifier))) {
+                    return temp;
+                }
+            }
+        }
+        return null;
     }
     
     private YassSession initMic() {

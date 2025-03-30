@@ -2,7 +2,7 @@
 <launch4jConfig>
   <dontWrapJar>false</dontWrapJar>
   <headerType>gui</headerType>
-  <jar>.\target\Yass-Reloaded-2025.3-jar-with-dependencies.jar</jar>
+  <jar>.\target\Yass-Reloaded-2025.4-jar-with-dependencies.jar</jar>
   <outfile>.\target\yass.exe</outfile>
   <errTitle></errTitle>
   <cmdLine></cmdLine>
@@ -27,12 +27,12 @@
     <timeoutErr>true</timeoutErr>
   </splash>
   <versionInfo>
-    <fileVersion>2.6.4.0</fileVersion>
+    <fileVersion>2.6.5.0</fileVersion>
     <txtFileVersion>Yass Reloaded ${project.version}</txtFileVersion>
     <fileDescription>Yass Reloaded - Karaoke Editor</fileDescription>
     <copyright>(C)2025 DoubleDee</copyright>
-    <productVersion>2.6.4.0</productVersion>
-    <txtProductVersion>2025.3</txtProductVersion>
+    <productVersion>2.6.5.0</productVersion>
+    <txtProductVersion>2025.4</txtProductVersion>
     <productName>Yass Reloaded</productName>
     <companyName>yass-reloaded.com</companyName>
     <internalName>yass</internalName>

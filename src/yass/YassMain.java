@@ -19,6 +19,7 @@
 package yass;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.math.NumberUtils;
 import yass.ffmpeg.FFMPEGLocator;
 import yass.logger.YassLogger;
 import yass.stats.YassStats;
@@ -69,6 +70,21 @@ public class YassMain extends JFrame {
                 System.out.println("Created User-Dir " + userDir.getAbsolutePath());
             }
         }
+        File sampleDir = new File(System.getProperty("user.home") + File.separator + ".yass" + 
+                                          File.separator + "samples" + File.separator + "longnotes");
+        if (!sampleDir.exists()) {
+            if (sampleDir.mkdirs()) {
+                System.out.println("Created Sample-Dir " + sampleDir.getAbsolutePath());
+            }
+        }
+        sampleDir = new File(System.getProperty("user.home") + File.separator + ".yass" +
+                                     File.separator + "samples" + File.separator + "shortnotes");
+        if (!sampleDir.exists()) {
+            if (sampleDir.mkdirs()) {
+                System.out.println("Created Sample-Dir " + sampleDir.getAbsolutePath());
+            }
+        }
+        
         YassLogger.init( userDir.getAbsolutePath() + File.separator + "log.txt");
         checkAudio();
         initLater(argv);
@@ -257,7 +273,12 @@ public class YassMain extends JFrame {
         sheet = new YassSheet();
         sheet.setOwner(this);
         mp3 = new YassPlayer(sheet, !prop.getBooleanProperty("use-sample"), prop.getBooleanProperty("debug-audio"));
-
+        String dbfsProp = prop.getProperty("dbfs");
+        if (StringUtils.isEmpty(dbfsProp) || !NumberUtils.isParsable(dbfsProp)) {
+            mp3.setTargetDbfs(0);
+        } else {
+            mp3.setTargetDbfs(NumberUtils.toDouble(dbfsProp));
+        }
         lyrics = new YassLyrics(prop);
         lyrics.setSheet(sheet);
 

@@ -22,6 +22,8 @@ package yass;
 import org.apache.commons.lang3.StringUtils;
 
 import javax.swing.*;
+import javax.swing.border.Border;
+import javax.swing.border.EtchedBorder;
 import java.awt.*;
 import java.awt.event.ItemEvent;
 import java.awt.event.WindowAdapter;
@@ -30,7 +32,7 @@ import java.io.File;
 import java.util.Objects;
 import java.util.logging.Logger;
 
-public class SongHeader extends JDialog {
+public class SongHeader extends JDialog implements YassSheetListener {
 
     private TimeSpinner gapSpinner = null;
     private TimeSpinner startSpinner = null;
@@ -41,6 +43,7 @@ public class SongHeader extends JDialog {
     private JComboBox<String> audioSelector;
     private YassActions actions;
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+
     public SongHeader(JFrame owner, YassActions actions, YassTable table) {
         super(owner);
         LOGGER.info("Init Songheader");
@@ -48,11 +51,14 @@ public class SongHeader extends JDialog {
             return;
         }
         this.actions = actions;
+        boolean darkMode = actions.getProperties().containsKey("dark-mode") && actions.getProperties()
+                                                                                      .get("dark-mode")
+                                                                                      .equals("true");
         setTitle(I18.get("edit_header"));
         setResizable(false);
         setUndecorated(true);
         addWindowListener(new WindowAdapter() {
-        public void windowClosing(WindowEvent e) {
+            public void windowClosing(WindowEvent e) {
                 e.getWindow().dispose();
             }
         });
@@ -174,8 +180,8 @@ public class SongHeader extends JDialog {
         panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
         panel.add(Box.createHorizontalStrut(5));
-        int duration = actions.getMP3() != null ? (int)(actions.getMP3().getDuration() / 1000) : 10000;
-        startSpinner = new TimeSpinner(I18.get("mpop_audio_start"), (int)table.getStart() * 1000, duration);
+        int duration = actions.getMP3() != null ? (int) (actions.getMP3().getDuration() / 1000) : 10000;
+        startSpinner = new TimeSpinner(I18.get("mpop_audio_start"), (int) table.getStart() * 1000, duration);
         startSpinner.setLabelSize(labelSize);
         startSpinner.setSpinnerWidth(100);
         startSpinner.getSpinner().setFocusable(false);
@@ -185,7 +191,7 @@ public class SongHeader extends JDialog {
         panel.add(startSpinner);
         panel.add(Box.createHorizontalStrut(30));
         int end = table.getEnd() > 0 ? (int) table.getEnd() : 10000;
-        
+
         endSpinner = new TimeSpinner(I18.get("mpop_audio_end"), Math.min(duration, end), Math.max(10000, duration));
         endSpinner.setLabelSize(midDimension);
         endSpinner.setSpinnerWidth(100);
@@ -226,6 +232,7 @@ public class SongHeader extends JDialog {
 
         add("Center", box);
         pack();
+        setColor(darkMode);
         setVisible(true);
         refreshLocation();
         toFront();
@@ -286,5 +293,50 @@ public class SongHeader extends JDialog {
         } else {
             return Objects.requireNonNull(audioSelector.getSelectedItem()).toString();
         }
+    }
+
+    @Override
+    public void posChanged(YassSheet source, double posMs) {
+        
+    }
+
+    @Override
+    public void rangeChanged(YassSheet source, int minHeight, int maxHeight, int minBeat, int maxBeat) {
+
+    }
+
+    @Override
+    public void propsChanged(YassSheet sheet) {
+        // dark mode buttons
+        Border emptyBorder = BorderFactory.createCompoundBorder(
+                BorderFactory.createEtchedBorder(EtchedBorder.RAISED),
+                BorderFactory.createEmptyBorder(4, 4, 4, 4));
+        Border rolloverBorder = BorderFactory.createCompoundBorder(
+                BorderFactory.createEtchedBorder(EtchedBorder.RAISED),
+                BorderFactory.createEmptyBorder(4, 4, 4, 4));
+        for (Component c : getComponents()) {
+            if (c instanceof JButton) {
+                ((JButton) c).getModel().addChangeListener(e -> {
+                    ButtonModel model = (ButtonModel) e.getSource();
+                    c.setBackground(model.isRollover()
+                                            ? (YassSheet.BLUE)
+                                            : (sheet.darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.HI_GRAY_2));
+                    ((JButton) c).setBorder(model.isRollover() ? rolloverBorder : emptyBorder);
+                });
+            }
+            if (c instanceof JToggleButton) {
+                ((JToggleButton) c).getModel().addChangeListener(e -> {
+                    ButtonModel model = (ButtonModel) e.getSource();
+                    c.setBackground(model.isRollover()
+                                            ? (YassSheet.BLUE)
+                                            : (sheet.darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.HI_GRAY_2));
+                    ((JToggleButton) c).setBorder(model.isRollover() ? rolloverBorder : emptyBorder);
+                });
+            }
+        }
+    }
+    
+    private void setColor(boolean darkMode) {
+        gapSpinner.setBackground(darkMode ? YassSheet.hiGrayDarkMode : YassSheet.hiGray);
     }
 }

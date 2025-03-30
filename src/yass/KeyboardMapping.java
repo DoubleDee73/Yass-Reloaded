@@ -71,6 +71,13 @@ public enum KeyboardMapping {
     }
     
     public String getLetter(int note) {
-        return KeyEvent.getKeyText(keys.get(note));
+        if (note >= keys.size()) {
+            return "";
+        }
+        try {
+            return KeyEvent.getKeyText(keys.get(note));
+        } catch (Exception e) {
+            return "";
+        }
     }
 }

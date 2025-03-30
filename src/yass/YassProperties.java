@@ -98,6 +98,9 @@ public class YassProperties extends Properties {
                 setProperty("key-18", "N");
             if (getProperty("before_next_ms") == null)
                 setProperty("before_next_ms", "300");
+            if (StringUtils.isEmpty(getProperty("audio-files")) || getProperty("audio-files").equals(".mp3")) {
+                setProperty("audio-files", ".mp3|.m4a|.wav|.ogg|.opus|.flac");
+            }
             setupTags();
             setupHyphenationDictionaries();
             return;
@@ -174,7 +177,7 @@ public class YassProperties extends Properties {
         p.putIfAbsent("song-filetype", ".txt");
         p.putIfAbsent("playlist-filetype", ".upl");
 
-        p.putIfAbsent("audio-files", ".mp3");
+        p.putIfAbsent("audio-files", ".mp3|.m4a|.wav|.ogg|.opus|.flac");
         p.putIfAbsent("image-files", ".jpg|.jpeg");
         p.putIfAbsent("video-files", ".mpg|.mpeg|.avi|.divx");
         p.putIfAbsent("cover-id", "[CO]");
@@ -426,6 +429,8 @@ public class YassProperties extends Properties {
         p.putIfAbsent("seek-out-offset", "0");
         p.putIfAbsent("seek-in-offset-ms", "0");
         p.putIfAbsent("seek-out-offset-ms", "0");
+        p.putIfAbsent("dbfs", "-14");
+        
         p.putIfAbsent("print-plugins", "yass.print.PrintBlocks|yass.print.PrintPlain|yass.print.PrintPlainLandscape|yass.print.PrintDetails");
         p.putIfAbsent("filter-plugins", "yass.filter.YassTitleFilter|yass.filter.YassArtistFilter|yass.filter.YassLanguageFilter|yass.filter.YassEditionFilter|yass.filter.YassGenreFilter|yass.filter.YassAlbumFilter|yass.filter.YassPlaylistFilter|yass.filter.YassYearFilter|yass.filter.YassLengthFilter|yass.filter.YassFolderFilter|yass.filter.YassFilesFilter|yass.filter.YassFormatFilter|yass.filter.YassTagsFilter|yass.filter.YassMultiPlayerFilter|yass.filter.YassInstrumentFilter|yass.filter.YassErrorsFilter|yass.filter.YassStatsFilter");
         p.putIfAbsent("stats-plugins", "yass.stats.YassBasicStats|yass.stats.YassTimeStats|yass.stats.YassPitchStats");
