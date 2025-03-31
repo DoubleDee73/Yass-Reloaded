@@ -42,12 +42,13 @@ public class YassLanguageUtils {
     private LanguageDetector detector;
 
     public static final List<Locale> SUPPORTED_LOCALES = List.of(Locale.ENGLISH, Locale.GERMAN, Locale.FRENCH,
-                                                                       Locale.ITALIAN, Locale.forLanguageTag("es"),
-                                                                       Locale.forLanguageTag("pt"),
-                                                                       Locale.forLanguageTag("pl"),
-                                                                       Locale.forLanguageTag("tr"),
-                                                                       Locale.forLanguageTag("hu"),
-                                                                       Locale.CHINESE, Locale.forLanguageTag("ru"));
+                                                                 Locale.ITALIAN, Locale.forLanguageTag("es"),
+                                                                 Locale.forLanguageTag("pt"),
+                                                                 Locale.forLanguageTag("pl"),
+                                                                 Locale.forLanguageTag("sv"),
+                                                                 Locale.forLanguageTag("tr"),
+                                                                 Locale.forLanguageTag("hu"),
+                                                                 Locale.CHINESE);
 
     public YassLanguageUtils() {
         try {

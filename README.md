@@ -6,7 +6,7 @@ You can drag & drop notes, spread syllables, and find errors. Further you can fi
 Yass Reloaded is a fork from Yass 2.4.3 that Saruta has been developing since 2009. Due to time constraints on his behalf and "creative differences" with the other contributors, I decided to go rogue with my fork.
 
 # Main Differences to the original Yass
-- Better support for audio formats. Note, that FFmpeg is now required, so support any audio format that FFmpeg supports, such as M4A, OGG or OPUS
+- Better support for audio formats. Note, that FFmpeg is now required, so support any audio format that FFmpeg supports, such as AAC, OGG or OPUS
 - Improved UX: Coming from someone who has created hundreds of songs, many little tweaks and improvements have gone into Yass Reloaded to make things easier
   - Better copy-pasting
   - BPM, GAP, START, END tags can now directly be edited without having to open additional dialogs
@@ -17,7 +17,8 @@ Yass Reloaded is a fork from Yass 2.4.3 that Saruta has been developing since 20
 # Downloads
 Binaries can be found in the [Release Section](https://github.com/DoubleDee73/Yass/releases)
 
-Min. Requirement is Java 21 with JavaFX (e. g. Open JDK ZuluFX https://www.azul.com/downloads/)
+Min. Requirement is Java 21 (e. g. Open JDK ZuluFX https://www.azul.com/downloads/).
+While JavaFX is no longer required, it may be needed in future releases.
 
 Yass Reloaded requires FFmpeg to support a variety of audio formats.
 https://www.ffmpeg.org/download.html
@@ -46,10 +47,10 @@ and then start the jar like so:
 
 Basic setup is described in the Wiki: https://github.com/SarutaSan72/Yass/wiki/Developers
 
-# Yass uses
-- Java FX
+# Yass Reloaded uses
 - Java Look & Feel Graphics Repository
 - FFmpeg
+- [jAudiotagger](https://www.jthink.net/jaudiotagger)
 - [FFmpeg CLI Wrapper for Java](https://github.com/bramp/ffmpeg-cli-wrapper)
 - iText
 - Jazzy Spell Checker

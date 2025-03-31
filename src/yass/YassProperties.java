@@ -203,7 +203,7 @@ public class YassProperties extends Properties {
 
         // metadata
         p.putIfAbsent("language-tag", "English|EN|German|DE|Spanish|ES|French|FR|Other|NN");
-        p.putIfAbsent("language-more-tag", "Chinese|CH|Croatian|HR|Danish|DA|Hungarian|HU|Italian|IT|Japanese|JA|Korean|KR|Polish|PL|Russian|RU|Swedish|SV|Turkish|TR");
+        p.putIfAbsent("language-more-tag", "Chinese|CH|Croatian|HR|Danish|DA|Hungarian|HU|Italian|IT|Japanese|JA|Korean|KR|Polish|PL|Swedish|SV|Turkish|TR");
         // ISO 639-2 http|//www.loc.gov/standards/iso639-2/php/English_list.php
         p.putIfAbsent("genre-tag", "Blues|Darkwave|Musical|Metal|Oldies|Pop|Punk|Reggae|Rock|Other");
         p.putIfAbsent("genre-more-tag", "Acid|Alternative|Anime|Classical|Country|Dance|Death Metal|Disco|Electronic|Folk|Funk|Game|Gangsta|Gospel|Gothic|Grunge|Hip-Hop|House|Industrial|Jazz|JPop|MORE|New Age|Noise|R&B|Rave|Rap|Retro|Rock & Roll|Showtunes|Ska|Soundtrack|Soul|Techno|Trance|Tribal|Vocal");
@@ -302,7 +302,7 @@ public class YassProperties extends Properties {
 
         p.putIfAbsent("hyphenations", "EN|DE|ES|FR|IT|PL|PT|RU|SV|TR|ZH");
         p.putIfAbsent("dicts", "EN|DE");
-        p.putIfAbsent("dict-map", "English|EN|German|DE|French|EN|Croatian|EN|Hungarian|EN|Italian|EN|Japanese|EN|Polish|EN|Russian|EN|Spanish|EN|Swedish|EN|Turkish|EN");
+        p.putIfAbsent("dict-map", "English|EN|German|DE|French|EN|Croatian|EN|Hungarian|EN|Italian|EN|Japanese|EN|Polish|EN|Spanish|EN|Swedish|EN|Turkish|EN");
         p.putIfAbsent("user-dicts", userDir + File.separator + yassDir);
 
         p.putIfAbsent("utf8-without-bom", "true");

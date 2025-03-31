@@ -239,8 +239,8 @@ public class I18 {
         sb.append("along with this program. If not, see <a href=\"https://www.gnu.org/licenses/\">https://www.gnu.org/licenses/</a>.<br>");
         sb.append("<br>");
         sb.append("Yass uses: ");
-        sb.append("Java Look & Feel Graphics Repository, JavaFX<br>");
-        sb.append("iText, Jazzy Spell Checker, TeX Hyphenator, JInput, JAudioTagger, FFmpeg, FFmpeg CLI Wrapper, <br>");
+        sb.append("Java Look & Feel Graphics Repository, jAudiotagger<br>");
+        sb.append("iText, Jazzy Spell Checker, TeX Hyphenator, JInput, FFmpeg, FFmpeg CLI Wrapper, <br>");
         sb.append("Java Media Framework (JMF), Robert Eckstein's Wizard code,<br>");
         sb.append("juniversalchardet, Optimaize Language Detector<br>");
         sb.append("Speed measure 'Inverse Duration' based on Marcel Taeumel's approach (http://uman.sf.net).<br>");
