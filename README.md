@@ -6,7 +6,7 @@ You can drag & drop notes, spread syllables, and find errors. Further you can fi
 Yass Reloaded is a fork from Yass 2.4.3 that Saruta has been developing since 2009. Due to time constraints on his behalf and "creative differences" with the other contributors, I decided to go rogue with my fork.
 
 # Main Differences to the original Yass
-- Better support for audio formats: M4A is supported out-of-the-box. If FFmpeg is installed, any audio format that FFmpeg supports, will work in Yass Reloaded, such as OGG or OPUS
+- Better support for audio formats. Note, that FFmpeg is now required, so support any audio format that FFmpeg supports, such as AAC, OGG or OPUS
 - Improved UX: Coming from someone who has created hundreds of songs, many little tweaks and improvements have gone into Yass Reloaded to make things easier
   - Better copy-pasting
   - BPM, GAP, START, END tags can now directly be edited without having to open additional dialogs
@@ -17,16 +17,14 @@ Yass Reloaded is a fork from Yass 2.4.3 that Saruta has been developing since 20
 # Downloads
 Binaries can be found in the [Release Section](https://github.com/DoubleDee73/Yass/releases)
 
-Min. Requirement is Java 21 with JavaFX (e. g. Open JDK ZuluFX https://www.azul.com/downloads/)
+Min. Requirement is Java 21 (e. g. Open JDK ZuluFX https://www.azul.com/downloads/).
+While JavaFX is no longer required, it may be needed in future releases.
 
-For Yass Reloaded to offer fully fledged audio format support, it is recommended, that you install FFmpeg:
+Yass Reloaded requires FFmpeg to support a variety of audio formats.
 https://www.ffmpeg.org/download.html
 - Windows (<code>winget install --id=Gyan.FFmpeg -e</code>) - Check out: https://www.gyan.dev/ffmpeg/builds/
 - MacOS (<code>brew install ffmpeg</code>)
 - Linux (<code>sudo apt install ffmpeg</code>)
-While Yass also works without FFmpeg, there are known issues, such as:
-- On Windows, if using MP3 or M4a and if the GAP is less than 1000 (aka singing starts immediately), the notes will seem out-of-sync
-- On Mac, notes are generally out-of-sync, unless WAV is used
 
 Also, it is highly recommended to download Ultrastar Creator to get you started (https://github.com/UltraStar-Deluxe/UltraStar-Creator)
 
@@ -35,7 +33,7 @@ If you install Yass Reloaded with the Windows installer, you can simply run <cod
 
 Alternatively, you can download the jar file and start it from the console:
 
-On Windows, you can simply do this: <code>java -jar Yass-Reloaded-2025.3.jar</code>
+On Windows, you can simply do this: <code>java -jar Yass-Reloaded-2025.4.jar</code>
 
 On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
@@ -43,16 +41,16 @@ On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
 and then start the jar like so:
 
-<code>java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2025.3.jar</code>
+<code>java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2025.4.jar</code>
 
 # Developers
 
 Basic setup is described in the Wiki: https://github.com/SarutaSan72/Yass/wiki/Developers
 
-# Yass uses
-- Java FX
+# Yass Reloaded uses
 - Java Look & Feel Graphics Repository
 - FFmpeg
+- [jAudiotagger](https://www.jthink.net/jaudiotagger)
 - [FFmpeg CLI Wrapper for Java](https://github.com/bramp/ffmpeg-cli-wrapper)
 - iText
 - Jazzy Spell Checker
@@ -96,7 +94,7 @@ If you like this  app, feel free (but not pressured!) to buy me coffee. Any supp
   - Open a command line window and type in <code>java -version</code>. 
   - You should have Java 21
 - Have you tried opening it as a jar?
-  - Download the jar, open a command line window and type in <code>java -jar Yass-Reloaded-2025.3.jar</code>
+  - Download the jar, open a command line window and type in <code>java -jar Yass-Reloaded-2025.4.jar</code>
   - Any error messages are then printed out in the command line window for debugging
 
 ## Cannot find FFmpeg?

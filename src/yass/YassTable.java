@@ -48,9 +48,9 @@ import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.Year;
+import java.util.*;
 import java.util.List;
 import java.util.Timer;
-import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -6481,8 +6481,43 @@ public class YassTable extends JTable {
     }
 
     public void alignQuarterNoteGrid() {
+        if (sheet == null) {
+            return;
+        }
         int currentRow = getSelectedRow();
-        System.out.println(currentRow);
+        if (currentRow < 0) {
+            currentRow = sheet.nextElement();
+        }
+        YassRow row = getRowAt(currentRow);
+        if (!row.isNote()) {
+            return;
+        }
+        int start = findGridBeat(row.getBeatInt());
+        
+        int counter = 0;
+        int nextRow = start;
+        while (row.isNote()) {
+            row.setBeat(nextRow);
+            nextRow = findGridBeat(nextRow + row.getLengthInt() + 1);
+            row = getRowAt(currentRow + ++counter);
+            if (row.getBeatInt() > nextRow) {
+                nextRow = findGridBeat(row.getBeatInt());
+            }
+        }
+        tm.fireTableRowsUpdated(start, nextRow);
+    }
+    
+    private int findGridBeat(int currentBeat) {
+        int gridBeat = currentBeat;
+        int diff = gridBeat % 4;
+        if (diff == 1) {
+            gridBeat = gridBeat - 1;
+        } else if (diff == 2) {
+            gridBeat = gridBeat + 2;
+        } else if (diff == 3) {
+            gridBeat = gridBeat + 1;
+        }
+        return gridBeat;
     }
     
     public void sortRows() {

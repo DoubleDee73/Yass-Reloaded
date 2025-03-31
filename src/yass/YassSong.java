@@ -18,6 +18,7 @@
 
 package yass;
 
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import javax.swing.*;
@@ -1628,6 +1629,19 @@ public class YassSong implements Cloneable, Comparable<Object> {
             }
         }
         return true;
+    }
+    
+    public String getUsdbUrl() {
+        File directory = new File(getDirectory());
+        if (!directory.exists() || ArrayUtils.isEmpty(directory.listFiles())) {
+            return null;
+        }
+        UsdbSyncerMetaFileLoader loader = new UsdbSyncerMetaFileLoader(directory.getAbsolutePath());
+        UsdbSyncerMetaFile metaFile = loader.getMetaFile();
+        if (metaFile == null || metaFile.getSongId() == 0) {
+            return null;
+        }
+        return "https://usdb.animux.de/index.php?link=detail&id=" + metaFile.getSongId(); 
     }
 }
 

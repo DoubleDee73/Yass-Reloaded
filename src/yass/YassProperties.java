@@ -98,6 +98,9 @@ public class YassProperties extends Properties {
                 setProperty("key-18", "N");
             if (getProperty("before_next_ms") == null)
                 setProperty("before_next_ms", "300");
+            if (StringUtils.isEmpty(getProperty("audio-files")) || getProperty("audio-files").equals(".mp3")) {
+                setProperty("audio-files", ".mp3|.m4a|.wav|.ogg|.opus|.flac");
+            }
             setupTags();
             setupHyphenationDictionaries();
             return;
@@ -174,7 +177,7 @@ public class YassProperties extends Properties {
         p.putIfAbsent("song-filetype", ".txt");
         p.putIfAbsent("playlist-filetype", ".upl");
 
-        p.putIfAbsent("audio-files", ".mp3");
+        p.putIfAbsent("audio-files", ".mp3|.m4a|.wav|.ogg|.opus|.flac");
         p.putIfAbsent("image-files", ".jpg|.jpeg");
         p.putIfAbsent("video-files", ".mpg|.mpeg|.avi|.divx");
         p.putIfAbsent("cover-id", "[CO]");
@@ -200,7 +203,7 @@ public class YassProperties extends Properties {
 
         // metadata
         p.putIfAbsent("language-tag", "English|EN|German|DE|Spanish|ES|French|FR|Other|NN");
-        p.putIfAbsent("language-more-tag", "Chinese|CH|Croatian|HR|Danish|DA|Hungarian|HU|Italian|IT|Japanese|JA|Korean|KR|Polish|PL|Russian|RU|Swedish|SV|Turkish|TR");
+        p.putIfAbsent("language-more-tag", "Chinese|CH|Croatian|HR|Danish|DA|Hungarian|HU|Italian|IT|Japanese|JA|Korean|KR|Polish|PL|Swedish|SV|Turkish|TR");
         // ISO 639-2 http|//www.loc.gov/standards/iso639-2/php/English_list.php
         p.putIfAbsent("genre-tag", "Blues|Darkwave|Musical|Metal|Oldies|Pop|Punk|Reggae|Rock|Other");
         p.putIfAbsent("genre-more-tag", "Acid|Alternative|Anime|Classical|Country|Dance|Death Metal|Disco|Electronic|Folk|Funk|Game|Gangsta|Gospel|Gothic|Grunge|Hip-Hop|House|Industrial|Jazz|JPop|MORE|New Age|Noise|R&B|Rave|Rap|Retro|Rock & Roll|Showtunes|Ska|Soundtrack|Soul|Techno|Trance|Tribal|Vocal");
@@ -299,7 +302,7 @@ public class YassProperties extends Properties {
 
         p.putIfAbsent("hyphenations", "EN|DE|ES|FR|IT|PL|PT|RU|SV|TR|ZH");
         p.putIfAbsent("dicts", "EN|DE");
-        p.putIfAbsent("dict-map", "English|EN|German|DE|French|EN|Croatian|EN|Hungarian|EN|Italian|EN|Japanese|EN|Polish|EN|Russian|EN|Spanish|EN|Swedish|EN|Turkish|EN");
+        p.putIfAbsent("dict-map", "English|EN|German|DE|French|EN|Croatian|EN|Hungarian|EN|Italian|EN|Japanese|EN|Polish|EN|Spanish|EN|Swedish|EN|Turkish|EN");
         p.putIfAbsent("user-dicts", userDir + File.separator + yassDir);
 
         p.putIfAbsent("utf8-without-bom", "true");
@@ -426,6 +429,8 @@ public class YassProperties extends Properties {
         p.putIfAbsent("seek-out-offset", "0");
         p.putIfAbsent("seek-in-offset-ms", "0");
         p.putIfAbsent("seek-out-offset-ms", "0");
+        p.putIfAbsent("dbfs", "-14");
+        
         p.putIfAbsent("print-plugins", "yass.print.PrintBlocks|yass.print.PrintPlain|yass.print.PrintPlainLandscape|yass.print.PrintDetails");
         p.putIfAbsent("filter-plugins", "yass.filter.YassTitleFilter|yass.filter.YassArtistFilter|yass.filter.YassLanguageFilter|yass.filter.YassEditionFilter|yass.filter.YassGenreFilter|yass.filter.YassAlbumFilter|yass.filter.YassPlaylistFilter|yass.filter.YassYearFilter|yass.filter.YassLengthFilter|yass.filter.YassFolderFilter|yass.filter.YassFilesFilter|yass.filter.YassFormatFilter|yass.filter.YassTagsFilter|yass.filter.YassMultiPlayerFilter|yass.filter.YassInstrumentFilter|yass.filter.YassErrorsFilter|yass.filter.YassStatsFilter");
         p.putIfAbsent("stats-plugins", "yass.stats.YassBasicStats|yass.stats.YassTimeStats|yass.stats.YassPitchStats");

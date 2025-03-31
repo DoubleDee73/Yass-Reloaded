@@ -2587,6 +2587,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         YassPlayer mp3 = actions.getMP3();
 
         int lasty = 0;
+        
         for (int x = clip.x + 1; x < clip.x + clip.width; x++) {
             double ms = fromTimelineExact(x);
             int y = mp3.getWaveFormAtMillis(ms);
@@ -5537,11 +5538,11 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         boolean exit;
         do {
             noteMapping.add(i + lowestNote);
-            exit = noteMapping.size() == KeyboardMapping.QWERTZ.keys.size();
+            exit = noteMapping.size() >= KeyboardMapping.QWERTZ.keys.size();
             normalized = normalizeNoteHeight(lowestNote + i);
             if (!exit && (normalized == 4 || normalized == 11)) {
                 noteMapping.add(Integer.MIN_VALUE);
-                exit = noteMapping.size() == KeyboardMapping.QWERTZ.keys.size();
+                exit = noteMapping.size() >= KeyboardMapping.QWERTZ.keys.size();
             }
             i++;
         } while (!exit);
