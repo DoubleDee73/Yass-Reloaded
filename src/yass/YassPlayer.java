@@ -118,26 +118,13 @@ public class YassPlayer {
     private double targetDbfs;
     private double replayGain;
     
-    private void initNoteMap() {
+    public void initNoteMap() {
         lastNote = null;
         LONG_NOTE_MAP = new HashMap<>();
         SHORT_NOTE_MAP = new HashMap<>();
-        byte[] note;
-        for (int i = 21; i < 109; i++) {
-            note = createNotePlayer("samples/longnotes/" + i);
-            if (note != null) {
-                LONG_NOTE_MAP.put(i, note);
-            } else {
-                if (DEBUG) LOGGER.info("Failed to create piano note " + i);
-            }
-            note = createNotePlayer("samples/shortnotes/" + i);
-            if (note != null) {
-                SHORT_NOTE_MAP.put(i, note);
-            }
-        }
     }
 
-    private byte[] createNotePlayer(String path) {
+    public byte[] createNotePlayer(String path) {
         File resource = fetchOrConvert(path);
         if (resource == null) {
             return null;
@@ -155,7 +142,19 @@ public class YassPlayer {
             throw new RuntimeException(e);
         }
     }
-
+    
+    public void addNoteToMap(byte[] note, int i, boolean longNote) {
+        if (note == null) {
+            if (DEBUG) LOGGER.info("Failed to create piano note " + i);
+            return;
+        }
+        if (longNote) {
+            LONG_NOTE_MAP.put(i, note);
+        } else {
+            SHORT_NOTE_MAP.put(i, note);
+        }
+    }
+    
     private File fetchOrConvert(String path) {
         File file = new File(TEMP_PATH + path + ".wav");
         if (file.exists()) {
@@ -189,7 +188,6 @@ public class YassPlayer {
 
     public YassPlayer(YassPlaybackRenderer s, boolean initMidi, boolean debugAudio) {
         playbackRenderer = s;
-        initNoteMap();
         if (initMidi) {
             midi = new YassMIDI();
         }
@@ -941,7 +939,7 @@ public class YassPlayer {
             double playrate = timebase.timerate;
             if (timebase == Timebase.NORMAL) {
                 mp3File = new File(TEMP_WAV);
-                setPlayrate(Timebase.NORMAL);
+                setPlayrate(yass.Timebase.NORMAL);
             } else {
                 mp3File = new File(TEMP_PATH + timebase.id + "temp.wav");
                 if (!mp3File.exists()) {
@@ -951,7 +949,7 @@ public class YassPlayer {
                         setPlayrate(timebase);
                     } catch (IOException | UnsupportedAudioFileException | LineUnavailableException e) {
                         // Couldn't find slowed down ffmpeg conversion, we are using the ugly JavaFX-slow down
-                        setPlayrate(Timebase.NORMAL);
+                        setPlayrate(yass.Timebase.NORMAL);
                     }
                 } else {
                     setPlayrate(timebase);
@@ -1321,13 +1319,13 @@ public class YassPlayer {
     }
 
     public File generateTemp(String source) throws IOException, UnsupportedAudioFileException, LineUnavailableException {
-        return generateTemp(source, Timebase.NORMAL);
+        return generateTemp(source, yass.Timebase.NORMAL);
     }
 
     public File generateTemp(String source, Timebase timeBase) throws IOException, UnsupportedAudioFileException,
             LineUnavailableException {
         String filename;
-        if (timeBase == Timebase.NORMAL) {
+        if (timeBase == yass.Timebase.NORMAL) {
             filename = TEMP_WAV;
         } else {
             filename = TEMP_PATH + timeBase.getId() + "temp.wav";
@@ -1352,7 +1350,7 @@ public class YassPlayer {
         this.key = findKey();
         setReplayGain(source);
         File tempFile = new File(filename);
-        if (timeBase != Timebase.NORMAL) {
+        if (timeBase != yass.Timebase.NORMAL) {
             fFmpegBuilder.setAudioFilter(timeBase.getFilter());
         }
         int channels = 2;
@@ -1554,7 +1552,7 @@ public class YassPlayer {
                         sourceLine.write(buffer, 0, bytesToWrite);
                         offset += bytesToWrite;
                     }
-                    sourceLine.drain();
+                    sourceLine.flush();
                     sourceLine.close();
                     buffer = null;
                     if (showPlayStatus) {

@@ -591,7 +591,13 @@ public class YassProperties extends Properties {
         Set<String> parentPaths = new HashSet<>();
         String[] paths = defaultPaths.split("\\|");
         for (String path : paths) {
-            Path tempPath = Path.of(path);
+            Path tempPath;
+            try {
+                tempPath = Path.of(path);
+            } catch (Exception ex) {
+                LOGGER.info("Invalid path " + path + " was found in default-programs");
+                continue;
+            }
             if (!Files.exists(tempPath)) {
                 continue;
             }
@@ -604,7 +610,14 @@ public class YassProperties extends Properties {
         }
         for (String additionalProgram : additionalPrograms) {
              for (String parentPath : parentPaths) {
-                 Path tempPath = Path.of(parentPath, additionalProgram);
+                 Path tempPath;
+                 try {
+                     tempPath = Path.of(parentPath, additionalProgram);
+                 } catch (Exception ex) {
+                     LOGGER.info(
+                             "Invalid path " + parentPath + "\\" + additionalProgram + " was found in default-programs");
+                     continue;
+                 }
                  if (!Files.exists(tempPath)) {
                      continue;
                  }

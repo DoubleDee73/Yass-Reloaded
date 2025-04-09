@@ -31,6 +31,7 @@ import javax.swing.border.EtchedBorder;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
+import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Locale;
@@ -91,25 +92,36 @@ public class YassMain extends JFrame {
     }
 
     private static void initLater(final String[] argv) {
-        SwingUtilities.invokeLater(() -> {
-            final YassMain y = new YassMain();
-            y.parseCommandLine(argv);
-
-            LOGGER.info("Init... Yass Reloaded " + YassActions.VERSION);
-            y.init();
-            LOGGER.info("Initialized.");
-            y.initConvert();
-            y.onShow();
-
-            LOGGER.info("Starting...");
-            y.load();
-
-            y.initFrame();
-            if (y.refreshLibrary()) {
-                LOGGER.info("Song Library was refreshed...");
-            }
-            LOGGER.info("Ready. Let's go.");
-        });
+        final Object[] result = new Object[1];
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                YassMain y = new YassMain();
+                y.parseCommandLine(argv);
+    
+                LOGGER.info("Init... Yass Reloaded " + YassActions.VERSION);
+                y.init();
+                LOGGER.info("Initialized.");
+                y.initConvert();
+                y.onShow();
+    
+                LOGGER.info("Starting...");
+                y.load();
+    
+                y.initFrame();
+                if (y.refreshLibrary()) {
+                    LOGGER.info("Song Library was refreshed...");
+                }
+                LOGGER.info("Ready. Let's go.");
+                result[0] = y;
+            });
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (InvocationTargetException e) {
+            throw new RuntimeException(e);
+        }
+        YassMain yassMain = (YassMain) result[0];
+        SplashFrame splashFrame = new SplashFrame(yassMain.mp3, yassMain.sheet);
+        splashFrame.setLocationRelativeTo(null);
     }
 
     private static void checkAudio() {
