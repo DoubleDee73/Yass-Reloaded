@@ -190,8 +190,8 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.version>2025.4</project.version>
-        <project.semantic.version>2025.4</project.semantic.version>
+        <project.version>2025.5</project.version>
+        <project.semantic.version>2025.5</project.semantic.version>
     </properties>
 
     <build>

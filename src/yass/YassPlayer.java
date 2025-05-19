@@ -113,7 +113,8 @@ public class YassPlayer {
     private boolean playing = false;
     private int pianoVolume;
     private HashMap<Long, Thread> playThreadMap = new HashMap<>();
-
+    private List<SourceDataLine> lineList = new ArrayList<>(); 
+    
     private MusicalKeyEnum key;
     private double targetDbfs;
     private double replayGain;
@@ -611,6 +612,31 @@ public class YassPlayer {
             players.interrupt();
         }
         playThreadMap.clear();
+    }
+
+    public void flushDatalines() {
+        for (SourceDataLine line : lineList) {
+            line.flush();
+            line.close();
+        }
+        lineList.clear();
+        for (Mixer.Info mixerInfo : AudioSystem.getMixerInfo()) {
+            Mixer mixer = AudioSystem.getMixer(mixerInfo);
+            for (Line.Info lineInfo : mixer.getSourceLineInfo()) {
+                try {
+                    Line line = mixer.getLine(lineInfo);
+                    if (line instanceof SourceDataLine) {
+                        ((SourceDataLine)line).flush();
+                    }
+                    if (line.isOpen()) {
+                        line.close();
+                    }
+                } catch (LineUnavailableException e) {
+                    // Probably already in use or unavailable
+                }
+            }
+        }
+
     }
 
     /**
@@ -1534,6 +1560,7 @@ public class YassPlayer {
             String threadName = Long.toString(System.currentTimeMillis());
             Runnable runnable = () -> {
                 try (SourceDataLine sourceLine = (SourceDataLine) AudioSystem.getLine(info)){
+                    lineList.add(sourceLine);
                     sourceLine.open(audioFormat);
                     sourceLine.start();
                     long tempBytes = (long)(length * bytesPerMillisecond);
@@ -1552,12 +1579,13 @@ public class YassPlayer {
                         sourceLine.write(buffer, 0, bytesToWrite);
                         offset += bytesToWrite;
                     }
-                    sourceLine.flush();
+                    sourceLine.drain();
                     sourceLine.close();
                     buffer = null;
                     if (showPlayStatus) {
                         playThreadMap.remove(threadName);
                     }
+                    lineList.remove(sourceLine);
                 } catch (LineUnavailableException e) {
                     LOGGER.throwing("YassPlayer", "playAudioData", e);
                 }

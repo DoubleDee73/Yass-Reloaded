@@ -302,7 +302,7 @@ public class YassProperties extends Properties {
 
         p.putIfAbsent("hyphenations", "EN|DE|ES|FR|IT|PL|PT|RU|SV|TR|ZH");
         p.putIfAbsent("dicts", "EN|DE");
-        p.putIfAbsent("dict-map", "English|EN|German|DE|French|EN|Croatian|EN|Hungarian|EN|Italian|EN|Japanese|EN|Polish|EN|Spanish|EN|Swedish|EN|Turkish|EN");
+        p.putIfAbsent("dict-map", "English|EN|German|DE");
         p.putIfAbsent("user-dicts", userDir + File.separator + yassDir);
 
         p.putIfAbsent("utf8-without-bom", "true");

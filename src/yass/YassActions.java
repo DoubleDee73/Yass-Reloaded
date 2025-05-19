@@ -949,6 +949,7 @@ public class YassActions implements DropTargetListener {
                 });
 
                 YassTable t = new YassTable();
+                t.init(prop);
                 t.loadFile(fn);
                 fh.add("Center", new JScrollPane(t));
                 fh.pack();
@@ -3433,6 +3434,7 @@ public class YassActions implements DropTargetListener {
         icons.put("help16Icon", new ImageIcon(getClass().getResource("/yass/resources/img/Help16.gif")));
         icons.put("help24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/Help24.gif")));
         icons.put("key24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/key_24.gif")));
+        icons.put("globe16Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/development/WebComponent16.gif")));
         copyRows.putValue(AbstractAction.SMALL_ICON, getIcon("copy16Icon"));
         pasteRows.putValue(AbstractAction.SMALL_ICON, getIcon("pasteMelody16Icon"));
         pasteNotes.putValue(AbstractAction.SMALL_ICON, getIcon("paste16Icon"));
@@ -5106,6 +5108,7 @@ public class YassActions implements DropTargetListener {
             menuHolder.setJMenuBar(libMenu);
             currentView = VIEW_LIBRARY;
         }
+        mp3.flushDatalines();
 
         String recent = prop.getProperty("recent-files");
         editRecent.setEnabled(recent != null);
@@ -5459,7 +5462,9 @@ public class YassActions implements DropTargetListener {
             songList.showLyrics(true);
             YassSong s = songList.getFirstSelectedSong();
             if (s != null) {
-                songList.loadSongDetails(s, new YassTable());
+                YassTable yassTable = new YassTable();
+                yassTable.init(prop);
+                songList.loadSongDetails(s, yassTable);
             }
             songInfo.setSong(s);
 
@@ -6603,12 +6608,8 @@ public class YassActions implements DropTargetListener {
         if (table == null)
             return;
         String lang = table.getLanguage();
-        if (lang == null) {
-            lang = "EN_US";
-        } else {
-            lang = mapLanguage(lang);
-        }
-        lyrics.setLanguage(lang);
+        Locale locale = YassUtils.determineLocale(lang);
+        lyrics.setLanguage(locale.toLanguageTag());
         updateGapBpm();
     }
 
@@ -6622,7 +6623,7 @@ public class YassActions implements DropTargetListener {
             }
             st.nextToken();
         }
-        return "EN-US";
+        return null;
     }
 
 
