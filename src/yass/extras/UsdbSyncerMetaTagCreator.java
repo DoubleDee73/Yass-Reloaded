@@ -20,8 +20,10 @@
 package yass.extras;
 
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.LoggerFactory;
 import yass.*;
 
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -29,10 +31,18 @@ import javax.swing.text.DefaultFormatter;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
-import java.util.List;
 import java.util.*;
+import java.util.List;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -42,6 +52,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
 
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+    private static final org.slf4j.Logger log = LoggerFactory.getLogger(UsdbSyncerMetaTagCreator.class);
     private YassActions actions;
     private YassTable song;
 
@@ -82,16 +93,16 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         actions = a;
         YassSongList songList = a.getSongList();
         Vector<YassSong> songs = songList.getSelectedSongs();
+        YassProperties prop = actions.getProperties();
         if (songs == null || songs.size() != 1) {
             JOptionPane.showMessageDialog(this, "Nope");
             dispose();
             return;
         } else {
             song = new YassTable();
+            song.init(prop);
             songList.loadSongDetails(songList.getFirstSelectedSong(), song);
         }
-        YassProperties prop = actions.getProperties();
-        song.init(prop);
         checkExistingUsdbSyncerTags();
         setModal(true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
@@ -493,8 +504,8 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         line = tagsLine(gbc, line, main);
         // --------------------------------------------------------
         line = resultLine(gbc, line, main);
-        main.setSize(1200, 600);
-        main.setPreferredSize(new Dimension(1300, 600));
+        main.setSize(1200, 620);
+        main.setPreferredSize(new Dimension(1300, 620));
         main.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
         return main;
     }
@@ -516,12 +527,81 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         gbc.gridx = 0;
         gbc.gridy = line;
         main.add(new JLabel(I18.get("usdb_syncer_cover_url")), gbc);
-        gbc.gridwidth = 10;
+        gbc.gridwidth = 9;
         gbc.gridx = 2;
         gbc.gridy = line;
         main.add(coverUrl, gbc);
+        gbc.gridwidth = 1;
+        gbc.gridx = 11;
+        gbc.gridy = line;
+        main.add(createDownloadButton("COVER"), gbc);
         line++;
         return line;
+    }
+
+    private JButton createDownloadButton(String action) {
+        JButton downloadButton = new JButton();
+        downloadButton.setIcon(actions.getIcon("globe16Icon"));
+        downloadButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if ("COVER".equals(action) && StringUtils.isNotEmpty(coverUrl.getText())) {
+                    int[] crop = new int[4];
+                    if (coverCropHeight.getValue() != null && ((Double)coverCropHeight.getValue()).intValue() > 0 &&
+                            coverCropWidth.getValue() != null && ((Double)coverCropWidth.getValue()).intValue() > 0) {
+                        crop[0] = (int) coverCropLeft.getValue();
+                        crop[1] = (int) coverCropTop.getValue();
+                        crop[2] = (int) coverCropWidth.getValue();
+                        crop[3] = (int) coverCropHeight.getValue();
+                    } else {
+                        crop = null;
+                    }
+                    int resize = coverResize.getValue() != null ? ((Number)coverResize.getValue()).intValue() : 0;
+                    if (resize == 0) {
+                        resize = actions.getProperties().getIntProperty("cover-max-width");
+                    }
+                    File file = downloadAndSaveFile(coverUrl.getText(),
+                                                    song.getDirFilename().replace(".txt", " [CO]"),
+                                                    crop,
+                                                    resize);
+                    if (file != null && !file.getName().equalsIgnoreCase(song.getCover())) {
+                        song.setCover(file.getName());
+                        song.storeFile(song.getDirFilename());
+                        JOptionPane.showMessageDialog(null, I18.get("usdb_syncer_cover_saved").replace("%s", file.getName()), I18.get("usdb_syncer_cover"),
+                                                      JOptionPane.PLAIN_MESSAGE);
+                    }
+                }
+            }
+        });
+        return downloadButton;
+    }
+
+    private File downloadAndSaveFile(String imageUrl, String destinationFile, int[] crop, int resize) {
+        URL url;
+        File imageFile;
+        try {
+            imageUrl = imageUrl.replace("images.fanart.tv", "assets.fanart.tv");
+            url = new URI(imageUrl).toURL();
+            BufferedImage image = ImageIO.read(url);
+            if (crop != null) {
+                image = image.getSubimage(crop[0], crop[1], crop[2], crop[3]);
+            }
+            if (resize > 0 && image.getWidth() != resize) {
+                Image resultingImage = image.getScaledInstance(resize, resize, Image.SCALE_SMOOTH);
+                BufferedImage outputImage = new BufferedImage(resize, resize, BufferedImage.TYPE_INT_RGB);
+                outputImage.getGraphics().drawImage(resultingImage, 0, 0, null);
+                image = outputImage;
+            }
+            imageFile = new File(destinationFile + ".jpg");
+            if (imageFile.exists()) {
+                log.info(destinationFile + ".jpg already exist");
+                return null;
+            }
+            ImageIO.write(image, "jpeg", imageFile);
+        } catch (IOException | URISyntaxException e) {
+            return null;
+        }
+        return imageFile;
     }
 
     private int coverRotationContrastResizeLine(GridBagConstraints gbc, int line, JPanel main) {

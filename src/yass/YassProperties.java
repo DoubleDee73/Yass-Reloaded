@@ -302,7 +302,7 @@ public class YassProperties extends Properties {
 
         p.putIfAbsent("hyphenations", "EN|DE|ES|FR|IT|PL|PT|RU|SV|TR|ZH");
         p.putIfAbsent("dicts", "EN|DE");
-        p.putIfAbsent("dict-map", "English|EN|German|DE|French|EN|Croatian|EN|Hungarian|EN|Italian|EN|Japanese|EN|Polish|EN|Spanish|EN|Swedish|EN|Turkish|EN");
+        p.putIfAbsent("dict-map", "English|EN|German|DE");
         p.putIfAbsent("user-dicts", userDir + File.separator + yassDir);
 
         p.putIfAbsent("utf8-without-bom", "true");
@@ -591,7 +591,13 @@ public class YassProperties extends Properties {
         Set<String> parentPaths = new HashSet<>();
         String[] paths = defaultPaths.split("\\|");
         for (String path : paths) {
-            Path tempPath = Path.of(path);
+            Path tempPath;
+            try {
+                tempPath = Path.of(path);
+            } catch (Exception ex) {
+                LOGGER.info("Invalid path " + path + " was found in default-programs");
+                continue;
+            }
             if (!Files.exists(tempPath)) {
                 continue;
             }
@@ -604,7 +610,14 @@ public class YassProperties extends Properties {
         }
         for (String additionalProgram : additionalPrograms) {
              for (String parentPath : parentPaths) {
-                 Path tempPath = Path.of(parentPath, additionalProgram);
+                 Path tempPath;
+                 try {
+                     tempPath = Path.of(parentPath, additionalProgram);
+                 } catch (Exception ex) {
+                     LOGGER.info(
+                             "Invalid path " + parentPath + "\\" + additionalProgram + " was found in default-programs");
+                     continue;
+                 }
                  if (!Files.exists(tempPath)) {
                      continue;
                  }

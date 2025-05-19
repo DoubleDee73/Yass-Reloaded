@@ -6923,7 +6923,7 @@ public class YassTable extends JTable {
         }
         int period = prop.getIntProperty("options_autosave_interval");
         if (period == 0) {
-            LOGGER.info("Autosave disabled");
+            LOGGER.fine("Autosave disabled");
             return;
         } 
         timer = new Timer();

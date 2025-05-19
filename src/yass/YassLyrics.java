@@ -858,6 +858,9 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
      * @param lang The new language value
      */
     public void setLanguage(String lang) {
+        if (lang == null) {
+            return;
+        }
         Thread loader = new LanguageLoader(lang);
         loader.setPriority(Thread.NORM_PRIORITY - 1);
         SwingUtilities.invokeLater(loader);
@@ -958,6 +961,9 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                     table.getModel().addTableModelListener(tableListener);
                     preventFireUpdate = false;
 
+                    isSpellChecking = false;
+                    tableListener.tableChanged(null);
+                } else {
                     isSpellChecking = false;
                     tableListener.tableChanged(null);
                 }
