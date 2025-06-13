@@ -1702,6 +1702,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         g.fillRect(0, 0, w2, w2);
         g.fillRect(w2, w2, w2, w2);
         bgtex = new TexturePaint(im, new Rectangle(w, w));
+        if (songHeader != null) {
+            songHeader.applyTheme(darkMode);
+        }
     }
 
     public void setAutoTrim(boolean onoff) {

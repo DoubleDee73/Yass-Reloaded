@@ -23,6 +23,8 @@ import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.io.Serial;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Description of the Class
@@ -169,6 +171,23 @@ public class TimeSpinner extends JPanel {
         }
     }
 
+    public List<JLabel> getLabels() {
+        List<JLabel> labels = new ArrayList<>();
+        if (lab1 != null) {
+            labels.add(lab1);
+        }
+        if (lab2 != null) {
+            labels.add(lab2);
+        }
+        return labels;
+    }
+    
+    public JTextField getTextField() {
+        if (msSpinner != null) {
+            return ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField(); 
+        }
+        return null;
+    }
     public void setSpinnerWidth(int width) {
         Dimension spinnerWidth = new Dimension(width, 20);
         ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setColumns(5);
@@ -209,6 +228,24 @@ public class TimeSpinner extends JPanel {
         }
         duration = d;
         msModel.setMaximum(duration);
+    }
+
+    @Override
+    public void setBackground(Color bg) {
+        if (msSpinner == null) {
+            return;
+        }
+        ((JSpinner.DefaultEditor)msSpinner.getEditor()).getTextField().setForeground(bg);
+        msSpinner.getEditor().repaint();
+    }
+
+    @Override
+    public void setForeground(Color fg) {
+        if (msSpinner == null) {
+            return;
+        }
+        ((JSpinner.DefaultEditor)msSpinner.getEditor()).getTextField().setBackground(fg);
+        msSpinner.getEditor().repaint();
     }
 }
 

@@ -545,19 +545,38 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         downloadButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                if ("COVER".equals(action) && StringUtils.isNotEmpty(coverUrl.getText())) {
+                String coUrl = coverUrl.getText();
+                if (StringUtils.isNotEmpty(coUrl) && !YassUtils.isUrlReachable(coUrl)) {
+                    JOptionPane.showMessageDialog(null, I18.get("url_not_reachable"));
+                    return;
+                }
+                if (StringUtils.isEmpty(coUrl) && isYouTube(videoUrl.getText().toLowerCase())) {
+                    coUrl = "https://i.ytimg.com/vi/" + extractYoutubeVideoIdFromUrl(videoUrl.getText()) + 
+                            "/maxresdefault.jpg";
+                    if (!YassUtils.isUrlReachable(coUrl)) {
+                        return;
+                    }
+                    coverUrl.setText(coUrl);
+                }
+                if (coUrl.startsWith("https://i.ytimg.com")) {
+                    coverCropHeight.setValue(720);
+                    coverCropWidth.setValue(720);
+                    coverCropLeft.setValue(280);
+                    coverCropTop.setValue(0);
+                }
+                if ("COVER".equals(action) && StringUtils.isNotEmpty(coUrl)) {
                     int[] crop = new int[4];
-                    if (coverCropHeight.getValue() != null && ((Double)coverCropHeight.getValue()).intValue() > 0 &&
-                            coverCropWidth.getValue() != null && ((Double)coverCropWidth.getValue()).intValue() > 0) {
-                        crop[0] = (int) coverCropLeft.getValue();
-                        crop[1] = (int) coverCropTop.getValue();
-                        crop[2] = (int) coverCropWidth.getValue();
-                        crop[3] = (int) coverCropHeight.getValue();
+                    if (coverCropHeight.getValue() != null && ((Number)coverCropHeight.getValue()).intValue() > 0 &&
+                            coverCropWidth.getValue() != null && ((Number)coverCropWidth.getValue()).intValue() > 0) {
+                        crop[0] = ((Number) coverCropLeft.getValue()).intValue();
+                        crop[1] = ((Number) coverCropTop.getValue()).intValue();
+                        crop[2] = ((Number) coverCropWidth.getValue()).intValue();
+                        crop[3] = ((Number) coverCropHeight.getValue()).intValue();
                     } else {
                         crop = null;
                     }
                     int resize = coverResize.getValue() != null ? ((Number)coverResize.getValue()).intValue() : 0;
-                    if (resize == 0) {
+                    if (resize == 0 && ((Number) coverCropWidth.getValue()).intValue() == 0) {
                         resize = actions.getProperties().getIntProperty("cover-max-width");
                     }
                     File file = downloadAndSaveFile(coverUrl.getText(),

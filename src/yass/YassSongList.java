@@ -97,6 +97,10 @@ public class YassSongList extends JTable {
     public int FIRST_STATS_COLUMN = -1;
     private JTableHeader header = null;
     private String imageCacheName = null;
+    private YassMain main;
+
+    public List<String> audioFiles;
+    
     private final Action editTitle = new AbstractAction(I18.get("lib_title")) {
                 public void actionPerformed(ActionEvent e) {
                     setTitle();
@@ -208,10 +212,12 @@ public class YassSongList extends JTable {
      *
      * @param a Description of the Parameter
      */
-    public YassSongList(YassActions a) {
+    public YassSongList(YassActions a, YassMain parent) {
+        main = parent;
         actions = a;
         auto = a.getAutoCorrect();
         prop = a.getProperties();
+        audioFiles = Arrays.stream(prop.getProperty("audio-files").split("[|]")).toList();
         setOpaque(false);
         setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
         setShowGrid(false);
@@ -3221,8 +3227,14 @@ public class YassSongList extends JTable {
             if (prop.isUnityOrNewer()) {
                 t.setVersion();
             }
-            if (prop.isShinyOrNewer() && StringUtils.isEmpty(s.getAudio())) {
-                t.setAudio(s.getMP3());
+            if (prop.isShinyOrNewer()) {
+                if (StringUtils.isEmpty(s.getAudio())) {
+                    t.setAudio(s.getMP3());
+                } else {
+                    t.setAudio(s.getAudio());
+                }
+                t.setInstrumental(s.getInstrumental());
+                t.setVocals(s.getVocals());
             }
             t.setTags(s.getTags());
             String tmp = prop.getProperty("temp-dir");
@@ -4391,6 +4403,182 @@ public class YassSongList extends JTable {
         repaint();
     }
 
+    public void assignAudioFiles() {
+        int i = getSelectedRow();
+        if (i < 0) {
+            return;
+        }
+        boolean changed = false;
+        DefaultAudioFile defaultAudioFile = DefaultAudioFile.UNDEFINED;
+        for (YassSong song : getSelectedSongs()) {
+            File folder = new File(song.getDirectory());
+            if (!folder.exists() || !folder.isDirectory()) {
+                continue;
+            }
+            List<String> files = new ArrayList<>(Arrays.stream(Objects.requireNonNull(folder.listFiles()))
+                                                       .filter(file -> file.isFile() && isAudioFile(file.getName()))
+                                                       .map(File::getName)
+                                                       .toList());
+            AudioInstrumentalFlag flags = handleAudioFiles(song, files);
+            if (flags.hasChanged()) {
+                changed = true;
+                continue;
+            }
+            if (files.size() == 1) {
+                if (flags.hasNoChanges()) {
+                    if (defaultAudioFile == DefaultAudioFile.UNDEFINED) {
+                        defaultAudioFile = DefaultAudioFile.valueOf(RadioOptionsDialog.showRadioOptionDialog(main,
+                                                                                                             I18.get("lib_assign_default_title"),
+                                                                                                             I18.get("lib_assign_default_text"),
+                                                                                                             DefaultAudioFile.validDefaultAudioFiles()));
+
+                    }
+                    changed = applySongType(song, DefaultAudioFile.AUDIO, files.getFirst());
+                    if (defaultAudioFile != DefaultAudioFile.AUDIO) {
+                        LOGGER.info(files.getFirst() + " was set as " + defaultAudioFile +
+                                            ". Maybe the real audio is missing?");
+                        changed = applySongType(song, defaultAudioFile, files.getFirst());
+                    }
+                } else {
+                    DefaultAudioFile remainingType;
+                    if (flags.hasAudio() && !flags.hasInstrumental()) {
+                        remainingType = DefaultAudioFile.INSTRUMENTAL;
+                    } else if (flags.hasInstrumental() && !flags.hasAudio()) {
+                        remainingType = DefaultAudioFile.AUDIO;
+                    } else {
+                        remainingType = DefaultAudioFile.VOCALS;
+                    }
+                    if (!files.getFirst().contains(" bak")) {
+                        changed = applySongType(song, remainingType, files.getFirst());
+                    }
+                }
+                if (changed) {
+                    song.setSaved(false);
+                    changed = true;
+                    continue;
+                }
+            }
+            if (!flags.hasAudio()) {
+                String audio = RadioOptionsDialog.showRadioOptionDialog(main, 
+                                                                        I18.get("lib_assign_audiofiles"), 
+                                                                        I18.get("lib_assign_audiofiles_audio"), 
+                                                                        files);
+                if (applySongType(song, DefaultAudioFile.AUDIO, audio)) {
+                    song.setSaved(false);
+                    changed = true;
+                }
+            }
+            if (!flags.hasInstrumental()) {
+                String instrumental = RadioOptionsDialog.showRadioOptionDialog(main,
+                                                                               I18.get("lib_assign_audiofiles"),
+                                                                               I18.get("lib_assign_audiofiles_instrumental"),
+                                                                               files);
+                if (applySongType(song, DefaultAudioFile.INSTRUMENTAL, instrumental)) {
+                    song.setSaved(false);
+                    files.remove(instrumental);
+                    changed = true;
+                }
+            }
+            if (!flags.hasVocals()) {
+                String vocals = RadioOptionsDialog.showRadioOptionDialog(main,
+                                                                         I18.get("lib_assign_audiofiles"),
+                                                                         I18.get("lib_assign_audiofiles_vocals"),
+                                                                         files);
+                if (applySongType(song, DefaultAudioFile.VOCALS, vocals)) {
+                    song.setSaved(false);
+                    files.remove(vocals);
+                    changed = true;
+                }
+            }
+        }
+        setSaved(!changed);
+        repaint();
+    }
+    
+    private boolean applySongType(YassSong song, DefaultAudioFile defaultAudioFile, String value) {
+        if (value == null) {
+            return false;
+        }
+        boolean changed = true;
+        if (defaultAudioFile == DefaultAudioFile.AUDIO) {
+            song.setAudio(value);
+        } else if (defaultAudioFile == DefaultAudioFile.INSTRUMENTAL) {
+            song.setInstrumental(value);
+        } else if (defaultAudioFile == DefaultAudioFile.VOCALS) {
+            song.setVocals(value);
+        } else {
+            changed = false;
+        }
+        return changed;
+    }
+
+    private AudioInstrumentalFlag handleAudioFiles(YassSong song, List<String> files) {
+        String[] temp = prop.getProperty("audio-qualifier").split("\\|");
+        String audio = song.getAudio();
+        if (StringUtils.isEmpty(audio) || !files.contains(audio)) {
+            audio = findFilenameByPart(files, temp);
+            if (audio != null) {
+                song.setAudio(audio);
+                song.setSaved(false);
+            }
+        }
+        if (audio != null) {
+            files.remove(audio);
+        }
+        temp = prop.getProperty("instrumental-qualifier").split("\\|");
+        String inst = song.getInstrumental();
+        if (StringUtils.isEmpty(inst) || !files.contains(inst)) {
+            inst = findFilenameByPart(files, temp);
+            if (inst != null) {
+                song.setInstrumental(inst);
+                song.setSaved(false);
+                files.remove(inst);
+            }
+        }
+        if (inst != null) {
+            files.remove(inst);
+        }
+        temp = prop.getProperty("vocals-qualifier").split("\\|");
+        String vocals = song.getVocals();
+        if (StringUtils.isEmpty(vocals) || !files.contains(vocals)) {
+            vocals = findFilenameByPart(files, temp);
+            if (vocals != null) {
+                song.setVocals(vocals);
+                song.setSaved(false);
+            }
+        }
+        if (vocals != null) {
+            files.remove(vocals);
+        }
+        return new AudioInstrumentalFlag(audio, inst, vocals);
+    }
+
+    private String findFilenameByPart(List<String> files, String... parts) {
+        if (files.isEmpty()) {
+            return null;
+        }
+        return files.stream()
+                    .filter(name -> {
+                        for (String part : parts) {
+                            if (name.toLowerCase().contains(part)) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    })
+                    .findFirst()
+                    .orElse(null);
+    }
+    
+    private boolean isAudioFile(String filename) {
+        for (String ext : audioFiles) {
+            if (filename.toLowerCase().endsWith(ext)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
     public void visitUsdb(String usdbUrl) {
         int i = getSelectedRow();
         if (i < 0) {

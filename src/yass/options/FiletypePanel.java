@@ -44,6 +44,11 @@ public class FiletypePanel extends OptionsPanel {
         addText(I18.get("options_filetypes_videos"), "video-files");
         addComment(I18.get("options_filetypes_comment"));
         addSeparator();
+        addText(I18.get("options_filetypes_audio_name"), "audio-qualifier");
+        addText(I18.get("options_filetypes_instrumental_name"), "instrumental-qualifier");
+        addText(I18.get("options_filetypes_vocals_name"), "vocals-qualifier");
+        addComment(I18.get("options_filetypes_qualifier_comment"));
+        addSeparator();
         addBoolean(I18.get("options_filetypes_utf8_bom"), "utf8-without-bom", I18.get("options_filetypes_utf8_bom_enable"));
         addBoolean("", "utf8-always", I18.get("options_filetypes_utf8_always"));
         //addSeparator();

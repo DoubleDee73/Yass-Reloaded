@@ -4567,7 +4567,11 @@ public class YassTable extends JTable {
         int num = 0;
         if (startBeat >= 0) {
             YassRow firstRowToAdd = new YassRow(lines[0]);
-            YassRow lastRowToAdd = new YassRow(lines[lines.length - 1]);
+            YassRow lastRowToAdd;
+            int temp = -1;
+            do {
+                lastRowToAdd = new YassRow(lines[lines.length + temp--]);
+            } while (!lastRowToAdd.isNote() && (lines.length + temp) > 1);
             int offset = lastRowToAdd.getBeatInt() - firstRowToAdd.getBeatInt();
             int lastBeat;
             if (getSelectedRows().length <= 1) {

@@ -664,7 +664,7 @@ public class YassMain extends JFrame {
     }
 
     public JPanel createSongListPanel() {
-        JScrollPane songScroll = new JScrollPane(songList = new YassSongList(actions));
+        JScrollPane songScroll = new JScrollPane(songList = new YassSongList(actions, this));
         songScroll.setOpaque(false);
         songScroll.getViewport().setOpaque(false);
         songScroll.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
@@ -740,7 +740,7 @@ public class YassMain extends JFrame {
         songInfo = new YassSongInfo(prop, actions);
         actions.setSongInfo(songInfo);
 
-        playList = new YassPlayList(actions, prop, null, songList);
+        playList = new YassPlayList(actions, prop, null, songList, this);
         playList.setOpaque(false);
 
         playlistPanel = new JPanel(new BorderLayout());

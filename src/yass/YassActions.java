@@ -656,6 +656,11 @@ public class YassActions implements DropTargetListener {
             setEnd((int) t);
         }
     };
+    final Action assignAudioFiles = new AbstractAction(I18.get("lib_assign_audiofiles")) {
+        public void actionPerformed(ActionEvent e) {
+            songList.assignAudioFiles();
+        }
+    };
     final Action removeStart = new AbstractAction(I18.get("tool_audio_start_reset")) {
         public void actionPerformed(ActionEvent e) {
             setStart(0);
@@ -3779,6 +3784,7 @@ public class YassActions implements DropTargetListener {
         menu.add(setPreviewStart);
         menu.add(setMedleyStartEnd);
         menu.add(setCalcMedley);
+        menu.add(assignAudioFiles);
         menu.addSeparator();
         menu2 = new JMenu(I18.get("lib_copy"));
         menu2.add(copyLyricsSongInfo);
@@ -6609,7 +6615,14 @@ public class YassActions implements DropTargetListener {
             return;
         String lang = table.getLanguage();
         Locale locale = YassUtils.determineLocale(lang);
-        lyrics.setLanguage(locale.toLanguageTag());
+        if (locale != null) {
+            lyrics.setLanguage(locale.toLanguageTag());
+            if (StringUtils.isNotEmpty(lang) && !locale.getDisplayLanguage(Locale.ENGLISH).equals(lang)) {
+                table.setLanguage(locale.getDisplayLanguage(Locale.ENGLISH));
+            }
+        } else {
+            lyrics.setLanguage(Locale.ENGLISH.getLanguage());
+        }
         updateGapBpm();
     }
 
