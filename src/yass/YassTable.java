@@ -425,7 +425,9 @@ public class YassTable extends JTable {
         StringJoiner joiner = new StringJoiner(File.separator);
         joiner.add(dir);
         if (prop.isShinyOrNewer()) {
-            if (StringUtils.isNotEmpty(audio)) {
+            if (prop.getBooleanProperty("debug-waveform") && StringUtils.isNotEmpty(vocals)) {
+                joiner.add(vocals);
+            } else if (StringUtils.isNotEmpty(audio)) {
                 joiner.add(audio);
             } else {
                 joiner.add(mp3);
