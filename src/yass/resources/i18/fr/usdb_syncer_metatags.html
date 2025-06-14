@@ -1,0 +1,71 @@
+<!--
+  ~ Yass Reloaded - Karaoke Editor
+  ~ Copyright (C) 2009-2023 Saruta
+  ~ Copyright (C) 2023 DoubleDee
+  ~
+  ~ This program is free software: you can redistribute it and/or modify
+  ~ it under the terms of the GNU General Public License as published by
+  ~ the Free Software Foundation, either version 3 of the License, or
+  ~ (at your option) any later version.
+  ~
+  ~ This program is distributed in the hope that it will be useful,
+  ~ but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~ GNU General Public License for more details.
+  ~
+  ~ You should have received a copy of the GNU General Public License
+  ~ along with this program. If not, see <http://www.gnu.org/licenses/>.
+  -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>USDB Syncer Meta-Tags</title>
+    <style>
+        body { font: Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <form action="#">
+        <table>
+            <tr>
+                <td>Video URL (v)</td>
+                <td><input type="text" name="videourl" value="%videourl%" maxlength="250"></td>
+            </tr>
+            <tr>
+                <td>Audio URL (a)</td>
+                <td><input type="text" name="audiourl" value="%videourl%" maxlength="250"></td>
+            </tr>
+            <tr>
+                <th colspan="2">Cover</th>
+            </tr>
+            <tr>
+                <td>Cover URL (co)</td>
+                <td><input type="text" name="coverurl" value="%coverurl%" maxlength="250"></td>
+            </tr>
+            <tr>
+                <td>Rotation (co-rotate)</td>
+                <td><input type="text" name="co-rotate"></td>
+            </tr>
+            <tr>
+                <td>Contrast (co-contrast)</td>
+                <td>
+                    <input type="checkbox" name="co-rotate-auto">Auto
+                    <input type="text" name="co-rotate" maxlength="4" size="5">
+                </td>
+            </tr>
+            <tr>
+                <td>Crop (co-crop)</td>
+                <td>
+                    <input type="text" name="co-crop-left" maxlength="4" size="5">
+                    <input type="text" name="co-crop-top" maxlength="4" size="5">
+                    <input type="text" name="co-rotate" maxlength="4" size="5">
+                    <input type="text" name="co-rotate" maxlength="4" size="5">
+                </td>
+            </tr>
+        </table>
+        <input type="submit" value="Okay">
+    </form>
+</body>
+</html>

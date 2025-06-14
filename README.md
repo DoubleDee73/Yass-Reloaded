@@ -5,6 +5,17 @@ You can drag & drop notes, spread syllables, and find errors. Further you can fi
 
 Yass Reloaded is a fork from Yass 2.4.3 that Saruta has been developing since 2009. Due to time constraints on his behalf and "creative differences" with the other contributors, I decided to go rogue with my fork.
 
+Yass Reloaded has been localized to:
+- English
+- German
+- French
+- Spanish
+- Polish
+- Hungarian
+
+French has just recently been added and been translated by AI. Please let me know, if you find any mistakes or missing translations.
+If you want to help me localize Yass Reloaded to your language, please let me know as well.
+
 # Main Differences to the original Yass
 - Better support for audio formats. Note, that FFmpeg is now required, so support any audio format that FFmpeg supports, such as AAC, OGG or OPUS
 - Improved UX: Coming from someone who has created hundreds of songs, many little tweaks and improvements have gone into Yass Reloaded to make things easier
