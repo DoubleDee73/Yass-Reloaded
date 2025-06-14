@@ -50,7 +50,8 @@ public class YassPlayList extends JPanel implements TabChangeListener {
      * @param actions Description of the Parameter
      * @param lib     Description of the Parameter
      */
-    public YassPlayList(YassActions actions, YassProperties p, JComponent toolbar, YassSongList lib) {
+    public YassPlayList(YassActions actions, YassProperties p, JComponent toolbar, YassSongList lib,
+                        YassMain main) {
         this.actions = actions;
         this.lib = lib;
 
@@ -65,7 +66,7 @@ public class YassPlayList extends JPanel implements TabChangeListener {
         panel.setLayout(new BorderLayout());
         panel.setOpaque(false);
 
-        list = new YassSongList(actions);
+        list = new YassSongList(actions, main);
         list.setOpaque(false);
         list.setEmptyMessage(I18.get("playlist_msg_empty"));
         list.setTableHeader(null);

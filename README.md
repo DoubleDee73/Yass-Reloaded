@@ -5,6 +5,17 @@ You can drag & drop notes, spread syllables, and find errors. Further you can fi
 
 Yass Reloaded is a fork from Yass 2.4.3 that Saruta has been developing since 2009. Due to time constraints on his behalf and "creative differences" with the other contributors, I decided to go rogue with my fork.
 
+Yass Reloaded has been localized to:
+- English
+- German
+- French
+- Spanish
+- Polish
+- Hungarian
+
+French has just recently been added and been translated by AI. Please let me know, if you find any mistakes or missing translations.
+If you want to help me localize Yass Reloaded to your language, please let me know as well.
+
 # Main Differences to the original Yass
 - Better support for audio formats. Note, that FFmpeg is now required, so support any audio format that FFmpeg supports, such as AAC, OGG or OPUS
 - Improved UX: Coming from someone who has created hundreds of songs, many little tweaks and improvements have gone into Yass Reloaded to make things easier
@@ -33,7 +44,7 @@ If you install Yass Reloaded with the Windows installer, you can simply run <cod
 
 Alternatively, you can download the jar file and start it from the console:
 
-On Windows, you can simply do this: <code>java -jar Yass-Reloaded-2025.5.jar</code>
+On Windows, you can simply do this: <code>java -jar Yass-Reloaded-2025.6.jar</code>
 
 On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
@@ -41,7 +52,7 @@ On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
 and then start the jar like so:
 
-<code>java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2025.5.jar</code>
+<code>java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2025.6.jar</code>
 
 # Developers
 
@@ -94,7 +105,7 @@ If you like this  app, feel free (but not pressured!) to buy me coffee. Any supp
   - Open a command line window and type in <code>java -version</code>. 
   - You should have Java 21
 - Have you tried opening it as a jar?
-  - Download the jar, open a command line window and type in <code>java -jar Yass-Reloaded-2025.5.jar</code>
+  - Download the jar, open a command line window and type in <code>java -jar Yass-Reloaded-2025.6.jar</code>
   - Any error messages are then printed out in the command line window for debugging
 
 ## Cannot find FFmpeg?

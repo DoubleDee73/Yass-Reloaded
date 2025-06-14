@@ -101,6 +101,9 @@ public class YassProperties extends Properties {
             if (StringUtils.isEmpty(getProperty("audio-files")) || getProperty("audio-files").equals(".mp3")) {
                 setProperty("audio-files", ".mp3|.m4a|.wav|.ogg|.opus|.flac");
             }
+            if (getProperty("instrumental-qualifier") == null) {
+                setDefaultAudioQualifiers(this);
+            }
             setupTags();
             setupHyphenationDictionaries();
             return;
@@ -157,6 +160,12 @@ public class YassProperties extends Properties {
         LOGGER.info("Selecting Mic: " + mic);
     }
 
+    public void setDefaultAudioQualifiers(Hashtable<Object,Object> p) {
+        p.putIfAbsent("audio-qualifier", "(vox)| vox");
+        p.putIfAbsent("instrumental-qualifier", "(instrumental|(filtered inst| [inst| (Backing");
+        p.putIfAbsent("vocals-qualifier", "(lead vocal|(all vocal| [vocals");
+    }
+    
     public void setDefaultProperties(Hashtable<Object,Object> p) {
 
         p.putIfAbsent("default-programs", "C:/Program Files/Ultrastar Deluxe|C:/Program Files (x86)/UltraStar Deluxe|C:/Program Files/Ultrastar|C:/Programme/Ultrastar Deluxe|C:/Ultrastar Deluxe|C:/Programme/Ultrastar|C:/Ultrastar|D:/Ultrastar|E:/Ultrastar|F:/Ultrastar|/home/.ultrastardx|/home/.ultrastar|C:/Program Files (x86)/UltraStar Deluxe WorldParty|C:/Program Files/UltraStar Deluxe WorldParty|D:/UltraStar Deluxe WorldParty|C:/Program Files (x86)/Vocaluxe|C:/Program Files/Vocaluxe|D:/Vocaluxe|C:/Program Files (x86)/Performous|C:/Program Files/Performous");
@@ -171,7 +180,7 @@ public class YassProperties extends Properties {
         p.putIfAbsent("ffmpegPath", "");
 
         p.putIfAbsent("yass-language", "default");
-        p.putIfAbsent("yass-languages", "default|en|de|hu|pl|es");
+        p.putIfAbsent("yass-languages", "default|en|de|fr|hu|pl|es");
 
         //filetype association
         p.putIfAbsent("song-filetype", ".txt");
@@ -180,6 +189,9 @@ public class YassProperties extends Properties {
         p.putIfAbsent("audio-files", ".mp3|.m4a|.wav|.ogg|.opus|.flac");
         p.putIfAbsent("image-files", ".jpg|.jpeg");
         p.putIfAbsent("video-files", ".mpg|.mpeg|.avi|.divx");
+
+        setDefaultAudioQualifiers(p);
+        
         p.putIfAbsent("cover-id", "[CO]");
         p.putIfAbsent("background-id", "[BG]");
         p.putIfAbsent("video-id", "[VD#*]");

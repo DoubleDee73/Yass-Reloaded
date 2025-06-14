@@ -183,15 +183,14 @@
             <artifactId>jaudiotagger</artifactId>
             <version>3.0.1</version>
         </dependency>
-
     </dependencies>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.version>2025.5</project.version>
-        <project.semantic.version>2025.5</project.semantic.version>
+        <project.version>2025.6</project.version>
+        <project.semantic.version>2025.6</project.semantic.version>
     </properties>
 
     <build>

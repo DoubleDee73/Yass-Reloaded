@@ -20,6 +20,7 @@ package yass;
 
 import net.bramp.ffmpeg.probe.FFmpegProbeResult;
 import org.apache.commons.lang3.StringUtils;
+import org.jetbrains.annotations.Nullable;
 import yass.ffmpeg.FFMPEGLocator;
 
 import javax.imageio.ImageIO;
@@ -38,9 +39,11 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeEvent;
 import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.text.MessageFormat;
-import java.util.List;
 import java.util.*;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
@@ -1185,10 +1188,28 @@ public class YassUtils {
      * @return the first locale found. Beware, could be en_US or en_UK, or something completely different
      */
     public static Locale determineLocale(String displayLanguage) {
-        return Locale.availableLocales()
-                     .filter(loc -> loc.getDisplayLanguage(Locale.ENGLISH).equals(displayLanguage))
-                     .findFirst()
-                     .orElse(null);
+        List<Locale> locales = Arrays.asList(Locale.ENGLISH, Locale.GERMAN, Locale.FRENCH, Locale.of("es"));
+        Locale locale = findLocaleByDisplayLanguage(displayLanguage, locales);
+        if (locale == null) {
+            locale = findLocaleByDisplayLanguage(displayLanguage, Arrays.asList(Locale.getAvailableLocales()));
+        }
+        return locale;
+    }
+
+    @Nullable
+    private static Locale findLocaleByDisplayLanguage(String displayLanguage, 
+                                                      List<Locale> locales) {
+        Locale locale = null;
+        for (Locale tempLocale : locales) {
+            locale = Locale.availableLocales()
+                           .filter(loc -> loc.getDisplayLanguage(tempLocale).equals(displayLanguage))
+                           .findFirst()
+                           .orElse(null);
+            if (locale != null) {
+                break;
+            }
+        }
+        return locale;
     }
 
     public static String determineDisplayLanguage(String language) {
@@ -1212,6 +1233,20 @@ public class YassUtils {
             }
         }
         return null;
+    }
+
+    public static boolean isUrlReachable(String urlString) {
+        try {
+            URL url = new URL(urlString);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("HEAD"); // oder "GET", wenn HEAD nicht unterstützt wird
+            connection.setConnectTimeout(1000);
+            connection.setReadTimeout(1000);
+            int responseCode = connection.getResponseCode();
+            return (200 <= responseCode && responseCode < 400);
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
 
