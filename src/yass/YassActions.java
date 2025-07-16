@@ -684,7 +684,7 @@ public class YassActions implements DropTargetListener {
             String tempExtensions = prop.getProperty("audio-files");
             String[] extensions;
             if (StringUtils.isEmpty(tempExtensions)) {
-                extensions = List.of("mp3", "m4a", "wav", "ogg", "opus", "flac").toArray(new String[0]);
+                extensions = List.of("mp3", "m4a", "wav", "ogg", "opus", "flac", ".webm", ".aac").toArray(new String[0]);
             } else {
                 extensions = Arrays.stream(tempExtensions.split("\\|"))
                                    .map(it -> it.replace(".", ""))
@@ -6910,7 +6910,7 @@ public class YassActions implements DropTargetListener {
      * @param table
      * @return
      */
-    private Vector<YassTable> getOpenTables(YassTable table) {
+    public Vector<YassTable> getOpenTables(YassTable table) {
         Vector<YassTable> tables = new Vector<>();
         for (YassTable open : openTables) {
             if (open.getDir().equals(table.getDir()) && open.getFilename().equals(table.getFilename()))

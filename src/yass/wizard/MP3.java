@@ -18,20 +18,21 @@
 
 package yass.wizard;
 
-import com.nexes.wizard.Wizard;
+import org.apache.commons.lang3.StringUtils;
 import yass.I18;
 import yass.YassUtils;
 
 import javax.swing.*;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.text.html.HTMLDocument;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
 import java.io.File;
-import java.io.FilenameFilter;
 import java.net.URL;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Description of the Class
@@ -48,7 +49,7 @@ public class MP3 extends JPanel {
     private JCheckBox skipCheck = null;
     private JButton browse;
 
-    private Wizard wizard;
+    private CreateSongWizard wizard;
 
 
     /**
@@ -56,7 +57,7 @@ public class MP3 extends JPanel {
      *
      * @param w Description of the Parameter
      */
-    public MP3(Wizard w) {
+    public MP3(CreateSongWizard w) {
         wizard = w;
         JLabel iconLabel = new JLabel();
         setLayout(new BorderLayout());
@@ -95,11 +96,11 @@ public class MP3 extends JPanel {
                 return;
             }
             wizard.setValue("filename", getFilename());
-            if (data[0] == null || data[0].trim().length() < 1) {
+            if (data[0] == null || data[0].trim().isEmpty()) {
                 data[0] = "UnknownTitle";
             }
             wizard.setValue("title", data[0]);
-            if (data[1] == null || data[1].trim().length() < 1) {
+            if (data[1] == null || data[1].trim().isEmpty()) {
                 data[1] = "UnknownArtist";
             }
             wizard.setValue("artist", data[1]);
@@ -109,21 +110,6 @@ public class MP3 extends JPanel {
             wizard.setValue("artist", "UnknownArtist");
         }
         wizard.setNextFinishButtonEnabled(true);
-
-		/*
-         *  AudioFileFormat baseFileFormat = AudioSystem.getAudioFileFormat(file);
-		 *  if (baseFileFormat instanceof TAudioFileFormat) {
-		 *  Map properties = ((TAudioFileFormat) baseFileFormat).properties();
-		 *  Boolean vbr = (Boolean) properties.get("mp3.vbr");
-		 *  if (vbr == null) {
-		 *  vbr = (Boolean) properties.get("vbr");
-		 *  }
-		 *  if (vbr != null) {
-		 *  setProperty("mp3-vbr", vbr.booleanValue() ? "VBR" : "CBR");
-		 *  } else {
-		 *  setProperty("mp3-vbr", "CBR");
-		 *  }
-		 */
     }
 
 
@@ -149,11 +135,7 @@ public class MP3 extends JPanel {
         filePanel.add("Center", txtField = new JTextField());
         filePanel.add("South", skipCheck = new JCheckBox(I18.get("create_mp3_skip")));
         txtField.addActionListener(
-                new ActionListener() {
-                    public void actionPerformed(ActionEvent evt) {
-                        setFilename(txtField.getText());
-                    }
-                });
+                evt -> setFilename(txtField.getText()));
         skipCheck.addItemListener(
                 new ItemListener() {
                     public void itemStateChanged(ItemEvent e) {
@@ -170,25 +152,36 @@ public class MP3 extends JPanel {
 
         browse = new JButton(I18.get("create_mp3_browse"));
         browse.addActionListener(
-                new ActionListener() {
-                    public void actionPerformed(ActionEvent e) {
-                        Frame f = new Frame();
-                        FileDialog fd = new FileDialog(f, I18.get("create_mp3_title"), FileDialog.LOAD);
-                        fd.setFilenameFilter(
-                                new FilenameFilter() {
-                                    // won't work on Windows - thx to Sun
-                                    public boolean accept(File dir, String name) {
-                                        return name.toLowerCase().endsWith(".mp3");
-                                    }
-                                });
-                        fd.setFile("*.mp3");
-                        fd.setVisible(true);
-                        if (fd.getFile() != null) {
-                            setFilename(fd.getDirectory() + File.separator + fd.getFile());
-                        }
-                        fd.dispose();
-                        f.dispose();
+                e -> {
+                    Frame f = new Frame();
+                    JFileChooser chooser = new JFileChooser();
+                    String tempExtensions = wizard.getProperty("audio-files");
+                    String[] extensions;
+                    if (StringUtils.isEmpty(tempExtensions)) {
+                        extensions = List.of("mp3", "m4a", "wav", "ogg", "opus", "flac", ".webm", ".aac").toArray(new String[0]);
+                    } else {
+                        extensions = Arrays.stream(tempExtensions.split("\\|"))
+                                           .map(it -> it.replace(".", ""))
+                                           .toList()
+                                           .toArray(new String[0]);
                     }
+                    FileNameExtensionFilter fileFilter = new FileNameExtensionFilter("Audio Files", extensions);
+                    chooser.setFileFilter(fileFilter);
+                    chooser.addChoosableFileFilter(fileFilter);
+                    try {
+                        File songDir = Path.of(wizard.getProperty("song-directory")).toFile();
+                        if (songDir.exists()) {
+                            chooser.setCurrentDirectory(songDir);
+                        }
+                    } catch (Exception ex) {
+                        // let's ignore this
+                    }
+                    int showOpenDialog = chooser.showOpenDialog(f);
+                    if (showOpenDialog == JFileChooser.APPROVE_OPTION) {
+                        File selectedFile = chooser.getSelectedFile();
+                        setFilename(selectedFile.getAbsolutePath());
+                    }
+                    f.dispose();
                 });
         filePanel.add("East", browse);
         content.add("South", filePanel);

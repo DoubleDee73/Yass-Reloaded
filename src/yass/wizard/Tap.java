@@ -19,6 +19,7 @@
 package yass.wizard;
 
 import com.nexes.wizard.Wizard;
+import org.apache.commons.lang3.StringUtils;
 import yass.I18;
 import yass.YassSong;
 import yass.YassTable;
@@ -111,11 +112,19 @@ public class Tap extends JPanel {
         table.setText(wizard.getValue("melodytable"));
         table.setTitle(wizard.getValue("title"));
         table.setArtist(wizard.getValue("artist"));
-        table.setMP3(YassSong.toFilename(wizard.getValue("artist") + " - " + wizard.getValue("title") + ".mp3"));
+        String extension;
+        String temp = wizard.getValue("filename");
+        if (StringUtils.isNotEmpty(temp)) {
+            extension = temp.substring(temp.lastIndexOf("."));
+        } else {
+            extension = ".mp3";
+        }
+        table.setMP3(YassSong.toFilename(wizard.getValue("artist") + " - " + wizard.getValue("title") + extension));
         table.setBPM(wizard.getValue("bpm"));
         table.getCommentRow("EDITION:").setComment(wizard.getValue("edition"));
         table.getCommentRow("GENRE:").setComment(wizard.getValue("genre"));
         table.getCommentRow("LANGUAGE:").setComment(wizard.getValue("language"));
+        table.getCommentRow("CREATOR:").setComment(wizard.getValue("creator"));
         wizard.setValue("melodytable", table.getPlainText());
         table.getColumnModel().getColumn(0).setPreferredWidth(10);
         table.getColumnModel().getColumn(0).setMaxWidth(10);

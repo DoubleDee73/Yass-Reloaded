@@ -20,6 +20,7 @@ package yass.wizard;
 
 import com.nexes.wizard.Wizard;
 import com.nexes.wizard.WizardPanelDescriptor;
+import org.apache.commons.lang3.StringUtils;
 import yass.I18;
 import yass.YassProperties;
 import yass.YassTable;
@@ -202,15 +203,23 @@ public class CreateSongWizard extends Wizard {
                 header.setArtist(getValue("artist"));
                 header.setBPM(getValue("bpm"));
                 header.setGenre(getValue("genre"));
+                String creator = getValue("creator");
+                if (StringUtils.isEmpty(creator)) {
+                    creator = getProperty("creator");
+                }
+                header.setCreator(creator);
             }
 
 
             public void aboutToHidePanel() {
+                header.ensureTableCommit();
                 setValue("title", header.getTitle());
                 setValue("artist", header.getArtist());
                 setValue("genre", header.getGenre());
                 setValue("language", header.getLanguage());
                 setValue("bpm", header.getBPM());
+                setValue("creator", header.getCreator());
+                setProperty("creator", header.getCreator());
             }
         });
         registerWizardPanel(Edition.ID, new WizardPanelDescriptor(Edition.ID, edition = new Edition(this)) {
@@ -270,6 +279,7 @@ public class CreateSongWizard extends Wizard {
         setModal(true);
         getDialog().pack();
         getDialog().setSize(new Dimension(600, 480));
+        getDialog().setLocationRelativeTo(null);
         getDialog().setVisible(true);
     }
 
@@ -289,6 +299,21 @@ public class CreateSongWizard extends Wizard {
     @Override
     public void setValue(String s, String val) {
         super.setValue(s, val);
+    }
+    
+    public String getProperty(String key) {
+        return yassProperties != null ? yassProperties.getProperty(key) : null;
+    }
+    
+    public boolean getBooleanProperty(String key) {
+        return yassProperties != null && yassProperties.getBooleanProperty(key);
+    }
+    
+    public void setProperty(String key, String value) {
+        if (yassProperties != null) {
+            yassProperties.setProperty(key, value);
+            yassProperties.store();
+        }
     }
 }
 

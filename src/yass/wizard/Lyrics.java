@@ -165,7 +165,7 @@ public class Lyrics extends JPanel {
         hyphenator.setYassProperties(yassProperties);
         YassUtils yassUtils = new YassUtils();
         yassUtils.setHyphenator(hyphenator);
-        yassUtils.setDefaultLength(4);
+        yassUtils.setDefaultLength(3);
         yassUtils.setSpacingAfter(yassProperties.isUncommonSpacingAfter());
         List<String> lyrics = yassUtils.splitLyricsToLines(getText().split("\n"), 0);
         for (String line : lyrics) {

@@ -161,8 +161,11 @@ public class YassUtils {
             String[] temp = f.getName().split("-");
             artist = temp[0].trim();
             title = temp[1].trim();
-            if (title.endsWith(".mp3") || title.endsWith(".m4a") || title.endsWith(".wav") || title.endsWith(".ogg")) {
+            if (title.endsWith(".mp3") || title.endsWith(".m4a") || title.endsWith(".wav") || title.endsWith(
+                    ".ogg") || title.endsWith(".aac")) {
                 title = title.substring(0, title.length() - 4);
+            } else if (title.endsWith(".webm") || title.endsWith(".flac") || title.endsWith(".opus")) {
+                title = title.substring(0, title.length() - 5);
             }
         }
         try {
@@ -220,7 +223,9 @@ public class YassUtils {
             encoding = null;
         }
         // saruta, Jan 2019: utf8-->UTF-8
-        if (encoding == "utf8") encoding = "UTF-8";
+        if (encoding != null && encoding.equals("utf8")) {
+            encoding = "UTF-8";
+        }
 
         if (artist == null || artist.trim().length() < 1) {
             artist = "UnknownArtist";
@@ -272,8 +277,8 @@ public class YassUtils {
             newdir.mkdir();
         }
         if (mp3filename != null && !mp3filename.trim().isEmpty()) {
-            File newmp3 = new File(newdir, at + ".mp3");
             File mp3 = new File(mp3filename);
+            File newmp3 = new File(newdir, mp3.getName());
             boolean exists = newmp3.getAbsolutePath().equalsIgnoreCase(mp3.getAbsolutePath());
             if (!exists && !copyFile(mp3, newmp3)) {
                 JOptionPane.showMessageDialog(parent, "<html>" + MessageFormat.format(I18.get("create_error_msg_1"),

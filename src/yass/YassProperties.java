@@ -98,11 +98,15 @@ public class YassProperties extends Properties {
                 setProperty("key-18", "N");
             if (getProperty("before_next_ms") == null)
                 setProperty("before_next_ms", "300");
-            if (StringUtils.isEmpty(getProperty("audio-files")) || getProperty("audio-files").equals(".mp3")) {
-                setProperty("audio-files", ".mp3|.m4a|.wav|.ogg|.opus|.flac");
+            String audioFiles = getProperty("audio-files");
+            if (StringUtils.isEmpty(audioFiles) || !audioFiles.contains("webm") || !audioFiles.contains("opus")) {
+                setProperty("audio-files", ".mp3|.m4a|.wav|.ogg|.opus|.flac|.webm|.aac");
             }
             if (getProperty("instrumental-qualifier") == null) {
                 setDefaultAudioQualifiers(this);
+            }
+            if (getProperty("titlecase") == null) {
+                setProperty("titlecase", "off");
             }
             setupTags();
             setupHyphenationDictionaries();
@@ -165,7 +169,7 @@ public class YassProperties extends Properties {
         p.putIfAbsent("instrumental-qualifier", "(instrumental|(filtered inst| [inst| (Backing");
         p.putIfAbsent("vocals-qualifier", "(lead vocal|(all vocal| [vocals");
     }
-    
+
     public void setDefaultProperties(Hashtable<Object,Object> p) {
 
         p.putIfAbsent("default-programs", "C:/Program Files/Ultrastar Deluxe|C:/Program Files (x86)/UltraStar Deluxe|C:/Program Files/Ultrastar|C:/Programme/Ultrastar Deluxe|C:/Ultrastar Deluxe|C:/Programme/Ultrastar|C:/Ultrastar|D:/Ultrastar|E:/Ultrastar|F:/Ultrastar|/home/.ultrastardx|/home/.ultrastar|C:/Program Files (x86)/UltraStar Deluxe WorldParty|C:/Program Files/UltraStar Deluxe WorldParty|D:/UltraStar Deluxe WorldParty|C:/Program Files (x86)/Vocaluxe|C:/Program Files/Vocaluxe|D:/Vocaluxe|C:/Program Files (x86)/Performous|C:/Program Files/Performous");
@@ -186,9 +190,9 @@ public class YassProperties extends Properties {
         p.putIfAbsent("song-filetype", ".txt");
         p.putIfAbsent("playlist-filetype", ".upl");
 
-        p.putIfAbsent("audio-files", ".mp3|.m4a|.wav|.ogg|.opus|.flac");
-        p.putIfAbsent("image-files", ".jpg|.jpeg");
-        p.putIfAbsent("video-files", ".mpg|.mpeg|.avi|.divx");
+        p.putIfAbsent("audio-files", ".mp3|.m4a|.wav|.ogg|.opus|.flac|.webm|.aac");
+        p.putIfAbsent("image-files", ".jpg|.jpeg|.png");
+        p.putIfAbsent("video-files", ".mpg|.mpeg|.avi|.divx|.mp4");
 
         setDefaultAudioQualifiers(p);
         
@@ -459,6 +463,7 @@ public class YassProperties extends Properties {
         //non-editable
         p.putIfAbsent("welcome", "true");
         p.putIfAbsent("recent-files", "");
+        p.putIfAbsent("titlecase", "off");
     }
 
     public String getProperty(String key, String[] var, String[] val) {
