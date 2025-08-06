@@ -1603,7 +1603,8 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             if (lyrics.isEditable() || songList.isEditing() || isFilterEditing())
                 return;
-            if (JOptionPane.OK_OPTION != JOptionPane.showConfirmDialog(tab, I18.get("edit_save_all_msg"), I18.get("edit_save_all"), JOptionPane.OK_CANCEL_OPTION))
+            boolean skipSaveConfirmation = getProperties() != null && getProperties().getBooleanProperty("quicksave");
+            if (!skipSaveConfirmation && JOptionPane.OK_OPTION != JOptionPane.showConfirmDialog(tab, I18.get("edit_save_all_msg"), I18.get("edit_save_all"), JOptionPane.OK_CANCEL_OPTION))
                 return;
             save(openTables);
         }
@@ -1612,15 +1613,20 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             if (lyrics.isEditable() || songList.isEditing() || isFilterEditing())
                 return;
+            boolean skipSaveConfirmation = getProperties() != null && getProperties().getBooleanProperty("quicksave");
             if (table.getDuetTrackCount() > 0) {
-                if (JOptionPane.OK_OPTION != JOptionPane.showConfirmDialog(tab,
-                        MessageFormat.format(I18.get("edit_save_duet_msg"), table.getDuetTrackCount()),
-                        I18.get("edit_save_track"), JOptionPane.OK_CANCEL_OPTION))
+                if (!skipSaveConfirmation && JOptionPane.OK_OPTION != JOptionPane.showConfirmDialog(tab,
+                                                                                                    MessageFormat.format(
+                                                                                                            I18.get("edit_save_duet_msg"),
+                                                                                                            table.getDuetTrackCount()),
+                                                                                                    I18.get("edit_save_track"),
+                                                                                                    JOptionPane.OK_CANCEL_OPTION))
                     return;
             } else {
-                if (JOptionPane.OK_OPTION != JOptionPane.showConfirmDialog(tab,
-                        I18.get("edit_save_track_msg"),
-                        I18.get("edit_save_track"), JOptionPane.OK_CANCEL_OPTION))
+                if (!skipSaveConfirmation && JOptionPane.OK_OPTION != JOptionPane.showConfirmDialog(tab,
+                                                                                                    I18.get("edit_save_track_msg"),
+                                                                                                    I18.get("edit_save_track"),
+                                                                                                    JOptionPane.OK_CANCEL_OPTION))
                     return;
             }
             Vector<YassTable> v = new Vector<>();
@@ -6420,11 +6426,17 @@ public class YassActions implements DropTargetListener {
         updateTrackComponent();
         storeRecentFiles();
         mp3.reinitSynth(prop.getBooleanProperty("use-sample"));
-        File file = new File(table.getDirMP3());
-        if (!file.exists()) {
-            selectAudioFile.actionPerformed(null);
+        File file;
+        if (table.getDirMP3() != null) {
+            file = new File(table.getDirMP3());
+            if (!file.exists()) {
+                selectAudioFile.actionPerformed(null);
+            }
+            mp3.openMP3(table.getDirMP3());
+        } else {
+            file = new File(table.getDirFilename());
+            mp3.emptyMp3(table);
         }
-        mp3.openMP3(table.getDirMP3());
         updateTitle();
 
         sheet.setDuration(mp3.getDuration() / 1000.0);

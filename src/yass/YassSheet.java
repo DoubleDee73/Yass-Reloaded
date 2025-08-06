@@ -2349,7 +2349,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         paintEmptySheet(db);
 
         YassPlayer mp3 = actions != null ? actions.getMP3() : null;
-        if (mp3 != null && mp3.createWaveform()) {
+        if (mp3 != null && mp3.hasAudio() && mp3.createWaveform()) {
             paintWaveform(db);
         }
 

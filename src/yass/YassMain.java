@@ -889,6 +889,10 @@ public class YassMain extends JFrame {
             }
             if (s != null && songList.getShowLyrics() && s.getLyrics() == null) {
                 songList.loadSongDetails(s, new YassTable());
+                if (songList.isTitleCaseChanged()) {
+                    songList.saveTitleCaseExceptions();
+                    songList.store();
+                }
             }
 
             if (s != null || isEmpty) {

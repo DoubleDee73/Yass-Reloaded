@@ -490,6 +490,22 @@ public class YassPlayer {
     }
 
     /**
+     * Initializes YassPlayer with no audio file and determines a theoretical length of the song from the last beat
+     * and the BPM.
+     * @param table
+     */
+    public void emptyMp3(YassTable table) {
+        long tempDuration = Math.max((long)table.getStart() * 1000, (long)table.getEnd() * 1000);
+        if (table.getRowCount() > 2 && table.getBPM() > 0) {
+            YassRow lastRow = table.getRowAt(table.getRowCount() - 2);
+            double beatToSec = 60d / table.getBPM();
+            double lastBeatMs = table.getGap() + (1000 * beatToSec * (lastRow.getBeatInt() + lastRow.getLengthInt()) / 4);
+            tempDuration = Math.max(tempDuration, (long) lastBeatMs);
+        }
+        duration = tempDuration * 1000;
+    }
+
+    /**
      * Description of the Method
      */
     public void cacheMP3() {
@@ -1643,5 +1659,9 @@ public class YassPlayer {
         } else {
             setTargetDbfs(NumberUtils.toDouble(dbfsProp));
         }
+    }
+    
+    public boolean hasAudio() {
+        return StringUtils.isNotEmpty(filename);
     }
 }

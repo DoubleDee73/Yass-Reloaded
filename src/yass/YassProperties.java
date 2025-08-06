@@ -328,6 +328,7 @@ public class YassProperties extends Properties {
 
         p.putIfAbsent("floatable", "false");
         p.putIfAbsent("options_autosave_interval", "300");
+        p.putIfAbsent("quicksave", "false");
 
         p.putIfAbsent("mouseover", "false");
         p.putIfAbsent("sketching", "false");
