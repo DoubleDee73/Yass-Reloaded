@@ -42,6 +42,12 @@ public class DictionaryPanel extends OptionsPanel {
         addDirectory(I18.get("options_dict_user"), "user-dicts");
         addComment(I18.get("options_dict_user_comment"));
         addComment(I18.get("options_dict_comment"));
+        addRadio(I18.get("options_dict_titlecase"), "titlecase", "simple|ap|off",
+                 I18.get("options_dict_titlecase_simple") + "|" +
+                         I18.get("options_dict_titlecase_ap") + "|"
+                         + I18.get("options_dict_titlecase_ignore"));
+        addComment(I18.get("options_dict_titlecase_comment"));
+
     }
 }
 

@@ -2349,7 +2349,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         paintEmptySheet(db);
 
         YassPlayer mp3 = actions != null ? actions.getMP3() : null;
-        if (mp3 != null && mp3.createWaveform()) {
+        if (mp3 != null && mp3.hasAudio() && mp3.createWaveform()) {
             paintWaveform(db);
         }
 
@@ -2619,29 +2619,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         Color arr = darkMode ? arrowDarkMode : arrow;
 
         boolean isPressed = hiliteCue == PREV_PAGE_PRESSED;
-        g2.setColor(isPressed ? fg : arr);
-        g2.fillRect(x, y, w, h);
-
-        if (isPressed) {
-            g2.setColor(sh);
-            g2.drawRect(x, y, w - 1, h - 1);
-        } else {
-            g2.setColor(fg);
-            g2.drawLine(x, y, x, y + h - 1);
-            g2.drawLine(x + 1, y, x + w - 2, y);
-
-            g2.setColor(wt);
-            g2.drawLine(x + 1, y + 1, x + 1, y + h - 3);
-            g2.drawLine(x + 2, y + 1, x + w - 3, y + 1);
-
-            g2.setColor(sh);
-            g2.drawLine(x + 1, y + h - 2, x + w - 2, y + h - 2);
-            g2.drawLine(x + w - 2, y + 1, x + w - 2, y + h - 3);
-
-            g2.setColor(fg);
-            g2.drawLine(x, y + h - 1, x + w - 1, y + h - 1);
-            g2.drawLine(x + w - 1, y + h - 1, x + w - 1, y);
-        }
+        paintButton(g2, x, y, w, h, isPressed, fg, sh, wt, arr);
 
         boolean isEnabled = hiliteCue == PREV_PAGE
                 || hiliteCue == PREV_PAGE_PRESSED;
@@ -2654,28 +2632,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         h = BOTTOM_BORDER - 16;
 
         isPressed = hiliteCue == NEXT_PAGE_PRESSED;
-        g2.setColor(isPressed ? fg : arr);
-        g2.fillRect(x, y, w, h);
-        if (isPressed) {
-            g2.setColor(sh);
-            g2.drawRect(x, y, w - 1, h - 1);
-        } else {
-            g2.setColor(fg);
-            g2.drawLine(x, y, x, y + h - 1);
-            g2.drawLine(x + 1, y, x + w - 2, y);
-
-            g2.setColor(wt);
-            g2.drawLine(x + 1, y + 1, x + 1, y + h - 3);
-            g2.drawLine(x + 2, y + 1, x + w - 3, y + 1);
-
-            g2.setColor(sh);
-            g2.drawLine(x + 1, y + h - 2, x + w - 2, y + h - 2);
-            g2.drawLine(x + w - 2, y + 1, x + w - 2, y + h - 3);
-
-            g2.setColor(fg);
-            g2.drawLine(x, y + h - 1, x + w - 1, y + h - 1);
-            g2.drawLine(x + w - 1, y + h - 1, x + w - 1, y);
-        }
+        paintButton(g2, x, y, w, h, isPressed, fg, sh, wt, arr);
 
         isEnabled = hiliteCue == NEXT_PAGE || hiliteCue == NEXT_PAGE_PRESSED;
         YassUtils.paintTriangle(g2, x + 10, y + 14, w / 3, YassUtils.SOUTH,
@@ -2699,29 +2656,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         Color arr = darkMode ? arrowDarkMode : arrow;
 
         boolean isPressed = hiliteCue == PREV_SLIDE_PRESSED;
-        g2.setColor(isPressed ? fg : arr);
-        g2.fillRect(x, y, w, h);
-
-        if (isPressed) {
-            g2.setColor(sh);
-            g2.drawRect(x, y, w - 1, h - 1);
-        } else {
-            g2.setColor(fg);
-            g2.drawLine(x, y, x, y + h - 1);
-            g2.drawLine(x + 1, y, x + w - 2, y);
-
-            g2.setColor(wt);
-            g2.drawLine(x + 1, y + 1, x + 1, y + h - 3);
-            g2.drawLine(x + 2, y + 1, x + w - 3, y + 1);
-
-            g2.setColor(sh);
-            g2.drawLine(x + 1, y + h - 2, x + w - 2, y + h - 2);
-            g2.drawLine(x + w - 2, y + 1, x + w - 2, y + h - 3);
-
-            g2.setColor(fg);
-            g2.drawLine(x, y + h - 1, x + w - 1, y + h - 1);
-            g2.drawLine(x + w - 1, y + h - 1, x + w - 1, y);
-        }
+        paintButton(g2, x, y, w, h, isPressed, fg, sh, wt, arr);
 
         boolean isEnabled = hiliteCue == PREV_SLIDE
                 || hiliteCue == PREV_SLIDE_PRESSED;
@@ -2734,28 +2669,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         h = BOTTOM_BORDER - 16;
 
         isPressed = hiliteCue == NEXT_SLIDE_PRESSED;
-        g2.setColor(isPressed ? fg : arr);
-        g2.fillRect(x, y, w, h);
-        if (isPressed) {
-            g2.setColor(sh);
-            g2.drawRect(x, y, w - 1, h - 1);
-        } else {
-            g2.setColor(fg);
-            g2.drawLine(x, y, x, y + h - 1);
-            g2.drawLine(x + 1, y, x + w - 2, y);
-
-            g2.setColor(wt);
-            g2.drawLine(x + 1, y + 1, x + 1, y + h - 3);
-            g2.drawLine(x + 2, y + 1, x + w - 3, y + 1);
-
-            g2.setColor(sh);
-            g2.drawLine(x + 1, y + h - 2, x + w - 2, y + h - 2);
-            g2.drawLine(x + w - 2, y + 1, x + w - 2, y + h - 3);
-
-            g2.setColor(fg);
-            g2.drawLine(x, y + h - 1, x + w - 1, y + h - 1);
-            g2.drawLine(x + w - 1, y + h - 1, x + w - 1, y);
-        }
+        paintButton(g2, x, y, w, h, isPressed, fg, sh, wt, arr);
 
         isEnabled = hiliteCue == NEXT_SLIDE || hiliteCue == NEXT_SLIDE_PRESSED;
         YassUtils.paintTriangle(g2, x + 10, y + 14, w / 3, YassUtils.EAST,
@@ -2796,29 +2710,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         Color arr = darkMode ? arrowDarkMode : arrow;
 
         boolean isPressed = hiliteCue == PLAY_NOTE_PRESSED;
-        g2.setColor(isPressed ? fg : arr);
-        g2.fillRect(x, y, w, h);
-
-        if (isPressed) {
-            g2.setColor(sh);
-            g2.drawRect(x, y, w - 1, h - 1);
-        } else {
-            g2.setColor(fg);
-            g2.drawLine(x, y, x, y + h - 1);
-            g2.drawLine(x + 1, y, x + w - 2, y);
-
-            g2.setColor(wt);
-            g2.drawLine(x + 1, y + 1, x + 1, y + h - 3);
-            g2.drawLine(x + 2, y + 1, x + w - 3, y + 1);
-
-            g2.setColor(sh);
-            g2.drawLine(x + 1, y + h - 2, x + w - 2, y + h - 2);
-            g2.drawLine(x + w - 2, y + 1, x + w - 2, y + h - 3);
-
-            g2.setColor(fg);
-            g2.drawLine(x, y + h - 1, x + w - 1, y + h - 1);
-            g2.drawLine(x + w - 1, y + h - 1, x + w - 1, y);
-        }
+        paintButton(g2, x, y, w, h, isPressed, fg, sh, wt, arr);
         boolean isEnabled = hiliteCue == PLAY_NOTE_PRESSED || hiliteCue == PLAY_NOTE;
         YassUtils.paintTriangle(g2, x + 16, y + 24, 18, YassUtils.EAST,
                 isEnabled, fg, sh, wt);
@@ -2831,29 +2723,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         w = PLAY_BEFORE_W;
 
         isPressed = hiliteCue == PLAY_BEFORE_PRESSED;
-        g2.setColor(isPressed ? fg : arr);
-        g2.fillRect(x, y, w, h);
-
-        if (isPressed) {
-            g2.setColor(sh);
-            g2.drawRect(x, y, w - 1, h - 1);
-        } else {
-            g2.setColor(fg);
-            g2.drawLine(x, y, x, y + h - 1);
-            g2.drawLine(x + 1, y, x + w - 2, y);
-
-            g2.setColor(wt);
-            g2.drawLine(x + 1, y + 1, x + 1, y + h - 3);
-            g2.drawLine(x + 2, y + 1, x + w - 3, y + 1);
-
-            g2.setColor(sh);
-            g2.drawLine(x + 1, y + h - 2, x + w - 2, y + h - 2);
-            g2.drawLine(x + w - 2, y + 1, x + w - 2, y + h - 3);
-
-            g2.setColor(fg);
-            g2.drawLine(x, y + h - 1, x + w - 1, y + h - 1);
-            g2.drawLine(x + w - 1, y + h - 1, x + w - 1, y);
-        }
+        paintButton(g2, x, y, w, h, isPressed, fg, sh, wt, arr);
         isEnabled = hiliteCue == PLAY_BEFORE || hiliteCue == PLAY_BEFORE_PRESSED;
         g2.setColor(isEnabled ? sh : fg);
         g2.fillRect(x + 22, y + 21, 3, 23);
@@ -2867,29 +2737,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         w = PLAY_NEXT_W;
 
         isPressed = hiliteCue == PLAY_NEXT_PRESSED;
-        g2.setColor(isPressed ? fg : arr);
-        g2.fillRect(x, y, w, h);
-
-        if (isPressed) {
-            g2.setColor(sh);
-            g2.drawRect(x, y, w - 1, h - 1);
-        } else {
-            g2.setColor(fg);
-            g2.drawLine(x, y, x, y + h - 1);
-            g2.drawLine(x + 1, y, x + w - 2, y);
-
-            g2.setColor(wt);
-            g2.drawLine(x + 1, y + 1, x + 1, y + h - 3);
-            g2.drawLine(x + 2, y + 1, x + w - 3, y + 1);
-
-            g2.setColor(sh);
-            g2.drawLine(x + 1, y + h - 2, x + w - 2, y + h - 2);
-            g2.drawLine(x + w - 2, y + 1, x + w - 2, y + h - 3);
-
-            g2.setColor(fg);
-            g2.drawLine(x, y + h - 1, x + w - 1, y + h - 1);
-            g2.drawLine(x + w - 1, y + h - 1, x + w - 1, y);
-        }
+        paintButton(g2, x, y, w, h, isPressed, fg, sh, wt, arr);
         isEnabled = hiliteCue == PLAY_NEXT || hiliteCue == PLAY_NEXT_PRESSED;
         g2.setColor(isEnabled ? sh : fg);
         g2.fillRect(x + 10, y + 21, 3, 23);
@@ -2903,6 +2751,18 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         w = PLAY_PAGE_W;
 
         isPressed = hiliteCue == PLAY_PAGE_PRESSED;
+        paintButton(g2, x, y, w, h, isPressed, fg, sh, wt, arr);
+        isEnabled = hiliteCue == PLAY_PAGE || hiliteCue == PLAY_PAGE_PRESSED;
+        g2.setColor(isEnabled ? sh : fg);
+        g2.fillRect(x + 10, y + 30, 14, 3);
+        YassUtils.paintTriangle(g2, x + 4, y + 28, 8, YassUtils.WEST,
+                isEnabled, fg, sh, wt);
+        YassUtils.paintTriangle(g2, x + 24, y + 28, 8, YassUtils.EAST,
+                isEnabled, fg, sh, wt);
+
+    }
+
+    private void paintButton(Graphics2D g2, int x, int y, int w, int h, boolean isPressed, Color fg, Color sh, Color wt, Color arr) {
         g2.setColor(isPressed ? fg : arr);
         g2.fillRect(x, y, w, h);
 
@@ -2926,14 +2786,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             g2.drawLine(x, y + h - 1, x + w - 1, y + h - 1);
             g2.drawLine(x + w - 1, y + h - 1, x + w - 1, y);
         }
-        isEnabled = hiliteCue == PLAY_PAGE || hiliteCue == PLAY_PAGE_PRESSED;
-        g2.setColor(isEnabled ? sh : fg);
-        g2.fillRect(x + 10, y + 30, 14, 3);
-        YassUtils.paintTriangle(g2, x + 4, y + 28, 8, YassUtils.WEST,
-                isEnabled, fg, sh, wt);
-        YassUtils.paintTriangle(g2, x + 24, y + 28, 8, YassUtils.EAST,
-                isEnabled, fg, sh, wt);
-
     }
 
     /**
@@ -5439,7 +5291,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
     public void finishPlayback() {
         Graphics2D pg2 = (Graphics2D) getGraphics();
-        pg2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        if (pg2 != null) {
+            pg2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        }
         if (isLive()) {
             previewEdit(false);
             showVideo(false);

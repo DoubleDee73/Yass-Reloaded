@@ -81,7 +81,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 
     private boolean preventFireUpdate = false;
     private boolean preventHyphenKeys = true;
-
+    private boolean isFormatting = false;
     private Hashtable<Object, Object> spellCheckers;
 
     private JTextComponentSpellChecker spellCheckerComp = null;
@@ -1124,7 +1124,9 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
             if (isSpellChecking) {
                 return;
             }
-
+            if (preventFireUpdate) {
+                return;
+            }
             preventFireUpdate = true;
             table.getModel().removeTableModelListener(tableListener);
             table.getSelectionModel().removeListSelectionListener(
@@ -1151,7 +1153,10 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                     tableSelectionListener);
             table.getModel().addTableModelListener(tableListener);
             preventFireUpdate = false;
-
+            if (isFormatting) {
+                return;
+            }
+            isFormatting = true;
             try {
                 String txt = lyricsArea.getText();
                 lyricsArea.getStyledDocument().setCharacterAttributes(0,
@@ -1187,6 +1192,8 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                 errLines.clear();
             } catch (Exception ex) {
                 LOGGER.log(Level.INFO, ex.getMessage(), ex);
+            } finally {
+                isFormatting = false;
             }
         }
     };

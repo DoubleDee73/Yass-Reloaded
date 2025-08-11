@@ -1,0 +1,23 @@
+break;breaking;broke;broken;on
+break;breaking;broke;broken;up
+break <sb>;breaking;broke;broken;up
+bring;bringing;brought;brought;on
+bring;bringing;brought;brought;up
+build;building;built;built;up
+build <sb>;building;built;built;up
+get;getting;got;gotten;in
+get;getting;got;gotten;out
+hold;;held;held;out
+leave;;left;left;out
+move;moving;moved;moved;on
+plug;plugging;plugged;plugged;in
+run;running;ran;run;out
+shut;shutting;shut;shut;up
+take;taking;took;taken;on
+think;;thought;thought;out
+turn;;;;on
+turn;;;;off
+turn <sb>;;;;on
+turn <sb>;;;;off
+wake;waking;woke;waken;up
+wake <sb>;waking;woke;waken;up

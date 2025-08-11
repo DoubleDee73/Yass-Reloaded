@@ -2625,6 +2625,9 @@ public class YassTable extends JTable {
                 sheet.setLeftX(minx);
             }
         }
+        if (zoomMode == ZOOM_ONE) {
+            zoomPage();
+        }
         updatePlayerPosition();
 
         preventLyricsUpdate(true);

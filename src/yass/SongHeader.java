@@ -36,18 +36,19 @@ import java.util.logging.Logger;
 
 public class SongHeader extends JDialog implements YassSheetListener {
 
-    private TimeSpinner gapSpinner = null;
-    private TimeSpinner startSpinner = null;
-    private TimeSpinner endSpinner = null;
-    private TimeSpinner vgapSpinner = null;
-    private JTextField mp3 = null;
+    private TimeSpinner gapSpinner;
+    private TimeSpinner startSpinner;
+    private TimeSpinner endSpinner;
+    private TimeSpinner vgapSpinner;
+    private JTextField mp3;
     private JTextField bpmField;
     private JComboBox<String> audioSelector;
     private YassActions actions;
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
-    private List<JPanel> panels = new ArrayList<>();
-    private List<JLabel> labels = new ArrayList<>();
-    private List<JTextField> textFields = new ArrayList<>();
+    private final List<JPanel> panels = new ArrayList<>();
+    private final List<JLabel> labels = new ArrayList<>();
+    private final List<JTextField> textFields = new ArrayList<>();
+
     public SongHeader(JFrame owner, YassActions actions, YassTable table) {
         super(owner);
         LOGGER.info("Init Songheader");
@@ -57,9 +58,22 @@ public class SongHeader extends JDialog implements YassSheetListener {
 
         this.actions = actions;
         YassProperties yassProperties = actions.getProperties();
-        boolean darkMode = yassProperties.containsKey("dark-mode") && yassProperties
-                .get("dark-mode")
-                .equals("true");
+
+        configureDialog();
+        add("Center", createMainPanel(table, yassProperties));
+        addListeners(table);
+
+        pack();
+        applyTheme(yassProperties.getBooleanProperty("dark-mode"));
+        setVisible(true);
+        refreshLocation();
+        toFront();
+    }
+
+    /**
+     * Configures the basic properties of the dialog window.
+     */
+    private void configureDialog() {
         setTitle(I18.get("edit_header"));
         setResizable(false);
         setUndecorated(true);
@@ -68,24 +82,162 @@ public class SongHeader extends JDialog implements YassSheetListener {
                 e.getWindow().dispose();
             }
         });
+    }
+
+    /**
+     * Creates the main panel containing all the song header controls.
+     * @param table The table model containing song data.
+     * @param yassProperties The application properties.
+     * @return The fully constructed main panel.
+     */
+    private JPanel createMainPanel(YassTable table, YassProperties yassProperties) {
         JPanel box = new JPanel();
         box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
-        AbstractButton button;
+        panels.add(box);
+
+        box.add(createAudioPanel(table, yassProperties));
+        box.add(createBpmAndGapPanel(table));
+        box.add(createStartEndPanel(table));
+
+        return box;
+    }
+
+    /**
+     * Creates the panel for audio file selection and management.
+     * @param table The table model containing song data.
+     * @param yassProperties The application properties.
+     * @return The audio panel.
+     */
+    private JPanel createAudioPanel(YassTable table, YassProperties yassProperties) {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
         panel.add(Box.createHorizontalStrut(5));
         panels.add(panel);
-        JLabel label;
+
         Dimension labelSize = new Dimension(120, 20);
         if (yassProperties.isShinyOrNewer()) {
             audioSelector = new JComboBox<>(new String[]{UltrastarHeaderTag.AUDIO.toString(),
                     UltrastarHeaderTag.INSTRUMENTAL.toString(), UltrastarHeaderTag.VOCALS.toString()});
             audioSelector.setMinimumSize(labelSize);
             audioSelector.setPreferredSize(labelSize);
+            panel.add(audioSelector);
+        } else {
+            JLabel label = new JLabel(I18.get("edit_audio"));
+            label.setMinimumSize(labelSize);
+            label.setPreferredSize(labelSize);
+            panel.add(label);
+            labels.add(label);
+        }
+
+        boolean debugWaveform = yassProperties.getBooleanProperty("debug-waveform");
+        String audio = (debugWaveform && StringUtils.isNotEmpty(table.getVocals()))
+                ? table.getVocals()
+                : (StringUtils.isNotEmpty(table.getAudio()) ? table.getAudio() : table.getMP3());
+        if (debugWaveform && StringUtils.isNotEmpty(table.getVocals())) {
+            audioSelector.setSelectedItem(UltrastarHeaderTag.VOCALS.toString());
+        }
+
+        mp3 = new JTextField(audio);
+        mp3.setName("mp3");
+        textFields.add(mp3);
+        panel.add(mp3);
+
+        JButton button = createOpenFileButton(actions.selectAudioFile, "mp3");
+        button.setIcon(actions.getIcon("open24Icon"));
+        panel.add(button);
+
+        return panel;
+    }
+
+    /**
+     * Creates the panel for managing BPM and GAP values.
+     * @param table The table model containing song data.
+     * @return The BPM and GAP panel.
+     */
+    private JPanel createBpmAndGapPanel(YassTable table) {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
+        panel.add(Box.createHorizontalStrut(5));
+        panels.add(panel);
+
+        gapSpinner = new TimeSpinner(I18.get("mpop_gap"), (int) table.getGap(), (int) table.getGap() * 10);
+        gapSpinner.setLabelSize(new Dimension(120, 20));
+        gapSpinner.setSpinnerWidth(100);
+        gapSpinner.getSpinner().setFocusable(false);
+        panel.add(gapSpinner);
+        labels.addAll(gapSpinner.getLabels());
+        textFields.add(gapSpinner.getTextField());
+
+        panel.add(Box.createHorizontalStrut(5));
+        panel.add(createActionButton(actions.setGapHere, "gap24Icon", new Dimension(20, 20)));
+        panel.add(Box.createHorizontalStrut(5));
+
+        JLabel label = new JLabel(I18.get("edit_bpm_title"));
+        Dimension midDimension = new Dimension(80, 20);
+        label.setPreferredSize(midDimension);
+        label.setMinimumSize(midDimension);
+        panel.add(label);
+        labels.add(label);
+
+        bpmField = new JTextField(String.valueOf(table.getBPM()));
+        bpmField.setPreferredSize(midDimension);
+        panel.add(bpmField);
+
+        panel.add(createActionButton(actions.multiply, "fastforward24Icon", null));
+        panel.add(createActionButton(actions.divide, "rewind24Icon", null));
+        panel.add(createActionButton(actions.recalcBpm, "refresh24Icon", null));
+        panel.add(createActionButton(actions.showOnlineHelpBeat, "help24Icon", null));
+
+        return panel;
+    }
+
+    /**
+     * Creates the panel for managing song start and end times.
+     * @param table The table model containing song data.
+     * @return The start/end panel.
+     */
+    private JPanel createStartEndPanel(YassTable table) {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
+        panel.add(Box.createHorizontalStrut(5));
+        panels.add(panel);
+
+        int duration = actions.getMP3() != null ? (int) (actions.getMP3().getDuration() / 1000) : 10000;
+        startSpinner = new TimeSpinner(I18.get("mpop_audio_start"), (int) table.getStart() * 1000, duration);
+        startSpinner.setLabelSize(new Dimension(120, 20));
+        startSpinner.setSpinnerWidth(100);
+        startSpinner.getSpinner().setFocusable(false);
+        panel.add(startSpinner);
+        labels.addAll(startSpinner.getLabels());
+        textFields.add(startSpinner.getTextField());
+
+        int end = table.getEnd() > 0 ? (int) table.getEnd() : 10000;
+        endSpinner = new TimeSpinner(I18.get("mpop_audio_end"), Math.min(duration, end), Math.max(10000, duration));
+        endSpinner.setLabelSize(new Dimension(80, 20));
+        endSpinner.setSpinnerWidth(100);
+        endSpinner.getSpinner().setFocusable(false);
+        panel.add(endSpinner);
+        labels.addAll(endSpinner.getLabels());
+        textFields.add(endSpinner.getTextField());
+
+        panel.add(createActionButton(actions.setStartHere, "bookmarks24Icon", null));
+        panel.add(createActionButton(actions.removeStart, "delete24Icon", null));
+        panel.add(createActionButton(actions.setEndHere, "bookmarks24Icon", null));
+        panel.add(createActionButton(actions.removeEnd, "delete24Icon", null));
+        panel.add(Box.createHorizontalStrut(30));
+
+        return panel;
+    }
+
+    /**
+     * Adds all necessary event listeners to the components.
+     * @param table The table model to be updated by the listeners.
+     */
+    private void addListeners(YassTable table) {
+        if (audioSelector != null) {
             audioSelector.addItemListener(e -> {
                 if (e.getStateChange() == ItemEvent.DESELECTED && mp3 != null) {
-                    String currentFile = mp3.getText();
-                    table.setAudioByTag(e.getItem().toString(), currentFile);
+                    table.setAudioByTag(e.getItem().toString(), mp3.getText());
                 }
                 if (e.getStateChange() == ItemEvent.SELECTED && mp3 != null) {
                     YassRow mp3Row = table.getCommentRow(e.getItem() + ":");
@@ -97,171 +249,46 @@ public class SongHeader extends JDialog implements YassSheetListener {
                     }
                 }
             });
-            panel.add(audioSelector);
-        } else {
-            label = new JLabel(I18.get("edit_audio"));
-            label.setMinimumSize(labelSize);
-            label.setPreferredSize(labelSize);
-            panel.add(label);
-            labels.add(label);
         }
-        boolean debugWaveform = yassProperties.getBooleanProperty("debug-waveform");
-        String audio;
-        if (debugWaveform && StringUtils.isNotEmpty(table.getVocals())) {
-            audio = table.getVocals();
-            audioSelector.setSelectedItem(UltrastarHeaderTag.VOCALS.toString());
-        } else {
-            audio = StringUtils.isNotEmpty(table.getAudio()) ? table.getAudio() : table.getMP3();
-        }
-        mp3 = new JTextField(audio);
-        mp3.setName("mp3");
+
         YassUtils.addChangeListener(mp3, e -> {
-            String selectedAudio = audioSelector != null && audioSelector.getSelectedItem() != null ?
-                    audioSelector.getSelectedItem().toString() : StringUtils.EMPTY;
-            String currentText = mp3.getText();
-            if (currentText != null) {
-                table.setAudioByTag(selectedAudio, currentText);
+            String selectedAudio = (audioSelector != null && audioSelector.getSelectedItem() != null)
+                    ? audioSelector.getSelectedItem().toString() : StringUtils.EMPTY;
+            if (mp3.getText() != null) {
+                table.setAudioByTag(selectedAudio, mp3.getText());
             }
         });
-        textFields.add(mp3);
-        panel.add(mp3);
-        button = createOpenFileButton(actions.selectAudioFile, "mp3");
-        button.setIcon(actions.getIcon("open24Icon"));
-        panel.add(button);
-        box.add(panel);
-        panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
-        panel.add(Box.createHorizontalStrut(5));
-        panels.add(panel);
-        gapSpinner = new TimeSpinner(I18.get("mpop_gap"), (int) table.getGap(), (int) table.getGap() * 10);
-        gapSpinner.setLabelSize(labelSize);
-        gapSpinner.setSpinnerWidth(100);
-        gapSpinner.getSpinner().setFocusable(false);
-        gapSpinner.getSpinner().addChangeListener(e -> {
-            actions.setGap(gapSpinner.getTime());
-        });
-        panel.add(gapSpinner);
-        textFields.add(gapSpinner.getTextField());
-        labels.addAll(gapSpinner.getLabels());
-        panel.add(Box.createHorizontalStrut(5));
-        panel.add(button = new JButton());
-        button.setAction(actions.setGapHere);
-        button.setToolTipText(button.getText());
-        button.setText("");
-        button.setIcon(actions.getIcon("gap24Icon"));
-        button.setFocusable(false);
-        button.setPreferredSize(new Dimension(20, 20));
-        panel.add(Box.createHorizontalStrut(5));
-        panel.add(label = new JLabel(I18.get("edit_bpm_title")));
-        labels.add(label);
-        Dimension midDimension = new Dimension(80, 20);
-        label.setPreferredSize(midDimension);
-        label.setMinimumSize(midDimension);
-        bpmField = new JTextField(String.valueOf(table.getBPM()));
-        bpmField.setPreferredSize(midDimension);
-        bpmField.setPreferredSize(midDimension);
-        bpmField.addActionListener(e1 -> {
-            String s = bpmField.getText();
-            double bpm1 = table.getBPM();
+
+        gapSpinner.getSpinner().addChangeListener(e -> actions.setGap(gapSpinner.getTime()));
+        startSpinner.getSpinner().addChangeListener(e -> actions.setStart(startSpinner.getTime()));
+        endSpinner.getSpinner().addChangeListener(e -> actions.setEnd(endSpinner.getTime()));
+
+        bpmField.addActionListener(e -> {
+            double bpm = table.getBPM();
             try {
-                bpm1 = Double.parseDouble(s);
+                bpm = Double.parseDouble(bpmField.getText());
             } catch (Exception ex) {
-                bpmField.setText(String.valueOf(bpm1));
+                bpmField.setText(String.valueOf(bpm));
             }
-            table.setBPM(bpm1);
+            for (YassTable temp : actions.getOpenTables(table)) {
+                temp.setBPM(bpm);
+            }
         });
-        panel.add(bpmField);
-        textFields.add(bpmField);
-        panel.add(button = new JButton());
-        button.setAction(actions.multiply);
-        button.setToolTipText(button.getText());
-        button.setText("");
-        button.setIcon(actions.getIcon("fastforward24Icon"));
-        button.setFocusable(false);
-        panel.add(button = new JButton());
-        button.setAction(actions.divide);
-        button.setToolTipText(button.getText());
-        button.setText("");
-        button.setIcon(actions.getIcon("rewind24Icon"));
-        button.setFocusable(false);
-        panel.add(button = new JButton());
-        button.setAction(actions.recalcBpm);
-        button.setToolTipText(button.getText());
-        button.setText("");
-        button.setIcon(actions.getIcon("refresh24Icon"));
-        button.setFocusable(false);
-        panel.add(button = new JButton());
-        button.setAction(actions.showOnlineHelpBeat);
-        button.setToolTipText(button.getText());
-        button.setText("");
-        button.setIcon(actions.getIcon("help24Icon"));
-        button.setFocusable(false);
+    }
 
-        box.add(panel);
-
-        panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
-        panel.add(Box.createHorizontalStrut(5));
-        panels.add(panel);
-        int duration = actions.getMP3() != null ? (int) (actions.getMP3().getDuration() / 1000) : 10000;
-        startSpinner = new TimeSpinner(I18.get("mpop_audio_start"), (int) table.getStart() * 1000, duration);
-        startSpinner.setLabelSize(labelSize);
-        startSpinner.setSpinnerWidth(100);
-        startSpinner.getSpinner().setFocusable(false);
-        startSpinner.getSpinner().addChangeListener(e -> {
-            actions.setStart(startSpinner.getTime());
-        });
-        panel.add(startSpinner);
-        labels.addAll(startSpinner.getLabels());
-        textFields.add(startSpinner.getTextField());
-        panel.add(Box.createHorizontalStrut(30));
-        int end = table.getEnd() > 0 ? (int) table.getEnd() : 10000;
-
-        endSpinner = new TimeSpinner(I18.get("mpop_audio_end"), Math.min(duration, end), Math.max(10000, duration));
-        endSpinner.setLabelSize(midDimension);
-        endSpinner.setSpinnerWidth(100);
-        endSpinner.getSpinner().setFocusable(false);
-        endSpinner.getSpinner().addChangeListener(e -> {
-            actions.setEnd(endSpinner.getTime());
-        });
-        panel.add(endSpinner);
-        labels.addAll(endSpinner.getLabels());
-        textFields.add(endSpinner.getTextField());
-        panel.add(button = new JButton());
-        button.setAction(actions.setStartHere);
+    private JButton createActionButton(Action action, String iconName, Dimension size) {
+        JButton button = new JButton();
+        button.setAction(action);
         button.setToolTipText(button.getText());
         button.setText("");
-        button.setIcon(actions.getIcon("bookmarks24Icon"));
+        if (iconName != null) {
+            button.setIcon(actions.getIcon(iconName));
+        }
         button.setFocusable(false);
-
-        panel.add(button = new JButton());
-        button.setAction(actions.removeStart);
-        button.setToolTipText(button.getText());
-        button.setText("");
-        button.setIcon(actions.getIcon("delete24Icon"));
-        button.setFocusable(false);
-
-        panel.add(button = new JButton());
-        button.setAction(actions.setEndHere);
-        button.setToolTipText(button.getText());
-        button.setText("");
-        button.setIcon(actions.getIcon("bookmarks24Icon"));
-        button.setFocusable(false);
-
-        panel.add(button = new JButton());
-        button.setAction(actions.removeEnd);
-        button.setToolTipText(button.getText());
-        button.setText("");
-        button.setIcon(actions.getIcon("delete24Icon"));
-        button.setFocusable(false);
-        box.add(panel);
-
-        add("Center", box);
-        pack();
-        applyTheme(yassProperties.getBooleanProperty("dark-mode"));
-        setVisible(true);
-        refreshLocation();
-        toFront();
+        if (size != null) {
+            button.setPreferredSize(size);
+        }
+        return button;
     }
 
     private JButton createOpenFileButton(Action action, String fieldName) {
@@ -323,7 +350,7 @@ public class SongHeader extends JDialog implements YassSheetListener {
 
     @Override
     public void posChanged(YassSheet source, double posMs) {
-        
+
     }
 
     @Override
@@ -345,8 +372,8 @@ public class SongHeader extends JDialog implements YassSheetListener {
                 ((JButton) c).getModel().addChangeListener(e -> {
                     ButtonModel model = (ButtonModel) e.getSource();
                     c.setBackground(model.isRollover()
-                                            ? (YassSheet.BLUE)
-                                            : YassSheet.HI_GRAY_2);
+                            ? (YassSheet.BLUE)
+                            : YassSheet.HI_GRAY_2);
                     ((JButton) c).setBorder(model.isRollover() ? rolloverBorder : emptyBorder);
                 });
             }
@@ -354,17 +381,19 @@ public class SongHeader extends JDialog implements YassSheetListener {
                 ((JToggleButton) c).getModel().addChangeListener(e -> {
                     ButtonModel model = (ButtonModel) e.getSource();
                     c.setBackground(model.isRollover()
-                                            ? (YassSheet.BLUE)
-                                            : YassSheet.HI_GRAY_2);
+                            ? (YassSheet.BLUE)
+                            : YassSheet.HI_GRAY_2);
                     ((JToggleButton) c).setBorder(model.isRollover() ? rolloverBorder : emptyBorder);
                 });
             }
         }
     }
-    
+
     public void applyTheme(boolean darkMode) {
-        audioSelector.setBackground(darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.white);
-        audioSelector.setForeground(darkMode ? YassSheet.white : null);
+        if (audioSelector != null) {
+            audioSelector.setBackground(darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.white);
+            audioSelector.setForeground(darkMode ? YassSheet.white : null);
+        }
         for (JTextField textField : textFields) {
             textField.setBackground(darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.white);
             textField.setForeground(darkMode ? YassSheet.white : null);

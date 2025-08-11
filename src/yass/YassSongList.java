@@ -19,10 +19,13 @@
 package yass;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.text.WordUtils;
 import org.tritonus.share.sampled.file.TAudioFileFormat;
 import yass.autocorrect.YassAutoCorrect;
 import yass.filter.YassFilter;
 import yass.stats.YassStats;
+import yass.titlecase.PhrasalVerbManager;
+import yass.titlecase.TitleCaseConverter;
 
 import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioSystem;
@@ -50,6 +53,8 @@ import java.util.stream.Collectors;
 import static yass.UltrastarHeaderTag.*;
 
 public class YassSongList extends JTable {
+    public static final String USER_PATH = System.getProperty("user.home") + File.separator + ".yass" + File.separator;
+
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public final static int TILE = 0;
     public final static int DETAILS = 1;
@@ -207,6 +212,10 @@ public class YassSongList extends JTable {
     private boolean filterAll = false;
     private Hashtable<String, String> lyricsCache = null;
     private YassFileUtils fileUtils;
+    private boolean skipTitleCase = false;
+    private boolean titleCaseCheckRunning = false;
+    private Map<String, Integer> titleCaseExceptions = null;
+    private boolean titleCaseChanges = false;
     /**
      * Constructor for the YassSongList object
      *
@@ -1816,7 +1825,85 @@ public class YassSongList extends JTable {
      */
     public void refresh() {
         dirChanged = true;
+        skipTitleCase = "off".equals(prop.getProperty("titlecase"));
+        titleCaseChanges = false;
+        PhrasalVerbManager.getInstance().reinit();
+        if (!skipTitleCase && !titleCaseCheckRunning) {
+            titleCaseExceptions = initTitleCaseExceptions();
+            titleCaseCheckRunning = true;
+        }
         load();
+        if (!skipTitleCase && titleCaseCheckRunning) {
+            titleCaseExceptions = initTitleCaseExceptions();
+            titleCaseCheckRunning = false;
+        }
+    }
+
+    private Map<String, Integer> initTitleCaseExceptions() {
+        Map<String, Integer> titleCaseExceptionsMap = new HashMap<>();
+        File properties = new File(USER_PATH + "titleCaseExceptions.txt");
+        if (!properties.exists()) {
+            LOGGER.fine(USER_PATH + "titleCaseExceptions.txt does not exist.");
+            return titleCaseExceptionsMap;
+        }
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(properties))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) continue; // Kommentare/Leerzeilen überspringen
+
+                String[] parts = line.split("\\t"); // Tab als Trennzeichen
+                if (parts.length == 2) {
+                    String key = parts[0].trim();
+                    try {
+                        int value = Integer.parseInt(parts[1].trim());
+                        titleCaseExceptionsMap.put(key, value);
+                    } catch (NumberFormatException e) {
+                        LOGGER.fine(USER_PATH + "titleCaseExceptions.txt: Failed to parse counter in line " + line);
+                    }
+                } else {
+                    LOGGER.fine(USER_PATH + "titleCaseExceptions.txt: Missing tab in line " + line);
+                    System.err.println("Ungültige Zeile (erwarte genau 1 Tab): " + line);
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return titleCaseExceptionsMap;
+    }
+
+    public void saveTitleCaseExceptions() {
+        if (titleCaseExceptions == null || titleCaseExceptions.isEmpty()) {
+            return;
+        }
+        saveTitleCaseExceptions(titleCaseExceptions);
+    }
+    private void saveTitleCaseExceptions(Map<String, Integer> exceptionsMap) {
+        File file = new File(USER_PATH + "titleCaseExceptions.txt");
+
+        try {
+            // Verzeichnis anlegen, falls nicht vorhanden
+            if (!file.getParentFile().exists()) {
+                file.getParentFile().mkdirs();
+            }
+
+            try (PrintWriter writer = new PrintWriter(new FileWriter(file))) {
+                writer.println("# titleCaseExceptions.txt");
+                writer.println("# Format: Song-Title<TAB>Counter");
+                writer.println("# ----------------------------------");
+
+                for (Map.Entry<String, Integer> entry : exceptionsMap.entrySet()) {
+                    writer.println(entry.getKey() + "\t" + entry.getValue());
+                }
+            }
+
+            LOGGER.fine("Saved title exceptions: " + file.getAbsolutePath() + " with "  + 
+                                exceptionsMap.size() + " entries");
+        } catch (IOException e) {
+            System.err.println("Fehler beim Schreiben der Datei: " + file.getAbsolutePath());
+            e.printStackTrace();
+        }
     }
 
     /**
@@ -3412,7 +3499,6 @@ public class YassSongList extends JTable {
                 changed = true;
                 s.setTimestamp(timestamp);
             }
-
             YassTableModel tm = (YassTableModel) t.getModel();
             YassRow r = tm.getCommentRow(TITLE);
             title = r != null ? r.getHeaderComment() : "";
@@ -3484,7 +3570,34 @@ public class YassSongList extends JTable {
 
             encoding = t.getEncoding();
             if (encoding==null) encoding="";
-
+            if (!isFiltering() && !skipTitleCase && isEnglish(language)) {
+                String titleCased;
+                if (prop.getProperty("titlecase").equals("simple")) {
+                    titleCased = WordUtils.capitalize(title);
+                } else {
+                    titleCased = TitleCaseConverter.toApTitleCase(title);
+                }
+                int count = countTitleCaseExceptions(title);
+                if (!title.equals(titleCased) && count < 3) {
+                    String message = MessageFormat.format(I18.get("lib_msg_correct_titlecase_msg"),
+                                                          title,
+                                                          TitleCaseConverter.highlightDiff(t.getTitle(), titleCased));
+                    int input = JOptionPane.showConfirmDialog(actions.getTab(),
+                                                              "<html>" + message + "</html>",
+                                                              I18.get("lib_msg_correct_titlecase_title"),
+                                                              JOptionPane.YES_NO_CANCEL_OPTION);
+                    if (input == JOptionPane.YES_OPTION) {
+                        title = titleCased;
+                        s.setSaved(false);
+                        titleCaseChanges = true;
+                    } else if (input == JOptionPane.NO_OPTION) {
+                        titleCaseExceptions.put(title, ++count);
+                        titleCaseChanges = true;
+                    } else if (input == JOptionPane.CANCEL_OPTION) {
+                        skipTitleCase = true;
+                    }
+                }
+            }
             if (!title.equals(s.getTitle())) {
                 changed = true;
                 s.setTitle(title);
@@ -3656,6 +3769,26 @@ public class YassSongList extends JTable {
             }
         }
         return changed;
+    }
+
+    private int countTitleCaseExceptions(String title) {
+        if (titleCaseExceptions == null) {
+            titleCaseExceptions = initTitleCaseExceptions();
+        }
+        return titleCaseExceptions.get(title) == null ? 0 : titleCaseExceptions.get(title);
+    }
+
+    private static boolean isEnglish(String language) {
+        return language.contains(
+                Locale.ENGLISH.getDisplayLanguage(Locale.ENGLISH)) ||
+                language.contains(Locale.ENGLISH.getDisplayLanguage(Locale.GERMAN));
+    }
+
+    private boolean isFiltering() {
+        if (filterThread == null) {
+            return true;
+        }
+        return !filterThread.isFinished;
     }
 
     /**
@@ -5042,7 +5175,6 @@ public class YassSongList extends JTable {
                     actions.setProgress(MessageFormat.format(libmsgload, i), s.getDirectory());
                 }
             }
-
             Collections.sort(data);
 
             if (all) {
@@ -5074,6 +5206,10 @@ public class YassSongList extends JTable {
 
             state = YassSongListEvent.FINISHED;
             fireSongListChanged(state);
+            if (titleCaseChanges) {
+                saveTitleCaseExceptions(titleCaseExceptions);
+                store();
+            }
         }
 
         /**
@@ -6576,6 +6712,13 @@ public class YassSongList extends JTable {
             });
             isFinished = true;
         }
+    }
+
+    public boolean isTitleCaseChanged() {
+        if (skipTitleCase) {
+            return false;
+        }
+        return titleCaseChanges;
     }
 }
 

@@ -86,6 +86,15 @@ public class Header extends JPanel {
         add("Center", getContentPanel());
     }
 
+    public void ensureTableCommit() {
+        if (fileTable.isEditing()) {
+            TableCellEditor editor = fileTable.getCellEditor();
+            if (editor != null) {
+                editor.stopCellEditing();
+            }
+        }
+    }
+    
     /**
      * Gets the filename attribute of the Header object
      *
@@ -195,6 +204,12 @@ public class Header extends JPanel {
     public String getBPM() {
         return (String) fileTable.getValueAt(4, 1);
     }
+    public String getCreator() {
+        return (String) fileTable.getValueAt(5, 1);
+    }
+    public void setCreator(String s) {
+        fileTable.setValueAt(s, 5, 1);
+    }
 
     /**
      * Sets the bPM attribute of the Header object
@@ -283,7 +298,7 @@ public class Header extends JPanel {
         content.add("Center", new JScrollPane(txt));
 
         fileTable =
-                new JTable(5, 2) {
+                new JTable(6, 2) {
                     private static final long serialVersionUID = -6838778960413155202L;
 
                     public TableCellEditor getCellEditor(int row, int column) {
@@ -303,6 +318,7 @@ public class Header extends JPanel {
         fileTable.setValueAt(I18.get("create_header_genre"), 2, 0);
         fileTable.setValueAt(I18.get("create_header_language"), 3, 0);
         fileTable.setValueAt(I18.get("create_header_bpm"), 4, 0);
+        fileTable.setValueAt(I18.get("create_header_creator"), 5, 0);
         content.add("South", fileTable);
         return content;
     }

@@ -23,6 +23,7 @@ import org.apache.commons.lang3.math.NumberUtils;
 import yass.ffmpeg.FFMPEGLocator;
 import yass.logger.YassLogger;
 import yass.stats.YassStats;
+import yass.titlecase.PhrasalVerbManager;
 
 import javax.sound.midi.MidiUnavailableException;
 import javax.swing.*;
@@ -110,6 +111,9 @@ public class YassMain extends JFrame {
                 y.initFrame();
                 if (y.refreshLibrary()) {
                     LOGGER.info("Song Library was refreshed...");
+                }
+                if ("ap".equals(y.prop.getProperty("titlecase"))) {
+                    PhrasalVerbManager.setInstance(y.prop);
                 }
                 LOGGER.info("Ready. Let's go.");
                 result[0] = y;
@@ -885,6 +889,10 @@ public class YassMain extends JFrame {
             }
             if (s != null && songList.getShowLyrics() && s.getLyrics() == null) {
                 songList.loadSongDetails(s, new YassTable());
+                if (songList.isTitleCaseChanged()) {
+                    songList.saveTitleCaseExceptions();
+                    songList.store();
+                }
             }
 
             if (s != null || isEmpty) {
