@@ -70,6 +70,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     public static final Color hiGrayDarkMode = new Color(100,100,100);
     public static final Color HI_GRAY_2_DARK_MODE = new Color(70,70,70);
     public static final  Color whiteDarkMode = new Color(50,50,50);
+    public static final Color dkGreen = new Color(0,120,0);
+    public static final Color dkGreenLight = new Color(50,220,50);
 
     private static final Color arrow = new Color(238, 238, 238, 160);
     private static final Color arrowDarkMode = new Color(200, 200, 200, 160);
@@ -2583,7 +2585,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
      * @param g2 Description of the Parameter
      */
     public void paintWaveform(Graphics2D g2) {
-        g2.setColor(Color.green);
+        g2.setColor(darkMode ? dkGreen : dkGreenLight);
 
         int h = TOP_LINE - 10 + 128;
 
@@ -3481,7 +3483,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
                                 int midx = (int) (r.x + r.width / 2);
                                 Font oldFont = g2.getFont();
-                                g2.setColor(darkMode ? dkGrayDarkMode : dkGray);
+                                g2.setColor(darkMode ? blackDarkMode : black);
                                 g2.setFont(big[16]);
                                 FontMetrics metrics = g2.getFontMetrics();
                                 int strw = metrics.stringWidth(lenstr);
@@ -3512,7 +3514,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                                 int yoff = 4;
                                 int midx = (int) (r.x + r.width / 2);
                                 Font oldFont = g2.getFont();
-                                g2.setColor(darkMode ? dkGrayDarkMode : dkGray);
+                                g2.setColor(darkMode ? blackDarkMode : black);
                                 g2.setFont(big[16]);
                                 FontMetrics metrics = g2.getFontMetrics();
                                 int strw = metrics.stringWidth(hstr);
