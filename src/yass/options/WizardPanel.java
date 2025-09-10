@@ -19,29 +19,24 @@
 package yass.options;
 
 import yass.I18;
+import yass.wizard.WizardMidiMode;
 
 /**
- * Description of the Class
+ * Wizard-Default settings panel
  *
- * @author Saruta
+ * @author DoubleDee
  */
-public class CachePanel extends OptionsPanel {
+public class WizardPanel extends OptionsPanel {
 
-    private static final long serialVersionUID = -7453496938869803003L;
+    private static final long serialVersionUID = 1L;
 
     /**
      * Gets the body attribute of the DirPanel object
      */
     public void addRows() {
-        addFile(I18.get("options_cache_songs"), "songlist-cache");
-        addComment(I18.get("options_cache_songs_comment"));
-        addFile(I18.get("options_cache_playlists"), "playlist-cache");
-        addComment(I18.get("options_cache_playlists_comment"));
-
-        addDirectory(I18.get("options_cache_covers"), "songlist-imagecache");
-        addComment(I18.get("options_cache_covers_comment"));
-
-        addComment(I18.get("options_cache_comment"));
+        setLabelWidth(140);
+        addText(I18.get("options_wizard_defaults_creator"), "creator");
+        addChoice(I18.get("options_wizard_defaults_midi"), WizardMidiMode.values(), "wizard-skip-midi");
     }
 }
 

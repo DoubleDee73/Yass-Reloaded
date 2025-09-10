@@ -103,7 +103,7 @@ public class YassPlayer {
     private int audioBytesChannels = 2;
     private float audioBytesSampleRate = 44100;
     private int audioBytesSampleSize = 2;
-    public static final String TEMP_PATH = System.getProperty("user.home") + File.separator + ".yass" + File.separator;
+    public static final String USER_PATH = System.getProperty("user.home") + File.separator + ".yass" + File.separator;
     private Map<Integer, byte[]> LONG_NOTE_MAP;
     private Map<Integer, byte[]> SHORT_NOTE_MAP;
     private Integer lastNote = null;
@@ -157,7 +157,7 @@ public class YassPlayer {
     }
     
     private File fetchOrConvert(String path) {
-        File file = new File(TEMP_PATH + path + ".wav");
+        File file = new File(USER_PATH + path + ".wav");
         if (file.exists()) {
             return file;
         }
@@ -166,7 +166,7 @@ public class YassPlayer {
             URL resource = YassPlayer.class.getClassLoader()
                                            .getResource("yass/resources/" + path + ".mp3");
             InputStream initialStream = resource.openStream();
-            File targetFile = new File(TEMP_PATH + "sample.mp3");
+            File targetFile = new File(USER_PATH + "sample.mp3");
             OutputStream outStream = new FileOutputStream(targetFile);
 
             byte[] buffer = new byte[8 * 1024];
@@ -185,7 +185,7 @@ public class YassPlayer {
         return file;
     }
 
-    public static final String TEMP_WAV = TEMP_PATH + "temp.wav";
+    public static final String TEMP_WAV = USER_PATH + "temp.wav";
 
     public YassPlayer(YassPlaybackRenderer s, boolean initMidi, boolean debugAudio) {
         playbackRenderer = s;
@@ -983,10 +983,10 @@ public class YassPlayer {
                 mp3File = new File(TEMP_WAV);
                 setPlayrate(yass.Timebase.NORMAL);
             } else {
-                mp3File = new File(TEMP_PATH + timebase.id + "temp.wav");
+                mp3File = new File(USER_PATH + timebase.id + "temp.wav");
                 if (!mp3File.exists()) {
                     try {
-                        mp3File = generateTemp(TEMP_PATH + "temp.wav", timebase);
+                        mp3File = generateTemp(USER_PATH + "temp.wav", timebase);
                         playrate = 1;
                         setPlayrate(timebase);
                     } catch (IOException | UnsupportedAudioFileException | LineUnavailableException e) {
@@ -1370,7 +1370,7 @@ public class YassPlayer {
         if (timeBase == yass.Timebase.NORMAL) {
             filename = TEMP_WAV;
         } else {
-            filename = TEMP_PATH + timeBase.getId() + "temp.wav";
+            filename = USER_PATH + timeBase.getId() + "temp.wav";
         }
         return generateTemp(source, timeBase, filename);
     }

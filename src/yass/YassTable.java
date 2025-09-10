@@ -1212,6 +1212,13 @@ public class YassTable extends JTable {
                 tm.getData().remove(r);
             }
         }
+        appendHeaderTag(r);
+        tm.fireTableDataChanged();
+        return true;
+    }
+
+    public void appendHeaderTag(YassRow r) {
+        int rowToInsert = 0;
         for (int i = 0; i < tm.getRowCount(); i++) {
             YassRow firstNote = tm.getRowAt(i);
             if (firstNote.isNote() || firstNote.isP()) {
@@ -1220,10 +1227,7 @@ public class YassTable extends JTable {
             }
         }
         tm.getData().insertElementAt(r, rowToInsert);
-        tm.fireTableDataChanged();
-        return true;
     }
-
     public boolean setCommentTag(String comment) {
         YassRow r = tm.getCommentRow(COMMENT);
         int rowToInsert = 0;
@@ -1234,14 +1238,7 @@ public class YassTable extends JTable {
             tm.fireTableDataChanged();
             return true;
         }
-        for (int i = 0; i < tm.getRowCount(); i++) {
-            YassRow firstNote = tm.getRowAt(i);
-            if (firstNote.isNote() || firstNote.isP()) {
-                rowToInsert = i;
-                break;
-            }
-        }
-        tm.getData().insertElementAt(r, rowToInsert - 1);
+        appendHeaderTag(r);
         return true;
     }
 

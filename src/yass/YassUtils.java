@@ -276,16 +276,6 @@ public class YassUtils {
         if (!newdir.exists()) {
             newdir.mkdir();
         }
-        if (mp3filename != null && !mp3filename.trim().isEmpty()) {
-            File mp3 = new File(mp3filename);
-            File newmp3 = new File(newdir, mp3.getName());
-            boolean exists = newmp3.getAbsolutePath().equalsIgnoreCase(mp3.getAbsolutePath());
-            if (!exists && !copyFile(mp3, newmp3)) {
-                JOptionPane.showMessageDialog(parent, "<html>" + MessageFormat.format(I18.get("create_error_msg_1"),
-                                                                                      newdir.getAbsolutePath()) + "</html>",
-                                              I18.get("create_error_title"), JOptionPane.ERROR_MESSAGE);
-            }
-        }
 
         YassTable table = new YassTable();
         table.init(prop);
@@ -1056,7 +1046,7 @@ public class YassUtils {
     }
 
     public static boolean isPunctuation(String input) {
-        return Pattern.matches("\\p{IsPunctuation}", input);
+        return Pattern.matches("\p{IsPunctuation}", input);
     }
 
     static class ImageLoadStatus {
@@ -1114,7 +1104,7 @@ public class YassUtils {
             textLines.addAll(rows);
             YassRow tempRow = new YassRow(rows.get(rows.size() -1));
             startBeat = tempRow.getBeatInt() + tempRow.getLengthInt() + 2;
-            textLines.add("-\t" + startBeat);
+            textLines.add("-	" + startBeat);
             startBeat = startBeat + 1;
         }
         return textLines;
@@ -1146,10 +1136,10 @@ public class YassUtils {
      */
     private List<String> createRowsFromWord(String word, int startBeat) {
         List<String> rows = new ArrayList<>();
-        String[] syllables = hyphenator.hyphenateWord(word).split("\u00AD");
+        String[] syllables = hyphenator.hyphenateWord(word).split("­");
         int i = 0;
         for (String syllable : syllables) {
-            StringJoiner row = new StringJoiner("\t");
+            StringJoiner row = new StringJoiner("	");
             row.add(":");
             row.add(Integer.toString(startBeat));
             row.add(Integer.toString(getDefaultLength()));
@@ -1254,4 +1244,3 @@ public class YassUtils {
         }
     }
 }
-

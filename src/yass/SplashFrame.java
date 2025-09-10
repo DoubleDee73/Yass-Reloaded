@@ -60,7 +60,7 @@ public class SplashFrame extends JWindow {
         String path;
         for (int i = 21; i < 109; i++) {
             path = "samples/longnotes/" + i;
-            File file = new File(YassPlayer.TEMP_PATH + path + ".wav");
+            File file = new File(YassPlayer.USER_PATH + path + ".wav");
             String noteName = yassSheet.getNoteName(i % 12) + ((i / 12) - 1);
             StringJoiner label = new StringJoiner(StringUtils.SPACE);
             if (!file.exists()) {

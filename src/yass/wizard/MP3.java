@@ -21,6 +21,7 @@ package yass.wizard;
 import org.apache.commons.lang3.StringUtils;
 import yass.I18;
 import yass.YassUtils;
+import yass.analysis.BpmDetector;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -109,6 +110,22 @@ public class MP3 extends JPanel {
             wizard.setValue("title", "UnknownTitle");
             wizard.setValue("artist", "UnknownArtist");
         }
+        String currentBpmStr = wizard.getValue("bpm");
+        boolean shouldDetect = true;
+        if (StringUtils.isNotEmpty(currentBpmStr)) {
+            try {
+                if (Float.parseFloat(currentBpmStr.replace(',', '.')) > 0) {
+                    shouldDetect = false;
+                }
+            } catch (NumberFormatException ignored) { }
+        }
+        if (shouldDetect) {
+            BpmDetector.detectBpm(s, bpm -> {
+                String bpmString = String.format(java.util.Locale.US, "%.2f", bpm);
+                wizard.setValue("bpm", bpmString);
+            }, wizard.getYassProperties());
+        }
+    
         wizard.setNextFinishButtonEnabled(true);
     }
 

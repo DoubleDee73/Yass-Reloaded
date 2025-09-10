@@ -76,6 +76,12 @@ public class YassProperties extends Properties {
         if (defaultProperties == null) {
             defaultProperties = new Hashtable<>();
             setDefaultProperties(defaultProperties);
+        } else {
+            if (defaultProperties.contains(key)) {
+                Hashtable<Object, Object> temp  = new Hashtable<>();
+                setDefaultProperties(temp);
+                defaultProperties.put(key, temp.get(key));
+            }
         }
         return (String)defaultProperties.get(key);
     }
@@ -182,6 +188,8 @@ public class YassProperties extends Properties {
         p.putIfAbsent("yass-version", YassActions.VERSION);
         p.putIfAbsent("ultrastar-format-version", UltrastarHeaderTagVersion.UNITY.version);
         p.putIfAbsent("ffmpegPath", "");
+        p.putIfAbsent("ytdlpPath", "");
+        p.putIfAbsent("aubioPath", "");
 
         p.putIfAbsent("yass-language", "default");
         p.putIfAbsent("yass-languages", "default|en|de|fr|hu|pl|es");
@@ -465,6 +473,13 @@ public class YassProperties extends Properties {
         p.putIfAbsent("welcome", "true");
         p.putIfAbsent("recent-files", "");
         p.putIfAbsent("titlecase", "off");
+        
+        p.putIfAbsent("wizard-skip-midi", "USE_MIDI");
+        p.putIfAbsent("ytdlp-audio-format", "m4a");
+        p.putIfAbsent("ytdlp-audio-bitrate", "320");
+        p.putIfAbsent("ytdlp-video-codec", "");
+        p.putIfAbsent("ytdlp-video-resolution", "[height<=1080]");
+        
     }
 
     public String getProperty(String key, String[] var, String[] val) {
