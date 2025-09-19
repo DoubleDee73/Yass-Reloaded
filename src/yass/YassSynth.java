@@ -132,24 +132,6 @@ public class YassSynth {
             float fac = (b.length - i) / (float) b.length;
             b[i] = (byte) Math.min(127, (sinValue * 127.0 * fac * fac));
         }
-        /*
-		 *  byte data[] = new byte[(int) (sampleRate * bytesPerSample * ms / 1000)];
-		 *  ByteBuffer byteBuffer = ByteBuffer.wrap(data);
-		 *  ShortBuffer shortBuffer = byteBuffer.asShortBuffer();
-		 *  int sampleLength = data.length / bytesPerSample;
-		 *  double f = getFrequency(note);
-		 *  for (int i = 0; i < sampleLength; i++) {
-		 *  double t = i / (double) sampleRate;
-		 *  double sinValue = Math.sin(2 * Math.PI * f * t);
-		 *  if (type != SINE) {
-		 *  if (type == RECT) {
-		 *  sinValue = sinValue > 0 ? 1 : -1;
-		 *  }
-		 *  }
-		 *  float fac = (sampleLength - i) / (float) sampleLength;
-		 *  shortBuffer.put((short) (32000 * sinValue * fac * fac));
-		 *  }
-		 */
         return b;
     }
 

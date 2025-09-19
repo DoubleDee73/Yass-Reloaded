@@ -1046,7 +1046,7 @@ public class YassUtils {
     }
 
     public static boolean isPunctuation(String input) {
-        return Pattern.matches("\p{IsPunctuation}", input);
+        return Pattern.matches("\\p{IsPunctuation}", input);
     }
 
     static class ImageLoadStatus {

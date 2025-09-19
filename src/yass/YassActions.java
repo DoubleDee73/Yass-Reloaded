@@ -2923,7 +2923,6 @@ public class YassActions implements DropTargetListener {
         lyrics.setTable(null);
         sheet.setActiveTable(null);
         songList.closeOpened();
-        sheet.disposeSongHeader();
         isUpdating = true;
         updateLyrics();
         errors.setTable(null);
@@ -6509,18 +6508,27 @@ public class YassActions implements DropTargetListener {
         // prevent unsetting saved icon
         isUpdating = true;
         updateLyrics();
-        // updateMP3Info(table);
-        // updateRaw();
-        // updateCover();
-        // updateBackground();
-        // updateVideo();
         updateVideo(); // todo: really?
         isUpdating = false;
 
-        for (YassTable t: openTables)
+        for (YassTable t: openTables) {
             songList.addOpened(t);
+        }
         sheet.init(initMic());
         sheet.initSongHeader(this);
+        if (sheet.getSongHeader() != null) {
+            JViewport v = (JViewport) sheet.getParent();
+            Point p = v.getViewPosition();
+            Dimension r = v.getExtentSize();
+            int lyricsWidth = 450;
+            int newx = (int) p.getX() + r.width - lyricsWidth;
+            int newy = (int) p.getY();
+
+            SongHeader songHeader = sheet.getSongHeader();
+            Dimension headerSize = songHeader.getPreferredSize();
+            int headerX = newx - headerSize.width - 10;
+            songHeader.setBounds(headerX, newy, headerSize.width, headerSize.height);
+        }
         table.initAutoSave();
     }
     

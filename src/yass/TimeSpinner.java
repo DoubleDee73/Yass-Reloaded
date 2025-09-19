@@ -188,12 +188,11 @@ public class TimeSpinner extends JPanel {
         }
         return null;
     }
-    public void setSpinnerWidth(int width) {
-        Dimension spinnerWidth = new Dimension(width, 20);
+    public void setSpinnerSize(Dimension size) {
         ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setColumns(5);
-        ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setSize(spinnerWidth);
-        ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setMinimumSize(spinnerWidth);
-        ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setPreferredSize(spinnerWidth);
+        ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setSize(size);
+        ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setMinimumSize(size);
+        ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setPreferredSize(size);
     }
     /**
      * Gets the time attribute of the TimeSpinner object
@@ -248,5 +247,3 @@ public class TimeSpinner extends JPanel {
         msSpinner.getEditor().repaint();
     }
 }
-
-

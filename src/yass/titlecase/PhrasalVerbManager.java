@@ -154,7 +154,10 @@ public class PhrasalVerbManager {
         instance = new PhrasalVerbManager(props);
     }
 
-    public static PhrasalVerbManager getInstance() {
+    public static PhrasalVerbManager getInstance(YassProperties props) {
+        if (instance == null) {
+            setInstance(props);
+        }
         return instance;
     }
 }

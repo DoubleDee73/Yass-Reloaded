@@ -138,7 +138,7 @@ public class TitleCaseConverter {
     }
 
     private static boolean isPhrasalVerb(String current, String previous, String prePrevious) {
-        if (!PhrasalVerbManager.phrasalVerbs.containsKey(current)) {
+        if (PhrasalVerbManager.phrasalVerbs != null && !PhrasalVerbManager.phrasalVerbs.containsKey(current)) {
             return false;
         }
         StringJoiner expression = new StringJoiner(" ");

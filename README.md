@@ -44,7 +44,7 @@ If you install Yass Reloaded with the Windows installer, you can simply run <cod
 
 Alternatively, you can download the jar file and start it from the console:
 
-On Windows, you can simply do this: <code>java -jar Yass-Reloaded-2025.8.jar</code>
+On Windows, you can simply do this: <code>java -jar Yass-Reloaded-2025.9.jar</code>
 
 On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
@@ -52,7 +52,7 @@ On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
 and then start the jar like so:
 
-<code>java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2025.8.jar</code>
+<code>java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2025.9.jar</code>
 
 # Developers
 
@@ -76,6 +76,14 @@ Basic setup is described in the Wiki: https://github.com/SarutaSan72/Yass/wiki/D
 Licenses are stated in the application's help section.
 
 Speed measure 'Inverse Duration' based on Marcel Taeumel's approach (http://uman.sf.net).
+
+# Support for external tools
+## yt-dlp
+yt-dlp is used to download audio and video files from YouTube
+https://github.com/yt-dlp/yt-dlp#release-files
+## aubio
+aubio is used to determine the BPM when using the Song Creation Wizard
+https://aubio.org/download
 
 # License
 
@@ -105,7 +113,7 @@ If you like this  app, feel free (but not pressured!) to buy me coffee. Any supp
   - Open a command line window and type in <code>java -version</code>. 
   - You should have Java 21
 - Have you tried opening it as a jar?
-  - Download the jar, open a command line window and type in <code>java -jar Yass-Reloaded-2025.8.jar</code>
+  - Download the jar, open a command line window and type in <code>java -jar Yass-Reloaded-2025.9.jar</code>
   - Any error messages are then printed out in the command line window for debugging
 
 ## Cannot find FFmpeg?
