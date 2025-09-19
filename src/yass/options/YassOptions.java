@@ -18,6 +18,10 @@
 
 package yass.options;
 
+import com.jfposton.ytdlp.YtDlp;
+import com.jfposton.ytdlp.YtDlpException;
+import org.apache.commons.lang3.StringUtils;
+import org.jetbrains.annotations.Nullable;
 import yass.I18;
 import yass.YassActions;
 import yass.YassProperties;
@@ -28,11 +32,13 @@ import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeSelectionModel;
 import java.awt.*;
-import java.beans.PropertyChangeEvent;
-import java.beans.PropertyChangeListener;
 import java.net.URL;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Hashtable;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -46,6 +52,7 @@ public class YassOptions extends JDialog {
     private final JPanel main;
     private final JScrollPane scrollMain;
     private final YassActions actions;
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
 
     /**
@@ -58,18 +65,21 @@ public class YassOptions extends JDialog {
 
         actions = a;
         YassProperties prop = actions.getProperties();
-        panels = new Hashtable<>();
 
+        String ytDlpVersion = checkYtDlpVersion(prop);
+        panels = new Hashtable<>();
         DefaultMutableTreeNode top = new DefaultMutableTreeNode("Yass");
         DefaultMutableTreeNode library = new DefaultMutableTreeNode(I18.get("options_library"));
         DefaultMutableTreeNode meta = new DefaultMutableTreeNode(I18.get("options_metadata"));
         DefaultMutableTreeNode checker = new DefaultMutableTreeNode(I18.get("options_errors"));
         DefaultMutableTreeNode editor = new DefaultMutableTreeNode(I18.get("options_editor"));
+        DefaultMutableTreeNode wizard = new DefaultMutableTreeNode(I18.get("options_wizard"));
         DefaultMutableTreeNode advanced = new DefaultMutableTreeNode(I18.get("options_advanced"));
         top.add(library);
         top.add(meta);
         top.add(checker);
         top.add(editor);
+        top.add(wizard);
         top.add(advanced);
 
         OptionsPanel.loadProperties(prop);
@@ -80,7 +90,7 @@ public class YassOptions extends JDialog {
         addPanel(library, I18.get("options_groups_2"), new Group2Panel());
         addPanel(library, I18.get("options_sorting"), new SortPanel());
         addPanel(library, I18.get("options_printer"), new PrintPanel());
-        addPanel(library, I18.get("options_cache"), new CachePanel());
+        addPanel(library, I18.get("options_locations"), new LocationsPanel());
         addPanel(library, I18.get("options_filetypes"), new FiletypePanel());
 
         addPanel(meta, I18.get("options_languages"), new LanguagePanel());
@@ -97,6 +107,9 @@ public class YassOptions extends JDialog {
         addPanel(editor, I18.get("options_control"), new SketchPanel());
         addPanel(editor, I18.get("options_keyboard"), new KeyboardPanel());
         addPanel(editor, I18.get("options_spelling"), new DictionaryPanel());
+        
+        addPanel(wizard, I18.get("options_wizard_defaults"), new WizardPanel());
+        addPanel(wizard, I18.get("options_wizard_ytdlp"), new YtDlpPanel(ytDlpVersion));
 
         addPanel(advanced, I18.get("options_advanced_audio"), new AudioPanel());
         addPanel(advanced, I18.get("options_advanced_debug"), new DebugPanel());
@@ -135,38 +148,74 @@ public class YassOptions extends JDialog {
         JOptionPane optionPane = new JOptionPane(panel, JOptionPane.PLAIN_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
         setContentPane(optionPane);
         optionPane.addPropertyChangeListener(
-                new PropertyChangeListener() {
-                    public void propertyChange(PropertyChangeEvent e) {
-                        if (!e.getPropertyName().equals(JOptionPane.VALUE_PROPERTY)) {
-                            return;
-                        }
-
-                        JOptionPane optionPane = (JOptionPane) e.getSource();
-                        Object val = optionPane.getValue();
-                        if (val == null || val == JOptionPane.UNINITIALIZED_VALUE) {
-                            return;
-                        }
-                        int value = ((Integer) val).intValue();
-                        if (value == JOptionPane.OK_OPTION) {
-
-                            actions.storeColors();
-                            OptionsPanel.storeProperties();
-                            //System.out.println("store");
-                        }
-
-                        dispose();
+                e -> {
+                    if (!e.getPropertyName().equals(JOptionPane.VALUE_PROPERTY)) {
+                        return;
                     }
+
+                    JOptionPane optionPane1 = (JOptionPane) e.getSource();
+                    Object val = optionPane1.getValue();
+                    if (val == null || val == JOptionPane.UNINITIALIZED_VALUE) {
+                        return;
+                    }
+                    int value = ((Integer) val).intValue();
+                    if (value == JOptionPane.OK_OPTION) {
+
+                        actions.storeColors();
+                        OptionsPanel.storeProperties();
+                        //System.out.println("store");
+                    }
+
+                    dispose();
                 });
 
         setModal(true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         pack();
         Dimension dim = this.getToolkit().getScreenSize();
-        setSize(800, 620);
-        setLocation(dim.width / 2 - 400, dim.height / 2 - 250);
+        setSize(800, 680);
+        setLocation(dim.width / 2 - 400, dim.height / 2 - 340);
         setTitle(I18.get("options_title"));
         showPanel(I18.get("options_directories"));
         setVisible(true);
+    }
+
+    @Nullable
+    private static String checkYtDlpVersion(YassProperties prop) {
+        String ytDlpVersion = prop.getProperty("ytdlp-version");
+        boolean ytDlpChanged = false;
+        if (ytDlpVersion == null) {
+            try {
+                ytDlpVersion = StringUtils.trim(YtDlp.getVersion());
+                LOGGER.info("yt-dlp version: " + ytDlpVersion);
+                ytDlpChanged = true;
+            } catch (YtDlpException e) {
+                LOGGER.info("yt-dlp not found");
+            }
+        }
+        if (StringUtils.isNotEmpty(ytDlpVersion)) {
+            LocalDate ytDlpDate = LocalDate.parse(ytDlpVersion, DateTimeFormatter.ofPattern("yyyy.MM.dd"));
+            if (ChronoUnit.DAYS.between(ytDlpDate, LocalDate.now()) > 30) {
+                try {
+                    YtDlp.update();
+                } catch (YtDlpException e) {
+                    LOGGER.info("yt-dlp not found");
+                    ytDlpVersion = null;
+                    ytDlpChanged = true;
+                }
+            }
+        }
+        if (ytDlpChanged) {
+            if (StringUtils.isNotEmpty(ytDlpVersion)) {
+                prop.setProperty("ytdlp-version", ytDlpVersion);
+                LOGGER.info("yt-dlp version set to: " + ytDlpVersion);
+            } else {
+                prop.remove("ytdlp-version");
+                LOGGER.info("yt-dlp was removed from properties");
+            }
+            prop.store();
+        }
+        return ytDlpVersion;
     }
 
     /**
@@ -239,5 +288,7 @@ public class YassOptions extends JDialog {
         public void show() {
         }
     }
+    
+    
 }
 

@@ -18,7 +18,9 @@
 
 package yass.wizard;
 
-import com.nexes.wizard.Wizard;
+import lombok.Getter;
+import lombok.Setter;
+import org.apache.commons.lang3.StringUtils;
 import yass.I18;
 
 import javax.swing.*;
@@ -26,8 +28,6 @@ import javax.swing.text.html.HTMLDocument;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.awt.event.ItemEvent;
-import java.awt.event.ItemListener;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.net.URL;
@@ -37,6 +37,8 @@ import java.net.URL;
  *
  * @author Saruta
  */
+@Getter
+@Setter
 public class Melody extends JPanel {
     /**
      * Description of the Field
@@ -46,7 +48,8 @@ public class Melody extends JPanel {
     private JTextField txtField;
     private JCheckBox check;
     private JButton browse;
-    private Wizard wizard;
+    private CreateSongWizard wizard;
+    private WizardMidiMode wizardMidiMode;
 
 
     /**
@@ -54,7 +57,7 @@ public class Melody extends JPanel {
      *
      * @param w Description of the Parameter
      */
-    public Melody(Wizard w) {
+    public Melody(CreateSongWizard w) {
         wizard = w;
         JLabel iconLabel = new JLabel();
         setLayout(new BorderLayout());
@@ -113,29 +116,21 @@ public class Melody extends JPanel {
         txt.setEditable(false);
         content.add("Center", new JScrollPane(txt));
         JPanel filePanel = new JPanel(new BorderLayout());
-
-        filePanel.add("South", check = new JCheckBox(I18.get("create_melody_manually")));
+        check = new JCheckBox(I18.get("create_melody_manually"));
+        filePanel.add("South", check);
         check.addItemListener(
-                new ItemListener() {
-                    public void itemStateChanged(ItemEvent e) {
-                        boolean onoff = check.isSelected();
-                        if (onoff) {
-                            setFilename("");
-                        } else {
-                            setFilename(getFilename());
-                        }
-                        txtField.setEnabled(!onoff);
-                        browse.setEnabled(!onoff);
+                e -> {
+                    boolean onoff = check.isSelected();
+                    if (onoff) {
+                        setFilename("");
+                    } else {
+                        setFilename(getFilename());
                     }
+                    txtField.setEnabled(!onoff);
+                    browse.setEnabled(!onoff);
                 });
         filePanel.add("Center", txtField = new JTextField());
-        txtField.addActionListener(
-                new ActionListener() {
-                    public void actionPerformed(ActionEvent evt) {
-                        setFilename(txtField.getText());
-                    }
-                });
-
+        txtField.addActionListener(evt -> setFilename(txtField.getText()));
         browse = new JButton(I18.get("create_melody_browse"));
         browse.addActionListener(
                 new ActionListener() {
@@ -169,7 +164,15 @@ public class Melody extends JPanel {
                 });
         filePanel.add("East", browse);
         content.add("South", filePanel);
+        if (StringUtils.isEmpty(wizard.getValue("melody"))) {
+            check.setSelected(getWizardMidiMode() == WizardMidiMode.SUGGEST_MIDI);
+        }
         return content;
+    }
+
+    public void setWizardMidiMode(WizardMidiMode wizardMidiMode) {
+        this.wizardMidiMode = wizardMidiMode;
+        check.setSelected(getWizardMidiMode() == WizardMidiMode.SUGGEST_MIDI);
     }
 }
 

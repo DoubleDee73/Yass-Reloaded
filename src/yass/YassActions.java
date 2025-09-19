@@ -2923,7 +2923,6 @@ public class YassActions implements DropTargetListener {
         lyrics.setTable(null);
         sheet.setActiveTable(null);
         songList.closeOpened();
-        sheet.disposeSongHeader();
         isUpdating = true;
         updateLyrics();
         errors.setTable(null);
@@ -5141,7 +5140,7 @@ public class YassActions implements DropTargetListener {
 
     private void cleanUpFiles() {
         for (int i = 2; i < 5; i++) {
-            Path tempPath = Path.of(YassPlayer.TEMP_PATH + i + "temp.wav");
+            Path tempPath = Path.of(YassPlayer.USER_PATH + i + "temp.wav");
             try {
                 Files.deleteIfExists(tempPath);
             } catch (IOException e) {
@@ -6509,18 +6508,27 @@ public class YassActions implements DropTargetListener {
         // prevent unsetting saved icon
         isUpdating = true;
         updateLyrics();
-        // updateMP3Info(table);
-        // updateRaw();
-        // updateCover();
-        // updateBackground();
-        // updateVideo();
         updateVideo(); // todo: really?
         isUpdating = false;
 
-        for (YassTable t: openTables)
+        for (YassTable t: openTables) {
             songList.addOpened(t);
+        }
         sheet.init(initMic());
         sheet.initSongHeader(this);
+        if (sheet.getSongHeader() != null) {
+            JViewport v = (JViewport) sheet.getParent();
+            Point p = v.getViewPosition();
+            Dimension r = v.getExtentSize();
+            int lyricsWidth = 450;
+            int newx = (int) p.getX() + r.width - lyricsWidth;
+            int newy = (int) p.getY();
+
+            SongHeader songHeader = sheet.getSongHeader();
+            Dimension headerSize = songHeader.getPreferredSize();
+            int headerX = newx - headerSize.width - 10;
+            songHeader.setBounds(headerX, newy, headerSize.width, headerSize.height);
+        }
         table.initAutoSave();
     }
     
@@ -6978,7 +6986,7 @@ public class YassActions implements DropTargetListener {
         wiz.setValue("genre", "Other");
         wiz.setValue("edition", "");
         wiz.setValue("language", "Other");
-        wiz.setValue("bpm", "300");
+        wiz.setValue("bpm", "");
         wiz.setValue("lyrics", "");
         wiz.setValue("starteditor", "true");
         wiz.setValue("encoding", "");
@@ -6998,6 +7006,42 @@ public class YassActions implements DropTargetListener {
 
         Hashtable<?, ?> hash = wiz.getValues();
         String file = YassUtils.createSong(tab, hash, prop);
+        if (file != null) {
+            // This part handles moving the audio and video files to the destination.
+            File destinationDir = new File(file).getParentFile();
+            // Move audio file
+            String sourceAudio = (String) hash.get("filename");
+            if (StringUtils.isNotEmpty(sourceAudio)) {
+                File sourceAudioFile = new File(sourceAudio);
+                if (sourceAudioFile.exists()) {
+                    try {
+                        File destinationFile = Path.of(destinationDir.getAbsolutePath() + 
+                                                               File.separator + hash.get("audio")).toFile();
+                        FileUtils.moveFile(sourceAudioFile, destinationFile);
+                        LOGGER.info("Moved audio file to " + destinationDir.getAbsolutePath());
+                    } catch (IOException e) {
+                        LOGGER.log(Level.SEVERE, "Could not move audio file to " + destinationDir.getAbsolutePath(), e);
+                    }
+                }
+            }
+
+            // Move video file
+            String sourceVideo = (String) hash.get("video");
+            if (StringUtils.isNotEmpty(sourceVideo)) {
+                File sourceVideoFile = new File(sourceVideo);
+                if (sourceVideoFile.exists()) {
+                    try {
+                        File destinationFile = Path.of(destinationDir.getAbsolutePath() +
+                                                               File.separator + hash.get("videofile")).toFile();
+
+                        FileUtils.moveFile(sourceVideoFile, destinationFile);
+                        LOGGER.info("Moved video file to " + destinationDir.getAbsolutePath());
+                    } catch (IOException e) {
+                        LOGGER.log(Level.SEVERE, "Could not move video file to " + destinationDir.getAbsolutePath(), e);
+                    }
+                }
+            }
+        }
 
         boolean starteditor = hash.get("starteditor").equals("true");
         if (!standAlone) {

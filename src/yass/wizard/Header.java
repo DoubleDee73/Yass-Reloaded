@@ -232,6 +232,25 @@ public class Header extends JPanel {
     }
 
     /**
+     * Gets the year attribute of the Header object
+     *
+     * @return The year value
+     */
+    public String getYear() {
+        return (String) fileTable.getValueAt(6, 1);
+    }
+
+    /**
+     * Sets the year attribute of the Header object
+     *
+     * @param s The new year value
+     */
+    public void setYear(String s) {
+        fileTable.setValueAt(s, 6, 1);
+    }
+
+
+    /**
      * Sets the genres attribute of the Header object
      *
      * @param g The new genres value
@@ -298,7 +317,7 @@ public class Header extends JPanel {
         content.add("Center", new JScrollPane(txt));
 
         fileTable =
-                new JTable(6, 2) {
+                new JTable(7, 2) {
                     private static final long serialVersionUID = -6838778960413155202L;
 
                     public TableCellEditor getCellEditor(int row, int column) {
@@ -319,8 +338,8 @@ public class Header extends JPanel {
         fileTable.setValueAt(I18.get("create_header_language"), 3, 0);
         fileTable.setValueAt(I18.get("create_header_bpm"), 4, 0);
         fileTable.setValueAt(I18.get("create_header_creator"), 5, 0);
+        fileTable.setValueAt(I18.get("create_header_year"), 6, 0);
         content.add("South", fileTable);
         return content;
     }
 }
-

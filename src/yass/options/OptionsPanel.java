@@ -18,6 +18,8 @@
 
 package yass.options;
 
+import lombok.Getter;
+import lombok.Setter;
 import yass.*;
 
 import javax.swing.*;
@@ -26,14 +28,16 @@ import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
-import java.util.List;
 import java.util.*;
+import java.util.List;
 
 /**
  * Description of the Class
  *
  * @author Saruta
  */
+@Getter
+@Setter
 public class OptionsPanel extends JPanel {
     private static final long serialVersionUID = -5593710558109233649L;
     private static Hashtable<String, String> myprop = null;
@@ -46,7 +50,7 @@ public class OptionsPanel extends JPanel {
     private JPanel contentPanel = null;
     private static final List<String> RESET_CONTEXT_MENU_OPTIONS = List.of("options_tags_compatibility");
     private static YassActions actions = null;
-
+    private boolean goToYtDlpPanel = false;
 
     /**
      * Constructor for the OptionsPanel object
@@ -77,7 +81,7 @@ public class OptionsPanel extends JPanel {
         for (Enumeration<String> en = panelProps.elements(); en.hasMoreElements(); ) {
             String key = en.nextElement();
             String val = prop.getDefaultProperty(key);
-            if (myprop.containsKey(key)) myprop.replace(key, val);
+            myprop.put(key, val);
         }
         BorderLayout layout = (BorderLayout) contentPanel.getLayout();
         contentPanel.remove(layout.getLayoutComponent(BorderLayout.CENTER));
@@ -241,16 +245,6 @@ public class OptionsPanel extends JPanel {
      */
     public void addRows() {
     }
-
-    /**
-     * Sets the labelWidth attribute of the OptionsPanel object
-     *
-     * @param w The new labelWidth value
-     */
-    public void setLabelWidth(int w) {
-        labelWidth = w;
-    }
-
 
     /**
      * Adds a feature to the Comment attribute of the OptionsPanel object
@@ -534,14 +528,17 @@ public class OptionsPanel extends JPanel {
         right.add(row);
     }
 
-    public void addChoice(String label, YassEnum[] enumElements, String select_key) {
+    public void addChoice(String label, YassEnum[] enumElements, String selectKey) {
+        addChoice(label, enumElements, selectKey, labelWidth);
+    }
+    
+    public void addChoice(String label, YassEnum[] enumElements, String select_key, int localLabelWidth) {
         JPanel row = new JPanel();
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
         JLabel lab = new JLabel(label);
         lab.setVerticalAlignment(JLabel.CENTER);
         lab.setHorizontalAlignment(JLabel.LEFT);
-        //lab.setSize(new Dimension(120, 10));
-        lab.setPreferredSize(new Dimension(labelWidth, 20));
+        lab.setPreferredSize(new Dimension(localLabelWidth, 20));
         //lab.setMaximumSize(new Dimension(200, 20));
         Vector<String> labels = new Vector<>();
         Vector<String> keys = new Vector<>();
@@ -554,12 +551,12 @@ public class OptionsPanel extends JPanel {
         int i = keys.indexOf(key);
         choiceBox.setSelectedIndex(i);
         choiceBox.addActionListener(new ChoiceListener(keys, select_key));
-
         row.add(lab);
         row.add(choiceBox);
         lab.setAlignmentY(Component.TOP_ALIGNMENT);
         choiceBox.setAlignmentY(Component.TOP_ALIGNMENT);
         right.add(row);
+        right.add(Box.createRigidArea(new Dimension(0, 2)));
     }
 
     /**

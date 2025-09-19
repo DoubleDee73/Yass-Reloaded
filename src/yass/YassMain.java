@@ -159,9 +159,6 @@ public class YassMain extends JFrame {
                     actions.setX(getX());
                     actions.setY(getY());
                 }
-                if (sheet != null && sheet.isVisible()) {
-                    sheet.refreshHeaderLocation();
-                }
             }
 
             @Override
@@ -169,9 +166,6 @@ public class YassMain extends JFrame {
                 if (actions != null) {
                     actions.setX(getX());
                     actions.setY(getY());
-                }
-                if (sheet != null && sheet.isVisible()) {
-                    sheet.refreshHeaderLocation();
                 }
             }
 
@@ -303,6 +297,9 @@ public class YassMain extends JFrame {
         actions.setTab(mainPanel);
         sheet.setActions(actions);
 
+        // Force tooltips to be lightweight to prevent repaint artifacts with custom-painted components.
+        ToolTipManager.sharedInstance().setLightWeightPopupEnabled(true);
+
         ToolTipManager.sharedInstance().setInitialDelay(200);
         ToolTipManager.sharedInstance().setReshowDelay(0);
 
@@ -335,7 +332,7 @@ public class YassMain extends JFrame {
     private void initLyricsLayout() {
         int lyricsWidth = 450;
         int lyricsMinHeight = 120;
-        lyrics.setBounds(500, 30, lyricsWidth, lyricsMinHeight);
+        lyrics.setBounds(500, 50, lyricsWidth, lyricsMinHeight);
     }
 
     private void initTempDir() {
@@ -551,10 +548,24 @@ public class YassMain extends JFrame {
             // LYRICS POSITION
             int lyricsWidth = 450;
             int newx = (int) p.getX() + r.width - lyricsWidth;
-            int newy = (int) p.getY() + 20;
+            int newy = (int) p.getY() + 20; 
             Point p2 = lyrics.getLocation();
-            if (p2.x != newx || p2.y != newy) {
+            boolean lyricsMoved = p2.x != newx || p2.y != newy;
+            if (lyricsMoved) {
                 lyrics.setLocation(newx, newy);
+            }
+            boolean headerMoved = false;
+            if (sheet.getSongHeader() != null) {
+                SongHeader songHeader = sheet.getSongHeader();
+                Dimension headerSize = songHeader.getPreferredSize();
+                int headerX = (int) p.getX();
+                Point headerP = songHeader.getLocation();
+                if (headerP.x != headerX || headerP.y != newy) {
+                    songHeader.setBounds(headerX, newy, headerSize.width, headerSize.height);
+                    headerMoved = true;
+                }
+            }
+            if (lyricsMoved || headerMoved) {
                 sheet.revalidate();
                 sheet.update();
             }
@@ -572,8 +583,22 @@ public class YassMain extends JFrame {
                 int newx = (int) p.getX() + r.width - lyricsWidth;
                 int newy = (int) p.getY() + 20;
                 Point p2 = lyrics.getLocation();
-                if (p2.x != newx || p2.y != newy) {
+                boolean lyricsMoved = p2.x != newx || p2.y != newy;
+                if (lyricsMoved) {
                     lyrics.setLocation(newx, newy);
+                }
+                boolean headerMoved = false;
+                if (sheet.getSongHeader() != null) {
+                    SongHeader songHeader = sheet.getSongHeader();
+                    Dimension headerSize = songHeader.getPreferredSize();
+                    int headerX = (int) p.getX();
+                    Point headerP = songHeader.getLocation();
+                    if (headerP.x != headerX || headerP.y != newy) {
+                        songHeader.setBounds(headerX, newy, headerSize.width, headerSize.height);
+                        headerMoved = true;
+                    }
+                }
+                if (lyricsMoved || headerMoved) {
                     sheet.revalidate();
                     sheet.update();
                 } else {
@@ -961,4 +986,3 @@ public class YassMain extends JFrame {
         return false;
     }
 }
-

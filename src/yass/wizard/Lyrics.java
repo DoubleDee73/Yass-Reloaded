@@ -19,6 +19,7 @@
 package yass.wizard;
 
 import com.nexes.wizard.Wizard;
+import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
 import yass.*;
 
@@ -35,6 +36,7 @@ import java.util.List;
  *
  * @author Saruta
  */
+@Getter
 public class Lyrics extends JPanel {
     /**
      * Description of the Field

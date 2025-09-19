@@ -18,11 +18,13 @@
 
 package yass.wizard;
 
-import com.nexes.wizard.Wizard;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.text.WordUtils;
 import yass.I18;
+import yass.YassRow;
 import yass.YassSong;
 import yass.YassTable;
+import yass.titlecase.TitleCaseConverter;
 
 import javax.swing.*;
 import javax.swing.text.html.HTMLDocument;
@@ -30,6 +32,9 @@ import java.awt.*;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
 import java.net.URL;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Description of the Class
@@ -42,7 +47,7 @@ public class Tap extends JPanel {
      */
     public final static String ID = "tap";
     private static final long serialVersionUID = -7998365588082763662L;
-    private Wizard wizard;
+    private CreateSongWizard wizard;
     private YassTable table = null;
     private JScrollPane scroll = null;
     private JCheckBox check = null;
@@ -53,7 +58,7 @@ public class Tap extends JPanel {
      *
      * @param w Description of the Parameter
      */
-    public Tap(Wizard w) {
+    public Tap(CreateSongWizard w) {
         wizard = w;
         JLabel iconLabel = new JLabel();
         setLayout(new BorderLayout());
@@ -110,7 +115,15 @@ public class Tap extends JPanel {
         table.setEnabled(true);
         table.removeAllRows();
         table.setText(wizard.getValue("melodytable"));
-        table.setTitle(wizard.getValue("title"));
+        String title = wizard.getValue("title");
+        if (wizard.getValue("language").equalsIgnoreCase(Locale.ENGLISH.getDisplayLanguage())) {
+            if (wizard.getProperty("titlecase").equals("simple")) {
+                title = WordUtils.capitalize(title);
+            } else {
+                title = TitleCaseConverter.toApTitleCase(title);
+            }
+        }
+        table.setTitle(title);
         table.setArtist(wizard.getValue("artist"));
         String extension;
         String temp = wizard.getValue("filename");
@@ -119,12 +132,30 @@ public class Tap extends JPanel {
         } else {
             extension = ".mp3";
         }
-        table.setMP3(YassSong.toFilename(wizard.getValue("artist") + " - " + wizard.getValue("title") + extension));
+        String artist = wizard.getValue("artist");
+        String actualFileName = YassSong.toFilename(artist + " - " + title + extension);
+        table.setMP3(actualFileName);
+        wizard.setValue("audio", actualFileName);
+        String videoPath = wizard.getValue("video");
+        if (StringUtils.isNotEmpty(videoPath)) {
+            String videoExtension = videoPath.substring(videoPath.lastIndexOf("."));
+            String videoFilename = YassSong.toFilename(artist + " - " + title + videoExtension);
+            table.setVideo(videoFilename);
+            wizard.setValue("videofile", videoFilename);
+        }
         table.setBPM(wizard.getValue("bpm"));
-        table.getCommentRow("EDITION:").setComment(wizard.getValue("edition"));
-        table.getCommentRow("GENRE:").setComment(wizard.getValue("genre"));
-        table.getCommentRow("LANGUAGE:").setComment(wizard.getValue("language"));
-        table.getCommentRow("CREATOR:").setComment(wizard.getValue("creator"));
+        setCommentIfNotEmpty("EDITION:", wizard.getValue("edition"));
+        setCommentIfNotEmpty("GENRE:", wizard.getValue("genre"));
+        setCommentIfNotEmpty("LANGUAGE:", wizard.getValue("language"));
+        setCommentIfNotEmpty("YEAR:", wizard.getValue("year"));
+        setCommentIfNotEmpty("CREATOR:", wizard.getValue("creator"));
+        String youtubeUrl = wizard.getValue("youtube");
+        if (StringUtils.isNotEmpty(youtubeUrl)) {
+            String videoId = extractVideoId(youtubeUrl);
+            if (videoId != null) {
+                table.setCommentTag("v=" + videoId);
+            }
+        }
         wizard.setValue("melodytable", table.getPlainText());
         table.getColumnModel().getColumn(0).setPreferredWidth(10);
         table.getColumnModel().getColumn(0).setMaxWidth(10);
@@ -132,5 +163,32 @@ public class Tap extends JPanel {
         table.revalidate();
         scroll.revalidate();
     }
-}
 
+    private void setCommentIfNotEmpty(String tag, String value) {
+        if (StringUtils.isNotEmpty(value)) {
+            YassRow commentRow = table.getCommentRow(tag);
+            if (commentRow == null) {
+                commentRow = new YassRow("#", tag, value, "", "");
+                table.appendHeaderTag(commentRow);
+            } else {
+                commentRow.setLength(value);
+            }
+        }
+    }
+
+    private String extractVideoId(String url) {
+        if (url == null || url.trim().isEmpty()) {
+            return null;
+        }
+        String videoId = null;
+        // This regex should cover most common YouTube URL formats.
+        String pattern = "(?<=watch\\?v=|/videos/|embed\\/|youtu.be\\/|\\/v\\/|\\/e\\/|watch\\?v%3D|watch\\?feature=player_embedded&v=|%2Fvideos%2F|embed%2F|youtu.be%2F|%2Fv%2F)[^#\\&\\?\\n]*";
+
+        Pattern compiledPattern = Pattern.compile(pattern);
+        Matcher matcher = compiledPattern.matcher(url);
+        if (matcher.find()) {
+            videoId = matcher.group();
+        }
+        return videoId;
+    }
+}

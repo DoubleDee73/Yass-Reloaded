@@ -18,6 +18,8 @@
 
 package yass;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
 import yass.musicalkey.MusicalKeyEnum;
 import yass.renderer.YassNote;
@@ -41,6 +43,8 @@ import java.util.List;
 import java.util.Vector;
 import java.util.logging.Logger;
 
+@Getter
+@Setter
 public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRenderer {
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
@@ -70,6 +74,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     public static final Color hiGrayDarkMode = new Color(100,100,100);
     public static final Color HI_GRAY_2_DARK_MODE = new Color(70,70,70);
     public static final  Color whiteDarkMode = new Color(50,50,50);
+    public static final Color dkGreen = new Color(0,120,0);
+    public static final Color dkGreenLight = new Color(50,220,50);
 
     private static final Color arrow = new Color(238, 238, 238, 160);
     private static final Color arrowDarkMode = new Color(200, 200, 200, 160);
@@ -333,6 +339,908 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         cutCursor = Toolkit.getDefaultToolkit().createCustomCursor(image, new Point(0, 10), "cut");
         removeAll();
         setDarkMode(false); // creates TexturePaint
+        initKeyListener();
+        initMouseListener();
+        initMouseMotionListener();
+    }
+
+    private boolean isMouseOverInteractiveChild(Point p) {
+        if (songHeader != null && songHeader.getBounds().contains(p)) {
+            return true;
+        }
+        return false;
+    }
+
+    private void initMouseMotionListener() {
+        addMouseMotionListener(new MouseMotionAdapter() {
+            public void mouseMoved(MouseEvent e) {
+                if (equalsKeyMillis > 0) {
+                    equalsKeyMillis = 0;
+                    equalsDigits = "";
+                }
+                if (isMouseOverInteractiveChild(e.getPoint())) {
+                    // When the mouse is over an interactive child,
+                    // let the child control the cursor and events.
+                    setCursor(Cursor.getDefaultCursor());
+                    return;
+                }
+                if (table == null || rect == null || isPlaying())
+                    return;
+
+                int x = e.getX();
+                int y = e.getY();
+                if (hilite >= 0) {
+                    hilite = -2;
+                } else {
+                    hilite = -1;
+                }
+                if (hiliteCue != UNDEFINED) {
+                    hilite = -2;
+                }
+                hiliteCue = UNDEFINED;
+                hiliteAction = ACTION_NONE;
+
+                boolean shouldRepaint = false;
+
+                if (paintHeights) {
+                    if (x < clip.x + heightBoxWidth && y > TOP_LINE - 10 && (y < clip.height - BOTTOM_BORDER)) {
+                        setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                        if (hiliteHeight < 1000) {
+                            if (y < 0)
+                                y = 0;
+                            if (y > dim.height)
+                                y = dim.height;
+                            int dy;
+                            if (pan) {
+                                dy = (int) Math.round(hhPageMin + (dim.height - y - BOTTOM_BORDER) / hSize);
+                            } else {
+                                dy = (int) Math.round(minHeight + (dim.height - y - BOTTOM_BORDER) / hSize);
+                            }
+
+                            if (hiliteHeight != dy) {
+                                hiliteHeight = dy;
+                                repaint();
+                            }
+                        }
+                        return;
+                    } else {
+                        if (hiliteHeight != 1000) {
+                            shouldRepaint = true;
+                            hiliteHeight = 1000;
+                        }
+                    }
+                }
+                int button = getButtonXY(x, y);
+                if (button != UNDEFINED) {
+                    // generate the hover effect
+                    setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+                    hiliteCue = button;
+                    repaint();
+                    return;
+                }
+                if (inSelect >= 0 && inSelect != outSelect && y < TOP_BORDER
+                        && x >= toTimeline(Math.min(inSelect, outSelect))
+                        && x <= toTimeline(Math.max(inSelect, outSelect))) {
+                    hiliteCue = SNAPSHOT;
+                    setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                    repaint();
+                    return;
+                }
+                // LYRICS POSITION
+                boolean notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
+                if (!notInLyrics && getComponentCount() > 0 && lyricsVisible) {
+                    // dirty bugfix for lost bounds
+                    Point p2 = lyrics.getLocation();
+                    if ((x - p2.x) > 500) {
+                        Point p = ((JViewport) getParent()).getViewPosition();
+                        Dimension vr = ((JViewport) getParent()).getExtentSize();
+
+                        int newx = (int) p.getX() + vr.width - lyricsWidth;
+
+                        int newy = (int) p.getY() + 50;
+                        if (p2.x != newx || p2.y != newy) {
+                            lyrics.setLocation(newx, newy);
+                            revalidate();
+                            update();
+                        }
+                        repaint();
+                    }
+                }
+                YassRectangle next = null;
+                YassRectangle r;
+                int i = 0;
+                for (Enumeration<?> en = rect.elements(); en.hasMoreElements(); i++) {
+                    if (next != null) {
+                        r = next;
+                        next = (YassRectangle) en.nextElement();
+                    } else {
+                        r = (YassRectangle) en.nextElement();
+                    }
+                    if (next == null) {
+                        next = en.hasMoreElements() ? (YassRectangle) en.nextElement() : null;
+                    }
+                    if (r != null) {
+                        boolean isNote = !r.isType(YassRectangle.GAP) && !r.isType(YassRectangle.START) && !r.isType(YassRectangle.END);
+                        if (r.isPageBreak()) {
+                            if (x > r.x - 5 && x < r.x + 5 && !autoTrim) {
+                                hiliteCue = CENTER;
+                                setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                                repaint();
+                                return;
+                            }
+                        } else if (r.contains(x, y)) {
+                            hilite = i;
+                            if (mouseover) {
+                                if (!table.isRowSelected(i)) {
+                                    if (!(e.isShiftDown() || e.isControlDown()))
+                                        table.clearSelection();
+                                    table.addRowSelectionInterval(i, i);
+                                    table.updatePlayerPosition();
+                                }
+                            }
+                            int dragw = r.width > Math.max(wSize, 32) * 3 ? (int) Math.max(wSize, 32) : (r.width > 72 ? 24 : (r.width > 48 ? 16 : 5));
+                            if (Math.abs(r.x - x) < dragw && r.width > 20) {
+                                hiliteCue = LEFT;
+                                hiliteAction = ACTION_CONTROL;
+                            } else if (Math.abs(r.x + r.width - x) < dragw && r.width > 20) {
+                                hiliteCue = RIGHT;
+                                hiliteAction = ACTION_ALT;
+                            } else {
+                                hiliteCue = CENTER;
+                                hiliteAction = ACTION_CONTROL_ALT;
+                            }
+
+                            if (hiliteCue == CENTER) {
+                                setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                            } else {
+                                setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
+                            }
+                            repaint();
+                            return;
+                        } else if (table.getMultiSize() > 1
+                                && r.x < x
+                                && (((next == null || next.isPageBreak() || next.hasType(YassRectangle.END)) && x < r.x + r.width)
+                                || (next != null && (!next.isPageBreak() && !next.hasType(YassRectangle.END)) && x < next.x))
+                                && y > clip.height - BOTTOM_BORDER
+                                && y < clip.height - BOTTOM_BORDER + 16) {
+                            hiliteCue = CENTER;
+                            setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                            repaint();
+                            return;
+                        } else if (isNote && r.x + wSize / 2 < x
+                                && x < r.x + r.width - wSize / 2
+                                && Math.abs(r.y - y) < hSize && r.width > 5) {
+                            hilite = i;
+                            hiliteCue = CUT;
+                            cutPercent = (x - r.x) / r.width;
+                            setCursor(cutCursor);
+                            repaint();
+                            return;
+                        } else if (isNote && r.x < x && x < r.x + wSize / 2
+                                && r.width > 5) {
+                            if (Math.abs(r.y - y) < hSize) {
+                                hilite = i;
+                                hiliteCue = JOIN_LEFT;
+                                setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
+                                repaint();
+                                return;
+                            }
+                        } else if (isNote && r.x + r.width - wSize / 2 < x
+                                && x < r.x + r.width && r.width > 5) {
+                            if (Math.abs(r.y - y) < hSize) {
+                                hilite = i;
+                                hiliteCue = JOIN_RIGHT;
+                                setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
+                                repaint();
+                                return;
+                            }
+                        }
+                    }
+                }
+                if (y > clip.height - BOTTOM_BORDER + 20 || (y > 20 && y < TOP_LINE - 10 && notInLyrics)) {
+                    setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                    hiliteCue = SLIDE;
+                    repaint();
+                    return;
+                }
+                if (x > playerPos - 10 && x < playerPos && y > TOP_LINE && y < dim.height - BOTTOM_BORDER) {
+                    hiliteCue = MOVE_REMAINDER;
+                    setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
+                    repaint();
+                    return;
+                }
+                setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+                if (hilite == -2) {
+                    hilite = -1;
+                    repaint();
+                    return;
+                }
+                if (shouldRepaint)
+                    repaint();
+            }
+
+            public void mouseDragged(MouseEvent e) {
+                if (isMouseOverInteractiveChild(e.getPoint())) {
+                    return;
+                }
+                if (rect == null)
+                    return;
+                if (! isMousePressed)
+                    return;
+                boolean left = SwingUtilities.isLeftMouseButton(e);
+                Point p = e.getPoint();
+                int px = Math.max(clip.x, Math.min(p.x, clip.x + clip.width));
+                int py = p.y;
+
+                if ((hiliteCue & BUTTON_FLAG) != 0) {
+                    // we hold a button, which is handled by getButtonXY()
+                    int button = getButtonXY(px, py);
+                    if ((hiliteCue & ~PRESSED_FLAG) == button) {
+                        // the mouse is (again) above the held button
+                        hiliteCue |= PRESSED_FLAG;
+                    } else {
+                        // the mouse is outside the held button
+                        hiliteCue &= ~PRESSED_FLAG;
+                    }
+                    repaint();
+                    return;
+                }
+
+                if (paintHeights) {
+                    if (px < clip.x + heightBoxWidth && py > TOP_LINE - 10 && (py < clip.height - BOTTOM_BORDER)) {
+                        if (py < 0)
+                            py = 0;
+                        if (py > dim.height)
+                            py = dim.height;
+                        int dy;
+                        if (pan) {
+                            dy = (int) Math.round(hhPageMin + (dim.height - py - BOTTOM_BORDER) / hSize);
+                        } else {
+                            dy = (int) Math.round(minHeight + (dim.height - py - BOTTOM_BORDER) / hSize);
+                        }
+                        hiliteHeight = dy;
+                        repaint();
+                        if (hiliteHeight > 200)
+                            return;
+                        long time = System.currentTimeMillis();
+                        if (time - lastMidiTime > 100) {
+                            firePropertyChange("midi", null, pan ? (hiliteHeight - 2) : hiliteHeight);
+                            lastMidiTime = time;
+                        }
+                        return;
+                    }
+                }
+
+                if (hiliteCue == SLIDE && left) {
+                    if (slideX == px)
+                        return;
+                    Point vp = getViewPosition();
+                    int off = px - slideX;
+                    int oldpoff = px - vp.x;
+                    vp.x = vp.x - off;
+                    if (vp.x < 0)
+                        vp.x = 0;
+                    setViewPosition(vp);
+                    slideX = vp.x + oldpoff;
+                    if (playerPos < vp.x || playerPos > vp.x + clip.width) {
+                        int next = nextElement(vp.x);
+                        if (next >= 0) {
+                            YassRow row = table.getRowAt(next);
+                            if (!row.isNote() && next + 1 < table.getRowCount()) {
+                                next = next + 1;
+                                row = table.getRowAt(next);
+                            }
+                            if (row.isNote()) {
+                                table.setRowSelectionInterval(next, next);
+                                table.updatePlayerPosition();
+                            }
+                        }
+                    }
+                    setPlayerPosition(-1);
+                    return;
+                }
+                int shiftRemainder = InputEvent.BUTTON1_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK;
+                if ((e.getModifiersEx() & shiftRemainder) == shiftRemainder)
+                    shiftRemainder = 1;
+                else
+                    shiftRemainder = 0;
+                if (hiliteCue == MOVE_REMAINDER)
+                    shiftRemainder = 1;
+
+                if (useSketching) {
+                    if (sketchStarted()) {
+                        addSketch(px, py);
+                        if (!detectSketch()) {
+                            cancelSketch();
+                        } else {
+                            repaint();
+                            return;
+                        }
+                    }
+                }
+
+                if (hit < 0) {
+                    if (left) {
+                        // playerPos = px;
+                        outPoint = px;
+                        outSelect = fromTimeline(outPoint);
+
+                        select.x = Math.min(inPoint, outPoint);
+                        select.y = 0;
+                        select.width = Math.abs(outPoint - inPoint);
+                        select.height = clip.height;
+                    } else {
+
+                        Point p2 = new Point((int) selectX, (int) selectY);
+                        SwingUtilities.convertPointFromScreen(p2,
+                                YassSheet.this);
+
+                        select.x = Math.min(p2.getX(), px);
+                        select.y = Math.min(p2.getY(), py);
+                        select.width = Math.abs(p2.getX() - (double) px);
+                        select.height = Math.abs(p2.getY() - (double) py);
+                    }
+
+                    int n = rect.size();
+                    YassRectangle r;
+                    boolean any = false;
+                    for (int i = 0; i < n; i++) {
+                        r = rect.elementAt(i);
+                        if (r.intersects(select)) {
+                            if (!any) {
+                                if (!(e.isShiftDown() || e.isControlDown())) {
+                                    table.clearSelection();
+                                }
+                            }
+                            if (!table.isRowSelected(i)) {
+                                table.addRowSelectionInterval(i, i);
+                            }
+                            any = true;
+                        }
+                    }
+                    if (any) {
+                        table.updatePlayerPosition();
+                    } else {
+                        table.clearSelection();
+                        playerPos = Math.min(inPoint, outPoint);
+                        table.updatePlayerPosition();
+                    }
+
+                    repaint();
+                    return;
+                }
+
+                long time = System.currentTimeMillis();
+                if (time - lastDragTime < 60)
+                    return;
+                lastDragTime = time;
+                table.setPreventUndo(true);
+                YassRectangle rr = rect.elementAt(hit);
+                table.getRowAt(hit);
+                int pageMin = rr.getPageMin();
+                int x;
+                int dx;
+                int y = py - dragOffsetY;
+                if (y < 0)
+                    y = 0;
+                if (y > dim.height)
+                    y = dim.height;
+                if (y < hSize)
+                    y = (int) -hSize;
+                int dy;
+                if (pan) {
+                    dy = (int) Math.round(pageMin + (dim.height - y - hSize - BOTTOM_BORDER + 1) / hSize) - 2;
+                } else {
+                    dy = (int) Math.round(minHeight + (dim.height - y - hSize - BOTTOM_BORDER + 1) / hSize);
+                }
+
+                YassRow r = table.getRowAt(hit);
+                if (rr.isType(YassRectangle.GAP)) {
+                    x = (int) ((px - dragOffsetXRatio * wSize));
+                    if (paintHeights)
+                        x -= heightBoxWidth;
+                    double gapres = x / wSize;
+                    double gap2 = gapres * 60 * 1000 / (4 * bpm);
+                    gap2 = Math.round(gap2 / 10) * 10;
+                    firePropertyChange("gap", null, (int) gap2);
+                    return;
+                }
+                if (rr.isType(YassRectangle.START)) {
+                    x = (int) ((px - dragOffsetXRatio * wSize));
+                    if (paintHeights)
+                        x -= heightBoxWidth;
+                    double valres = x / wSize;
+                    double val = valres * 60 * 1000 / (4 * bpm);
+                    val = Math.round(val / 10) * 10;
+                    firePropertyChange("start", null, (int) val);
+                    return;
+                }
+                if (rr.isType(YassRectangle.END)) {
+                    x = (int) ((px - dragOffsetXRatio * wSize));
+                    if (paintHeights)
+                        x -= heightBoxWidth;
+                    double valres = x / wSize;
+                    double val = valres * 60 * 1000 / (4 * bpm);
+                    val = Math.round(val / 10) * 10;
+                    table.clearSelection();
+                    // quick hack
+                    firePropertyChange("end", null, (int) val);
+                    table.clearSelection();
+                    return;
+                }
+
+                boolean isPageBreak = r.isPageBreak();
+                if (!isPageBreak) {
+                    int oldy = r.getHeightInt();
+                    if (oldy != dy) {
+                        if (dragDir != HORIZONTAL) {
+                            dragDir = VERTICAL;
+                            firePropertyChange("relHeight", null, (dy - oldy));
+                            return;
+                        }
+                    }
+                }
+                boolean isPageBreakMin = false;
+                if (isPageBreak)
+                    isPageBreakMin = r.getBeatInt() == r.getSecondBeatInt();
+                if (!isPageBreakMin && dragMode == RIGHT) {
+                    x = (int) (px - beatgap * wSize - 2 + wSize / 2);
+                    if (paintHeights)
+                        x -= heightBoxWidth;
+                    dx = (int) Math.round(x / wSize);
+                } else {
+                    x = (int) (px - beatgap * wSize - 2 - dragOffsetXRatio * wSize);
+                    if (paintHeights)
+                        x -= heightBoxWidth;
+                    dx = (int) Math.round(x / wSize);
+                }
+                if (isPageBreakMin || dragMode == CENTER) {
+                    int oldx = r.getBeatInt();
+                    if (oldx != dx) {
+                        if (dragDir != VERTICAL) {
+                            dragDir = HORIZONTAL;
+                            if (shiftRemainder != 0) {
+                                firePropertyChange("relBeatRemainder", null, (dx - oldx));
+                            } else {
+                                firePropertyChange("relBeat", null, (dx - oldx));
+                            }
+                        }
+                    }
+                } else if (dragMode == LEFT) {
+                    int oldx = r.getBeatInt();
+                    if (oldx != dx) {
+                        if (dragDir != VERTICAL) {
+                            dragDir = HORIZONTAL;
+                            firePropertyChange("relLeft", null, (dx - oldx));
+                        }
+                    }
+                } else {
+                    // dragMode==RIGHT
+                    int oldx = 0;
+                    if (r.isNote())
+                        oldx = r.getBeatInt() + r.getLengthInt();
+                    else if (r.isPageBreak())
+                        oldx = r.getSecondBeatInt();
+                    if (oldx != dx) {
+                        if (dragDir != VERTICAL) {
+                            dragDir = HORIZONTAL;
+                            firePropertyChange("relRight", null, (dx - oldx));
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    private void initMouseListener() {
+        addMouseListener(new MouseAdapter() {
+            public void mouseReleased(MouseEvent e) {
+                hiliteAction = ACTION_NONE;
+                if (! isMousePressed)
+                    return;
+                isMousePressed = false;
+
+                if (table == null) {
+                    return;
+                }
+
+                if (temporaryZoomOff) {
+                    temporaryZoomOff = false;
+                    YassTable.setZoomMode(YassTable.ZOOM_ONE);
+                    table.zoomPage();
+                }
+
+                if (table.getPreventUndo()) {
+                    table.setPreventUndo(false);
+                    table.setSaved(false);
+                    table.addUndo();
+                    actions.updateActions();
+                }
+                if (actions != null) {
+                    actions.showMessage(0);
+                }
+
+                /*
+                 * if (table.getPreventZoom()) { table.setPreventZoom(false);
+                 * table.zoomPage(); }
+                 */
+                if (hiliteCue == MOVE_REMAINDER) {
+                    hiliteCue = UNDEFINED;
+                }
+
+                if ((hiliteCue & BUTTON_FLAG) != 0) {
+                    switch (hiliteCue) {
+                        case PREV_SLIDE_PRESSED:
+                        case NEXT_SLIDE_PRESSED:
+                            stopSlide();
+                            break;
+                        case PREV_PAGE_PRESSED:
+                            SwingUtilities.invokeLater(() -> firePropertyChange("page", null, -1));
+                            break;
+                        case NEXT_PAGE_PRESSED:
+                            SwingUtilities.invokeLater(() -> firePropertyChange("page", null, +1));
+                            break;
+                        case PLAY_NOTE_PRESSED:
+                            SwingUtilities.invokeLater(() -> firePropertyChange("play", null, "start"));
+                            break;
+                        case PLAY_PAGE_PRESSED:
+                            SwingUtilities.invokeLater(() -> firePropertyChange("play", null, "page"));
+                            break;
+                        case PLAY_BEFORE_PRESSED:
+                            SwingUtilities.invokeLater(() -> firePropertyChange("play", null, "before"));
+                            break;
+                        case PLAY_NEXT_PRESSED:
+                            SwingUtilities.invokeLater(() -> firePropertyChange("play", null, "next"));
+                            break;
+                    }
+                    hiliteCue = UNDEFINED;
+                    repaint();
+                    return;
+                }
+
+                if (sketchStarted()) {
+                    // firePropertyChange("play", null, "stop");
+                    SwingUtilities.invokeLater(() -> {
+                        int ok = executeSketch();
+                        cancelSketch();
+                        if (useSketchingPlayback) {
+                            if (ok == 2) {
+                                firePropertyChange("play", null, "start");
+                            } else if (ok == 3) {
+                                int i = table.getSelectionModel()
+                                        .getMinSelectionIndex();
+                                if (i >= 0) {
+                                    YassRow r = table.getRowAt(i);
+                                    if (r.isNote()) {
+                                        int h = r.getHeightInt();
+                                        firePropertyChange("midi", null, h);
+                                        firePropertyChange("play", null,
+                                                "start");
+                                    }
+                                }
+                            }
+                        }
+                        repaint();
+                    });
+
+                } else {
+                    repaint();
+                }
+                selectX = selectY = -1;
+                select.x = select.y = select.width = select.height = 0;
+                inPoint = outPoint = -1;
+            }
+
+            public void mouseClicked(MouseEvent e) {
+                if (isPlaying() || isTemporaryStop()) {
+                    firePropertyChange("play", null, "stop");
+                    e.consume();
+                    return;
+                }
+
+                int x = e.getX();
+                int y = e.getY();
+
+                int button = getButtonXY(x, y);
+                if (button != UNDEFINED) {
+                    // ignore this button click, it was handled in mouseReleased()
+                    return;
+                }
+
+                boolean left = SwingUtilities.isLeftMouseButton(e);
+                boolean twice = e.getClickCount() > 1;
+                boolean one = e.getClickCount() == 1;
+
+                // LYRICS POSITION
+                boolean notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
+
+                if (y > clip.height - BOTTOM_BORDER + 20
+                        || (y > 20 && y < TOP_LINE - 10 && notInLyrics)) {
+                    if (!left || twice || one) {
+                        //firePropertyChange("one", null, null);
+                        return;
+                    }
+                }
+
+                if (!twice) {
+                    if (!paintHeights) {
+                        return;
+                    }
+                    if (e.getX() > clip.x + heightBoxWidth) {
+                        return;
+                    }
+                    if (hiliteHeight > 200) {
+                        return;
+                    }
+                    firePropertyChange("midi", null, pan ? (hiliteHeight - 2) : hiliteHeight);
+                    return;
+                }
+                table.selectLine();
+            }
+
+            public void mousePressed(MouseEvent e) {
+                if (isMouseOverInteractiveChild(e.getPoint())) {
+                    return;
+                }
+                if (equalsKeyMillis > 0) {
+                    equalsKeyMillis = 0;
+                    equalsDigits = "";
+                }
+                boolean left = SwingUtilities.isLeftMouseButton(e);
+                if (table == null)
+                    return;
+                if (! hasFocus()) {
+                    requestFocusInWindow();
+                    requestFocus();
+                }
+                if (isPlaying() || isTemporaryStop()) {
+                    firePropertyChange("play", null, "stop");
+                    e.consume();
+                    return;
+                }
+                isMousePressed = true; // not while playing
+                int x = e.getX();
+                int y = e.getY();
+                if (YassTable.getZoomMode() == YassTable.ZOOM_ONE && dragMode != SLIDE) {
+                    temporaryZoomOff = true;
+                    YassTable.setZoomMode(YassTable.ZOOM_MULTI);
+                }
+                setErrorMessage("");
+                if (paintHeights && (x < clip.x + heightBoxWidth && y > TOP_LINE - 10
+                        && (y < clip.height - BOTTOM_BORDER))) {
+                    if (y < 0) {
+                        y = 0;
+                    }
+                    if (y > dim.height) {
+                        y = dim.height;
+                    }
+
+                    int dy;
+                    if (pan) {
+                        dy = (int) Math.round(hhPageMin
+                                + (dim.height - y - BOTTOM_BORDER) / hSize);
+                    } else {
+                        dy = (int) Math.round(minHeight
+                                + (dim.height - y - BOTTOM_BORDER) / hSize);
+                    }
+                    hiliteHeight = dy;
+                    repaint();
+                    return;
+
+                }
+                int button = getButtonXY(x, y);
+                if (button != UNDEFINED) {
+                    if (button == NEXT_SLIDE) {
+                        startSlide(10);
+                    } else if (button == PREV_SLIDE) {
+                        startSlide(-10);
+                    }
+                    hiliteCue = button | PRESSED_FLAG;
+                    repaint();
+                    // no further processing, because the actual event will be handled in mouseReleased()
+                    return;
+                }
+                YassRectangle r;
+                if (hiliteCue == CUT) {
+                    r = rect.elementAt(hilite);
+                    table.clearSelection();
+                    table.addRowSelectionInterval(hilite, hilite);
+                    firePropertyChange("split", null, (e.getX() - r.x) / r.width);
+                    hiliteCue = UNDEFINED;
+                } else if (hiliteCue == JOIN_LEFT) {
+                    r = rect.elementAt(hilite);
+                    table.clearSelection();
+                    table.addRowSelectionInterval(hilite, hilite);
+                    firePropertyChange("joinLeft", null, (e.getX() - r.x));
+                    hiliteCue = UNDEFINED;
+                } else if (hiliteCue == JOIN_RIGHT) {
+                    r = rect.elementAt(hilite);
+                    table.clearSelection();
+                    table.addRowSelectionInterval(hilite, hilite);
+                    firePropertyChange("joinRight", null, (int) (e.getX() - r.x));
+                    hiliteCue = UNDEFINED;
+                } else if (hiliteCue == SNAPSHOT) {
+                    hiliteCue = UNDEFINED;
+                    createSnapshot();
+                    repaint();
+                    return;
+                } else if (hiliteCue == MOVE_REMAINDER) {
+                    hit = nextElement();
+                    if (hit < 0)
+                        return;
+                    table.setRowSelectionInterval(hit, hit);
+                    table.updatePlayerPosition();
+
+                    dragMode = CENTER;
+                    r = rect.elementAt(hit);
+                    dragOffsetX = (int) (e.getX() - r.x);
+                    dragOffsetY = (int) (e.getY() - r.y);
+                    dragOffsetXRatio = dragOffsetX / wSize;
+                    return;
+                } else if (hiliteCue == SLIDE && left) {
+                    YassTable t = getActiveTable();
+                    if (t != null && t.getMultiSize() == 1) {
+                        YassTable.setZoomMode(YassTable.ZOOM_MULTI);
+                        enablePan(false);
+                        actions.revalidateLyricsArea();
+                        update();
+                        repaint();
+                    }
+                    dragMode = SLIDE;
+                    slideX = e.getX();
+                    return;
+                }
+                YassRectangle next = null;
+                hit = -1;
+                selectX = selectY = -1;
+                dragDir = UNDEFINED;
+                dragOffsetX = dragOffsetY = 0;
+                int i = 0;
+                for (Enumeration<?> en = rect.elements(); en.hasMoreElements(); i++) {
+                    if (next != null) {
+                        r = next;
+                        next = (YassRectangle) en.nextElement();
+                    } else {
+                        r = (YassRectangle) en.nextElement();
+                    }
+                    if (next == null) {
+                        next = en.hasMoreElements() ? (YassRectangle) en.nextElement() : null;
+                    }
+                    if (r == null)
+                        break;
+                    if (r.isPageBreak()) {
+                        if (x > r.x - 5 && x < r.x + 5) {
+                            hit = i;
+                            dragOffsetX = (int) (e.getX() - r.x);
+                            dragOffsetY = (int) (e.getY() - r.y);
+                            dragOffsetXRatio = dragOffsetX / wSize;
+                            dragMode = hiliteCue;
+                            if (!table.isRowSelected(i)) {
+                                if (e.isControlDown()) {
+                                    table.addRowSelectionInterval(i, i);
+                                } else {
+                                    table.setRowSelectionInterval(i, i);
+                                }
+                            }
+                            table.scrollRectToVisible(table.getCellRect(i, 0, true));
+                            repaint();
+                            break;
+                        }
+                    } else if (r.contains(e.getPoint())) {
+                        // hiliteAction = ACTION_CONTROL_ALT;
+                        hit = i;
+                        dragOffsetX = (int) (e.getX() - r.x);
+                        dragOffsetY = (int) (e.getY() - r.y);
+                        dragOffsetXRatio = dragOffsetX / wSize;
+                        dragMode = hiliteCue;
+                        if (!table.isRowSelected(i)) {
+                            if (e.isShiftDown() || e.isControlDown()) {
+                                table.addRowSelectionInterval(i, i);
+                            } else {
+                                table.setRowSelectionInterval(i, i);
+                            }
+                        }
+                        table.scrollRectToVisible(table.getCellRect(i, 0, true));
+                        table.updatePlayerPosition();
+
+                        inPoint = outPoint = playerPos;
+                        inSelect = fromTimeline(inPoint);
+                        outSelect = fromTimeline(outPoint);
+                        if (r.hasType(YassRectangle.GAP)) {
+                            temporaryZoomOff = false;
+                        }
+                        repaint();
+                        break;
+                    } else if (table.getMultiSize() > 1
+                            && r.x < x
+                            && (((next == null || next.isPageBreak() || next.hasType(YassRectangle.END)) && x < r.x + r.width) ||
+                            (next != null && (!next.isPageBreak() && !next.hasType(YassRectangle.END)) && x < next.x))
+                            && y > clip.height - BOTTOM_BORDER
+                            && y < clip.height - BOTTOM_BORDER + 16) {
+                        hiliteAction = ACTION_CONTROL_ALT;
+
+                        hit = i;
+                        dragOffsetX = (int) (e.getX() - r.x);
+                        dragOffsetY = (int) (e.getY() - r.y);
+                        dragOffsetXRatio = dragOffsetX / wSize;
+                        dragMode = hiliteCue;
+
+                        table.setRowSelectionInterval(i, i);
+                        table.selectLine();
+                        table.updatePlayerPosition();
+
+                        inPoint = outPoint = playerPos;
+                        inSelect = fromTimeline(inPoint);
+                        outSelect = fromTimeline(outPoint);
+
+                        repaint();
+                        break;
+                    }
+                }
+                if (hit < 0) {
+                    if (SwingUtilities.isLeftMouseButton(e)) {
+                        inPoint = outPoint = e.getX();
+                        inSelect = fromTimeline(inPoint);
+                        outSelect = fromTimeline(outPoint);
+
+                        if (useSketching) {
+                            startSketch();
+                            addSketch(e.getX(), e.getY());
+                            repaint();
+                            return;
+                        }
+
+                        boolean any = false;
+                        int k = 0;
+                        for (Enumeration<?> en = rect.elements(); en.hasMoreElements(); k++) {
+                            r = (YassRectangle) en.nextElement();
+                            if (r.x <= e.getX() && e.getX() <= r.x + r.width) {
+                                if (!any) {
+                                    if (!(e.isShiftDown() || e.isControlDown())) {
+                                        table.clearSelection();
+                                    }
+                                }
+                                if (!table.isRowSelected(k)) {
+                                    table.addRowSelectionInterval(k, k);
+                                }
+                                any = true;
+                            }
+                        }
+                        if (any) {
+                            table.updatePlayerPosition();
+                        } else {
+                            table.clearSelection();
+                            playerPos = Math.min(inPoint, outPoint);
+                            table.updatePlayerPosition();
+                        }
+                    } else {
+                        inPoint = outPoint = -1;
+                        inSelect = outSelect = -1;
+
+                        Point p = (Point) e.getPoint().clone();
+                        SwingUtilities.convertPointToScreen(p, YassSheet.this);
+                        selectX = p.getX();
+                        selectY = p.getY();
+                        select.x = select.y = select.width = select.height = 0;
+                    }
+                    repaint();
+                }
+            }
+
+            public void mouseEntered(MouseEvent e) {
+                // LOGGER.info("sheet entered");
+            }
+
+            public void mouseExited(MouseEvent e) {
+                hilite = -1;
+                hiliteHeight = 1000;
+                repaint();
+            }
+
+        });
+    }
+
+    private void initKeyListener() {
         addKeyListener(new KeyListener() {
             private long lastDigitMillis;
             private int lastDigit;
@@ -737,877 +1645,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 // table.dispatchEvent(e);
             }
         });
-        addMouseListener(new MouseAdapter() {
-            public void mouseReleased(MouseEvent e) {
-                hiliteAction = ACTION_NONE;
-                if (! isMousePressed)
-                    return;
-                isMousePressed = false;
-
-                if (table == null) {
-                    return;
-                }
-
-                if (temporaryZoomOff) {
-                    temporaryZoomOff = false;
-                    YassTable.setZoomMode(YassTable.ZOOM_ONE);
-                    table.zoomPage();
-                }
-
-                if (table.getPreventUndo()) {
-                    table.setPreventUndo(false);
-                    table.setSaved(false);
-                    table.addUndo();
-                    actions.updateActions();
-                }
-                if (actions != null) {
-                    actions.showMessage(0);
-                }
-
-                /*
-                 * if (table.getPreventZoom()) { table.setPreventZoom(false);
-                 * table.zoomPage(); }
-                 */
-                if (hiliteCue == MOVE_REMAINDER) {
-                    hiliteCue = UNDEFINED;
-                }
-
-                if ((hiliteCue & BUTTON_FLAG) != 0) {
-                    switch (hiliteCue) {
-                        case PREV_SLIDE_PRESSED:
-                        case NEXT_SLIDE_PRESSED:
-                            stopSlide();
-                            break;
-                        case PREV_PAGE_PRESSED:
-                            SwingUtilities.invokeLater(() -> firePropertyChange("page", null, -1));
-                            break;
-                        case NEXT_PAGE_PRESSED:
-                            SwingUtilities.invokeLater(() -> firePropertyChange("page", null, +1));
-                            break;
-                        case PLAY_NOTE_PRESSED:
-                            SwingUtilities.invokeLater(() -> firePropertyChange("play", null, "start"));
-                            break;
-                        case PLAY_PAGE_PRESSED:
-                            SwingUtilities.invokeLater(() -> firePropertyChange("play", null, "page"));
-                            break;
-                        case PLAY_BEFORE_PRESSED:
-                            SwingUtilities.invokeLater(() -> firePropertyChange("play", null, "before"));
-                            break;
-                        case PLAY_NEXT_PRESSED:
-                            SwingUtilities.invokeLater(() -> firePropertyChange("play", null, "next"));
-                            break;
-                    }
-                    hiliteCue = UNDEFINED;
-                    repaint();
-                    return;
-                }
-
-                if (sketchStarted()) {
-                    // firePropertyChange("play", null, "stop");
-                    SwingUtilities.invokeLater(() -> {
-                        int ok = executeSketch();
-                        cancelSketch();
-                        if (useSketchingPlayback) {
-                            if (ok == 2) {
-                                firePropertyChange("play", null, "start");
-                            } else if (ok == 3) {
-                                int i = table.getSelectionModel()
-                                        .getMinSelectionIndex();
-                                if (i >= 0) {
-                                    YassRow r = table.getRowAt(i);
-                                    if (r.isNote()) {
-                                        int h = r.getHeightInt();
-                                        firePropertyChange("midi", null, h);
-                                        firePropertyChange("play", null,
-                                                "start");
-                                    }
-                                }
-                            }
-                        }
-                        repaint();
-                    });
-
-                } else {
-                    repaint();
-                }
-                selectX = selectY = -1;
-                select.x = select.y = select.width = select.height = 0;
-                inPoint = outPoint = -1;
-            }
-
-            public void mouseClicked(MouseEvent e) {
-                if (isPlaying() || isTemporaryStop()) {
-                    firePropertyChange("play", null, "stop");
-                    e.consume();
-                    return;
-                }
-
-                int x = e.getX();
-                int y = e.getY();
-
-                int button = getButtonXY(x, y);
-                if (button != UNDEFINED) {
-                    // ignore this button click, it was handled in mouseReleased()
-                    return;
-                }
-
-                boolean left = SwingUtilities.isLeftMouseButton(e);
-                boolean twice = e.getClickCount() > 1;
-                boolean one = e.getClickCount() == 1;
-
-                // LYRICS POSITION
-                boolean notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
-
-                if (y > clip.height - BOTTOM_BORDER + 20
-                        || (y > 20 && y < TOP_LINE - 10 && notInLyrics)) {
-                    if (!left || twice || one) {
-                        //firePropertyChange("one", null, null);
-                        return;
-                    }
-                }
-
-                if (!twice) {
-                    if (!paintHeights) {
-                        return;
-                    }
-                    if (e.getX() > clip.x + heightBoxWidth) {
-                        return;
-                    }
-                    if (hiliteHeight > 200) {
-                        return;
-                    }
-                    firePropertyChange("midi", null, pan ? (hiliteHeight - 2) : hiliteHeight);
-                    return;
-                }
-                table.selectLine();
-            }
-
-            public void mousePressed(MouseEvent e) {
-                if (equalsKeyMillis > 0) {
-                    equalsKeyMillis = 0;
-                    equalsDigits = "";
-                }
-                boolean left = SwingUtilities.isLeftMouseButton(e);
-                if (table == null)
-                    return;
-                if (! hasFocus()) {
-                    requestFocusInWindow();
-                    requestFocus();
-                }
-                if (isPlaying() || isTemporaryStop()) {
-                    firePropertyChange("play", null, "stop");
-                    e.consume();
-                    return;
-                }
-                isMousePressed = true; // not while playing
-                int x = e.getX();
-                int y = e.getY();
-                if (YassTable.getZoomMode() == YassTable.ZOOM_ONE && dragMode != SLIDE) {
-                    temporaryZoomOff = true;
-                    YassTable.setZoomMode(YassTable.ZOOM_MULTI);
-                }
-                setErrorMessage("");
-                if (paintHeights && (x < clip.x + heightBoxWidth && y > TOP_LINE - 10
-                        && (y < clip.height - BOTTOM_BORDER))) {
-                    if (y < 0) {
-                        y = 0;
-                    }
-                    if (y > dim.height) {
-                        y = dim.height;
-                    }
-
-                    int dy;
-                    if (pan) {
-                        dy = (int) Math.round(hhPageMin
-                                + (dim.height - y - BOTTOM_BORDER) / hSize);
-                    } else {
-                        dy = (int) Math.round(minHeight
-                                + (dim.height - y - BOTTOM_BORDER) / hSize);
-                    }
-                    hiliteHeight = dy;
-                    repaint();
-                    return;
-
-                }
-                int button = getButtonXY(x, y);
-                if (button != UNDEFINED) {
-                    if (button == NEXT_SLIDE) {
-                        startSlide(10);
-                    } else if (button == PREV_SLIDE) {
-                        startSlide(-10);
-                    }
-                    hiliteCue = button | PRESSED_FLAG;
-                    repaint();
-                    // no further processing, because the actual event will be handled in mouseReleased()
-                    return;
-                }
-                YassRectangle r;
-                if (hiliteCue == CUT) {
-                    r = rect.elementAt(hilite);
-                    table.clearSelection();
-                    table.addRowSelectionInterval(hilite, hilite);
-                    firePropertyChange("split", null, (e.getX() - r.x) / r.width);
-                    hiliteCue = UNDEFINED;
-                } else if (hiliteCue == JOIN_LEFT) {
-                    r = rect.elementAt(hilite);
-                    table.clearSelection();
-                    table.addRowSelectionInterval(hilite, hilite);
-                    firePropertyChange("joinLeft", null, (e.getX() - r.x));
-                    hiliteCue = UNDEFINED;
-                } else if (hiliteCue == JOIN_RIGHT) {
-                    r = rect.elementAt(hilite);
-                    table.clearSelection();
-                    table.addRowSelectionInterval(hilite, hilite);
-                    firePropertyChange("joinRight", null, (int) (e.getX() - r.x));
-                    hiliteCue = UNDEFINED;
-                } else if (hiliteCue == SNAPSHOT) {
-                    hiliteCue = UNDEFINED;
-                    createSnapshot();
-                    repaint();
-                    return;
-                } else if (hiliteCue == MOVE_REMAINDER) {
-                    hit = nextElement();
-                    if (hit < 0)
-                        return;
-                    table.setRowSelectionInterval(hit, hit);
-                    table.updatePlayerPosition();
-
-                    dragMode = CENTER;
-                    r = rect.elementAt(hit);
-                    dragOffsetX = (int) (e.getX() - r.x);
-                    dragOffsetY = (int) (e.getY() - r.y);
-                    dragOffsetXRatio = dragOffsetX / wSize;
-                    return;
-                } else if (hiliteCue == SLIDE && left) {
-                    YassTable t = getActiveTable();
-                    if (t != null && t.getMultiSize() == 1) {
-                        YassTable.setZoomMode(YassTable.ZOOM_MULTI);
-                        enablePan(false);
-                        actions.revalidateLyricsArea();
-                        update();
-                        repaint();
-                    }
-                    dragMode = SLIDE;
-                    slideX = e.getX();
-                    return;
-                }
-                YassRectangle next = null;
-                hit = -1;
-                selectX = selectY = -1;
-                dragDir = UNDEFINED;
-                dragOffsetX = dragOffsetY = 0;
-                int i = 0;
-                for (Enumeration<?> en = rect.elements(); en.hasMoreElements(); i++) {
-                    if (next != null) {
-                        r = next;
-                        next = (YassRectangle) en.nextElement();
-                    } else {
-                        r = (YassRectangle) en.nextElement();
-                    }
-                    if (next == null) {
-                        next = en.hasMoreElements() ? (YassRectangle) en.nextElement() : null;
-                    }
-                    if (r == null)
-                        break;
-                    if (r.isPageBreak()) {
-                        if (x > r.x - 5 && x < r.x + 5) {
-                            hit = i;
-                            dragOffsetX = (int) (e.getX() - r.x);
-                            dragOffsetY = (int) (e.getY() - r.y);
-                            dragOffsetXRatio = dragOffsetX / wSize;
-                            dragMode = hiliteCue;
-                            if (!table.isRowSelected(i)) {
-                                if (e.isControlDown()) {
-                                    table.addRowSelectionInterval(i, i);
-                                } else {
-                                    table.setRowSelectionInterval(i, i);
-                                }
-                            }
-                            table.scrollRectToVisible(table.getCellRect(i, 0, true));
-                            repaint();
-                            break;
-                        }
-                    } else if (r.contains(e.getPoint())) {
-                        // hiliteAction = ACTION_CONTROL_ALT;
-                        hit = i;
-                        dragOffsetX = (int) (e.getX() - r.x);
-                        dragOffsetY = (int) (e.getY() - r.y);
-                        dragOffsetXRatio = dragOffsetX / wSize;
-                        dragMode = hiliteCue;
-                        if (!table.isRowSelected(i)) {
-                            if (e.isShiftDown() || e.isControlDown()) {
-                                table.addRowSelectionInterval(i, i);
-                            } else {
-                                table.setRowSelectionInterval(i, i);
-                            }
-                        }
-                        table.scrollRectToVisible(table.getCellRect(i, 0, true));
-                        table.updatePlayerPosition();
-
-                        inPoint = outPoint = playerPos;
-                        inSelect = fromTimeline(inPoint);
-                        outSelect = fromTimeline(outPoint);
-                        if (r.hasType(YassRectangle.GAP)) {
-                            temporaryZoomOff = false;
-                        }
-                        repaint();
-                        break;
-                    } else if (table.getMultiSize() > 1
-                            && r.x < x
-                            && (((next == null || next.isPageBreak() || next.hasType(YassRectangle.END)) && x < r.x + r.width) ||
-                            (next != null && (!next.isPageBreak() && !next.hasType(YassRectangle.END)) && x < next.x))
-                            && y > clip.height - BOTTOM_BORDER
-                            && y < clip.height - BOTTOM_BORDER + 16) {
-                        hiliteAction = ACTION_CONTROL_ALT;
-
-                        hit = i;
-                        dragOffsetX = (int) (e.getX() - r.x);
-                        dragOffsetY = (int) (e.getY() - r.y);
-                        dragOffsetXRatio = dragOffsetX / wSize;
-                        dragMode = hiliteCue;
-
-                        table.setRowSelectionInterval(i, i);
-                        table.selectLine();
-                        table.updatePlayerPosition();
-
-                        inPoint = outPoint = playerPos;
-                        inSelect = fromTimeline(inPoint);
-                        outSelect = fromTimeline(outPoint);
-
-                        repaint();
-                        break;
-                    }
-                }
-                if (hit < 0) {
-                    if (SwingUtilities.isLeftMouseButton(e)) {
-                        inPoint = outPoint = e.getX();
-                        inSelect = fromTimeline(inPoint);
-                        outSelect = fromTimeline(outPoint);
-
-                        if (useSketching) {
-                            startSketch();
-                            addSketch(e.getX(), e.getY());
-                            repaint();
-                            return;
-                        }
-
-                        boolean any = false;
-                        int k = 0;
-                        for (Enumeration<?> en = rect.elements(); en.hasMoreElements(); k++) {
-                            r = (YassRectangle) en.nextElement();
-                            if (r.x <= e.getX() && e.getX() <= r.x + r.width) {
-                                if (!any) {
-                                    if (!(e.isShiftDown() || e.isControlDown())) {
-                                        table.clearSelection();
-                                    }
-                                }
-                                if (!table.isRowSelected(k)) {
-                                    table.addRowSelectionInterval(k, k);
-                                }
-                                any = true;
-                            }
-                        }
-                        if (any) {
-                            table.updatePlayerPosition();
-                        } else {
-                            table.clearSelection();
-                            playerPos = Math.min(inPoint, outPoint);
-                            table.updatePlayerPosition();
-                        }
-                    } else {
-                        inPoint = outPoint = -1;
-                        inSelect = outSelect = -1;
-
-                        Point p = (Point) e.getPoint().clone();
-                        SwingUtilities.convertPointToScreen(p, YassSheet.this);
-                        selectX = p.getX();
-                        selectY = p.getY();
-                        select.x = select.y = select.width = select.height = 0;
-                    }
-                    repaint();
-                }
-            }
-
-            public void mouseEntered(MouseEvent e) {
-                // LOGGER.info("sheet entered");
-            }
-
-            public void mouseExited(MouseEvent e) {
-                hilite = -1;
-                hiliteHeight = 1000;
-                repaint();
-            }
-
-        });
-        addMouseMotionListener(new MouseMotionAdapter() {
-            public void mouseMoved(MouseEvent e) {
-                if (equalsKeyMillis > 0) {
-                    equalsKeyMillis = 0;
-                    equalsDigits = "";
-                }
-                if (table == null || rect == null || isPlaying())
-                    return;
-
-                int x = e.getX();
-                int y = e.getY();
-                if (hilite >= 0) {
-                    hilite = -2;
-                } else {
-                    hilite = -1;
-                }
-                if (hiliteCue != UNDEFINED) {
-                    hilite = -2;
-                }
-                hiliteCue = UNDEFINED;
-                hiliteAction = ACTION_NONE;
-
-                boolean shouldRepaint = false;
-
-                if (paintHeights) {
-                    if (x < clip.x + heightBoxWidth && y > TOP_LINE - 10 && (y < clip.height - BOTTOM_BORDER)) {
-                        setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                        if (hiliteHeight < 1000) {
-                            if (y < 0)
-                                y = 0;
-                            if (y > dim.height)
-                                y = dim.height;
-                            int dy;
-                            if (pan) {
-                                dy = (int) Math.round(hhPageMin + (dim.height - y - BOTTOM_BORDER) / hSize);
-                            } else {
-                                dy = (int) Math.round(minHeight + (dim.height - y - BOTTOM_BORDER) / hSize);
-                            }
-
-                            if (hiliteHeight != dy) {
-                                hiliteHeight = dy;
-                                repaint();
-                            }
-                        }
-                        return;
-                    } else {
-                        if (hiliteHeight != 1000) {
-                            shouldRepaint = true;
-                            hiliteHeight = 1000;
-                        }
-                    }
-                }
-                int button = getButtonXY(x, y);
-                if (button != UNDEFINED) {
-                    // generate the hover effect
-                    setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
-                    hiliteCue = button;
-                    repaint();
-                    return;
-                }
-                if (inSelect >= 0 && inSelect != outSelect && y < TOP_BORDER
-                        && x >= toTimeline(Math.min(inSelect, outSelect))
-                        && x <= toTimeline(Math.max(inSelect, outSelect))) {
-                    hiliteCue = SNAPSHOT;
-                    setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                    repaint();
-                    return;
-                }
-                // LYRICS POSITION
-                boolean notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
-                if (!notInLyrics && getComponentCount() > 0 && lyricsVisible) {
-                    // dirty bugfix for lost bounds
-                    Point p2 = lyrics.getLocation();
-                    if ((x - p2.x) > 500) {
-                        Point p = ((JViewport) getParent()).getViewPosition();
-                        Dimension vr = ((JViewport) getParent()).getExtentSize();
-
-                        int newx = (int) p.getX() + vr.width - lyricsWidth;
-
-                        int newy = (int) p.getY() + 50;
-                        if (p2.x != newx || p2.y != newy) {
-                            lyrics.setLocation(newx, newy);
-                            revalidate();
-                            update();
-                        }
-                        repaint();
-                    }
-                }
-                YassRectangle next = null;
-                YassRectangle r;
-                int i = 0;
-                for (Enumeration<?> en = rect.elements(); en.hasMoreElements(); i++) {
-                    if (next != null) {
-                        r = next;
-                        next = (YassRectangle) en.nextElement();
-                    } else {
-                        r = (YassRectangle) en.nextElement();
-                    }
-                    if (next == null) {
-                        next = en.hasMoreElements() ? (YassRectangle) en.nextElement() : null;
-                    }
-                    if (r != null) {
-                        boolean isNote = !r.isType(YassRectangle.GAP) && !r.isType(YassRectangle.START) && !r.isType(YassRectangle.END);
-                        if (r.isPageBreak()) {
-                            if (x > r.x - 5 && x < r.x + 5 && !autoTrim) {
-                                hiliteCue = CENTER;
-                                setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
-                                repaint();
-                                return;
-                            }
-                        } else if (r.contains(x, y)) {
-                            hilite = i;
-                            if (mouseover) {
-                                if (!table.isRowSelected(i)) {
-                                    if (!(e.isShiftDown() || e.isControlDown()))
-                                        table.clearSelection();
-                                    table.addRowSelectionInterval(i, i);
-                                    table.updatePlayerPosition();
-                                }
-                            }
-                            int dragw = r.width > Math.max(wSize, 32) * 3 ? (int) Math.max(wSize, 32) : (r.width > 72 ? 24 : (r.width > 48 ? 16 : 5));
-                            if (Math.abs(r.x - x) < dragw && r.width > 20) {
-                                hiliteCue = LEFT;
-                                hiliteAction = ACTION_CONTROL;
-                            } else if (Math.abs(r.x + r.width - x) < dragw && r.width > 20) {
-                                hiliteCue = RIGHT;
-                                hiliteAction = ACTION_ALT;
-                            } else {
-                                hiliteCue = CENTER;
-                                hiliteAction = ACTION_CONTROL_ALT;
-                            }
-
-                            if (hiliteCue == CENTER) {
-                                setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
-                            } else {
-                                setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
-                            }
-                            repaint();
-                            return;
-                        } else if (table.getMultiSize() > 1
-                                && r.x < x
-                                && (((next == null || next.isPageBreak() || next.hasType(YassRectangle.END)) && x < r.x + r.width)
-                                || (next != null && (!next.isPageBreak() && !next.hasType(YassRectangle.END)) && x < next.x))
-                                && y > clip.height - BOTTOM_BORDER
-                                && y < clip.height - BOTTOM_BORDER + 16) {
-                            hiliteCue = CENTER;
-                            setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
-                            repaint();
-                            return;
-                        } else if (isNote && r.x + wSize / 2 < x
-                                && x < r.x + r.width - wSize / 2
-                                && Math.abs(r.y - y) < hSize && r.width > 5) {
-                            hilite = i;
-                            hiliteCue = CUT;
-                            cutPercent = (x - r.x) / r.width;
-                            setCursor(cutCursor);
-                            repaint();
-                            return;
-                        } else if (isNote && r.x < x && x < r.x + wSize / 2
-                                && r.width > 5) {
-                            if (Math.abs(r.y - y) < hSize) {
-                                hilite = i;
-                                hiliteCue = JOIN_LEFT;
-                                setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
-                                repaint();
-                                return;
-                            }
-                        } else if (isNote && r.x + r.width - wSize / 2 < x
-                                && x < r.x + r.width && r.width > 5) {
-                            if (Math.abs(r.y - y) < hSize) {
-                                hilite = i;
-                                hiliteCue = JOIN_RIGHT;
-                                setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
-                                repaint();
-                                return;
-                            }
-                        }
-                    }
-                }
-                if (y > clip.height - BOTTOM_BORDER + 20 || (y > 20 && y < TOP_LINE - 10 && notInLyrics)) {
-                    setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                    hiliteCue = SLIDE;
-                    repaint();
-                    return;
-                }
-                if (x > playerPos - 10 && x < playerPos && y > TOP_LINE && y < dim.height - BOTTOM_BORDER) {
-                    hiliteCue = MOVE_REMAINDER;
-                    setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
-                    repaint();
-                    return;
-                }
-                setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
-                if (hilite == -2) {
-                    hilite = -1;
-                    repaint();
-                    return;
-                }
-                if (shouldRepaint)
-                    repaint();
-            }
-
-            public void mouseDragged(MouseEvent e) {
-                if (rect == null)
-                    return;
-                if (! isMousePressed)
-                    return;
-                boolean left = SwingUtilities.isLeftMouseButton(e);
-                Point p = e.getPoint();
-                int px = Math.max(clip.x, Math.min(p.x, clip.x + clip.width));
-                int py = p.y;
-
-                if ((hiliteCue & BUTTON_FLAG) != 0) {
-                    // we hold a button, which is handled by getButtonXY()
-                    int button = getButtonXY(px, py);
-                    if ((hiliteCue & ~PRESSED_FLAG) == button) {
-                        // the mouse is (again) above the held button
-                        hiliteCue |= PRESSED_FLAG;
-                    } else {
-                        // the mouse is outside the held button
-                        hiliteCue &= ~PRESSED_FLAG;
-                    }
-                    repaint();
-                    return;
-                }
-
-                if (paintHeights) {
-                    if (px < clip.x + heightBoxWidth && py > TOP_LINE - 10 && (py < clip.height - BOTTOM_BORDER)) {
-                        if (py < 0)
-                            py = 0;
-                        if (py > dim.height)
-                            py = dim.height;
-                        int dy;
-                        if (pan) {
-                            dy = (int) Math.round(hhPageMin + (dim.height - py - BOTTOM_BORDER) / hSize);
-                        } else {
-                            dy = (int) Math.round(minHeight + (dim.height - py - BOTTOM_BORDER) / hSize);
-                        }
-                        hiliteHeight = dy;
-                        repaint();
-                        if (hiliteHeight > 200)
-                            return;
-                        long time = System.currentTimeMillis();
-                        if (time - lastMidiTime > 100) {
-                            firePropertyChange("midi", null, pan ? (hiliteHeight - 2) : hiliteHeight);
-                            lastMidiTime = time;
-                        }
-                        return;
-                    }
-                }
-
-                if (hiliteCue == SLIDE && left) {
-                    if (slideX == px)
-                        return;
-                    Point vp = getViewPosition();
-                    int off = px - slideX;
-                    int oldpoff = px - vp.x;
-                    vp.x = vp.x - off;
-                    if (vp.x < 0)
-                        vp.x = 0;
-                    setViewPosition(vp);
-                    slideX = vp.x + oldpoff;
-                    if (playerPos < vp.x || playerPos > vp.x + clip.width) {
-                        int next = nextElement(vp.x);
-                        if (next >= 0) {
-                            YassRow row = table.getRowAt(next);
-                            if (!row.isNote() && next + 1 < table.getRowCount()) {
-                                next = next + 1;
-                                row = table.getRowAt(next);
-                            }
-                            if (row.isNote()) {
-                                table.setRowSelectionInterval(next, next);
-                                table.updatePlayerPosition();
-                            }
-                        }
-                    }
-                    setPlayerPosition(-1);
-                    return;
-                }
-                int shiftRemainder = InputEvent.BUTTON1_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK;
-                if ((e.getModifiersEx() & shiftRemainder) == shiftRemainder)
-                    shiftRemainder = 1;
-                else
-                    shiftRemainder = 0;
-                if (hiliteCue == MOVE_REMAINDER)
-                    shiftRemainder = 1;
-
-                if (useSketching) {
-                    if (sketchStarted()) {
-                        addSketch(px, py);
-                        if (!detectSketch()) {
-                            cancelSketch();
-                        } else {
-                            repaint();
-                            return;
-                        }
-                    }
-                }
-
-                if (hit < 0) {
-                    if (left) {
-                        // playerPos = px;
-                        outPoint = px;
-                        outSelect = fromTimeline(outPoint);
-
-                        select.x = Math.min(inPoint, outPoint);
-                        select.y = 0;
-                        select.width = Math.abs(outPoint - inPoint);
-                        select.height = clip.height;
-                    } else {
-
-                        Point p2 = new Point((int) selectX, (int) selectY);
-                        SwingUtilities.convertPointFromScreen(p2,
-                                YassSheet.this);
-
-                        select.x = Math.min(p2.getX(), px);
-                        select.y = Math.min(p2.getY(), py);
-                        select.width = Math.abs(p2.getX() - (double) px);
-                        select.height = Math.abs(p2.getY() - (double) py);
-                    }
-
-                    int n = rect.size();
-                    YassRectangle r;
-                    boolean any = false;
-                    for (int i = 0; i < n; i++) {
-                        r = rect.elementAt(i);
-                        if (r.intersects(select)) {
-                            if (!any) {
-                                if (!(e.isShiftDown() || e.isControlDown())) {
-                                    table.clearSelection();
-                                }
-                            }
-                            if (!table.isRowSelected(i)) {
-                                table.addRowSelectionInterval(i, i);
-                            }
-                            any = true;
-                        }
-                    }
-                    if (any) {
-                        table.updatePlayerPosition();
-                    } else {
-                        table.clearSelection();
-                        playerPos = Math.min(inPoint, outPoint);
-                        table.updatePlayerPosition();
-                    }
-
-                    repaint();
-                    return;
-                }
-
-                long time = System.currentTimeMillis();
-                if (time - lastDragTime < 60)
-                    return;
-                lastDragTime = time;
-                table.setPreventUndo(true);
-                YassRectangle rr = rect.elementAt(hit);
-                table.getRowAt(hit);
-                int pageMin = rr.getPageMin();
-                int x;
-                int dx;
-                int y = py - dragOffsetY;
-                if (y < 0)
-                    y = 0;
-                if (y > dim.height)
-                    y = dim.height;
-                if (y < hSize)
-                    y = (int) -hSize;
-                int dy;
-                if (pan) {
-                    dy = (int) Math.round(pageMin + (dim.height - y - hSize - BOTTOM_BORDER + 1) / hSize) - 2;
-                } else {
-                    dy = (int) Math.round(minHeight + (dim.height - y - hSize - BOTTOM_BORDER + 1) / hSize);
-                }
-
-                YassRow r = table.getRowAt(hit);
-                if (rr.isType(YassRectangle.GAP)) {
-                    x = (int) ((px - dragOffsetXRatio * wSize));
-                    if (paintHeights)
-                        x -= heightBoxWidth;
-                    double gapres = x / wSize;
-                    double gap2 = gapres * 60 * 1000 / (4 * bpm);
-                    gap2 = Math.round(gap2 / 10) * 10;
-                    firePropertyChange("gap", null, (int) gap2);
-                    return;
-                }
-                if (rr.isType(YassRectangle.START)) {
-                    x = (int) ((px - dragOffsetXRatio * wSize));
-                    if (paintHeights)
-                        x -= heightBoxWidth;
-                    double valres = x / wSize;
-                    double val = valres * 60 * 1000 / (4 * bpm);
-                    val = Math.round(val / 10) * 10;
-                    firePropertyChange("start", null, (int) val);
-                    return;
-                }
-                if (rr.isType(YassRectangle.END)) {
-                    x = (int) ((px - dragOffsetXRatio * wSize));
-                    if (paintHeights)
-                        x -= heightBoxWidth;
-                    double valres = x / wSize;
-                    double val = valres * 60 * 1000 / (4 * bpm);
-                    val = Math.round(val / 10) * 10;
-                    table.clearSelection();
-                    // quick hack
-                    firePropertyChange("end", null, (int) val);
-                    table.clearSelection();
-                    return;
-                }
-
-                boolean isPageBreak = r.isPageBreak();
-                if (!isPageBreak) {
-                    int oldy = r.getHeightInt();
-                    if (oldy != dy) {
-                        if (dragDir != HORIZONTAL) {
-                            dragDir = VERTICAL;
-                            firePropertyChange("relHeight", null, (dy - oldy));
-                            return;
-                        }
-                    }
-                }
-                boolean isPageBreakMin = false;
-                if (isPageBreak)
-                    isPageBreakMin = r.getBeatInt() == r.getSecondBeatInt();
-                if (!isPageBreakMin && dragMode == RIGHT) {
-                    x = (int) (px - beatgap * wSize - 2 + wSize / 2);
-                    if (paintHeights)
-                        x -= heightBoxWidth;
-                    dx = (int) Math.round(x / wSize);
-                } else {
-                    x = (int) (px - beatgap * wSize - 2 - dragOffsetXRatio * wSize);
-                    if (paintHeights)
-                        x -= heightBoxWidth;
-                    dx = (int) Math.round(x / wSize);
-                }
-                if (isPageBreakMin || dragMode == CENTER) {
-                    int oldx = r.getBeatInt();
-                    if (oldx != dx) {
-                        if (dragDir != VERTICAL) {
-                            dragDir = HORIZONTAL;
-                            if (shiftRemainder != 0) {
-                                firePropertyChange("relBeatRemainder", null, (dx - oldx));
-                            } else {
-                                firePropertyChange("relBeat", null, (dx - oldx));
-                            }
-                        }
-                    }
-                } else if (dragMode == LEFT) {
-                    int oldx = r.getBeatInt();
-                    if (oldx != dx) {
-                        if (dragDir != VERTICAL) {
-                            dragDir = HORIZONTAL;
-                            firePropertyChange("relLeft", null, (dx - oldx));
-                        }
-                    }
-                } else {
-                    // dragMode==RIGHT
-                    int oldx = 0;
-                    if (r.isNote())
-                        oldx = r.getBeatInt() + r.getLengthInt();
-                    else if (r.isPageBreak())
-                        oldx = r.getSecondBeatInt();
-                    if (oldx != dx) {
-                        if (dragDir != VERTICAL) {
-                            dragDir = HORIZONTAL;
-                            firePropertyChange("relRight", null, (dx - oldx));
-                        }
-                    }
-                }
-            }
-        });
     }
 
     /**
@@ -1930,22 +1967,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         mouseover = onoff;
     }
 
-    public void setActions(YassActions a) {
-        actions = a;
-    }
-
-    public boolean isPlaying() {
-        return isPlaying;
-    }
-
-    public void setPlaying(boolean onoff) {
-        isPlaying = onoff;
-    }
-
-    public boolean isTemporaryStop() {
-        return isTemporaryStop;
-    }
-
     public void setTemporaryStop(boolean onoff) {
         isTemporaryStop = onoff;
     }
@@ -2200,14 +2221,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
      * @param g Description of the Parameter
      */
     public void paintChildren(Graphics g) {
-        if (table == null || table.getRowCount() < 1) {
-            Graphics2D g2d = (Graphics2D) g;
-            int dw = getWidth();
-            int dh = getHeight();
-
-            g.setColor(darkMode ? hiGrayDarkMode : hiGray);
-            g2d.fillRect(0, 0, dw, dh);
-        }
+        // This is the standard way to paint child components like SongHeader and YassLyrics.
+        // It ensures they are interactive and repaint correctly.
+        super.paintChildren(g);
     }
 
     /**
@@ -2232,6 +2248,13 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
      * @param g Description of the Parameter
      */
     public void paintComponent(Graphics g) {
+        // If the table is empty, just paint a gray background and stop.
+        if (table == null || rect == null || rect.size() < 1) {
+            Graphics2D g2d = (Graphics2D) g;
+            g.setColor(darkMode ? hiGrayDarkMode : hiGray);
+            g2d.fillRect(0, 0, getWidth(), getHeight());
+            return;
+        }
         if (table == null || rect == null || rect.size() < 1) {
             return;
         }
@@ -2319,15 +2342,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     }
 
     /**
-     * Gets the refreshing attribute of the YassSheet object
-     *
-     * @return The refreshing value
-     */
-    public boolean isRefreshing() {
-        return refreshing;
-    }
-
-    /**
      * Description of the Method
      */
     public void refreshImage() {
@@ -2386,19 +2400,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     + occHeap + "Mb reserved.";
             db.drawString(info, clip.x + 10, 40);
         }
-
-        // message:
-        // LYRICS POSITION
-        if (getComponentCount() > 0 && lyricsVisible) {
-            Rectangle cr = lyrics.getBounds();
-
-            db.translate(clip.x + clip.width - cr.width + cr.getX() - lyrics.getX(), cr.getY() - lyrics.getY() + 20);
-
-            // LOGGER.info("refresh print");
-            lyrics.print(db);
-            // LOGGER.info("refresh print done");
-        }
-        // paintText(db);
 
         imageChanged = false;
         imageX = clip.x;
@@ -2583,7 +2584,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
      * @param g2 Description of the Parameter
      */
     public void paintWaveform(Graphics2D g2) {
-        g2.setColor(Color.green);
+        g2.setColor(darkMode ? dkGreen : dkGreenLight);
 
         int h = TOP_LINE - 10 + 128;
 
@@ -3481,7 +3482,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
                                 int midx = (int) (r.x + r.width / 2);
                                 Font oldFont = g2.getFont();
-                                g2.setColor(darkMode ? dkGrayDarkMode : dkGray);
+                                g2.setColor(darkMode ? blackDarkMode : black);
                                 g2.setFont(big[16]);
                                 FontMetrics metrics = g2.getFontMetrics();
                                 int strw = metrics.stringWidth(lenstr);
@@ -3512,7 +3513,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                                 int yoff = 4;
                                 int midx = (int) (r.x + r.width / 2);
                                 Font oldFont = g2.getFont();
-                                g2.setColor(darkMode ? dkGrayDarkMode : dkGray);
+                                g2.setColor(darkMode ? blackDarkMode : black);
                                 g2.setFont(big[16]);
                                 FontMetrics metrics = g2.getFontMetrics();
                                 int strw = metrics.stringWidth(hstr);
@@ -5341,37 +5342,10 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         this.lyrics = lyrics;
     }
 
-    public void disposeSongHeader() {
-        if (songHeader != null) {
-            songHeader.dispose();
-        }
-    }
 
     public void initSongHeader(YassActions actions) {
-        songHeader = new SongHeader(getOwner(), actions, getActiveTable());
-    }
-
-    public void refreshHeaderLocation() {
-        if (songHeader == null) {
-            return;
-        }
-        songHeader.refreshLocation();
-    }
-
-    public YassMain getOwner() {
-        return owner;
-    }
-
-    public void setOwner(YassMain owner) {
-        this.owner = owner;
-    }
-
-    public SongHeader getSongHeader() {
-        return songHeader;
-    }
-
-    public List<Integer> getTmpPitches() {
-        return tmpPitches;
+        songHeader = new SongHeader(actions, getActiveTable());
+        add(songHeader);
     }
 
     public void clearTempPitches() {
@@ -5405,7 +5379,4 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         } while (!exit);
     }
 
-    public List<Integer> getNoteMapping() {
-        return noteMapping;
-    }
 }

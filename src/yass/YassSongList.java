@@ -226,6 +226,10 @@ public class YassSongList extends JTable {
         actions = a;
         auto = a.getAutoCorrect();
         prop = a.getProperties();
+        if (prop.getProperty("titlecase") == null || "off".equalsIgnoreCase(prop.getProperty("titlecase"))) {
+            skipTitleCase = true;
+            LOGGER.info("Title Case checking disabled");
+        }
         audioFiles = Arrays.stream(prop.getProperty("audio-files").split("[|]")).toList();
         setOpaque(false);
         setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
@@ -1827,7 +1831,7 @@ public class YassSongList extends JTable {
         dirChanged = true;
         skipTitleCase = "off".equals(prop.getProperty("titlecase"));
         titleCaseChanges = false;
-        PhrasalVerbManager.getInstance().reinit();
+        PhrasalVerbManager.getInstance(prop).reinit();
         if (!skipTitleCase && !titleCaseCheckRunning) {
             titleCaseExceptions = initTitleCaseExceptions();
             titleCaseCheckRunning = true;
