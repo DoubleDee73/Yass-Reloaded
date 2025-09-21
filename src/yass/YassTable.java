@@ -5978,7 +5978,7 @@ public class YassTable extends JTable {
      * @param includePageBreaks Description of the Parameter
      * @return The selection value
      */
-    public long[][] getSelection(int i, int j, long[] inout, long[][] clicks,
+    public Click[] getSelection(int i, int j, long[] inout, Click[] clicks,
                                  boolean includePageBreaks) {
         int n = getRowCount();
         boolean all = i < 0 && j < 0;
@@ -5997,7 +5997,7 @@ public class YassTable extends JTable {
         int clickCount = 0;
         if (clicks == null) {
             if (includePageBreaks) {
-                clicks = new long[j - i + 1][3];
+                clicks = new Click[j - i + 1];
             } else {
                 int nn = 0;
                 for (int k = i; k <= j; k++) {
@@ -6006,7 +6006,7 @@ public class YassTable extends JTable {
                         nn++;
                     }
                 }
-                clicks = new long[nn][3];
+                clicks = new Click[nn];
             }
         }
 
@@ -6019,9 +6019,7 @@ public class YassTable extends JTable {
                 if (includePageBreaks) {
                     beat = r.getBeatInt();
                     end = r.hasSecondBeat() ? r.getSecondBeatInt() : beat;
-                    clicks[clickCount][0] = beat;
-                    clicks[clickCount][1] = 100;
-                    clicks[clickCount][2] = end;
+                    clicks[clickCount] = new Click(beat, 100, end);
                     clickCount++;
                     min = Math.min(min, beat);
                     max = Math.max(max, end);
@@ -6029,9 +6027,7 @@ public class YassTable extends JTable {
             } else if (r.isNote()) {
                 beat = r.getBeatInt();
                 end = beat + r.getLengthInt();
-                clicks[clickCount][0] = beat;
-                clicks[clickCount][1] = r.getHeightInt();
-                clicks[clickCount][2] = end;
+                clicks[clickCount] = new Click(beat, r.getHeightInt(), end);
                 clickCount++;
                 min = Math.min(min, beat);
                 max = Math.max(max, end);
@@ -6045,9 +6041,12 @@ public class YassTable extends JTable {
             inout[0] = (long) ((60 * min / (4.0 * bpm) + gap / 1000.0) * 1000000L);
             inout[1] = (long) ((60 * max / (4.0 * bpm) + gap / 1000.0) * 1000000L);
         }
+        long tempStart;
+        long tempEnd;
         for (i = 0; i < clickCount; i++) {
-            clicks[i][0] = (long) ((60 * clicks[i][0] / (4.0 * bpm) + gap / 1000.0) * 1000000L);
-            clicks[i][2] = (long) ((60 * clicks[i][2] / (4.0 * bpm) + gap / 1000.0) * 1000000L);
+            tempStart = (long) ((60 * clicks[i].start() / (4.0 * bpm) + gap / 1000.0) * 1000000L);
+            tempEnd = (long) ((60 * clicks[i].end() / (4.0 * bpm) + gap / 1000.0) * 1000000L);
+            clicks[i] = new Click(tempStart, clicks[i].height(), tempEnd);
         }
         return clicks;
     }

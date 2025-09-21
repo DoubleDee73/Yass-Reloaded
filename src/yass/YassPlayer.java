@@ -57,6 +57,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.text.MessageFormat;
 import java.util.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -69,7 +71,6 @@ public class YassPlayer {
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public boolean DEBUG = false;
     byte[] memcache = null;
-    byte[] clickmemcache = null;
     boolean midiEnabled = false, midisEnabled = false;
     boolean playAudio = true;
     boolean playClicks = true;
@@ -106,6 +107,7 @@ public class YassPlayer {
     public static final String USER_PATH = System.getProperty("user.home") + File.separator + ".yass" + File.separator;
     private Map<Integer, byte[]> LONG_NOTE_MAP;
     private Map<Integer, byte[]> SHORT_NOTE_MAP;
+    private byte[] drumClick;
     private Integer lastNote = null;
     private Timebase playrate = Timebase.NORMAL;
     private File tempFile;
@@ -113,16 +115,24 @@ public class YassPlayer {
     private boolean playing = false;
     private int pianoVolume;
     private HashMap<Long, Thread> playThreadMap = new HashMap<>();
-    private List<SourceDataLine> lineList = new ArrayList<>(); 
-    
+    private List<SourceDataLine> lineList = new ArrayList<>();
+
     private MusicalKeyEnum key;
     private double targetDbfs;
     private double replayGain;
-    
+
+    private SourceDataLine sharedLine = null;
+    private Thread sharedLineThread = null;
+    private AudioFormat sharedLineFormat = null;
+    private volatile boolean sharedLineRunning = false;
+    private volatile boolean sharedLineInterrupted = false;
+    private final BlockingQueue<byte[]> sharedLineQueue = new LinkedBlockingQueue<>();
+
     public void initNoteMap() {
         lastNote = null;
         LONG_NOTE_MAP = new HashMap<>();
         SHORT_NOTE_MAP = new HashMap<>();
+        drumClick = YassSynth.getWavSampleAsByteArray();
     }
 
     public byte[] createNotePlayer(String path) {
@@ -143,7 +153,7 @@ public class YassPlayer {
             throw new RuntimeException(e);
         }
     }
-    
+
     public void addNoteToMap(byte[] note, int i, boolean longNote) {
         if (note == null) {
             if (DEBUG) LOGGER.info("Failed to create piano note " + i);
@@ -155,7 +165,7 @@ public class YassPlayer {
             SHORT_NOTE_MAP.put(i, note);
         }
     }
-    
+
     private File fetchOrConvert(String path) {
         File file = new File(USER_PATH + path + ".wav");
         if (file.exists()) {
@@ -471,14 +481,15 @@ public class YassPlayer {
         }
 
         fps = -1;
-        try (AudioInputStream in = AudioSystem.getAudioInputStream(file)){
+        try (AudioInputStream in = AudioSystem.getAudioInputStream(file)) {
             AudioFormat baseFormat = in.getFormat();
             fps = baseFormat.getFrameRate();
             audioBytesFormat = baseFormat;
             audioBytesChannels = baseFormat.getChannels();
             audioBytesSampleRate = baseFormat.getSampleRate();
             audioBytes = writeByteArray(file);
-            duration = (long)(in.getFrameLength() / baseFormat.getFrameRate() * 1000000);
+            duration = (long) (in.getFrameLength() / baseFormat.getFrameRate() * 1000000);
+            openSharedLine(baseFormat);
         } catch (Exception e) {
             audioBytes = null;
             createWaveform = false;
@@ -492,10 +503,11 @@ public class YassPlayer {
     /**
      * Initializes YassPlayer with no audio file and determines a theoretical length of the song from the last beat
      * and the BPM.
+     *
      * @param table
      */
     public void emptyMp3(YassTable table) {
-        long tempDuration = Math.max((long)table.getStart() * 1000, (long)table.getEnd() * 1000);
+        long tempDuration = Math.max((long) table.getStart() * 1000, (long) table.getEnd() * 1000);
         if (table.getRowCount() > 2 && table.getBPM() > 0) {
             YassRow lastRow = table.getRowAt(table.getRowCount() - 2);
             double beatToSec = 60d / table.getBPM();
@@ -572,7 +584,7 @@ public class YassPlayer {
      * @param out    Description of the Parameter
      * @param clicks Description of the Parameter
      */
-    public void playSelection(long in, long out, long clicks[][]) {
+    public void playSelection(long in, long out, Click[] clicks) {
         playSelection(in, out, clicks, Timebase.NORMAL);
     }
 
@@ -581,7 +593,7 @@ public class YassPlayer {
      *
      * @param clicks Description of the Parameter
      */
-    public void playAll(long clicks[][]) {
+    public void playAll(Click[] clicks) {
         playSelection(0, -1, clicks);
     }
 
@@ -591,7 +603,7 @@ public class YassPlayer {
      * @param clicks   Description of the Parameter
      * @param timebase Description of the Parameter
      */
-    public void playAll(long clicks[][], Timebase timebase) {
+    public void playAll(Click[] clicks, Timebase timebase) {
         playSelection(0, -1, clicks, timebase);
     }
 
@@ -603,7 +615,7 @@ public class YassPlayer {
      * @param clicks   Description of the Parameter
      * @param timebase Description of the Parameter
      */
-    public void playSelection(long in, long out, long clicks[][], Timebase timebase) {
+    public void playSelection(long in, long out, Click[] clicks, Timebase timebase) {
         if (filename == null) {
             return;
         }
@@ -618,14 +630,11 @@ public class YassPlayer {
      * Description of the Method
      */
     public void interruptMP3() {
-        if (player != null && player.started) {
-            player.notInterrupted = false;
+        if (isPlaying()) {
+            sharedLineInterrupted = true;
             if (hasPlaybackRenderer) {
                 playbackRenderer.setPlaybackInterrupted(true);
             }
-        }
-        for (Thread players : playThreadMap.values()) {
-            players.interrupt();
         }
         playThreadMap.clear();
     }
@@ -642,7 +651,7 @@ public class YassPlayer {
                 try {
                     Line line = mixer.getLine(lineInfo);
                     if (line instanceof SourceDataLine) {
-                        ((SourceDataLine)line).flush();
+                        ((SourceDataLine) line).flush();
                     }
                     if (line.isOpen()) {
                         line.close();
@@ -720,7 +729,7 @@ public class YassPlayer {
      * @return The playing value
      */
     public boolean isPlaying() {
-        return !playThreadMap.isEmpty();
+        return player != null && player.isAlive();
     }
 
     /**
@@ -812,15 +821,15 @@ public class YassPlayer {
      * @param file Temporary wave file
      */
     public byte[] writeByteArray(File file) {
-        try (InputStream inputStream = new FileInputStream(file)){
+        try (InputStream inputStream = new FileInputStream(file)) {
             byte[] pcmData = inputStream.readAllBytes();
-            if ((int)targetDbfs == 0 && (int)replayGain == 0) {
+            if ((int) targetDbfs == 0 && (int) replayGain == 0) {
                 return pcmData;
             }
             int numSamples = pcmData.length / 2;
 
             double normalizationFactor;
-            if ((int)replayGain != 0) {
+            if ((int) replayGain != 0) {
                 normalizationFactor = Math.pow(10.0, replayGain / 20.0);
             } else {
                 double currentDbfs = 20 * Math.log10(calculateRMS(pcmData, numSamples) / Short.MAX_VALUE);
@@ -828,7 +837,7 @@ public class YassPlayer {
                 normalizationFactor = Math.pow(10.0, gainDb / 20.0);
             }
 
-           return normalizePCM(pcmData, normalizationFactor);
+            return normalizePCM(pcmData, normalizationFactor);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -841,7 +850,7 @@ public class YassPlayer {
      * @return The waveFormAtMillis value
      */
     public int getWaveFormAtMillis(double ms) {
-        int bytePosition = findByteAtMilli((int)ms);
+        int bytePosition = findByteAtMilli((int) ms);
         int data;
         try {
             byte lowLeft = audioBytes[bytePosition];
@@ -891,43 +900,19 @@ public class YassPlayer {
     private int findByteAtMilli(int milli) {
         int frameSize = audioBytesFormat.getFrameSize();
         double bytesPerMillisecond = audioBytesFormat.getFrameRate() * frameSize / 1000;
-        int bytePos = Math.min(audioBytes.length - 1, (int)(milli * bytesPerMillisecond));
+        int bytePos = Math.min(audioBytes.length - 1, (int) (milli * bytesPerMillisecond));
         if (bytePos % frameSize != 0) {
             bytePos = bytePos - (bytePos % frameSize);
         }
         return Math.max(0, bytePos);
     }
-    
+
     private byte[] getAudioBytesInRange(int startMillis, int endMillis) {
         int startByte = findByteAtMilli(startMillis);
         int endByte = Math.max(startByte, findByteAtMilli(endMillis));
         byte[] audioData = new byte[endByte - startByte];
         System.arraycopy(audioBytes, startByte, audioData, 0, endByte - startByte);
         return audioData;
-    }
-    /**
-     * Description of the Class
-     *
-     * @author Saruta
-     */
-    class Play2Thread extends Thread {
-        byte[] audioData;
-        /**
-         * Constructor for the Play2Thread object
-         *
-         * @param skip1 Description of the Parameter
-         * @param skip2 Description of the Parameter
-         */
-        public Play2Thread(int skip1, int skip2) {
-            audioData = getAudioBytesInRange(skip1, skip2);
-        }
-
-        /**
-         * Main processing method for the Play2Thread object
-         */
-        public void run() {
-            playAudioData(audioData, audioBytesFormat, audioData.length, true);
-        }
     }
 
     /**
@@ -940,7 +925,8 @@ public class YassPlayer {
          * Description of the Field
          */
         public boolean notInterrupted = true, finished = false, started = false;
-        long in, out, clicks[][];
+        long in, out;
+        Click[] clicks;
         Timebase timebase;
 
         /**
@@ -951,7 +937,7 @@ public class YassPlayer {
          * @param clicks   Description of the Parameter
          * @param timebase Description of the Parameter
          */
-        public PlayThread(long in, long out, long[][] clicks, Timebase timebase) {
+        public PlayThread(long in, long out, Click[] clicks, Timebase timebase) {
             this.in = in;
             this.out = out;
             this.clicks = clicks;
@@ -973,12 +959,11 @@ public class YassPlayer {
          * @param clicks   Description of the Parameter
          * @param timebase Description of the Parameter
          */
-        private void playMP3(long inpoint, long outpoint, long[][] clicks,
+        private void playMP3(long inpoint, long outpoint, Click[] clicks,
                              Timebase timebase) {
             finished = false;
             started = true;
             File mp3File;
-            double playrate = timebase.timerate;
             if (timebase == Timebase.NORMAL) {
                 mp3File = new File(TEMP_WAV);
                 setPlayrate(yass.Timebase.NORMAL);
@@ -987,7 +972,6 @@ public class YassPlayer {
                 if (!mp3File.exists()) {
                     try {
                         mp3File = generateTemp(USER_PATH + "temp.wav", timebase);
-                        playrate = 1;
                         setPlayrate(timebase);
                     } catch (IOException | UnsupportedAudioFileException | LineUnavailableException e) {
                         // Couldn't find slowed down ffmpeg conversion, we are using the ugly JavaFX-slow down
@@ -995,7 +979,6 @@ public class YassPlayer {
                     }
                 } else {
                     setPlayrate(timebase);
-                    playrate = 1;
                 }
             }
             if (!mp3File.exists()) {
@@ -1012,9 +995,10 @@ public class YassPlayer {
                 LOGGER.info("out: " + outpoint);
                 if (ArrayUtils.isNotEmpty(clicks)) {
                     for (int i = 0; i < clicks.length; i++) {
-                        long duration = clicks[i][2] - clicks[i][0];
-                        System.out.println("click[" + i + "]=" + clicks[i][1] + " (at:" + clicks[i][0] + " len:"
-                                                   + duration + ")");
+                        long duration = clicks[i].end() - clicks[i].start();
+                        System.out.println(
+                                "click[" + i + "]=" + clicks[i].height() + " (at:" + clicks[i].start() + " len:"
+                                        + duration + ")");
                     }
                 }
             }
@@ -1028,14 +1012,6 @@ public class YassPlayer {
             int inMillis = (int) (inpoint * multiplier) / 1000;
             int outMillis = (int) outpoint / 1000;
             long off;
-
-            long maxClickOffset = 0;
-            int midiPitch = 0;
-            int clicksPos = 0;
-            int n = clicks != null ? clicks.length : 0;
-            long nextClick = clicks == null ? -1 : (long) (clicks[clicksPos][0] * multiplier);
-            long nextClickPitch = (clicks == null || clicks.length < 2) ? Integer.MIN_VALUE : clicks[clicksPos][1];
-            long nextClickEnd = clicks == null ? -1 : (long) (clicks[clicksPos][2] * multiplier);
 
             if (DEBUG) {
                 LOGGER.info("playAudio:" + playAudio);
@@ -1071,17 +1047,13 @@ public class YassPlayer {
                 }
             }
 
-            // Thread.currentThread().setPriority(Thread.NORM_PRIORITY + 1);
-
-            if (midisEnabled && playClicks) {
-                if (useWav) {
-                    YassSynth.openWavLine();
-                } else {
-                    YassSynth.openLine();
-                }
-            }
-
-            firePlayerStarted();
+            byte[] pianoAndClicks = createAudioStreamFromClicks(clicks, timebase.timerate, playClicks, midiEnabled);
+            byte[] audioData = getAudioBytesInRange(inMillis + (int) seekInOffsetMs,
+                                                    outMillis + (int) seekOutOffsetMs);
+            playAudioData(mixAudioStereo(pianoAndClicks, audioData), audioBytesFormat, audioData.length,
+                          true, () -> {
+                        firePlayerStarted();
+                    });
             if (hasPlaybackRenderer) {
                 playbackRenderer.setPause(false);
                 playbackRenderer.startPlayback();
@@ -1089,79 +1061,22 @@ public class YassPlayer {
                     video.playVideo();
                 }
             }
-            if (playAudio) {
-                try {
-                    new Play2Thread(inMillis + (int)seekInOffsetMs,
-                                    outMillis + (int)seekOutOffsetMs).start();
-                } catch (Exception e) {
-                    LOGGER.log(Level.INFO, e.getMessage(), e);
-                }
-            }
-
             long nanoStart = System.nanoTime() / 1000L;
             position = (long) (inpoint * multiplier);
 
             long lastms = System.nanoTime();
 
-            if (!notInterrupted) {
+            if (sharedLineInterrupted) {
                 LOGGER.info("Playback interrupted.");
             }
-            while (notInterrupted) {
+            while (!sharedLineInterrupted) {
                 long tempdiff = (System.nanoTime() / 1000L) - nanoStart;
                 position = (long) (tempdiff + (inpoint * multiplier));
                 if (position >= outpoint) {
                     position = outpoint;
-                    notInterrupted = false;
+                    sharedLineInterrupted = true;
                     if (DEBUG) LOGGER.info("Playback stopped.");
                     break;
-                }
-                if (clicks != null && clicksPos < n) {
-                    if (position >= nextClickEnd) {
-                        if (midiEnabled && midi != null) {
-                            midi.stopPlay();
-                        }
-                    }
-                    if (position >= nextClick) {
-                        off = Math.abs(position - nextClick);
-//                        System.out.println("Playing note " + clicks[clicksPos][1] + " at " + position);
-                        if (DEBUG)
-                            LOGGER.info(off + " us offset  at line "
-                                                + clicksPos);
-                        maxClickOffset = Math.max(maxClickOffset, off);
-                        midiPitch = (int) clicks[clicksPos][1];
-                        midiPitch += 60;
-                        if (midiPitch > 127) {
-                            midiPitch = 127;
-                        }
-
-                        if (playClicks && midisEnabled && n > 1) {
-                            int midiPitch2 = midiPitch + 12;
-                            if (midiPitch2 > 127) {
-                                midiPitch2 = 127;
-                            }
-                            if (useWav) {
-                                YassSynth.playWav();
-                            } else {
-                                YassSynth.play(midis[midiPitch2]);
-                            }
-                        }
-
-                        if (midiEnabled) {
-                            if (useWav) {
-                                playNote((int) clicks[clicksPos][1], (double) (nextClickEnd - nextClick) / 1000,
-                                         (int) nextClickPitch);
-                            } else {
-                                if (midi != null) {
-                                    midi.playNote(midiPitch, (nextClickEnd - nextClick) / 1000);
-                                }
-                            }
-                        }
-
-                        if (++clicksPos < n) {
-                            nextClick = (long) (clicks[clicksPos][0] * multiplier);
-                            nextClickEnd = (long) (clicks[clicksPos][2] * multiplier);
-                        }
-                    }
                 }
 
                 if (hasPlaybackRenderer) {
@@ -1248,7 +1163,7 @@ public class YassPlayer {
                 } catch (InterruptedException e) {
                     if (DEBUG)
                         LOGGER.info("Playback renderer: interrupt.");
-                    notInterrupted = false;
+                    sharedLineInterrupted = true;
                 }
 
             }
@@ -1256,21 +1171,13 @@ public class YassPlayer {
             if (midiEnabled && midi != null) {
                 midi.stopPlay();
             }
-            notInterrupted = false;
+            sharedLineInterrupted = true;
 
             if (playAudio && isPlaying()) {
                 try {
                     Thread.currentThread();
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
-                }
-            }
-
-            if (playClicks && midisEnabled) {
-                if (useWav) {
-                    YassSynth.closeWavLine();
-                } else {
-                    YassSynth.closeLine();
                 }
             }
 
@@ -1287,17 +1194,9 @@ public class YassPlayer {
                     video.stopVideo();
                 }
                 playbackRenderer.finishPlayback();
-
-                if (clicks != null && maxClickOffset / 1000.0 > 10) {
-                    // greater 10 ms
-                    playbackRenderer.setErrorMessage(latency.format(new Object[]{
-                            Math.round(maxClickOffset / 1000.0) + ""
-                    }));
-                }
             }
             live = false;
 
-            // Thread.currentThread().setPriority(Thread.NORM_PRIORITY);
             finished = true;
             firePlayerStopped();
         }
@@ -1402,6 +1301,7 @@ public class YassPlayer {
         fFmpegBuilder.overrideOutputFiles(true)
                      .addOutput(tempFile.getAbsolutePath())
                      .setAudioChannels(channels)
+                     .setAudioSampleRate(44100)
                      .done();
         FFmpegExecutor executor = new FFmpegExecutor(ffmpeg, fFprobe);
         // Run a one-pass encode
@@ -1426,7 +1326,7 @@ public class YassPlayer {
             if (tag != null) {
                 Iterator<TagField> fields = tag.getFields();
                 List<String> tagKeys = Arrays.asList("replaygain_track_gain", "replaygain_album_gain");
-                while(fields.hasNext()) {
+                while (fields.hasNext()) {
                     TagField tagField = fields.next();
                     String replayGain = null;
                     for (String tagKey : tagKeys) {
@@ -1458,6 +1358,7 @@ public class YassPlayer {
             LOGGER.throwing("YassPlayer", "setReplayGain", e);
         }
     }
+
     private boolean parseTagToReplayGain(String tag) {
         if (StringUtils.isNotEmpty(tag) && tag.contains("dB")) {
             replayGain = Float.parseFloat(tag.replace("dB", "").trim());
@@ -1482,16 +1383,16 @@ public class YassPlayer {
         if (length > 1000) {
             audioData = LONG_NOTE_MAP.get(currentNote);
             lengthFactor = 1000;
-            finalLength = (int)length;
+            finalLength = (int) length;
         } else {
             audioData = SHORT_NOTE_MAP.get(currentNote);
             lengthFactor = 1;
-            finalLength = (int)Math.max(length, 500);
+            finalLength = (int) Math.max(length, 500);
         }
         if (audioData != null) {
             if (DEBUG) LOGGER.info("playNote: Playing " + note);
             lastNote = currentNote * lengthFactor;
-            playAudioData(audioData, pianoFormat, finalLength, false);
+            playAudioData(audioData, pianoFormat, finalLength, false, null);
         } else {
             if (DEBUG) LOGGER.info("playNote: Couldn't find note " + note);
         }
@@ -1568,48 +1469,121 @@ public class YassPlayer {
         }
         return MusicalKeyEnum.UNDEFINED;
     }
-    
-    public void playAudioData(byte[] audioData, AudioFormat audioFormat, int length, boolean showPlayStatus) {
-        try {
-            DataLine.Info info = new DataLine.Info(SourceDataLine.class, audioFormat);
-            double bytesPerMillisecond = audioFormat.getFrameSize() * audioFormat.getFrameRate() / 1000;
-            String threadName = Long.toString(System.currentTimeMillis());
-            Runnable runnable = () -> {
-                try (SourceDataLine sourceLine = (SourceDataLine) AudioSystem.getLine(info)){
-                    lineList.add(sourceLine);
-                    sourceLine.open(audioFormat);
-                    sourceLine.start();
-                    long tempBytes = (long)(length * bytesPerMillisecond);
-                    if (tempBytes % audioFormat.getFrameSize() != 0) {
-                        tempBytes = tempBytes + tempBytes % audioFormat.getFrameSize();
-                    }
-                    long audioLength = Math.min(audioData.length, tempBytes);
-                    int bufferSize = 1024;
-                    byte[] buffer = new byte[bufferSize];
-                    int offset = 0;
 
-                    while (offset < audioLength && player.notInterrupted) {
-                        int bytesToWrite = Math.min(bufferSize, (int)(audioLength - offset));
-                        bytesToWrite = (int)Math.round(bytesToWrite / 2d) * 2;
-                        System.arraycopy(audioData, offset, buffer, 0, bytesToWrite);
-                        sourceLine.write(buffer, 0, bytesToWrite);
-                        offset += bytesToWrite;
+    /**
+     * Mischt zwei Stereo-PCM-Byte-Arrays (16 Bit, little endian, signed) sampleweise mit Clipping.
+     * Gibt ein neues Array der Länge des längeren Arrays zurück.
+     */
+    private static byte[] mixAudioStereo(byte[] a, byte[] b) {
+        int len = Math.max(a.length, b.length);
+        byte[] result = new byte[len];
+        for (int i = 0; i < len; i += 2) {
+            short sampleA = 0;
+            short sampleB = 0;
+            if (i + 1 < a.length) {
+                sampleA = (short) ((a[i + 1] << 8) | (a[i] & 0xFF));
+            }
+            if (i + 1 < b.length) {
+                sampleB = (short) ((b[i + 1] << 8) | (b[i] & 0xFF));
+            }
+            int mixed = sampleA + sampleB;
+            if (mixed > Short.MAX_VALUE) mixed = Short.MAX_VALUE;
+            if (mixed < Short.MIN_VALUE) mixed = Short.MIN_VALUE;
+            result[i] = (byte) (mixed & 0xFF);
+            result[i + 1] = (byte) ((mixed >> 8) & 0xFF);
+        }
+        return result;
+    }
+
+    /**
+     * Öffnet eine geteilte SourceDataLine mit dem aktuellen AudioFormat, falls noch nicht vorhanden.
+     * Startet einen Thread, der die Queue abarbeitet.
+     */
+    public synchronized void openSharedLine(AudioFormat format) {
+        if (sharedLine != null && sharedLine.isOpen() && format.matches(sharedLineFormat)) {
+            return;
+        }
+        closeSharedLine();
+        try {
+            DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
+            sharedLine = (SourceDataLine) AudioSystem.getLine(info);
+            sharedLine.open(format);
+            sharedLine.start();
+            sharedLineFormat = format;
+            sharedLineRunning = true;
+            sharedLineThread = new Thread(() -> {
+                try {
+                    while (sharedLineRunning) {
+                        byte[] data = sharedLineQueue.take();
+                        int offset = 0;
+                        int blockSize = 1024;
+                        while (offset < data.length && !sharedLineInterrupted) {
+                            int toWrite = Math.min(blockSize, data.length - offset);
+                            int written = sharedLine.write(data, offset, toWrite);
+                            if (written <= 0) {
+                                break;
+                            }
+                            offset += written;
+                        }
                     }
-                    sourceLine.drain();
-                    sourceLine.close();
-                    buffer = null;
-                    if (showPlayStatus) {
-                        playThreadMap.remove(threadName);
-                    }
-                    lineList.remove(sourceLine);
-                } catch (LineUnavailableException e) {
-                    LOGGER.throwing("YassPlayer", "playAudioData", e);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
-            };
-            Thread audioThread = new Thread(runnable, threadName);
-            audioThread.start();
-        } catch (Exception ex) {
-            LOGGER.throwing("YassPlayer", "playAudioData", ex);
+            }, "SharedSourceLineThread");
+            sharedLineThread.start();
+        } catch (LineUnavailableException e) {
+            LOGGER.throwing("YassPlayer", "openSharedLine", e);
+            sharedLine = null;
+            sharedLineThread = null;
+            sharedLineFormat = null;
+            sharedLineRunning = false;
+        }
+    }
+
+    /**
+     * Schließt die geteilte SourceDataLine und den zugehörigen Thread.
+     */
+    public synchronized void closeSharedLine() {
+        sharedLineRunning = false;
+        if (sharedLineThread != null) {
+            sharedLineThread.interrupt();
+            sharedLineThread = null;
+        }
+        if (sharedLine != null) {
+            try {
+                sharedLine.flush();
+                sharedLine.close();
+            } catch (Exception ignored) {
+            }
+            sharedLine = null;
+        }
+        sharedLineFormat = null;
+        sharedLineQueue.clear();
+    }
+
+    /**
+     * Prüft, ob die geteilte SourceDataLine offen ist.
+     */
+    public synchronized boolean isSharedLineOpen() {
+        return sharedLine != null && sharedLine.isOpen() && sharedLineRunning;
+    }
+
+    /**
+     * Sets the audioEnabled attribute of the YassPlayer object
+     */
+    public void playAudioData(byte[] audioData, AudioFormat audioFormat, int length, boolean showPlayStatus,
+                              Runnable onStarted) {
+        if (isSharedLineOpen() && audioFormat.matches(sharedLineFormat)) {
+            sharedLineInterrupted = false;
+            try {
+                sharedLineQueue.put(Arrays.copyOf(audioData, length));
+                if (onStarted != null) onStarted.run();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return;
+        } else  {
+            LOGGER.info("YassPlayer.playAudioData: SourceDataLine not open");
         }
     }
 
@@ -1652,7 +1626,7 @@ public class YassPlayer {
     public void setTargetDbfs(double targetDbfs) {
         this.targetDbfs = targetDbfs;
     }
-    
+
     public void setTargetDbfs(String dbfsProp) {
         if (StringUtils.isEmpty(dbfsProp) || !NumberUtils.isParsable(dbfsProp)) {
             setTargetDbfs(0);
@@ -1660,8 +1634,92 @@ public class YassPlayer {
             setTargetDbfs(NumberUtils.toDouble(dbfsProp));
         }
     }
-    
+
     public boolean hasAudio() {
         return StringUtils.isNotEmpty(filename);
+    }
+
+    /**
+     * Erzeugt einen Stereo-Audio-Stream als Byte-Array aus den übergebenen Clicks.
+     * Mono-Samples werden auf beide Kanäle dupliziert.
+     *
+     * @param clicks      Array von Click-Objekten (start, height, end)
+     * @param timebase    Gibt die Abspielgeschwindigkeit an (z. B. 0.5 = halb so schnell)
+     * @param playClicks  Wenn true, werden die Noten (Wave/MIDI) ins Array geschrieben
+     * @param midiEnabled Wenn true, werden Piano-Töne wie in playNote ins Array geschrieben
+     * @return Byte-Array mit dem Stereo-Audio-Stream
+     */
+    public byte[] createAudioStreamFromClicks(Click[] clicks, double timebase, boolean playClicks, boolean midiEnabled) {
+        if (clicks == null || clicks.length == 0) return new byte[0];
+        long offset = clicks[0].start();
+        long lastEnd = clicks[0].end();
+        for (Click c : clicks) {
+            if (c.end() > lastEnd) lastEnd = c.end();
+        }
+        int sampleRate = 44100;
+        int bytesPerSample = 2; // 16bit PCM
+        int channels = 2; // Stereo
+        double durationSeconds = ((lastEnd - offset) / 1_000_000.0) / timebase;
+        int totalSamples = (int) (durationSeconds * sampleRate) + sampleRate; // +1s Puffer
+        int totalBytes = totalSamples * bytesPerSample * channels;
+        byte[] audio = new byte[totalBytes];
+
+        for (Click click : clicks) {
+            int startSample = (int) (((click.start() - offset) / 1_000_000.0) / timebase * sampleRate);
+            int lengthSamples = (int) (((click.end() - click.start()) / 1_000_000.0) / timebase * sampleRate);
+            if (lengthSamples <= 0) continue;
+            byte[] pcm = null;
+            boolean isPiano = false;
+            if (playClicks && !midiEnabled) {
+                if (useWav()) {
+                    pcm = drumClick; // Mono
+                } else {
+                    int midiPitch = click.height() + 60;
+                    if (midiPitch >= 0 && midiPitch < midis.length && midis[midiPitch] != null) {
+                        pcm = midis[midiPitch];
+                    }
+                }
+            } else if (midiEnabled) {
+                int note = click.height() + 60;
+                pcm = LONG_NOTE_MAP.get(note);
+                isPiano = true;
+            }
+            if (pcm != null) {
+                int maxSamples = Math.min(pcm.length / 2, lengthSamples);
+                int audioMaxSamples = Math.min(lengthSamples, (audio.length / 4) - startSample);
+                int samplesToCopy = Math.min(maxSamples, audioMaxSamples);
+                for (int i = 0; i < samplesToCopy; i++) {
+                    int pcmIndex = i * 2;
+                    int audioIndex = (startSample + i) * 4;
+                    byte lo = pcm[pcmIndex];
+                    byte hi = pcm[pcmIndex + 1];
+                    if (isPiano) {
+                        int fadeSamples = samplesToCopy / 8;
+                        boolean doFade = samplesToCopy > fadeSamples;
+                        short sample = (short) (((hi & 0xFF) << 8) | (lo & 0xFF));
+                        if (doFade && i >= samplesToCopy - fadeSamples) {
+                            double fadeFac = (double) (samplesToCopy - i) / fadeSamples;
+                            sample = (short) (sample * fadeFac);
+                            lo = (byte) (sample & 0xFF);
+                            hi = (byte) ((sample >> 8) & 0xFF);
+                        }
+                        int mixedL = audio[audioIndex] + lo;
+                        int mixedH = audio[audioIndex + 1] + hi;
+                        audio[audioIndex] = (byte) Math.max(Math.min(mixedL, 127), -128);
+                        audio[audioIndex + 1] = (byte) Math.max(Math.min(mixedH, 127), -128);
+                        int mixedRL = audio[audioIndex + 2] + lo;
+                        int mixedRH = audio[audioIndex + 3] + hi;
+                        audio[audioIndex + 2] = (byte) Math.max(Math.min(mixedRL, 127), -128);
+                        audio[audioIndex + 3] = (byte) Math.max(Math.min(mixedRH, 127), -128);
+                    } else {
+                        audio[audioIndex] = lo;
+                        audio[audioIndex + 1] = hi;
+                        audio[audioIndex + 2] = lo;
+                        audio[audioIndex + 3] = hi;
+                    }
+                }
+            }
+        }
+        return audio;
     }
 }

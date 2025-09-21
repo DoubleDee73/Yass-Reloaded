@@ -89,7 +89,7 @@ public class YassActions implements DropTargetListener {
     private int recordLength = -1;
     private Timebase playTimebase = Timebase.NORMAL;
     private long playAllStart = -1;
-    private long[][] playAllClicks = null;
+    private Click[] playAllClicks = null;
     private int beforeNextMs = 300;
     private boolean preventTrim = false;
     long lastTogglePressed = -1;
@@ -1247,7 +1247,7 @@ public class YassActions implements DropTargetListener {
             }
             int j = table.getSelectionModel().getMaxSelectionIndex();
             tempSelection = new ImmutablePair<>(i, j);
-            long[][] clicks = table.getSelection(i, j, inout, null, false);
+            Click[] clicks = table.getSelection(i, j, inout, null, false);
             inout[0] = Math.max(0, inout[0] - 2000000);
             inout[1] = -1;// inout[1] + 2000000;
 
@@ -2267,6 +2267,9 @@ public class YassActions implements DropTargetListener {
             table.removeAutoSave();
             closeAllTables();
             video.closeVideo();
+            if (mp3 != null) {
+                mp3.closeSharedLine();
+            }
             setView(VIEW_LIBRARY);
             if (!songList.isLoaded()) {
                 songList.load();
@@ -5929,7 +5932,7 @@ public class YassActions implements DropTargetListener {
             j = -1;
         }
         startPlaying();
-        long[][] clicks = table.getSelection(i, j, inout, null, false);
+        Click[] clicks = table.getSelection(i, j, inout, null, false);
         boolean midiEnabled = midiButton.isSelected();
         boolean mp3Enabled = mp3Button.isSelected();
         if (mode == 0) {
@@ -6048,7 +6051,7 @@ public class YassActions implements DropTargetListener {
         int i;
         int j;
         long[] inout = new long[2];
-        long[][] clicks;
+        Click[] clicks;
         if (frozen) {
             long in = sheet.getInSnapshot();
             long out = sheet.getOutSnapshot();

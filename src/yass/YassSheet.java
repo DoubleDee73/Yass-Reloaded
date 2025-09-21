@@ -1254,8 +1254,12 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             }
 
             public void keyPressed(KeyEvent e) {
-                if (table == null)
+                if (table == null) {
                     return;
+                }
+                if (actions.getMP3().isPlaying()) {
+                    actions.interruptPlay();
+                }
                 char c = e.getKeyChar();
                 int code = e.getKeyCode();
                 int shift = KeyEvent.SHIFT_DOWN_MASK;
