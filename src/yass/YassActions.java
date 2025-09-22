@@ -23,6 +23,7 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
+import yass.analysis.PitchDetector;
 import yass.autocorrect.YassAutoCorrect;
 import yass.extras.UsdbSyncerMetaTagCreator;
 import yass.hyphenator.HyphenatorDictionary;
@@ -744,6 +745,9 @@ public class YassActions implements DropTargetListener {
                     activeTable.setVocals(filename);
                 }
                 mp3.openMP3(selectedFile.getAbsolutePath());
+                if (audioTag == UltrastarHeaderTag.VOCALS && prop.getBooleanProperty("debug-waveform")) {
+                    mp3.setPitchDataList(PitchDetector.detectPitch(mp3.getTempFile(), prop));
+                }
                 activeTable.setSaved(false);
                 updateActions();
             }
@@ -2597,11 +2601,6 @@ public class YassActions implements DropTargetListener {
         progressBar.setString("");
         progressBar.addMouseListener(new MouseAdapter() {
             public void mousePressed(MouseEvent e) {
-                // String dir = prop.getProperty("song-directory");
-                // if (dir != null && dir.length() > 0 && new
-                // File(dir).exists()) {
-                // return;
-                // }
                 SwingUtilities.invokeLater(() -> {
                     progressBar.repaint();
                     new YassLibOptions(prop, YassActions.this, songList, mp3);

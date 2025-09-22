@@ -282,7 +282,7 @@ public class YassMain extends JFrame {
 
         sheet = new YassSheet();
         sheet.setOwner(this);
-        mp3 = new YassPlayer(sheet, !prop.getBooleanProperty("use-sample"), prop.getBooleanProperty("debug-audio"));
+        mp3 = new YassPlayer(sheet, prop);
         String dbfsProp = prop.getProperty("dbfs");
         if (StringUtils.isEmpty(dbfsProp) || !NumberUtils.isParsable(dbfsProp)) {
             mp3.setTargetDbfs(0);

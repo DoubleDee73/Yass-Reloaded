@@ -21,6 +21,7 @@ package yass;
 
 import lombok.Getter;
 import org.apache.commons.lang3.StringUtils;
+import yass.analysis.PitchDetector;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -152,6 +153,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
                 : (StringUtils.isNotEmpty(table.getAudio()) ? table.getAudio() : table.getMP3());
         if (debugWaveform && StringUtils.isNotEmpty(table.getVocals())) {
             audioSelector.setSelectedItem(UltrastarHeaderTag.VOCALS.toString());
+            determinePitches();
         }
 
         mp3 = new JTextField(audio);
@@ -284,6 +286,9 @@ public class SongHeader extends JPanel implements YassSheetListener {
                     ? audioSelector.getSelectedItem().toString() : StringUtils.EMPTY;
             if (mp3.getText() != null) {
                 table.setAudioByTag(selectedAudio, mp3.getText());
+                if (StringUtils.isNotEmpty(this.mp3.getText())) {
+                    determinePitches();
+                }
             }
         });
 
@@ -304,6 +309,18 @@ public class SongHeader extends JPanel implements YassSheetListener {
         });
     }
 
+    private void determinePitches() {
+        YassProperties prop = actions.getProperties();
+        YassPlayer player = actions.getMP3();
+        if (this.audioSelector.getSelectedItem()
+                              .toString()
+                              .equalsIgnoreCase(UltrastarHeaderTag.VOCALS.toString()) &&
+                prop.getBooleanProperty("debug-waveform")) {
+            player.setPitchDataList(
+                    PitchDetector.detectPitch(player.getTempFile(), prop));
+        }
+    }
+    
     private JButton createActionButton(Action action, String iconName, Dimension size) {
         JButton button = new JButton();
         button.setAction(action);

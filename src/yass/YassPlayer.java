@@ -18,6 +18,8 @@
 
 package yass;
 
+import lombok.Getter;
+import lombok.Setter;
 import net.bramp.ffmpeg.FFmpeg;
 import net.bramp.ffmpeg.FFmpegExecutor;
 import net.bramp.ffmpeg.FFprobe;
@@ -28,6 +30,8 @@ import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.lang3.tuple.Pair;
 import org.jaudiotagger.audio.AudioFile;
 import org.jaudiotagger.audio.AudioFileIO;
 import org.jaudiotagger.audio.exceptions.CannotReadException;
@@ -42,6 +46,7 @@ import org.jaudiotagger.tag.asf.AsfTagTextField;
 import org.jaudiotagger.tag.id3.AbstractID3v2Frame;
 import org.jaudiotagger.tag.mp4.field.Mp4TagReverseDnsField;
 import org.jaudiotagger.tag.vorbiscomment.VorbisCommentTagField;
+import yass.analysis.PitchDetector.PitchData;
 import yass.ffmpeg.FFMPEGLocator;
 import yass.musicalkey.MusicalKeyEnum;
 import yass.renderer.YassNote;
@@ -55,7 +60,6 @@ import java.io.*;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -67,6 +71,8 @@ import java.util.logging.Logger;
  *
  * @author Saruta
  */
+@Getter
+@Setter
 public class YassPlayer {
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public boolean DEBUG = false;
@@ -76,10 +82,10 @@ public class YassPlayer {
     boolean playClicks = true;
     boolean hasPlaybackRenderer = true;
     boolean live = false;
-    MessageFormat latency = new MessageFormat(I18.get("sheet_msg_latency"));
     private YassPlaybackRenderer playbackRenderer;
     private YassMIDI midi;
     private YassVideo video = null;
+    private YassProperties properties;
     private byte midis[][];
     private long duration = 0, position = -1, seekInOffset = 0,
             seekOutOffset = 0, seekInOffsetMs = 0, seekOutOffsetMs = 0;
@@ -103,7 +109,6 @@ public class YassPlayer {
     private AudioFormat audioBytesFormat = null;
     private int audioBytesChannels = 2;
     private float audioBytesSampleRate = 44100;
-    private int audioBytesSampleSize = 2;
     public static final String USER_PATH = System.getProperty("user.home") + File.separator + ".yass" + File.separator;
     private Map<Integer, byte[]> LONG_NOTE_MAP;
     private Map<Integer, byte[]> SHORT_NOTE_MAP;
@@ -112,8 +117,6 @@ public class YassPlayer {
     private Timebase playrate = Timebase.NORMAL;
     private File tempFile;
     private AudioFormat pianoFormat;
-    private boolean playing = false;
-    private int pianoVolume;
     private HashMap<Long, Thread> playThreadMap = new HashMap<>();
     private List<SourceDataLine> lineList = new ArrayList<>();
 
@@ -126,8 +129,10 @@ public class YassPlayer {
     private AudioFormat sharedLineFormat = null;
     private volatile boolean sharedLineRunning = false;
     private volatile boolean sharedLineInterrupted = false;
-    private final BlockingQueue<byte[]> sharedLineQueue = new LinkedBlockingQueue<>();
+    private final BlockingQueue<Pair<byte[], Runnable>> sharedLineQueue = new LinkedBlockingQueue<>();
 
+    private List<PitchData> pitchDataList;
+    
     public void initNoteMap() {
         lastNote = null;
         LONG_NOTE_MAP = new HashMap<>();
@@ -197,12 +202,13 @@ public class YassPlayer {
 
     public static final String TEMP_WAV = USER_PATH + "temp.wav";
 
-    public YassPlayer(YassPlaybackRenderer s, boolean initMidi, boolean debugAudio) {
+    public YassPlayer(YassPlaybackRenderer s, YassProperties prop) {
         playbackRenderer = s;
-        if (initMidi) {
+        this.properties = prop;
+        if (!prop.getBooleanProperty("use-sample")) {
             midi = new YassMIDI();
         }
-        DEBUG = debugAudio;
+        DEBUG = prop.getBooleanProperty("debug-audio");
         Thread synth = new Thread(() -> {
             midis = new byte[128][];
             for (int i = 0; i < 128; i++) {
@@ -897,6 +903,10 @@ public class YassPlayer {
         audioBytes = null;
     }
 
+    public byte[] getAudioBytes() {
+        return audioBytes;
+    }
+
     private int findByteAtMilli(int milli) {
         int frameSize = audioBytesFormat.getFrameSize();
         double bytesPerMillisecond = audioBytesFormat.getFrameRate() * frameSize / 1000;
@@ -1046,14 +1056,16 @@ public class YassPlayer {
                     playbackRenderer.setBackgroundImage(bgImage);
                 }
             }
+            if (audioBytes == null) {
+                playbackRenderer.setErrorMessage(I18.get("sheet_msg_still_loading"));
+                return;
+            }
 
             byte[] pianoAndClicks = createAudioStreamFromClicks(clicks, timebase.timerate, playClicks, midiEnabled);
             byte[] audioData = getAudioBytesInRange(inMillis + (int) seekInOffsetMs,
                                                     outMillis + (int) seekOutOffsetMs);
             playAudioData(mixAudioStereo(pianoAndClicks, audioData), audioBytesFormat, audioData.length,
-                          true, () -> {
-                        firePlayerStarted();
-                    });
+                          YassPlayer.this::firePlayerStarted);
             if (hasPlaybackRenderer) {
                 playbackRenderer.setPause(false);
                 playbackRenderer.startPlayback();
@@ -1209,7 +1221,6 @@ public class YassPlayer {
         } else {
             volume = YassMIDI.VOLUME_MED;
         }
-        this.pianoVolume = volume;
         if (midi != null) {
             midi.setVolume(volume);
         }
@@ -1392,7 +1403,7 @@ public class YassPlayer {
         if (audioData != null) {
             if (DEBUG) LOGGER.info("playNote: Playing " + note);
             lastNote = currentNote * lengthFactor;
-            playAudioData(audioData, pianoFormat, finalLength, false, null);
+            playAudioData(audioData, pianoFormat, finalLength, null);
         } else {
             if (DEBUG) LOGGER.info("playNote: Couldn't find note " + note);
         }
@@ -1514,7 +1525,12 @@ public class YassPlayer {
             sharedLineThread = new Thread(() -> {
                 try {
                     while (sharedLineRunning) {
-                        byte[] data = sharedLineQueue.take();
+                        Pair<byte[], Runnable> job = sharedLineQueue.take();
+                        if (job == null) break;
+                        byte[] data = job.getLeft();
+                        Runnable callback = job.getRight();
+                        boolean callbackCalled = false;
+
                         int offset = 0;
                         int blockSize = 1024;
                         while (offset < data.length && !sharedLineInterrupted) {
@@ -1524,6 +1540,13 @@ public class YassPlayer {
                                 break;
                             }
                             offset += written;
+                            if (!callbackCalled && callback != null) {
+                                try {
+                                    callback.run();
+                                } finally {
+                                    callbackCalled = true;
+                                }
+                            }
                         }
                     }
                 } catch (InterruptedException e) {
@@ -1571,17 +1594,16 @@ public class YassPlayer {
     /**
      * Sets the audioEnabled attribute of the YassPlayer object
      */
-    public void playAudioData(byte[] audioData, AudioFormat audioFormat, int length, boolean showPlayStatus,
+    public void playAudioData(byte[] audioData, AudioFormat audioFormat, int length, 
                               Runnable onStarted) {
         if (isSharedLineOpen() && audioFormat.matches(sharedLineFormat)) {
             sharedLineInterrupted = false;
-            try {
-                sharedLineQueue.put(Arrays.copyOf(audioData, length));
+            try {                
+                sharedLineQueue.put(new ImmutablePair<>(Arrays.copyOf(audioData, length), onStarted));
                 if (onStarted != null) onStarted.run();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-            return;
         } else  {
             LOGGER.info("YassPlayer.playAudioData: SourceDataLine not open");
         }
