@@ -412,20 +412,20 @@ public class SongHeader extends JPanel implements YassSheetListener {
     public void applyTheme(boolean darkMode) {
         setBackground(darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : null);
         if (audioSelector != null) {
-            audioSelector.setBackground(darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.white);
-            audioSelector.setForeground(darkMode ? YassSheet.white : null);
+            audioSelector.setBackground(darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : Color.WHITE);
+            audioSelector.setForeground(darkMode ? Color.WHITE : null);
         }
         for (JTextField textField : textFields) {
-            textField.setBackground(darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.white);
-            textField.setForeground(darkMode ? YassSheet.white : null);
+            textField.setBackground(darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : Color.WHITE);
+            textField.setForeground(darkMode ? Color.WHITE : null);
         }
         for (JPanel panel : panels) {
             panel.setBackground(darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : null);
-            panel.setForeground(darkMode ? YassSheet.white : null);
+            panel.setForeground(darkMode ? Color.WHITE : null);
         }
         for (JLabel label : labels) {
-            label.setBackground(darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.white);
-            label.setForeground(darkMode ? YassSheet.white : null);
+            label.setBackground(darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : Color.WHITE);
+            label.setForeground(darkMode ? Color.WHITE : null);
         }
         repaint();
     }

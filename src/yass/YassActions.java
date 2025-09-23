@@ -93,7 +93,7 @@ public class YassActions implements DropTargetListener {
     private Click[] playAllClicks = null;
     private int beforeNextMs = 300;
     private boolean preventTrim = false;
-    long lastTogglePressed = -1;
+    private long lastTogglePressed = -1;
 
     private YassTable table = null;
     private YassLyrics lyrics;
@@ -5091,13 +5091,13 @@ public class YassActions implements DropTargetListener {
                     public void propsChanged(YassSheet source) {
                         editMenu.setBackground(sheet.darkMode ? sheet.HI_GRAY_2_DARK_MODE : sheet.HI_GRAY_2);
                         for (Component c : editMenu.getComponents()) {
-                            c.setForeground(sheet.darkMode ? sheet.blackDarkMode : sheet.black);
+                            c.setForeground(sheet.darkMode ? sheet.blackDarkMode : Color.BLACK);
                         }
                     }
                 });
                 editMenu.setBackground(sheet.darkMode ? sheet.HI_GRAY_2_DARK_MODE : sheet.HI_GRAY_2);
                 for (Component c : editMenu.getComponents()) {
-                    c.setForeground(sheet.darkMode ? sheet.blackDarkMode : sheet.black);
+                    c.setForeground(sheet.darkMode ? sheet.blackDarkMode : Color.BLACK);
                 }
 
             }

@@ -156,19 +156,19 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
     public void colorsChanged() {
         if (sheet != null) {
             if (isEditable()) {
-                StyleConstants.setForeground(notLongStyle, sheet.darkMode ? YassSheet.blackDarkMode : YassSheet.dkGray);
+                StyleConstants.setForeground(notLongStyle, sheet.darkMode ? YassSheet.blackDarkMode : YassSheet.DK_GRAY);
                 StyleConstants.setForeground(notSelectStyle,
-                                             sheet.darkMode ? YassSheet.blackDarkMode : YassSheet.dkGray);
+                                             sheet.darkMode ? YassSheet.blackDarkMode : YassSheet.DK_GRAY);
             } else {
                 StyleConstants.setForeground(notLongStyle,
-                                             sheet.darkMode ? YassSheet.dkGrayDarkMode : YassSheet.dkGray);
+                                             sheet.darkMode ? YassSheet.dkGrayDarkMode : YassSheet.DK_GRAY);
                 StyleConstants.setForeground(notSelectStyle,
-                                             sheet.darkMode ? YassSheet.dkGrayDarkMode : YassSheet.dkGray);
+                                             sheet.darkMode ? YassSheet.dkGrayDarkMode : YassSheet.DK_GRAY);
             }
             StyleConstants.setBackground(notSelectStyle, nofontBG); // transparent
             lyricsArea.setSelectionColor(sheet.darkMode ? selectionDarkMode : selection);
-            lyricsArea.setSelectedTextColor(sheet.darkMode ? YassSheet.blackDarkMode : YassSheet.black);
-            StyleConstants.setForeground(selectStyle, sheet.darkMode ? YassSheet.blackDarkMode : YassSheet.black);
+            lyricsArea.setSelectedTextColor(sheet.darkMode ? YassSheet.blackDarkMode : Color.BLACK);
+            StyleConstants.setForeground(selectStyle, sheet.darkMode ? YassSheet.blackDarkMode : Color.BLACK);
             StyleConstants.setBackground(selectStyle, sheet.darkMode ? selectionDarkMode : selection);
         }
     }
@@ -189,21 +189,21 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
             @Override
             protected JButton createDecreaseButton(int orientation) {
                 JButton b = createZeroButton();
-                b.setBackground(sheet.darkMode ? YassSheet.hiGrayDarkMode : YassSheet.hiGray);
+                b.setBackground(sheet.darkMode ? YassSheet.hiGrayDarkMode : YassSheet.HI_GRAY);
                 b.setForeground(sheet.darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.HI_GRAY_2);
                 return b;
             }
 
             protected JButton createIncreaseButton(int orientation) {
                 JButton b = createZeroButton();
-                b.setBackground(sheet.darkMode ? YassSheet.hiGrayDarkMode : YassSheet.hiGray);
+                b.setBackground(sheet.darkMode ? YassSheet.hiGrayDarkMode : YassSheet.HI_GRAY);
                 return b;
             }
 
             @Override
             protected void configureScrollBarColors() {
-                this.thumbColor = sheet.darkMode ? YassSheet.hiGray : YassSheet.hiGray;
-                this.thumbDarkShadowColor = sheet.darkMode ? YassSheet.dkGray : YassSheet.dkGray;
+                this.thumbColor = sheet.darkMode ? YassSheet.HI_GRAY : YassSheet.HI_GRAY;
+                this.thumbDarkShadowColor = sheet.darkMode ? YassSheet.DK_GRAY : YassSheet.DK_GRAY;
                 this.trackColor = sheet.darkMode ? YassSheet.HI_GRAY_2_DARK_MODE : YassSheet.HI_GRAY_2;
             }
         });
@@ -275,7 +275,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                     g.setColor(sheet.darkMode ? redDarkMode : red);
                 else {
                     g.setColor(lyricsArea.isEditable()
-                                       ? (sheet.darkMode ? YassSheet.hiGrayDarkMode : YassSheet.white)
+                                       ? (sheet.darkMode ? YassSheet.hiGrayDarkMode : Color.WHITE)
                                        : (sheet.darkMode ? new Color(73, 73, 73, 210) : whitetrans));
                 }
                 Rectangle r = ((JViewport) getParent()).getViewRect();
@@ -1905,7 +1905,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                         start);
                 int endline = doc.getDefaultRootElement().getElementIndex(end);
 
-                g.setColor(sheet.darkMode ? YassSheet.blackDarkMode : YassSheet.dkGray);
+                g.setColor(sheet.darkMode ? YassSheet.blackDarkMode : YassSheet.DK_GRAY);
 
                 g.setFont(lineNumberFont);
                 FontMetrics metrics = g.getFontMetrics();
@@ -1922,7 +1922,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                         else g.setColor(errBackground);
 
                         g2.fillRect(0, r.y - p.y, getWidth() - 1, r.height);
-                        g.setColor(sheet.darkMode ? YassSheet.blackDarkMode : YassSheet.dkGray);
+                        g.setColor(sheet.darkMode ? YassSheet.blackDarkMode : YassSheet.DK_GRAY);
                     }
 
                     String s = (n + 1) + "";

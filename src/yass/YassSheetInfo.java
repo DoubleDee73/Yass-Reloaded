@@ -288,14 +288,14 @@ public class YassSheetInfo extends JPanel {
         g2.fillRect(0, 0, sideBar, h);
         g2.fillRect(sideBar+w+1, 0, sideBar, h);
         if (isActive && sheet.getTableCount() > 1) {
-            g2.setColor(sheet.darkMode ? sheet.whiteDarkMode : sheet.white);
+            g2.setColor(sheet.darkMode ? sheet.whiteDarkMode : Color.WHITE);
             g2.fillRect(5, 5, sideBar-10, h-10);
         }
 
         // background
         x += sideBar;
         if (isActive) {
-            g2.setColor(sheet.darkMode ? sheet.whiteDarkMode : sheet.white);
+            g2.setColor(sheet.darkMode ? sheet.whiteDarkMode : Color.WHITE);
             g2.fillRect(x, y + h - hBar - notesBar, w, notesBar);
             g2.fillRect(x, 0, w, txtBar);
         }
@@ -305,9 +305,9 @@ public class YassSheetInfo extends JPanel {
         }
 
         //  notes background
-        g2.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.dkGray);
+        g2.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.DK_GRAY);
         g2.fillRect(x, y + h - hBar, w, hBar);
-        g2.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.dkGray);
+        g2.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.DK_GRAY);
         g2.drawRect(x, y, w, h);
         g2.drawRect(x, y + h - hBar, w, hBar);
 
@@ -364,7 +364,7 @@ public class YassSheetInfo extends JPanel {
             double rxx2 = (maxVisBeat-minBeat)/rangeBeat * w;
             g2.setColor(sheet.darkMode ? sheet.blueDragDarkMode : sheet.blueDrag);
             g2.fill(new Rectangle2D.Double(x + rxx1, y, rxx2 - rxx1, h - hBar));
-            g2.setColor(sheet.darkMode ? sheet.blackDarkMode : sheet.black);
+            g2.setColor(sheet.darkMode ? sheet.blackDarkMode : Color.BLACK);
             g2.draw(new Rectangle2D.Double(x + rxx1, y+1, rxx2 - rxx1, h - hBar-2));
         }
 
@@ -407,10 +407,10 @@ public class YassSheetInfo extends JPanel {
                     g3.fill(new Rectangle2D.Double(x + rx, y + h - hBar + 1, rw, hBar - 1));
                 }
                 if (same) {
-                    g3.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.hiGray);
+                    g3.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.HI_GRAY);
                     g3.setStroke(minLineStroke);
                 } else {
-                    g3.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.dkGray);
+                    g3.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.DK_GRAY);
                     g3.setStroke(maxLineStroke);
                 }
                 g3.draw(new Line2D.Double(x + rx, y + h - hBar - ry, x + rx + rw, y + h - hBar - ry));
@@ -418,7 +418,7 @@ public class YassSheetInfo extends JPanel {
                     int gapNotes = r.getBeatInt() - (rPrev.getBeatInt() + rPrev.getLengthInt());
                     double gapNotesMs = gapNotes * 60 / (4 * bpm) * 1000;
                     if (gapNotesMs < 300) {
-                        g3.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.hiGray);
+                        g3.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.HI_GRAY);
                         g3.setStroke(minLineStroke);
                         g3.draw(new Line2D.Double(x + rxPrev + rwPrev, y + h - hBar - ryPrev, x + rx, y + h - hBar - ry));
                         g3.setStroke(medLineStroke);
@@ -430,7 +430,7 @@ public class YassSheetInfo extends JPanel {
                 rPrev = r;
             }
             else if (r.isPageBreak()) {
-                g3.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.dkGray);
+                g3.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.DK_GRAY);
                 rx = (r.getBeatInt() - minBeat)/rangeBeat * w;
                 rx2 = (r.getSecondBeatInt() - minBeat)/rangeBeat * w;
                 rw = Math.max(1,rx2-rx);
@@ -478,7 +478,7 @@ public class YassSheetInfo extends JPanel {
                 int sw = g2.getFontMetrics().stringWidth(name);
                 if (sw > trackNameWidth && name.length() > 12)
                     name = name.substring(0, 10) + "...";
-                g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.hiGray);
+                g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.HI_GRAY);
                 g2.drawString(duetTrack + ": " + name, x + 22, y);
                 g2.drawOval(x, y - msgBar + 4, msgBar - 5, msgBar - 5);
                 g2.drawOval(x + 6, y - msgBar + 4, msgBar - 5, msgBar - 5);
@@ -551,29 +551,29 @@ public class YassSheetInfo extends JPanel {
             boolean perfect = goldenDiff.equals("0");
             if (! perfect) {
                 String goldenStringMinor = "\u2605" + goldenDiff;
-                g2.setColor(goldenErr ? colorSet[YassSheet.COLOR_ERROR] : (sheet.darkMode ? sheet.hiGrayDarkMode : sheet.hiGray));
+                g2.setColor(goldenErr ? colorSet[YassSheet.COLOR_ERROR] : (sheet.darkMode ? sheet.hiGrayDarkMode : sheet.HI_GRAY));
                 g2.drawString(goldenStringMinor, xg + wg + 4, y);
             }
             else {
                 String goldenStringMinor = "\u2605";
-                g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.hiGray);
+                g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.HI_GRAY);
                 g2.drawString(goldenStringMinor, xg + wg + 4, y);
             }
 
             if (! perfect) {
-                g2.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.dkGray);
+                g2.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.DK_GRAY);
                 g2.drawRect(xg, y2, wg, hg);
-                if (goldenErr) {g2.setColor(goldenErr ? colorSet[YassSheet.COLOR_ERROR] : (sheet.darkMode ? sheet.dkGrayDarkMode : sheet.dkGray));
+                if (goldenErr) {g2.setColor(goldenErr ? colorSet[YassSheet.COLOR_ERROR] : (sheet.darkMode ? sheet.dkGrayDarkMode : sheet.DK_GRAY));
                 g2.fillRect(xg + 1, y2 + 1, wg - 1, hg - 1);}
                 g2.setColor(colorSet[YassSheet.COLOR_GOLDEN]);
                 g2.fillRect(xg + wg / 2 - xVar / 2, y2 + 1, xVar, hg - 1);
-                g2.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.dkGray);
+                g2.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.DK_GRAY);
                 g2.drawRect(xg + wg / 2, y2, 1, hg);
-                g2.setColor(sheet.darkMode ? sheet.blackDarkMode : sheet.black);
+                g2.setColor(sheet.darkMode ? sheet.blackDarkMode : Color.BLACK);
                 g2.drawRect(xg + xGold, y2 - 1, 1, hg + 2);
             }
             else {
-                g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.hiGray);
+                g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.HI_GRAY);
                 g2.drawRect(xg, y2, wg, hg);
                 g2.drawRect(xg + xGold, y2, 1, hg );
             }
@@ -621,18 +621,18 @@ public class YassSheetInfo extends JPanel {
         int sw1 = g2.getFontMetrics().stringWidth(s1);
         int sw2 = g2.getFontMetrics().stringWidth(s2);
         if (sw2 < w-trackNameWidth-errorWidth-20) {
-            g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.hiGray);
+            g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.HI_GRAY);
             g2.drawString(s2, x - sw2 - 4, y);
         }
         if (sw1 < w-sw) {
-            g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.hiGray);
+            g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.HI_GRAY);
             g2.drawString(s1, x - sw1 - 4, y-msgBar);
         }
         if (sw < w) {
             if (! table.isSaved())
-                g2.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.dkGray);
+                g2.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.DK_GRAY);
             else
-                g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.hiGray);
+                g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.HI_GRAY);
             g2.drawString(s, sideBar + 4, y-msgBar);
         }
 
