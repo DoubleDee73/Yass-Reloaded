@@ -296,6 +296,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         setFocusable(true);
         Image image = new ImageIcon(this.getClass().getResource("/yass/resources/img/cut.gif")).getImage();
         cutCursor = Toolkit.getDefaultToolkit().createCustomCursor(image, new Point(0, 10), "cut");
+        setLayout(new BorderLayout()); // Layout-Manager setzen
         removeAll();
         setDarkMode(false); // creates TexturePaint
         initKeyListener();
@@ -2587,42 +2588,21 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         List<PitchDetector.PitchData> pitchDataList = mp3.getPitchDataList();
 
         if (pitchDataList != null && !pitchDataList.isEmpty()) {
-            // --- Dynamische Baseline pro Seite ---
-            // Bestimme Zeitbereich der aktuellen Seite
-            double pageStart = fromTimelineExact(clip.x) / 1000.0;
-            double pageEnd = fromTimelineExact(clip.x + clip.width) / 1000.0;
-            // Filtere PitchData auf den Bereich der aktuellen Seite
-            List<PitchDetector.PitchData> pagePitches = new ArrayList<>();
-            for (PitchDetector.PitchData pd : pitchDataList) {
-                if (pd.time() >= pageStart && pd.time() <= pageEnd) {
-                    pagePitches.add(pd);
-                }
-            }
-            // Fallback: falls keine PitchData auf Seite, nimm alle
-            if (pagePitches.isEmpty()) pagePitches = pitchDataList;
-            // Ermittle min/max Pitch auf der Seite
-            double minPitch = pagePitches.stream().mapToDouble(PitchDetector.PitchData::pitch).min().orElse(60);
-            double maxPitch = pagePitches.stream().mapToDouble(PitchDetector.PitchData::pitch).max().orElse(72);
-            // Verhindere zu kleine Bereiche
-            if (maxPitch - minPitch < 3) {
-                maxPitch = minPitch + 3;
-            }
-            double pitchRange = maxPitch - minPitch;
             int pitchDataIndex = 0;
             for (int x = clip.x; x < clip.x + clip.width; x++) {
                 double timeInSeconds = fromTimelineExact(x) / 1000.0;
-                // Finde den passenden Pitch-Eintrag für die aktuelle Zeit
+                // Find the matching pitch entry for the current time
                 while (pitchDataIndex < pitchDataList.size() - 1 &&
                         pitchDataList.get(pitchDataIndex + 1).time() < timeInSeconds) {
                     pitchDataIndex++;
                 }
                 PitchDetector.PitchData currentPitch = pitchDataList.get(pitchDataIndex);
-                // Berechne die Y-Position basierend auf der Tonhöhe relativ zum Seitenbereich
-                double relPitch = (currentPitch.pitch() - minPitch) / pitchRange;
-                double y_center = dim.height - BOTTOM_BORDER - relPitch * ((pitchRange) * hSize);
-                // Hole die Amplitude der Wellenform an dieser Stelle
+                // Calculate the Y position based on the pitch, aligned with the fixed note grid
+                double y_center = dim.height - BOTTOM_BORDER - (currentPitch.pitch() - minHeight) * hSize;
+
+                // Get the amplitude of the waveform at this point
                 int amplitude = mp3.getWaveFormAtMillis(timeInSeconds * 1000);
-                // Zeichne eine vertikale Linie, die die Amplitude darstellt, zentriert um die Tonhöhe
+                // Draw a vertical line representing the amplitude, centered on the pitch
                 g2.drawLine(x, (int) (y_center - amplitude / 2.0), x, (int) (y_center + amplitude / 2.0));
             }
         } else {
@@ -4504,8 +4484,6 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
     private void updateFromRow(YassTable t, int i, YassRow prev, YassRow r, YassRectangle rr) {
         double timelineGap = t.getGap() * 4 / (60 * 1000 / t.getBPM());
         if (r.isNote()) {
-            int pageMin = r.getHeightInt();
-            boolean isInKey;
             MusicalKeyEnum key;
             YassActions yassActions = t.getActions();
             if (yassActions != null && yassActions.getMP3() != null && yassActions.getMP3().getKey() != null) {
@@ -4513,20 +4491,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             } else {
                 key = MusicalKeyEnum.UNDEFINED;
             }
-            if (pan) {
-                int j = i - 1;
-                YassRow p = t.getRowAt(j);
-                while (p.isNote()) {
-                    pageMin = Math.min(pageMin, p.getHeightInt());
-                    p = t.getRowAt(--j);
-                }
-                j = i + 1;
-                p = t.getRowAt(j);
-                while (p != null && p.isNote()) {
-                    pageMin = Math.min(pageMin, p.getHeightInt());
-                    p = t.getRowAt(++j);
-                }
-            }
+
             int beat = r.getBeatInt();
             int length = r.getLengthInt();
             int height = r.getHeightInt();
@@ -4535,16 +4500,14 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             rr.x = (timelineGap + beat) * wSize + 1;
             if (paintHeights)
                 rr.x += heightBoxWidth;
-            if (pan) {
-                rr.y = dim.height - (height - pageMin + 2) * hSize - hSize - BOTTOM_BORDER + 1;
-            } else {
-                rr.y = dim.height - (height - minHeight) * hSize - hSize - BOTTOM_BORDER + 1;
-            }
+
+            rr.y = dim.height - (height - minHeight) * hSize - hSize - BOTTOM_BORDER + 1;
+
             rr.width = length * wSize - 2;
             if (rr.width < 1)
                 rr.width = 1;
             rr.height = 2 * hSize - 2;
-            rr.setPageMin(pan ? pageMin : minHeight);
+            rr.setPageMin(minHeight);
             if (r.hasMessage())
                 rr.setType(YassRectangle.WRONG);
             else if (r.isGolden())

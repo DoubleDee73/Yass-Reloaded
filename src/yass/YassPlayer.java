@@ -504,6 +504,7 @@ public class YassPlayer {
                 LOGGER.log(Level.INFO, e.getMessage(), e);
             }
         }
+        pitchDataList = new ArrayList<>();
     }
 
     /**

@@ -2274,6 +2274,7 @@ public class YassActions implements DropTargetListener {
             if (mp3 != null) {
                 mp3.closeSharedLine();
             }
+            sheet.setSongHeader(null);
             setView(VIEW_LIBRARY);
             if (!songList.isLoaded()) {
                 songList.load();

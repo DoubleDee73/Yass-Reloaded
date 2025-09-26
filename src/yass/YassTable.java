@@ -3914,6 +3914,9 @@ public class YassTable extends JTable {
                 r = getRowAt(++row);
             }
             if (row == n - 1) { // select END --> no
+                if (sheet != null && !sheet.isVisible(row)) {
+                    zoomPage();
+                }
                 return;
             }
         }

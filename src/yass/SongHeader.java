@@ -30,6 +30,7 @@ import java.awt.*;
 import java.awt.event.ItemEvent;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.logging.Logger;
@@ -318,6 +319,8 @@ public class SongHeader extends JPanel implements YassSheetListener {
                 prop.getBooleanProperty("debug-waveform")) {
             player.setPitchDataList(
                     PitchDetector.detectPitch(player.getTempFile(), prop));
+        } else {
+            player.setPitchDataList(Collections.emptyList());
         }
     }
     
