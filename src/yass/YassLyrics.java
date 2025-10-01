@@ -97,6 +97,10 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
     private int mismatch = 0;
     private OverwriteCaret overwriteCaret = new OverwriteCaret();
     private boolean overwrite = false;
+    private int lastSelectionMin = -1;
+    private int lastSelectionMax = -1;
+    private boolean isCaretUpdate = false;
+    private boolean caretScrollToEnd = true;
 
     /**
      * Description of the Method
@@ -265,21 +269,17 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
         lyricsArea = new JTextPane(doc) {
             private static final long serialVersionUID = -639942626000500351L;
 
-            public void paint(Graphics g) {
-                super.paint(g);
-            }
-
             public void paintComponent(Graphics g) {
-
-                if (mismatch != 0)
-                    g.setColor(sheet.darkMode ? redDarkMode : red);
-                else {
-                    g.setColor(lyricsArea.isEditable()
-                                       ? (sheet.darkMode ? YassSheet.hiGrayDarkMode : Color.WHITE)
-                                       : (sheet.darkMode ? new Color(73, 73, 73, 210) : whitetrans));
+                if (sheet != null) {
+                    if (mismatch != 0) {
+                        g.setColor(sheet.darkMode ? redDarkMode : red);
+                    } else {
+                        g.setColor(lyricsArea.isEditable()
+                                ? (sheet.darkMode ? YassSheet.hiGrayDarkMode : Color.WHITE)
+                                : (sheet.darkMode ? new Color(73, 73, 73, 210) : whitetrans));
+                    }
+                    g.fillRect(0, 0, getWidth(), getHeight());
                 }
-                Rectangle r = ((JViewport) getParent()).getViewRect();
-                g.fillRect(r.x, r.y, r.width, r.height);
 
                 try {
                     super.paintComponent(g);
@@ -303,7 +303,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                 int y = p.y + strh + 6;
                 g2.setFont(big);
                 g.setColor(blue);
-                g.drawString(str, x, y);
+                g2.drawString(str, x, y);
             }
         };
         lyricsArea.setLogicalStyle(notLongStyle);
@@ -427,7 +427,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                 boolean altShift = e.isAltDown() && e.isShiftDown() && !e.isControlDown();
                 boolean ctrlAltShift = e.isShiftDown() && e.isControlDown() && e.isAltDown();
 //				System.out.printf("Shift %b, Ctrl %b, Alt %b, CtrlShift %b, AltShift %b, CtrlAltShift %b%n",
-//								  shift, ctrl, alt, ctrlShift, altShift, ctrlAltShift);
+//									  shift, ctrl, alt, ctrlShift, altShift, ctrlAltShift);
                 if (!lyricsArea.isEditable() && sheet != null) {
                     char c = e.getKeyChar();
                     if (e.isControlDown() && e.isAltDown()
@@ -692,7 +692,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                         table.addHyphenatedWord();
                     } else if (ctrl && keyCode == KeyEvent.VK_H) {
                         table.rehyphenate();
-                    } else if (c == '\'') {
+                    } else if (c == StringConstants.APOSTROPHE ) {
                         table.toggleApostropheEnd();
                     } else if (c == '~') {
                         table.toggleTildeStart();
@@ -800,11 +800,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
         lyricsArea.setOpaque(false);
         lyricsScrollPane.setOpaque(false);
         lyricsScrollPane.getViewport().setOpaque(false);
-        lyricsScrollPane.getViewport().addChangeListener(new ChangeListener() {
-            public void stateChanged(ChangeEvent e) {
-                lineNumbers.repaint();
-            }
-        });
+        lyricsScrollPane.getViewport().addChangeListener(e -> lineNumbers.repaint());
         lyricsScrollPane.setBorder(null);
 
         setLayout(new BorderLayout());
@@ -1225,6 +1221,25 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
             return;
         }
 
+        boolean scrollToEnd;
+        if (isCaretUpdate) {
+            scrollToEnd = caretScrollToEnd;
+        } else {
+            scrollToEnd = true;
+            if (lastSelectionMin != -1) {
+                if (i < lastSelectionMin) {
+                    scrollToEnd = false;
+                } else if (i == lastSelectionMin && j < lastSelectionMax) {
+                    scrollToEnd = false;
+                }
+            }
+        }
+
+        if (i != -1) { // only update if there is a selection
+            lastSelectionMin = i;
+            lastSelectionMax = j;
+        }
+
         int n = table.getRowCount();
 
         int min = -1;
@@ -1251,7 +1266,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
             max = min;
         }
 
-        selectSyllablesAt(min, max);
+        selectSyllablesAt(min, max, scrollToEnd);
     }
 
     Vector<Integer> errLines = new Vector<>();
@@ -1468,7 +1483,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
      * @param min Description of the Parameter
      * @param max Description of the Parameter
      */
-    public void selectSyllablesAt(int min, int max) {
+    public void selectSyllablesAt(int min, int max, boolean scrollToEnd) {
         String txt = lyricsArea.getText();
         int n = txt.length();
         if (n < 1) {
@@ -1500,7 +1515,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                     caretin = in;
                 }
                 if (syllable == max) {
-                    SwingUtilities.invokeLater(new Selector(caretin, i));
+                    SwingUtilities.invokeLater(new Selector(caretin, i, scrollToEnd));
                     return;
                 }
             }
@@ -1516,6 +1531,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
      */
     class Selector implements Runnable {
         int in, out;
+        boolean scrollToEnd;
 
         /**
          * Constructor for the Selector object
@@ -1523,32 +1539,47 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
          * @param i Description of the Parameter
          * @param j Description of the Parameter
          */
-        public Selector(int i, int j) {
+        public Selector(int i, int j, boolean scrollToEnd) {
             in = i;
             out = j;
+            this.scrollToEnd = scrollToEnd;
         }
 
         /**
          * Main processing method for the Selector object
          */
         public synchronized void run() {
+            preventFireUpdate = true;
             try {
                 lyricsArea.getStyledDocument().setCharacterAttributes(0,
                                                                       lyricsArea.getStyledDocument().getLength(),
                                                                       notSelectStyle, false);
                 lyricsArea.getStyledDocument().setCharacterAttributes(in,
                                                                       out - in, selectStyle, false);
-                Rectangle r = lyricsArea.modelToView(in);
-                r.add(lyricsArea.modelToView(out));
-                lyricsArea.scrollRectToVisible(r);
 
                 if (!lyricsArea.isEditable()) {
-                    preventFireUpdate = true;
-                    lyricsArea.getCaret().setDot(in);
-                    lyricsArea.getCaret().moveDot(out);
-                    preventFireUpdate = false;
+                    lyricsArea.requestFocusInWindow();
+                    if (scrollToEnd) {
+                        lyricsArea.select(in, out);
+                    } else {
+                        lyricsArea.select(in, out);
+                        lyricsArea.setCaretPosition(in);
+                    }
+                }
+                // Ensure the caret is visible by scrolling to it
+                try {
+                    Rectangle caretBounds = lyricsArea.modelToView(lyricsArea.getCaret().getDot());
+                    if (caretBounds != null) {
+                        lyricsArea.scrollRectToVisible(caretBounds);
+                    }
+                } catch (BadLocationException e) {
+                    // Ignore exception, as it's not critical
                 }
             } catch (Exception ignored) {
+                // This can happen if the model and view get out of sync.
+                // It's not critical, so we can ignore it for now.
+            } finally {
+                preventFireUpdate = false;
             }
         }
     }
@@ -2012,6 +2043,9 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                 return;
             }
 
+            isCaretUpdate = true;
+            caretScrollToEnd = e.getDot() >= e.getMark();
+
             table.getSelectionModel().removeListSelectionListener(
                     tableSelectionListener);
             lyricsArea.removeCaretListener(caretListener);
@@ -2021,6 +2055,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                     tableSelectionListener);
             tableSelectionListener.valueChanged(null);
             table.updatePlayerPosition();
+            isCaretUpdate = false;
         }
     };
 

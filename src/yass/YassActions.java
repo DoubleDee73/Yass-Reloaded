@@ -18,6 +18,8 @@
 package yass;
 
 import com.nexes.wizard.Wizard;
+import lombok.Getter;
+import lombok.Setter;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -58,6 +60,8 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+@Getter
+@Setter
 public class YassActions implements DropTargetListener {
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
@@ -97,6 +101,7 @@ public class YassActions implements DropTargetListener {
 
     private YassTable table = null;
     private YassLyrics lyrics;
+    private SongHeader songHeader;
     private final YassPlayer mp3;
     private YassPlayList playList = null;
     private YassSongInfo songInfo = null;
@@ -745,6 +750,11 @@ public class YassActions implements DropTargetListener {
                     activeTable.setVocals(filename);
                 }
                 mp3.openMP3(selectedFile.getAbsolutePath());
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
                 if (audioTag == UltrastarHeaderTag.VOCALS && prop.getBooleanProperty("debug-waveform")) {
                     mp3.setPitchDataList(PitchDetector.detectPitch(mp3.getTempFile(), prop));
                 }
@@ -2274,7 +2284,6 @@ public class YassActions implements DropTargetListener {
             if (mp3 != null) {
                 mp3.closeSharedLine();
             }
-            sheet.setSongHeader(null);
             setView(VIEW_LIBRARY);
             if (!songList.isLoaded()) {
                 songList.load();
@@ -2580,7 +2589,6 @@ public class YassActions implements DropTargetListener {
                 sheet.enablePan(state);
 
                 sheet.update();
-                revalidateLyricsArea();
                 sheet.repaint();
             }
             if (alignCBI != null) {
@@ -6120,7 +6128,6 @@ public class YassActions implements DropTargetListener {
         }
         if (currentView == VIEW_EDIT) {
             SwingUtilities.invokeLater(() -> {
-                revalidateLyricsArea();
                 sheet.repaint();
             });
         }
@@ -6227,25 +6234,6 @@ public class YassActions implements DropTargetListener {
         });
     }
 
-
-    public void revalidateLyricsArea() {
-        if (sheet.isLive()) {
-            return;
-        }
-        int newh = sheet.getTopLine() - 30;
-        int lyricsWidth = 450;
-        int lyricsMinHeight = 120;
-        if (newh < lyricsMinHeight) {
-            newh = lyricsMinHeight;
-        }
-
-        int h = lyrics.getBounds().height;
-        if (h != newh) {
-            lyrics.setBounds(500, 30, lyricsWidth, newh);
-            sheet.revalidate();
-        }
-    }
-
     public boolean isRelative() {
         return !sheet.isPanEnabled();
     }
@@ -6255,7 +6243,6 @@ public class YassActions implements DropTargetListener {
         if (alignCBI != null) {
             alignCBI.setState(onoff);
         }
-        revalidateLyricsArea();
     }
 
 
@@ -6421,10 +6408,10 @@ public class YassActions implements DropTargetListener {
     }
 
     private void openEditor(boolean reload) {
-        if (table == null)
-            setActiveTable(firstTable());
-        if (table == null || table.getArtist() == null || table.getTitle() == null)
+        if (table == null || table.getArtist() == null || table.getTitle() == null) {
             return;
+        }
+        setActiveTable(firstTable());
         updateTrackComponent();
         storeRecentFiles();
         mp3.reinitSynth(prop.getBooleanProperty("use-sample"));
@@ -6443,6 +6430,7 @@ public class YassActions implements DropTargetListener {
 
         sheet.setDuration(mp3.getDuration() / 1000.0);
         sheet.setActiveTable(table);
+        sheet.getSongHeader().initSongHeader(table);
         table.loadUsdbSyncerMetaFile(table.getDir());
         String vd = table.getVideo();
         if (video != null && vd != null) {
@@ -6518,20 +6506,7 @@ public class YassActions implements DropTargetListener {
             songList.addOpened(t);
         }
         sheet.init(initMic());
-        sheet.initSongHeader(this);
-        if (sheet.getSongHeader() != null) {
-            JViewport v = (JViewport) sheet.getParent();
-            Point p = v.getViewPosition();
-            Dimension r = v.getExtentSize();
-            int lyricsWidth = 450;
-            int newx = (int) p.getX() + r.width - lyricsWidth;
-            int newy = (int) p.getY();
 
-            SongHeader songHeader = sheet.getSongHeader();
-            Dimension headerSize = songHeader.getPreferredSize();
-            int headerX = newx - headerSize.width - 10;
-            songHeader.setBounds(headerX, newy, headerSize.width, headerSize.height);
-        }
         table.initAutoSave();
     }
     

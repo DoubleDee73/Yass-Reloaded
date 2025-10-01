@@ -548,7 +548,7 @@ public class YassAutoCorrect {
         boolean match;
         int n = 1;
         boolean changed = true;
-        boolean changedAny = true;
+        boolean changedAny = false;
         while (changed && n++ < 20) {
             for (int i = 0; i < YassRow.ALL_MESSAGES.length; i++) {
 

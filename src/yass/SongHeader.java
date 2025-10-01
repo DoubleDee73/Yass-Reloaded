@@ -42,7 +42,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
     private TimeSpinner startSpinner;
     private TimeSpinner endSpinner;
     private TimeSpinner vgapSpinner;
-    private JTextField mp3;
+    private JTextField audioField;
     private JTextField bpmField;
     private JComboBox<String> audioSelector;
     private YassActions actions;
@@ -51,7 +51,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
     private final List<JLabel> labels = new ArrayList<>();
     private final List<JTextField> textFields = new ArrayList<>();
 
-    public SongHeader(YassActions actions, YassTable table) {
+    public SongHeader(YassActions actions) {
         LOGGER.info("Init Songheader");
         setLayout(new BorderLayout());
         setOpaque(true);
@@ -60,18 +60,17 @@ public class SongHeader extends JPanel implements YassSheetListener {
         Border border = BorderFactory.createEtchedBorder();
         setBorder(border);
         YassProperties yassProperties = actions.getProperties();
-        JPanel inner = createMainPanel(table, yassProperties);
+        JPanel inner = createMainPanel(yassProperties);
         add(inner, BorderLayout.CENTER);
         applyTheme(yassProperties.getBooleanProperty("dark-mode"));
     }
 
     /**
      * Creates the main panel containing all the song header controls.
-     * @param table The table model containing song data.
      * @param yassProperties The application properties.
      * @return The fully constructed main panel.
      */
-    private JPanel createMainPanel(YassTable table, YassProperties yassProperties) {
+    private JPanel createMainPanel(YassProperties yassProperties) {
         JPanel mainPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         panels.add(mainPanel);
@@ -82,18 +81,19 @@ public class SongHeader extends JPanel implements YassSheetListener {
         gbc.gridwidth = 5; // Span all columns
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1.0;
-        mainPanel.add(createAudioPanel(table, yassProperties), gbc);
+        gbc.anchor = GridBagConstraints.NORTH;
+        mainPanel.add(createAudioPanel(getTable(), yassProperties), gbc);
 
         // --- Row 1: Gap and BPM ---
         gbc.gridy = 1;
         gbc.gridwidth = 1;
         gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.LINE_START;
+        gbc.anchor = GridBagConstraints.NORTH;
         gbc.weightx = 0;
 
         // Gap Spinner
         gbc.gridx = 0;
-        mainPanel.add(createGapSpinnerPanel(table), gbc);
+        mainPanel.add(createGapSpinnerPanel(), gbc);
 
         // Gap Button
         gbc.gridx = 1;
@@ -101,14 +101,15 @@ public class SongHeader extends JPanel implements YassSheetListener {
 
         // BPM Panel
         gbc.gridx = 2;
-        mainPanel.add(createBpmPanel(table), gbc);
+        mainPanel.add(createBpmPanel(), gbc);
 
         // --- Row 2: Start and End ---
         gbc.gridy = 2;
+        gbc.anchor = GridBagConstraints.NORTH;
 
         // Start Spinner
         gbc.gridx = 0;
-        mainPanel.add(createStartSpinnerPanel(table), gbc);
+        mainPanel.add(createStartSpinnerPanel(), gbc);
 
         // Spacer to align with Gap Button
         gbc.gridx = 1;
@@ -116,8 +117,15 @@ public class SongHeader extends JPanel implements YassSheetListener {
 
         // End Panel
         gbc.gridx = 2;
-        mainPanel.add(createEndPanel(table), gbc);
-        addListeners(table);
+        mainPanel.add(createEndPanel(), gbc);
+
+        // --- Add a filler component to push everything to the top ---
+        gbc.gridy = 3;
+        gbc.weighty = 1.0; // This will take up all extra vertical space
+        JPanel filler = new JPanel();
+        panels.add(filler); // Add to panels list to get theme applied
+        mainPanel.add(filler, gbc);
+
         return mainPanel;
     }
     
@@ -147,21 +155,24 @@ public class SongHeader extends JPanel implements YassSheetListener {
             panel.add(label);
             labels.add(label);
         }
-
         boolean debugWaveform = yassProperties.getBooleanProperty("debug-waveform");
-        String audio = (debugWaveform && StringUtils.isNotEmpty(table.getVocals()))
-                ? table.getVocals()
-                : (StringUtils.isNotEmpty(table.getAudio()) ? table.getAudio() : table.getMP3());
-        if (debugWaveform && StringUtils.isNotEmpty(table.getVocals())) {
-            audioSelector.setSelectedItem(UltrastarHeaderTag.VOCALS.toString());
-            determinePitches();
+        String audio;
+        if (table != null) {
+            audio = (debugWaveform && StringUtils.isNotEmpty(table.getVocals()))
+                    ? table.getVocals()
+                    : (StringUtils.isNotEmpty(table.getAudio()) ? table.getAudio() : getTable().getMP3());
+            if (debugWaveform && StringUtils.isNotEmpty(table.getVocals())) {
+                audioSelector.setSelectedItem(UltrastarHeaderTag.VOCALS.toString());
+                determinePitches();
+            }
+        } else {
+            audio = "";
         }
-
-        mp3 = new JTextField(audio);
-        mp3.setName("mp3");
-        mp3.setPreferredSize(new Dimension(100, 30)); // Set a consistent height
-        textFields.add(mp3);
-        panel.add(mp3);
+        audioField = new JTextField(audio);
+        audioField.setName("mp3");
+        audioField.setPreferredSize(new Dimension(100, 30)); // Set a consistent height
+        textFields.add(audioField);
+        panel.add(audioField);
 
         JButton button = createOpenFileButton(actions.selectAudioFile, "mp3");
         button.setIcon(actions.getIcon("open24Icon"));
@@ -169,13 +180,13 @@ public class SongHeader extends JPanel implements YassSheetListener {
 
         return panel;
     }
-
-    private JPanel createGapSpinnerPanel(YassTable table) {
+    
+    private JPanel createGapSpinnerPanel() {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
         panel.add(Box.createHorizontalStrut(5));
         panels.add(panel);
-        gapSpinner = new TimeSpinner(I18.get("mpop_gap"), (int) table.getGap(), (int) table.getGap() * 10);
+        gapSpinner = new TimeSpinner(I18.get("mpop_gap"), 0, 10000);
         gapSpinner.setLabelSize(new Dimension(120, 30));
         gapSpinner.setSpinnerSize(new Dimension(100, 30));
         gapSpinner.getSpinner().setFocusable(false);
@@ -183,6 +194,30 @@ public class SongHeader extends JPanel implements YassSheetListener {
         panel.add(gapSpinner);
         labels.addAll(gapSpinner.getLabels());
         return panel;
+    }
+
+
+    public void initSongHeader(YassTable table) {
+        YassProperties yassProperties = actions.getProperties();
+        boolean debugWaveform = yassProperties.getBooleanProperty("debug-waveform");
+        String audio = (debugWaveform && StringUtils.isNotEmpty(table.getVocals()))
+                ? table.getVocals()
+                : (StringUtils.isNotEmpty(table.getAudio()) ? table.getAudio() : table.getMP3());
+        audioField.setText(audio);
+        if (debugWaveform && StringUtils.isNotEmpty(table.getVocals())) {
+            audioSelector.setSelectedItem(UltrastarHeaderTag.VOCALS.toString());
+            determinePitches();
+        }
+        gapSpinner.setTime((int)table.getGap());
+        gapSpinner.setDuration((int)table.getGap() * 10);
+        bpmField.setText(String.valueOf(table.getBPM()));
+        int duration = actions.getMP3() != null ? (int) (actions.getMP3().getDuration() / 1000) : 10000;
+        startSpinner.setTime((int) table.getStart() * 1000);
+        startSpinner.setDuration(duration);
+        int end = table.getEnd() > 0 ? (int) table.getEnd() : 10000;
+        endSpinner.setTime(Math.min(duration, end));
+        endSpinner.setDuration(Math.max(10000, duration));
+        addListeners(actions.getSheet());
     }
 
     private JPanel createGapButtonPanel() {
@@ -195,7 +230,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         return gapButtonPanel;
     }
 
-    private JPanel createBpmPanel(YassTable table) {
+    private JPanel createBpmPanel() {
         // Group BPM controls into their own panel for alignment
         JPanel bpmPanel = new JPanel();
         bpmPanel.setLayout(new BoxLayout(bpmPanel, BoxLayout.X_AXIS));
@@ -208,7 +243,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         bpmPanel.add(label);
         labels.add(label);
 
-        bpmField = new JTextField(String.valueOf(table.getBPM()));
+        bpmField = new JTextField("");
         bpmField.setPreferredSize(new Dimension(75, 30)); 
         bpmPanel.add(bpmField);
         textFields.add(bpmField);
@@ -221,13 +256,12 @@ public class SongHeader extends JPanel implements YassSheetListener {
     }
 
 
-    private JPanel createStartSpinnerPanel(YassTable table) {
+    private JPanel createStartSpinnerPanel() {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
         panel.add(Box.createHorizontalStrut(5));
         panels.add(panel);
-        int duration = actions.getMP3() != null ? (int) (actions.getMP3().getDuration() / 1000) : 10000;
-        startSpinner = new TimeSpinner(I18.get("mpop_audio_start"), (int) table.getStart() * 1000, duration);
+        startSpinner = new TimeSpinner(I18.get("mpop_audio_start"), 0, 0);
         startSpinner.setLabelSize(new Dimension(120, 30)); // Same as gapSpinner
         startSpinner.setSpinnerSize(new Dimension(100, 30)); // Same as gapSpinner
         startSpinner.getSpinner().setFocusable(false);
@@ -237,14 +271,12 @@ public class SongHeader extends JPanel implements YassSheetListener {
         return panel;
     }
 
-    private JPanel createEndPanel(YassTable table) {
+    private JPanel createEndPanel() {
         // Group End-Spinner controls into their own panel for alignment
         JPanel endPanel = new JPanel();
         endPanel.setLayout(new BoxLayout(endPanel, BoxLayout.X_AXIS));
         panels.add(endPanel);
-        int duration = actions.getMP3() != null ? (int) (actions.getMP3().getDuration() / 1000) : 10000;
-        int end = table.getEnd() > 0 ? (int) table.getEnd() : 10000;
-        endSpinner = new TimeSpinner(I18.get("mpop_audio_end"), Math.min(duration, end), Math.max(10000, duration));
+        endSpinner = new TimeSpinner(I18.get("mpop_audio_end"), 0, 0);
         endSpinner.setLabelSize(new Dimension(80, 30));
         endSpinner.setSpinnerSize(new Dimension(100, 30));
         endSpinner.getSpinner().setFocusable(false);
@@ -262,32 +294,32 @@ public class SongHeader extends JPanel implements YassSheetListener {
 
     /**
      * Adds all necessary event listeners to the components.
-     * @param table The table model to be updated by the listeners.
+     * @param sheet The YassSheet instance to be updated by the listeners.
      */
-    private void addListeners(YassTable table) {
-        if (audioSelector != null) {
-            audioSelector.addItemListener(e -> {
-                if (e.getStateChange() == ItemEvent.DESELECTED && mp3 != null) {
-                    table.setAudioByTag(e.getItem().toString(), mp3.getText());
+    private void addListeners(YassSheet sheet) {
+        audioSelector.addItemListener(e -> {
+            YassTable table = sheet.getTable();
+            if (e.getStateChange() == ItemEvent.DESELECTED && audioField != null) {
+                table.setAudioByTag(e.getItem().toString(), audioField.getText());
+            }
+            if (e.getStateChange() == ItemEvent.SELECTED && audioField != null) {
+                YassRow mp3Row = table.getCommentRow(e.getItem() + ":");
+                if (mp3Row != null) {
+                    audioField.setText(mp3Row.getHeaderComment());
+                    actions.openMp3(table.getDir() + File.separator + mp3Row.getHeaderComment());
+                } else {
+                    audioField.setText(StringUtils.EMPTY);
                 }
-                if (e.getStateChange() == ItemEvent.SELECTED && mp3 != null) {
-                    YassRow mp3Row = table.getCommentRow(e.getItem() + ":");
-                    if (mp3Row != null) {
-                        mp3.setText(mp3Row.getHeaderComment());
-                        actions.openMp3(table.getDir() + File.separator + mp3Row.getHeaderComment());
-                    } else {
-                        mp3.setText(StringUtils.EMPTY);
-                    }
-                }
-            });
-        }
+            }
+        });
 
-        YassUtils.addChangeListener(mp3, e -> {
+        YassUtils.addChangeListener(audioField, e -> {
             String selectedAudio = (audioSelector != null && audioSelector.getSelectedItem() != null)
                     ? audioSelector.getSelectedItem().toString() : StringUtils.EMPTY;
-            if (mp3.getText() != null) {
-                table.setAudioByTag(selectedAudio, mp3.getText());
-                if (StringUtils.isNotEmpty(this.mp3.getText())) {
+            YassTable table = sheet.getTable();
+            if (audioField.getText() != null) {
+                table.setAudioByTag(selectedAudio, audioField.getText());
+                if (StringUtils.isNotEmpty(this.audioField.getText())) {
                     determinePitches();
                 }
             }
@@ -298,6 +330,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         endSpinner.getSpinner().addChangeListener(e -> actions.setEnd(endSpinner.getTime()));
 
         bpmField.addActionListener(e -> {
+            YassTable table = sheet.getTable();
             double bpm = table.getBPM();
             try {
                 bpm = Double.parseDouble(bpmField.getText());
@@ -309,10 +342,13 @@ public class SongHeader extends JPanel implements YassSheetListener {
             }
         });
     }
-
+    
     private void determinePitches() {
         YassProperties prop = actions.getProperties();
         YassPlayer player = actions.getMP3();
+        if (player.getPitchDataList() != null && !player.getPitchDataList().isEmpty()) {
+            return;
+        }
         if (this.audioSelector.getSelectedItem()
                               .toString()
                               .equalsIgnoreCase(UltrastarHeaderTag.VOCALS.toString()) &&
@@ -359,7 +395,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
 
     public JTextField getTextFieldByName(String name) {
         if ("mp3".equals(name)) {
-            return mp3;
+            return audioField;
         }
         return null;
     }
@@ -431,5 +467,9 @@ public class SongHeader extends JPanel implements YassSheetListener {
             label.setForeground(darkMode ? Color.WHITE : null);
         }
         repaint();
+    }
+    
+    private YassTable getTable() {
+        return getActions().getTable();
     }
 }

@@ -485,7 +485,7 @@ public class YassPlayer {
             playbackRenderer.setErrorMessage(I18.get("sheet_msg_audio_missing"));
             return;
         }
-
+        setPitchDataList(Collections.emptyList());
         fps = -1;
         try (AudioInputStream in = AudioSystem.getAudioInputStream(file)) {
             AudioFormat baseFormat = in.getFormat();
@@ -1181,18 +1181,15 @@ public class YassPlayer {
 
             }
 
+            if (playAudio && sharedLine != null && sharedLine.isOpen()) {
+                sharedLine.drain();
+                sharedLine.stop();
+            }
+
             if (midiEnabled && midi != null) {
                 midi.stopPlay();
             }
             sharedLineInterrupted = true;
-
-            if (playAudio && isPlaying()) {
-                try {
-                    Thread.currentThread();
-                    Thread.sleep(100);
-                } catch (InterruptedException e) {
-                }
-            }
 
             if (hasPlaybackRenderer) {
                 if (useCapture) {
@@ -1327,6 +1324,7 @@ public class YassPlayer {
                 throw new RuntimeException(e);
             }
         }
+        LOGGER.info("YassPlayer: finished converting " + source + " to " + filename);
         return tempFile;
     }
 
@@ -1598,8 +1596,11 @@ public class YassPlayer {
     public void playAudioData(byte[] audioData, AudioFormat audioFormat, int length, 
                               Runnable onStarted) {
         if (isSharedLineOpen() && audioFormat.matches(sharedLineFormat)) {
+            if (!sharedLine.isRunning()) {
+                sharedLine.start();
+            }
             sharedLineInterrupted = false;
-            try {                
+            try {
                 sharedLineQueue.put(new ImmutablePair<>(Arrays.copyOf(audioData, length), onStarted));
                 if (onStarted != null) onStarted.run();
             } catch (InterruptedException e) {

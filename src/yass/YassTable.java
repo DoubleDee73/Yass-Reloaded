@@ -3344,8 +3344,6 @@ public class YassTable extends JTable {
         if (zoomMode == ZOOM_TIME) {
             sheet.scrollRectToVisible(ij[0], ij[1]);
         }
-
-        actions.revalidateLyricsArea();
         sheet.repaint();
     }
 
