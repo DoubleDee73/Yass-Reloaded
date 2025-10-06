@@ -294,6 +294,7 @@ public class YassMain extends JFrame {
         actions.init(prop);
         actions.setTab(mainPanel);
         songHeader = new SongHeader(actions);
+        actions.setSongHeader(songHeader);
         sheet.setActions(actions);
         sheet.setSongHeader(songHeader);
         

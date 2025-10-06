@@ -62,6 +62,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -1061,20 +1062,31 @@ public class YassPlayer {
                 playbackRenderer.setErrorMessage(I18.get("sheet_msg_still_loading"));
                 return;
             }
-
+            final CountDownLatch playbackStartLatch = new CountDownLatch(1);
+            Runnable onPlaybackStarted = () -> {
+                if (hasPlaybackRenderer) {
+                    playbackRenderer.setPause(false);
+                    playbackRenderer.startPlayback();
+                    if (video != null && playbackRenderer.showVideo()) {
+                        video.playVideo();
+                    }
+                }
+                firePlayerStarted();
+                playbackStartLatch.countDown();
+            };
             byte[] pianoAndClicks = createAudioStreamFromClicks(clicks, timebase.timerate, playClicks, midiEnabled);
             byte[] audioData = getAudioBytesInRange(inMillis + (int) seekInOffsetMs,
                                                     outMillis + (int) seekOutOffsetMs);
-            playAudioData(mixAudioStereo(pianoAndClicks, audioData), audioBytesFormat, audioData.length,
-                          YassPlayer.this::firePlayerStarted);
-            if (hasPlaybackRenderer) {
-                playbackRenderer.setPause(false);
-                playbackRenderer.startPlayback();
-                if (video != null && playbackRenderer.showVideo()) {
-                    video.playVideo();
-                }
+            playAudioData(mixAudioStereo(pianoAndClicks, audioData), audioBytesFormat, audioData.length, 
+                          onPlaybackStarted);
+            try {
+                playbackStartLatch.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                sharedLineInterrupted = true;
             }
-            long nanoStart = System.nanoTime() / 1000L;
+
+            long nanoStart = System.nanoTime() / 1000L; // Start timing AFTER audio has started
             position = (long) (inpoint * multiplier);
 
             long lastms = System.nanoTime();
@@ -1315,6 +1327,7 @@ public class YassPlayer {
         FFmpegExecutor executor = new FFmpegExecutor(ffmpeg, fFprobe);
         // Run a one-pass encode
         FFmpegJob job = executor.createJob(fFmpegBuilder);
+        LOGGER.info("YassPlayer: Starting conversion of " + source + " to " + filename);
         job.run();
         while (job.getState() == FFmpegJob.State.RUNNING || job.getState() == FFmpegJob.State.WAITING) {
             System.out.println("Waiting for conversion");
@@ -1525,7 +1538,6 @@ public class YassPlayer {
                 try {
                     while (sharedLineRunning) {
                         Pair<byte[], Runnable> job = sharedLineQueue.take();
-                        if (job == null) break;
                         byte[] data = job.getLeft();
                         Runnable callback = job.getRight();
                         boolean callbackCalled = false;
@@ -1538,7 +1550,6 @@ public class YassPlayer {
                             if (written <= 0) {
                                 break;
                             }
-                            offset += written;
                             if (!callbackCalled && callback != null) {
                                 try {
                                     callback.run();
@@ -1546,6 +1557,7 @@ public class YassPlayer {
                                     callbackCalled = true;
                                 }
                             }
+                            offset += written;
                         }
                     }
                 } catch (InterruptedException e) {
@@ -1602,7 +1614,6 @@ public class YassPlayer {
             sharedLineInterrupted = false;
             try {
                 sharedLineQueue.put(new ImmutablePair<>(Arrays.copyOf(audioData, length), onStarted));
-                if (onStarted != null) onStarted.run();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }

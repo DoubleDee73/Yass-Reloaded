@@ -145,7 +145,8 @@ public class YassActions implements DropTargetListener {
     private Pair<Integer, Integer> tempSelection;
     private boolean recording = false;
     public static final KeyboardMapping CURRENT_MAPPING = determineMapping();
-    
+    private boolean keyPressed = false;
+    private int currentEditPage = 0;
     public HyphenatorDictionary hyphenatorDictionary = null;
 
     private static KeyboardMapping determineMapping() {
@@ -760,6 +761,7 @@ public class YassActions implements DropTargetListener {
                 }
                 activeTable.setSaved(false);
                 updateActions();
+                sheet.repaint();
             }
         }
     };
@@ -1505,10 +1507,57 @@ public class YassActions implements DropTargetListener {
             sheet.repaint();
         }
     };
+    private final Action prevPagePressed = new AbstractAction() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            stopPlaying();
+            if (!isKeyPressed()) {
+                setCurrentEditPage(table.getPageNumber());
+            }
+            setKeyPressed(true);
+            if (getCurrentEditPage() > 1) {
+                table.gotoPage(-1);
+            }
+        }
+    };
+    private final Action prevPageReleased = new AbstractAction() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            setKeyPressed(false);
+            if (getCurrentEditPage() == 1) {
+                stopPlaying();
+                table.gotoPageNumber(table.getPageCount());
+            }
+        }
+    };
+
     private final Action prevPage = new AbstractAction(I18.get("edit_page_prev")) {
         public void actionPerformed(ActionEvent e) {
             stopPlaying();
             table.gotoPage(-1);
+        }
+    };
+    private final Action nextPagePressed = new AbstractAction() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            stopPlaying();
+            if (!isKeyPressed()) {
+                setCurrentEditPage(table.getPageNumber());
+            }
+            setKeyPressed(true);
+            if (getCurrentEditPage() < table.getPageCount()) {
+                table.gotoPage(1);
+            }
+        }
+    };
+    private final Action nextPageReleased = new AbstractAction() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            setKeyPressed(false);
+            if (getCurrentEditPage() == table.getPageCount()) {
+                stopPlaying();
+                table.gotoPageNumber(1);
+            }
         }
     };
     private final Action nextPage = new AbstractAction(I18.get("edit_page_next")) {
@@ -2276,6 +2325,9 @@ public class YassActions implements DropTargetListener {
 
             if (cancelOpen()) {
                 return;
+            }
+            if (songHeader != null) {
+                songHeader.reset();
             }
             YassTable lastTable = table;
             table.removeAutoSave();
@@ -6411,27 +6463,35 @@ public class YassActions implements DropTargetListener {
         if (table == null || table.getArtist() == null || table.getTitle() == null) {
             return;
         }
-        setActiveTable(firstTable());
-        updateTrackComponent();
-        storeRecentFiles();
-        mp3.reinitSynth(prop.getBooleanProperty("use-sample"));
+        
         File file;
         if (table.getDirMP3() != null) {
             file = new File(table.getDirMP3());
             if (!file.exists()) {
                 selectAudioFile.actionPerformed(null);
             }
-            mp3.openMP3(table.getDirMP3());
+            if (prop.getBooleanProperty("debug-waveform") && StringUtils.isNotEmpty(table.getVocals())) {
+                mp3.openMP3(table.getDir() + File.separator + table.getVocals());
+                songHeader.setAudioToVocals();
+            } else {
+                mp3.openMP3(table.getDirMP3());
+            }
         } else {
             file = new File(table.getDirFilename());
             mp3.emptyMp3(table);
         }
+        setActiveTable(firstTable());
+        updateTrackComponent();
+        storeRecentFiles();
+        mp3.reinitSynth(prop.getBooleanProperty("use-sample"));
         updateTitle();
 
         sheet.setDuration(mp3.getDuration() / 1000.0);
         sheet.setActiveTable(table);
-        sheet.getSongHeader().initSongHeader(table);
         table.loadUsdbSyncerMetaFile(table.getDir());
+
+        sheet.getSongHeader().initSongHeader(table);
+
         String vd = table.getVideo();
         if (video != null && vd != null) {
             video.setVideo(table.getDir() + File.separator + vd);
@@ -6506,7 +6566,7 @@ public class YassActions implements DropTargetListener {
             songList.addOpened(t);
         }
         sheet.init(initMic());
-
+        sheet.repaint();
         table.initAutoSave();
     }
     
@@ -7338,8 +7398,11 @@ public class YassActions implements DropTargetListener {
         am.put("incRight", incRight);
         incRight.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_MASK));
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0), "prevPage");
+        im.put(KeyStroke.getKeyStroke("pressed UP"), "prevPagePressed");
+        im.put(KeyStroke.getKeyStroke("released UP"), "prevPageReleased");
         am.put("prevPage", prevPage);
+        am.put("prevPagePressed", prevPagePressed);
+        am.put("prevPageReleased", prevPageReleased);
         prevPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0));
 
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0), "prevBeat");
@@ -7348,7 +7411,10 @@ public class YassActions implements DropTargetListener {
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "nextBeat");
         am.put("nextBeat", nextBeat);
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0), "nextPage");
+        im.put(KeyStroke.getKeyStroke("pressed DOWN"), "nextPagePressed");
+        im.put(KeyStroke.getKeyStroke("released DOWN"), "nextPageReleased");
+        am.put("nextPagePressed", nextPagePressed);
+        am.put("nextPageReleased", nextPageReleased);
         am.put("nextPage", nextPage);
         nextPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0));
 

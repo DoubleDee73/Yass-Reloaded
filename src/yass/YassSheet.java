@@ -4622,9 +4622,6 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             update();
             repaint();
         }
-        if (songHeader != null && getActiveTable() != null) {
-            songHeader.initSongHeader(getActiveTable());
-        }
     }
 
     public void updateHeight() {
