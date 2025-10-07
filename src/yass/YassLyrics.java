@@ -663,32 +663,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                 // non-control key
                 if (!isEditable()) {
                     char c = e.getKeyChar();
-
-                    if (Character.isDigit(c) && !e.isControlDown()) {
-                        String cstr = c + "";
-                        long currentTime = System.currentTimeMillis();
-                        if (currentTime < lastTime + 700) {
-                            if (lastTimeString.length() < 3) {
-                                cstr = lastTimeString + cstr;
-                            }
-                            lastTimeString = cstr;
-                            try {
-                                int n = Integer.parseInt(cstr);
-                                table.gotoPageNumber(n);
-                            } catch (Exception ignored) {
-                            }
-                        } else {
-                            lastTimeString = cstr;
-                            try {
-                                int n = Integer.parseInt(cstr);
-                                table.gotoPageNumber(n);
-                            } catch (Exception ignored) {
-                            }
-                        }
-                        lastTime = currentTime;
-                        lyricsArea.repaint();
-                        e.consume();
-                    } else if (ctrlShift && keyCode == KeyEvent.VK_H) {
+                    if (ctrlShift && keyCode == KeyEvent.VK_H) {
                         table.addHyphenatedWord();
                     } else if (ctrl && keyCode == KeyEvent.VK_H) {
                         table.rehyphenate();
@@ -2003,6 +1978,10 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                 KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.CTRL_MASK),
                 "find");
         lyricsArea.getActionMap().put("find", find);
+        lyricsArea.getInputMap().put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_L, InputEvent.CTRL_MASK),
+                "goToLine");
+        lyricsArea.getActionMap().put("goToLine", goToLine);
         find.putValue(AbstractAction.ACCELERATOR_KEY,
                       KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.CTRL_MASK));
         erase.putValue(AbstractAction.ACCELERATOR_KEY,
@@ -2028,6 +2007,27 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
         @Override
         public void actionPerformed(ActionEvent e) {
             table.removeRowsWithLyrics();
+        }
+    };
+
+    Action goToLine = new AbstractAction(I18.get("tool_lyrics_go_to_line_action")) {
+        private static final long serialVersionUID = 17042024L;
+
+        public void actionPerformed(ActionEvent e) {
+            String line = JOptionPane.showInputDialog(
+                JOptionPane.getFrameForComponent(lyricsArea),
+                I18.get("tool_lyrics_go_to_line_prompt"),
+                I18.get("tool_lyrics_go_to_line_title"),
+                JOptionPane.QUESTION_MESSAGE
+            );
+            if (line != null) {
+                try {
+                    int lineNumber = Integer.parseInt(line);
+                    table.gotoPageNumber(lineNumber);
+                } catch (NumberFormatException ex) {
+                    // ignore
+                }
+            }
         }
     };
 

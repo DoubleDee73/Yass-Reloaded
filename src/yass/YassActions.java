@@ -5947,6 +5947,7 @@ public class YassActions implements DropTargetListener {
             songHeader.getBpmField().setText(bpm + "");
         }
         table.zoomPage();
+        sheet.requestFocus();
     }
 
     public void setVideoGap(int ms) {
@@ -6164,6 +6165,9 @@ public class YassActions implements DropTargetListener {
         }
         if (sheet != null && sheet.getSongHeader() != null) {
             sheet.getSongHeader().setVisible(!onoff);
+        }
+        if (lyrics != null) {
+            lyrics.setVisible(!onoff);
         }
     }
 

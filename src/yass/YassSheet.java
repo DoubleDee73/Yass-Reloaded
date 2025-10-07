@@ -955,7 +955,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                 boolean left = SwingUtilities.isLeftMouseButton(e);
                 if (table == null)
                     return;
-                if (! hasFocus()) {
+                if (!hasFocus()) {
                     requestFocusInWindow();
                     requestFocus();
                 }
