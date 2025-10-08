@@ -1073,12 +1073,12 @@ public class YassPlayer {
                 }
                 firePlayerStarted();
                 playbackStartLatch.countDown();
-            };
-            byte[] pianoAndClicks = createAudioStreamFromClicks(clicks, timebase.timerate, playClicks, midiEnabled);
+            }; 
+            byte[] pianoAndClicks = createAudioStreamFromClicks(clicks, timebase.timerate, playClicks, midiEnabled, inpoint);
             byte[] audioData = getAudioBytesInRange(inMillis + (int) seekInOffsetMs,
                                                     outMillis + (int) seekOutOffsetMs);
-            playAudioData(mixAudioStereo(pianoAndClicks, audioData), audioBytesFormat, audioData.length, 
-                          onPlaybackStarted);
+            byte[] mixedAudio = mixAudioStereo(audioData, pianoAndClicks);
+            playAudioData(mixedAudio, audioBytesFormat, audioData.length, onPlaybackStarted);
             try {
                 playbackStartLatch.await();
             } catch (InterruptedException e) {
@@ -1612,10 +1612,20 @@ public class YassPlayer {
                 sharedLine.start();
             }
             sharedLineInterrupted = false;
-            try {
-                sharedLineQueue.put(new ImmutablePair<>(Arrays.copyOf(audioData, length), onStarted));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            int offset = 0;
+            int chunkSize = 4096; // z.B.
+            boolean firstChunk = true;
+            while (offset < length) {
+                int chunkLength = Math.min(chunkSize, length - offset);
+                byte[] chunk = Arrays.copyOfRange(audioData, offset, offset + chunkLength);
+                Runnable callback = firstChunk ? onStarted : null;
+                try {
+                    sharedLineQueue.put(new ImmutablePair<>(chunk, callback));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                firstChunk = false;
+                offset += chunkLength;
             }
         } else  {
             LOGGER.info("YassPlayer.playAudioData: SourceDataLine not open");
@@ -1684,9 +1694,13 @@ public class YassPlayer {
      * @param midiEnabled Wenn true, werden Piano-Töne wie in playNote ins Array geschrieben
      * @return Byte-Array mit dem Stereo-Audio-Stream
      */
-    public byte[] createAudioStreamFromClicks(Click[] clicks, double timebase, boolean playClicks, boolean midiEnabled) {
+    public byte[] createAudioStreamFromClicks(Click[] clicks, double timebase, boolean playClicks, boolean midiEnabled, long playbackStartUs) {
         if (clicks == null || clicks.length == 0) return new byte[0];
-        long offset = clicks[0].start();
+
+        // Der Offset ist der Start der Wiedergabe, nicht der Start des ersten Klicks.
+        // Alle Zeitstempel der Klicks werden relativ zu diesem Punkt berechnet.
+        long offset = playbackStartUs;
+
         long lastEnd = clicks[0].end();
         for (Click c : clicks) {
             if (c.end() > lastEnd) lastEnd = c.end();
@@ -1694,12 +1708,15 @@ public class YassPlayer {
         int sampleRate = 44100;
         int bytesPerSample = 2; // 16bit PCM
         int channels = 2; // Stereo
-        double durationSeconds = ((lastEnd - offset) / 1_000_000.0) / timebase;
+        // Die Dauer des Streams reicht vom Wiedergabestart bis zum Ende des letzten Klicks.
+        double durationSeconds = ((Math.max(lastEnd, offset) - offset) / 1_000_000.0) / timebase;
         int totalSamples = (int) (durationSeconds * sampleRate) + sampleRate; // +1s Puffer
         int totalBytes = totalSamples * bytesPerSample * channels;
         byte[] audio = new byte[totalBytes];
 
         for (Click click : clicks) {
+            // Berechne die Startposition des Klicks relativ zum Wiedergabestart (offset).
+            // Wenn click.start() > offset, ist startSample > 0, was die Stille am Anfang erzeugt.
             int startSample = (int) (((click.start() - offset) / 1_000_000.0) / timebase * sampleRate);
             int lengthSamples = (int) (((click.end() - click.start()) / 1_000_000.0) / timebase * sampleRate);
             if (lengthSamples <= 0) continue;
