@@ -275,7 +275,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
     private boolean versionTextPainted = true;
     private final Vector<Long> tmpNotes = new Vector<>(1024);
     private List<Integer> tmpPitches = new ArrayList<>();
-    private final Dimension dim = new Dimension(1000, 100);
+    private final Dimension dim = new Dimension(1000, 200);
     private Graphics2D pgb = null;
     private int ppos = 0;
     private Point psheetpos = null;
@@ -1219,6 +1219,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             }
 
             public void keyPressed(KeyEvent e) {
+                if (isFocusInSongHeader()) {
+                    return;
+                }
                 if (table == null) {
                     return;
                 }
@@ -3875,9 +3878,8 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             int length = row.getLengthInt();
             int height = row.getHeightInt();
             r.x = (timelineGap + beat) * wSize + 1;
-            if (paintHeights) {
+            if (paintHeights)
                 r.x += heightBoxWidth;
-            }
             if (pan) {
                 r.y = dim.height - BOTTOM_BORDER - (height - pageMin + 2)
                         * hSize - hSize + 1;
@@ -5371,5 +5373,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             i++;
         } while (!exit);
     }
-
+    
+    private boolean isFocusInSongHeader() {
+        Component focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+        return focusOwner != null && songHeader != null && SwingUtilities.isDescendingFrom(focusOwner, songHeader);
+    }
 }

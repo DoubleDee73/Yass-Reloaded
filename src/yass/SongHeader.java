@@ -23,6 +23,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
 import yass.analysis.PitchDetector;
+import yass.suggest.SuggestingTagField;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -30,11 +31,12 @@ import javax.swing.border.EtchedBorder;
 import java.awt.*;
 import java.awt.event.ItemEvent;
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
+import java.text.NumberFormat;
+import java.util.*;
 import java.util.List;
-import java.util.Objects;
+import java.util.function.Function;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 @Getter
 @Setter
@@ -47,6 +49,10 @@ public class SongHeader extends JPanel implements YassSheetListener {
     private JTextField audioField;
     private JTextField bpmField;
     private JComboBox<String> audioSelector;
+    private SuggestingTagField languageField;
+    private JFormattedTextField yearField;
+    private SuggestingTagField genreField;
+    private SuggestingTagField tagField;
     private YassActions actions;
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private final List<JPanel> panels = new ArrayList<>();
@@ -67,6 +73,10 @@ public class SongHeader extends JPanel implements YassSheetListener {
         JPanel inner = createMainPanel(actions);
         add(inner, BorderLayout.CENTER);
         applyTheme(yassProperties.getBooleanProperty("dark-mode"));
+
+        // Verhindert, dass der Header in der Höhe wächst und das Split-Panel verschiebt.
+        Dimension prefSize = getPreferredSize();
+        setMaximumSize(new Dimension(Integer.MAX_VALUE, prefSize.height));
     }
 
     /**
@@ -89,12 +99,13 @@ public class SongHeader extends JPanel implements YassSheetListener {
         gbc.anchor = GridBagConstraints.NORTH;
         mainPanel.add(createAudioPanel(getTable(), yassProperties), gbc);
 
-        // --- Row 1: Gap and BPM ---
-        gbc.gridy = 1;
+        // --- Row 2: Gap and BPM ---
+        gbc.gridy = 2;
         gbc.gridwidth = 1;
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.NORTH;
         gbc.weightx = 0;
+
 
         // Gap Spinner
         gbc.gridx = 0;
@@ -108,8 +119,8 @@ public class SongHeader extends JPanel implements YassSheetListener {
         gbc.gridx = 2;
         mainPanel.add(createBpmPanel(), gbc);
 
-        // --- Row 2: Start and End ---
-        gbc.gridy = 2;
+        // --- Row 3: Start and End ---
+        gbc.gridy = 3;
         gbc.anchor = GridBagConstraints.NORTH;
 
         // Start Spinner
@@ -124,12 +135,13 @@ public class SongHeader extends JPanel implements YassSheetListener {
         gbc.gridx = 2;
         mainPanel.add(createEndPanel(), gbc);
 
-        // --- Add a filler component to push everything to the top ---
-        gbc.gridy = 3;
-        gbc.weighty = 1.0; // This will take up all extra vertical space
-        JPanel filler = new JPanel();
-        panels.add(filler); // Add to panels list to get theme applied
-        mainPanel.add(filler, gbc);
+        // --- Row 4: Metadata Panel (Language, Year, Genre) ---
+        gbc.gridx = 0;
+        gbc.gridy = 4;
+        gbc.gridwidth = 5; // Span all columns
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        mainPanel.add(createMetadataPanel(yassProperties), gbc);
+
         setInternalUpdate(true);
         addListeners(actions.getSheet());
         setInternalUpdate(false);
@@ -187,6 +199,154 @@ public class SongHeader extends JPanel implements YassSheetListener {
 
         return panel;
     }
+
+    private JPanel createMetadataPanel(YassProperties yassProperties) {
+        JPanel metaPanel = new JPanel();
+        metaPanel.setLayout(new BoxLayout(metaPanel, BoxLayout.Y_AXIS));
+        panels.add(metaPanel);
+
+        // --- Row 1: Language and Year ---
+        JPanel row1 = new JPanel(new GridBagLayout());
+        panels.add(row1);
+        GridBagConstraints gbc1 = new GridBagConstraints();
+        gbc1.insets = new Insets(1, 5, 1, 5);
+        gbc1.anchor = GridBagConstraints.WEST;
+
+        // Language Label
+        JLabel langLabel = new JLabel(I18.get("options_group1_language"));
+        langLabel.setPreferredSize(new Dimension(110, 30));
+        gbc1.gridx = 0;
+        gbc1.gridy = 0;
+        gbc1.weightx = 0;
+        gbc1.fill = GridBagConstraints.NONE;
+        row1.add(langLabel, gbc1);
+        labels.add(langLabel);
+
+        // Language Field
+        languageField = createLanguageField();
+        gbc1.gridx = 1;
+        gbc1.weightx = 0.9;
+        gbc1.fill = GridBagConstraints.HORIZONTAL;
+        row1.add(languageField, gbc1);
+
+        // Year Label
+        JLabel yearLabel = new JLabel(I18.get("options_group1_year"));
+        yearLabel.setPreferredSize(new Dimension(60, 30));
+        gbc1.gridx = 2;
+        gbc1.weightx = 0;
+        gbc1.fill = GridBagConstraints.NONE;
+        row1.add(yearLabel, gbc1);
+        labels.add(yearLabel);
+
+        // Year Field
+        yearField = createYearField();
+        gbc1.gridx = 3;
+        gbc1.weightx = 0.1;
+        gbc1.fill = GridBagConstraints.HORIZONTAL;
+        row1.add(yearField, gbc1);
+
+        // --- Row 2: Genre and Tags ---
+        JPanel row2 = new JPanel(new GridBagLayout());
+        panels.add(row2);
+        GridBagConstraints gbc2 = new GridBagConstraints();
+        gbc2.insets = new Insets(1, 5, 1, 5);
+        gbc2.anchor = GridBagConstraints.WEST;
+
+        // Genre Label
+        JLabel genreLabel = new JLabel(I18.get("options_group1_genre"));
+        genreLabel.setPreferredSize(new Dimension(110, 30));
+        gbc2.gridx = 0;
+        gbc2.gridy = 0;
+        gbc2.weightx = 0;
+        gbc2.fill = GridBagConstraints.NONE;
+        row2.add(genreLabel, gbc2);
+        labels.add(genreLabel);
+
+        // Genre Field
+        genreField = createGenreField(yassProperties);
+        gbc2.gridx = 1;
+        gbc2.weightx = 0.5;
+        gbc2.fill = GridBagConstraints.HORIZONTAL;
+        row2.add(genreField, gbc2);
+
+        // Tag Label
+        JLabel tagLabel = new JLabel(I18.get("options_tags"));
+        tagLabel.setPreferredSize(new Dimension(90, 30));
+        gbc2.gridx = 2;
+        gbc2.weightx = 0;
+        gbc2.fill = GridBagConstraints.NONE;
+        row2.add(tagLabel, gbc2);
+        labels.add(tagLabel);
+
+        // Tag Field
+        tagField = createTagField(yassProperties);
+        gbc2.gridx = 3;
+        gbc2.weightx = 0.5;
+        gbc2.fill = GridBagConstraints.HORIZONTAL;
+        row2.add(tagField, gbc2);
+
+        metaPanel.add(row1);
+        metaPanel.add(row2);
+
+        return metaPanel;
+    }
+
+    private SuggestingTagField createLanguageField() {
+        Function<String, List<String>> languageSuggester = (input) -> Arrays.stream(Locale.getAvailableLocales())
+                                                                             .map(l -> l.getDisplayLanguage(Locale.ENGLISH))
+                                                                             .filter(lang -> !lang.isEmpty())
+                                                                             .filter(lang -> lang.toLowerCase().startsWith(input.toLowerCase()))
+                                                                             .distinct()
+                                                                             .sorted()
+                                                                             .collect(Collectors.toList());
+        SuggestingTagField field = new SuggestingTagField(languageSuggester, Color.WHITE, Color.DARK_GRAY);
+        field.setPreferredSize(new Dimension(100, 30));
+        return field;
+    }
+
+    private JFormattedTextField createYearField() {
+        NumberFormat format = NumberFormat.getIntegerInstance();
+        format.setGroupingUsed(false);
+        JFormattedTextField field = new JFormattedTextField(format);
+        field.setColumns(4);
+        field.setPreferredSize(new Dimension(field.getPreferredSize().width, 30));
+        textFields.add(field);
+        return field;
+    }
+
+    private SuggestingTagField createGenreField(YassProperties yassProperties) {
+        // Create the suggestion provider function
+        Function<String, List<String>> genreSuggester = (input) -> {
+            String genreTags = yassProperties.getProperty("genre-tag", "") + "|" + yassProperties.getProperty("genre-more-tag", "");
+            String[] allGenres = genreTags.split("\\|");
+            return Arrays.stream(allGenres)
+                         .map(String::trim)
+                         .filter(g -> !g.isEmpty() && !g.equals("MORE"))
+                         .filter(g -> g.toLowerCase().startsWith(input.toLowerCase()))
+                         .distinct()
+                         .collect(Collectors.toList());
+        };
+        SuggestingTagField field = new SuggestingTagField(genreSuggester);
+        field.setPreferredSize(new Dimension(100, 30));
+        return field;
+    }
+    
+    private SuggestingTagField createTagField(YassProperties yassProperties) {
+        // Create the suggestion provider function
+        Function<String, List<String>> tagsSuggester = (input) -> {
+            String tags = yassProperties.getProperty("tags-tag", "");
+            String[] allTags = tags.split("\\|");
+            return Arrays.stream(allTags)
+                         .map(String::trim)
+                         .filter(g -> !g.isEmpty())
+                         .filter(g -> g.toLowerCase().startsWith(input.toLowerCase()))
+                         .distinct()
+                         .collect(Collectors.toList());
+        };
+        SuggestingTagField field = new SuggestingTagField(tagsSuggester);
+        field.setPreferredSize(new Dimension(100, 30));
+        return field;
+    }
     
     private JPanel createGapSpinnerPanel() {
         JPanel panel = new JPanel();
@@ -225,6 +385,10 @@ public class SongHeader extends JPanel implements YassSheetListener {
         int end = table.getEnd() > 0 ? (int) table.getEnd() : 10000;
         endSpinner.setTime(Math.min(duration, end));
         endSpinner.setDuration(Math.max(10000, duration));
+        languageField.setText(table.getLanguage());
+        yearField.setText(table.getYear());
+        genreField.setText(table.getGenre());
+        tagField.setText(table.getTags());
         setInternalUpdate(false);
     }
 
@@ -383,6 +547,37 @@ public class SongHeader extends JPanel implements YassSheetListener {
                 temp.setBPM(bpm);
             }
         });
+        languageField.addChangeListener(e -> {
+            if (isInternalUpdate || sheet == null || sheet.getTable() == null) {
+                return;
+            }
+            YassTable table = sheet.getTable();
+            table.setLanguage(languageField.getText());
+        });
+
+        YassUtils.addChangeListener(yearField, e -> {
+            if (isInternalUpdate || sheet == null || sheet.getTable() == null) {
+                return;
+            }
+            YassTable table = sheet.getTable();
+            table.setYear(yearField.getText());
+        });
+
+        genreField.addChangeListener(e -> {
+            if (isInternalUpdate || sheet == null || sheet.getTable() == null) {
+                return;
+            }
+            YassTable table = sheet.getTable();
+            table.setGenre(genreField.getText());
+        });
+
+        tagField.addChangeListener(e -> {
+            if (isInternalUpdate || sheet == null || sheet.getTable() == null) {
+                return;
+            }
+            YassTable table = sheet.getTable();
+            table.setTags(tagField.getText());
+        });
     }
     
     private void determinePitches() {
@@ -530,6 +725,10 @@ public class SongHeader extends JPanel implements YassSheetListener {
         bpmField.setText("");
         startSpinner.setTime(0);
         endSpinner.setTime(0);
+        languageField.setText("");
+        yearField.setText("");
+        genreField.setText("");
+        tagField.setText("");
 
         isInternalUpdate = false; // Re-enable listeners
     }

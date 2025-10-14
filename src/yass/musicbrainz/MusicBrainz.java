@@ -37,14 +37,17 @@ import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.logging.Logger;
 
 public class MusicBrainz {
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+
     public MusicBrainzInfo queryMusicBrainz(String artist, String title) throws Exception {
         String query = "recording:\"" + title + "\" AND artist:\"" + artist + "\"";
         String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8);
 
         String urlStr = "https://musicbrainz.org/ws/2/recording/?query=" + encodedQuery + "&fmt=json";
-
+        LOGGER.info(urlStr);
         RecordingsResponse response = fetchFromMusicBrainz(urlStr, RecordingsResponse.class);
         Recording firstRecording = findEarliestRecording(response.getRecordings());
         MusicBrainzInfo musicBrainzInfo = new MusicBrainzInfo();
@@ -57,7 +60,8 @@ public class MusicBrainz {
         return musicBrainzInfo;
     }
 
-    private <T extends MusicBrainzEntity> T fetchFromMusicBrainz(String urlStr, Class<? extends MusicBrainzEntity> responseClass) throws URISyntaxException, IOException {
+    private <T extends MusicBrainzEntity> T fetchFromMusicBrainz(String urlStr,
+                                                                 Class<? extends MusicBrainzEntity> responseClass) throws URISyntaxException, IOException {
         URI uri = new URI(urlStr);
         HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();
         conn.setRequestMethod("GET");
@@ -79,7 +83,7 @@ public class MusicBrainz {
                          .min(Comparator.comparing(r -> parsePartialDate(r.firstReleaseDate)))
                          .orElse(null);
     }
-    
+
     private static LocalDate parsePartialDate(String dateStr) {
         try {
             if (dateStr.length() == 4) {
@@ -115,7 +119,7 @@ public class MusicBrainz {
                         .findFirst()
                         .orElse(null);
     }
-    
+
     public List<String> getGenresForRecording(Artist artist) throws Exception {
         if (artist == null) {
             return List.of();

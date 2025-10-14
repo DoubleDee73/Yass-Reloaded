@@ -25,7 +25,9 @@ import net.bramp.ffmpeg.FFmpegExecutor;
 import net.bramp.ffmpeg.FFprobe;
 import net.bramp.ffmpeg.builder.FFmpegBuilder;
 import net.bramp.ffmpeg.job.FFmpegJob;
+import net.bramp.ffmpeg.probe.FFmpegFormat;
 import net.bramp.ffmpeg.probe.FFmpegProbeResult;
+import net.bramp.ffmpeg.probe.FFmpegStream;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -41,11 +43,6 @@ import org.jaudiotagger.audio.exceptions.ReadOnlyFileException;
 import org.jaudiotagger.tag.FieldKey;
 import org.jaudiotagger.tag.Tag;
 import org.jaudiotagger.tag.TagException;
-import org.jaudiotagger.tag.TagField;
-import org.jaudiotagger.tag.asf.AsfTagTextField;
-import org.jaudiotagger.tag.id3.AbstractID3v2Frame;
-import org.jaudiotagger.tag.mp4.field.Mp4TagReverseDnsField;
-import org.jaudiotagger.tag.vorbiscomment.VorbisCommentTagField;
 import yass.analysis.PitchDetector.PitchData;
 import yass.ffmpeg.FFMPEGLocator;
 import yass.musicalkey.MusicalKeyEnum;
@@ -476,7 +473,7 @@ public class YassPlayer {
         try {
             file = generateTemp(filename);
             tempFile = file;
-        } catch (IOException | UnsupportedAudioFileException | LineUnavailableException e) {
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
         if (file == null || !file.exists()) {
@@ -985,7 +982,7 @@ public class YassPlayer {
                     try {
                         mp3File = generateTemp(USER_PATH + "temp.wav", timebase);
                         setPlayrate(timebase);
-                    } catch (IOException | UnsupportedAudioFileException | LineUnavailableException e) {
+                    } catch (IOException e) {
                         // Couldn't find slowed down ffmpeg conversion, we are using the ugly JavaFX-slow down
                         setPlayrate(yass.Timebase.NORMAL);
                     }
@@ -1280,12 +1277,11 @@ public class YassPlayer {
         }
     }
 
-    public File generateTemp(String source) throws IOException, UnsupportedAudioFileException, LineUnavailableException {
+    public File generateTemp(String source) throws IOException {
         return generateTemp(source, yass.Timebase.NORMAL);
     }
 
-    public File generateTemp(String source, Timebase timeBase) throws IOException, UnsupportedAudioFileException,
-            LineUnavailableException {
+    public File generateTemp(String source, Timebase timeBase) throws IOException {
         String filename;
         if (timeBase == yass.Timebase.NORMAL) {
             filename = TEMP_WAV;
@@ -1310,7 +1306,7 @@ public class YassPlayer {
             audioBytesChannels = fFmpegProbeResult.getStreams().get(0).channels;
         }
         this.key = findKey();
-        setReplayGain(source);
+        replayGain = determineReplayGain(source);
         File tempFile = new File(filename);
         if (timeBase != yass.Timebase.NORMAL) {
             fFmpegBuilder.setAudioFilter(timeBase.getFilter());
@@ -1341,53 +1337,106 @@ public class YassPlayer {
         return tempFile;
     }
 
-    private void setReplayGain(String filename) {
-        AudioFile audioFile;
+    private double determineReplayGain(String sourcePath) {
+        FFprobe ffprobe = FFMPEGLocator.getInstance().getFfprobe();
+        if (ffprobe == null) return 0.0;
+
         try {
-            audioFile = AudioFileIO.read(new File(filename));
-            Tag tag = audioFile.getTag();
-            if (tag != null) {
-                Iterator<TagField> fields = tag.getFields();
-                List<String> tagKeys = Arrays.asList("replaygain_track_gain", "replaygain_album_gain");
-                while (fields.hasNext()) {
-                    TagField tagField = fields.next();
-                    String replayGain = null;
-                    for (String tagKey : tagKeys) {
-                        if (tagField instanceof AbstractID3v2Frame frame && frame.toString()
-                                                                                 .toLowerCase()
-                                                                                 .contains(tagKey)) {
-                            replayGain = frame.getContent();
-                        } else if (tagField instanceof Mp4TagReverseDnsField frame && frame.getDescriptor()
-                                                                                           .equalsIgnoreCase(tagKey)) {
-                            replayGain = frame.getContent();
-                        } else if (tagField instanceof VorbisCommentTagField frame && frame.getId()
-                                                                                           .toLowerCase()
-                                                                                           .contains(tagKey)) {
-                            replayGain = frame.getContent();
-                        } else if (tagField instanceof AsfTagTextField frame && frame.getId()
-                                                                                     .toLowerCase()
-                                                                                     .contains(tagKey)) {
-                            replayGain = frame.getContent();
-                        }
-                        if (replayGain != null && parseTagToReplayGain(replayGain)) {
-                            return;
-                        }
+            FFmpegProbeResult probeResult = ffprobe.probe(sourcePath);
+            List<FFmpegStream> streams = probeResult.getStreams();
+
+            if (streams != null && !streams.isEmpty()) {
+                FFmpegStream firstStream = streams.getFirst();
+                String trackGain = firstStream.tags.get("R128_TRACK_GAIN");
+                if (trackGain != null) {
+                    try {
+                        double r128Gain = Double.parseDouble(trackGain);
+                        double gain = r128Gain / 256.0;
+                        LOGGER.info("Found R128_TRACK_GAIN tag: " + gain + " dB. Applying this gain.");
+                        return gain;
+                    } catch (NumberFormatException e) {
+                        LOGGER.warning("Could not parse R128_TRACK_GAIN value: " + trackGain);
                     }
                 }
             }
-            replayGain = 0d;
-        } catch (CannotReadException | IOException | TagException | ReadOnlyFileException | InvalidAudioFrameException |
-                 NumberFormatException e) {
-            LOGGER.throwing("YassPlayer", "setReplayGain", e);
+            FFmpegFormat format = probeResult.getFormat();
+            String gainTag = format.tags.get("replaygain_track_gain");
+            if (gainTag == null) {
+                gainTag = format.tags.get("replaygain_album_gain");
+            }
+
+            if (gainTag != null && gainTag.toLowerCase().contains("db")) {
+                try {
+                    String numericPart = gainTag.toLowerCase().replace("db", "").trim();
+                    double gain = Double.parseDouble(numericPart);
+                    LOGGER.info("Found ReplayGain tag: " + gain + " dB. Applying this gain.");
+                    return gain;
+                } catch (NumberFormatException e) {
+                    LOGGER.warning("Could not parse ReplayGain value: " + gainTag);
+                }
+            }
+        
+            // If targetDbfs is set and no ReplayGain tag was found, analyze the file with ffmpeg.
+            if (Math.round(targetDbfs) != 0) {
+                FFmpeg ffmpeg = FFMPEGLocator.getInstance().getFfmpeg();
+                if (ffmpeg != null) {
+                    try {
+                        // Use ProcessBuilder for direct control over stderr
+                        List<String> command = new ArrayList<>();
+                        command.add(ffmpeg.getPath());
+                        command.add("-i");
+                        command.add(sourcePath);
+                        command.add("-af");
+                        command.add("replaygain");
+                        command.add("-f");
+                        command.add("null");
+                        command.add("-");
+
+                        ProcessBuilder processBuilder = new ProcessBuilder(command);
+                        processBuilder.redirectErrorStream(true); // Redirect stderr to stdout
+                        Process process = processBuilder.start();
+
+                        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                if (line.contains("track_gain")) {
+                                    return parseReplayGainFromLine(line);
+                                }
+                            }
+                        }
+                        process.waitFor();
+                    } catch (IOException | InterruptedException e) {
+                        LOGGER.log(Level.SEVERE, "Error during ffmpeg replaygain analysis", e);
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "Error during ffprobe execution for normalization", e);
         }
+
+        return 0.0; // Default: no gain
     }
 
-    private boolean parseTagToReplayGain(String tag) {
-        if (StringUtils.isNotEmpty(tag) && tag.contains("dB")) {
-            replayGain = Float.parseFloat(tag.replace("dB", "").trim());
-            return true;
+    /**
+     * Parses a line from the ffmpeg replaygain filter output to extract the track gain.
+     * Example line: [Parsed_replaygain_0 @ 0x...] track_gain = -3.2dB
+     * @param line The output line from ffmpeg.
+     * @return The parsed gain in dB, or 0.0 if parsing fails.
+     */
+    private double parseReplayGainFromLine(String line) {
+        try {
+            String[] parts = line.split("track_gain = ");
+            if (parts.length > 1) {
+                String gainStr = parts[1].replace("dB", "").trim();
+                double gain = Double.parseDouble(gainStr);
+                LOGGER.info("FFmpeg analysis: ReplayGain track_gain is " + gain + " dB.");
+                return gain;
+            }
+        } catch (NumberFormatException e) {
+            LOGGER.warning("Could not parse track_gain from ffmpeg output: " + line);
         }
-        return false;
+        return 0.0; // Default to no gain if parsing fails
     }
 
     public void playNote(int note) {

@@ -63,7 +63,7 @@ public class YassMain extends JFrame {
     private JPanel toolPanel = null;
     private JPanel groupsPanel, songPanel, playlistPanel, sheetInfoPanel;
     private JComponent editToolbar;
-
+    private JSplitPane verticalSplit;
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
     public static void main(String[] argv) {
@@ -244,16 +244,18 @@ public class YassMain extends JFrame {
     private Dimension getDefaultSize() {
         Dimension dim = Toolkit.getDefaultToolkit().getScreenSize();
         String w = prop.getProperty("frame-width");
-        if (w == null)
+        if (w == null) {
             w = dim.width >= 1200 ? "1200" : Integer.toString(dim.width);
-        else if (Integer.parseInt(w) > dim.width)
+        } else if (Integer.parseInt(w) > dim.width) {
             w = Integer.toString(dim.width);
+        }
 
         String h = prop.getProperty("frame-height");
-        if (h == null)
-            h = dim.height >= 800 ? "800" : Integer.toString(dim.height);
-        else if (Integer.parseInt(h) > dim.height)
-            w = Integer.toString(dim.height);
+        if (h == null) {
+            h = dim.height >= 900 ? "900" : Integer.toString(dim.height);
+        } else if (Integer.parseInt(h) > dim.height) {
+            h = Integer.toString(dim.height);
+        }
 
         return new Dimension(Integer.parseInt(w), Integer.parseInt(h));
     }
@@ -323,12 +325,6 @@ public class YassMain extends JFrame {
         Container c = getContentPane();
         c.setLayout(new BorderLayout());
         c.add("Center", mainPanel);
-    }
-
-    private void initLyricsLayout() {
-        int lyricsWidth = 450;
-        int lyricsMinHeight = 120;
-        lyrics.setBounds(500, 50, lyricsWidth, lyricsMinHeight);
     }
 
     private void initTempDir() {
@@ -554,8 +550,9 @@ public class YassMain extends JFrame {
             actions.getTable().gotoPage(notches < 0 ? -1 : 1);
         });
 
-        JSplitPane verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, horizontalSplit, sheetPane);
-        verticalSplit.setResizeWeight(0.2);
+        verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, horizontalSplit, sheetPane);
+        verticalSplit.setResizeWeight(0.1);
+        actions.setEditorSplit(verticalSplit);
         contentPanel.add(verticalSplit, BorderLayout.CENTER);
 
         mainPanel.add(contentPanel, BorderLayout.CENTER);

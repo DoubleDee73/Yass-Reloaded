@@ -36,6 +36,10 @@ public class RadioOptionsDialog {
             group.add(buttons[i]);
             panel.add(buttons[i++]);
         }
+        if (options.isEmpty()) {
+            return null;
+        }
+
         buttons[0].setSelected(true);
         int result = JOptionPane.showConfirmDialog(parent, panel, title, JOptionPane.OK_CANCEL_OPTION,
                                                    JOptionPane.QUESTION_MESSAGE);
