@@ -1298,12 +1298,16 @@ public class YassPlayer {
         FFmpeg ffmpeg = FFMPEGLocator.getInstance().getFfmpeg();
         FFprobe fFprobe = FFMPEGLocator.getInstance().getFfprobe();
         FFmpegProbeResult fFmpegProbeResult = fFprobe.probe(source);
+        final Double durationNs;
         FFmpegBuilder fFmpegBuilder = new FFmpegBuilder();
         fFmpegBuilder.addInput(fFmpegProbeResult);
         if (fFmpegProbeResult != null && fFmpegProbeResult.getStreams() != null && !fFmpegProbeResult.getStreams()
                                                                                                      .isEmpty()) {
             audioBytesSampleRate = fFmpegProbeResult.getStreams().get(0).sample_rate;
             audioBytesChannels = fFmpegProbeResult.getStreams().get(0).channels;
+            durationNs = fFmpegProbeResult.getFormat().duration * 1_000_000_000;
+        } else {
+            durationNs = null;
         }
         this.key = findKey();
         replayGain = determineReplayGain(source);
@@ -1321,19 +1325,45 @@ public class YassPlayer {
                      .setAudioSampleRate(44100)
                      .done();
         FFmpegExecutor executor = new FFmpegExecutor(ffmpeg, fFprobe);
-        // Run a one-pass encode
-        FFmpegJob job = executor.createJob(fFmpegBuilder);
-        LOGGER.info("YassPlayer: Starting conversion of " + source + " to " + filename);
-        job.run();
-        while (job.getState() == FFmpegJob.State.RUNNING || job.getState() == FFmpegJob.State.WAITING) {
-            System.out.println("Waiting for conversion");
+        // Eine thread-sichere Variable, um den Fortschritt zwischen den Threads zu teilen.
+        final java.util.concurrent.atomic.AtomicReference<net.bramp.ffmpeg.progress.Progress> progressHolder = new java.util.concurrent.atomic.AtomicReference<>();
+        FFmpegJob job = executor.createJob(fFmpegBuilder, progress -> {
+            if (durationNs == null) {
+                return;
+            }
+            // Aktualisiere den Fortschritt. Dies wird im Hintergrund-Thread aufgerufen.
+            progressHolder.set(progress);
+        });
+
+        Thread conversionThread = new Thread(() -> {
+            LOGGER.info("YassPlayer: Starting conversion of " + source + " to " + filename);
+            job.run();
+            LOGGER.info("YassPlayer: finished converting " + source + " to " + filename);
+        }, "FFmpeg-Conversion-Thread");
+
+        conversionThread.start();
+
+        SplashFrame splashFrame = new SplashFrame();
+        splashFrame.setVisible(true); // Mach den Frame sofort sichtbar
+
+        // Aktualisiere den Fortschrittsbalken in einer Schleife, bis der Thread fertig ist
+        while (conversionThread.isAlive()) {
+            net.bramp.ffmpeg.progress.Progress progress = progressHolder.get();
+            if (progress != null && durationNs != null) {
+                double percentage = (progress.out_time_ns / durationNs) * 100;
+                splashFrame.updateProgress("Generating Temp file", (int) percentage);
+            }
             try {
-                Thread.sleep(1000);
+                // Gib dem UI-Thread eine kurze Pause, um sich neu zu zeichnen
+                // und andere Events zu verarbeiten.
+                Thread.sleep(100);
             } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+                Thread.currentThread().interrupt();
+                break; // Schleife bei Interruption verlassen
             }
         }
-        LOGGER.info("YassPlayer: finished converting " + source + " to " + filename);
+
+        splashFrame.dispose();
         return tempFile;
     }
 
@@ -1347,7 +1377,7 @@ public class YassPlayer {
 
             if (streams != null && !streams.isEmpty()) {
                 FFmpegStream firstStream = streams.getFirst();
-                String trackGain = firstStream.tags.get("R128_TRACK_GAIN");
+                String trackGain = firstStream.tags != null ? firstStream.tags.get("R128_TRACK_GAIN") : null;
                 if (trackGain != null) {
                     try {
                         double r128Gain = Double.parseDouble(trackGain);
@@ -1360,8 +1390,8 @@ public class YassPlayer {
                 }
             }
             FFmpegFormat format = probeResult.getFormat();
-            String gainTag = format.tags.get("replaygain_track_gain");
-            if (gainTag == null) {
+            String gainTag = format.tags != null ? format.tags.get("replaygain_track_gain") : null;
+            if (gainTag == null && format.tags != null) {
                 gainTag = format.tags.get("replaygain_album_gain");
             }
 
@@ -1767,6 +1797,10 @@ public class YassPlayer {
             // Berechne die Startposition des Klicks relativ zum Wiedergabestart (offset).
             // Wenn click.start() > offset, ist startSample > 0, was die Stille am Anfang erzeugt.
             int startSample = (int) (((click.start() - offset) / 1_000_000.0) / timebase * sampleRate);
+            if (startSample < 0) {
+                // Dieser Klick liegt vor dem Wiedergabestart und wird ignoriert.
+                continue;
+            }
             int lengthSamples = (int) (((click.end() - click.start()) / 1_000_000.0) / timebase * sampleRate);
             if (lengthSamples <= 0) continue;
             byte[] pcm = null;

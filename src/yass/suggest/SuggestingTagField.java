@@ -188,16 +188,89 @@ public class SuggestingTagField extends JPanel {
 
         // Make the input field grow to fill available space
         inputField.addFocusListener(new FocusAdapter() {
+            private Dimension originalPreferredSize;
+
             @Override
             public void focusGained(FocusEvent e) {
+                if (originalPreferredSize == null) {
+                    originalPreferredSize = SuggestingTagField.this.getPreferredSize();
+                    // If preferred size is not set, use current size as a fallback
+                    int requiredHeight = (int)(Math.ceil(getRequiredHeight() / originalPreferredSize.getHeight()) *
+                            originalPreferredSize.getHeight());
+                    SuggestingTagField.this.setPreferredSize(new Dimension(originalPreferredSize.width, requiredHeight));
+                    SuggestingTagField.this.revalidate();
+                }
                 updateInputFieldSize();
             }
-        });
-        this.addComponentListener(new ComponentAdapter() {
+
+            @Override
+            public void focusLost(FocusEvent e) {
+                // Don't shrink if focus is going to the suggestion popup
+                // or to another component within this field (like a tag's close button).
+                Component oppositeComponent = e.getOppositeComponent();
+
+                // If the focus is going to a component that is a child of this field (like a tag's close button)
+                // or the suggestion popup, we don't want to shrink.
+                boolean focusStaysInside = false;
+                if (oppositeComponent != null) {
+                    focusStaysInside = SwingUtilities.isDescendingFrom(oppositeComponent, SuggestingTagField.this) ||
+                                       SwingUtilities.isDescendingFrom(oppositeComponent, suggestionPopup);
+                }
+                if (focusStaysInside) {
+                    return;
+                }
+
+                if (originalPreferredSize != null) {
+                    SuggestingTagField.this.setPreferredSize(originalPreferredSize);
+                    SuggestingTagField.this.revalidate();
+                    originalPreferredSize = null; // Reset for the next focus gain
+                }
+                // Also add any pending tag when focus is lost
+                addTagFromInput();
+            }
+        });        this.addComponentListener(new ComponentAdapter() {
             public void componentResized(ComponentEvent evt) {
                 updateInputFieldSize();
             }
         });
+    }
+
+    /**
+     * Calculates the required height to display all tags without clipping.
+     * It simulates the FlowLayout wrapping behavior.
+     * @return The required height in pixels.
+     */
+    private int getRequiredHeight() {
+        FlowLayout layout = (FlowLayout) tagsPanel.getLayout();
+        int hgap = layout.getHgap();
+        int vgap = layout.getVgap();
+        // Use the actual width of the component for calculation
+        int panelWidth = this.getWidth();
+
+        // If panel is not yet displayed, we can't calculate, return current height
+        if (panelWidth <= 0) {
+            return this.getPreferredSize().height;
+        }
+
+        int rowCount = 1;
+        int currentLineWidth = 0;
+        // Use the input field's height as a good reference for row height
+        int rowHeight = inputField.getPreferredSize().height;
+
+        for (Component comp : tagsPanel.getComponents()) {
+            int compWidth = comp.getPreferredSize().width;
+            if (currentLineWidth > 0 && currentLineWidth + hgap + compWidth > panelWidth) {
+                // Component doesn't fit, wrap to a new line
+                rowCount++;
+                currentLineWidth = compWidth;
+            } else {
+                // Component fits, add it to the current line
+                currentLineWidth += (currentLineWidth > 0 ? hgap : 0) + compWidth;
+            }
+        }
+
+        Insets insets = getInsets();
+        return rowCount * rowHeight + Math.max(0, rowCount - 1) * vgap + insets.top + insets.bottom + vgap * 2;
     }
 
     private void addTagFromInput() {

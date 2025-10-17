@@ -258,8 +258,8 @@ public class CreateSongWizard extends Wizard {
                         }
                         String genreFromMusicBrainz = null;
                         if (info.getGenres() != null && !info.getGenres().isEmpty() && (StringUtils.isEmpty(
-                                header.getGenre()) || header.getGenre().equalsIgnoreCase("unknown"))) {
-                            genreFromMusicBrainz = info.getGenres().get(0);
+                                getValue("genre")) || "unknown".equals(getValue("genre")))) {
+                            genreFromMusicBrainz = String.join(", ", info.getGenres());
                             setValue("genre", genreFromMusicBrainz);
                         }
                         header.setGenre(genreFromMusicBrainz != null ? genreFromMusicBrainz : getValue("genre"));

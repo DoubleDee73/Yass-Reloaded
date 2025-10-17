@@ -123,7 +123,8 @@ public class YassMain extends JFrame {
             throw new RuntimeException(e);
         }
         YassMain yassMain = (YassMain) result[0];
-        SplashFrame splashFrame = new SplashFrame(yassMain.mp3, yassMain.sheet);
+        SplashFrame splashFrame = new SplashFrame();
+        splashFrame.initNoteMap(yassMain.mp3, yassMain.sheet);
         splashFrame.setLocationRelativeTo(null);
     }
 
