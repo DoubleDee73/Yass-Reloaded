@@ -171,6 +171,9 @@ public class Lyrics extends JPanel {
         yassUtils.setSpacingAfter(yassProperties.isUncommonSpacingAfter());
         List<String> lyrics = yassUtils.splitLyricsToLines(getText().split("\n"), 0);
         for (String line : lyrics) {
+            if (StringUtils.isEmpty(line.trim())) {
+                continue;
+            }
             outputStream.println(line.replace("\t", " "));
         }
         outputStream.println("E");

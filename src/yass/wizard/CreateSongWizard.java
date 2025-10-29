@@ -256,10 +256,13 @@ public class CreateSongWizard extends Wizard {
                         if (info.getYear() != null && StringUtils.isEmpty(header.getYear())) {
                             header.setYear(info.getYear());
                         }
+                        String genreFromMusicBrainz = null;
                         if (info.getGenres() != null && !info.getGenres().isEmpty() && (StringUtils.isEmpty(
-                                header.getGenre()) || header.getGenre().equalsIgnoreCase("unknown"))) {
-                            setValue("genre", info.getGenres().get(0));
+                                getValue("genre")) || "unknown".equals(getValue("genre")))) {
+                            genreFromMusicBrainz = String.join(", ", info.getGenres());
+                            setValue("genre", genreFromMusicBrainz);
                         }
+                        header.setGenre(genreFromMusicBrainz != null ? genreFromMusicBrainz : getValue("genre"));
                     } catch (Exception e) {
                         LOGGER.log(Level.INFO, "Failed to query MusicBrainz", e);
                     }

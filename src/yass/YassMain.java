@@ -59,10 +59,11 @@ public class YassMain extends JFrame {
     private YassSongInfo songInfo = null;
     private YassPlayList playList = null;
     private YassGroups groups = null;
+    private SongHeader songHeader = null;
     private JPanel toolPanel = null;
     private JPanel groupsPanel, songPanel, playlistPanel, sheetInfoPanel;
     private JComponent editToolbar;
-
+    private JSplitPane verticalSplit;
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
     public static void main(String[] argv) {
@@ -118,13 +119,12 @@ public class YassMain extends JFrame {
                 LOGGER.info("Ready. Let's go.");
                 result[0] = y;
             });
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        } catch (InvocationTargetException e) {
+        } catch (InterruptedException | InvocationTargetException e) {
             throw new RuntimeException(e);
         }
         YassMain yassMain = (YassMain) result[0];
-        SplashFrame splashFrame = new SplashFrame(yassMain.mp3, yassMain.sheet);
+        SplashFrame splashFrame = new SplashFrame();
+        splashFrame.initNoteMap(yassMain.mp3, yassMain.sheet);
         splashFrame.setLocationRelativeTo(null);
     }
 
@@ -245,16 +245,18 @@ public class YassMain extends JFrame {
     private Dimension getDefaultSize() {
         Dimension dim = Toolkit.getDefaultToolkit().getScreenSize();
         String w = prop.getProperty("frame-width");
-        if (w == null)
+        if (w == null) {
             w = dim.width >= 1200 ? "1200" : Integer.toString(dim.width);
-        else if (Integer.parseInt(w) > dim.width)
+        } else if (Integer.parseInt(w) > dim.width) {
             w = Integer.toString(dim.width);
+        }
 
         String h = prop.getProperty("frame-height");
-        if (h == null)
-            h = dim.height >= 800 ? "800" : Integer.toString(dim.height);
-        else if (Integer.parseInt(h) > dim.height)
-            w = Integer.toString(dim.height);
+        if (h == null) {
+            h = dim.height >= 900 ? "900" : Integer.toString(dim.height);
+        } else if (Integer.parseInt(h) > dim.height) {
+            h = Integer.toString(dim.height);
+        }
 
         return new Dimension(Integer.parseInt(w), Integer.parseInt(h));
     }
@@ -266,7 +268,6 @@ public class YassMain extends JFrame {
         actions.interruptPlay();
 
         sheet.updateHeight();
-        actions.revalidateLyricsArea();
         sheet.update();
         sheet.repaint();
     }
@@ -282,7 +283,7 @@ public class YassMain extends JFrame {
 
         sheet = new YassSheet();
         sheet.setOwner(this);
-        mp3 = new YassPlayer(sheet, !prop.getBooleanProperty("use-sample"), prop.getBooleanProperty("debug-audio"));
+        mp3 = new YassPlayer(sheet, prop);
         String dbfsProp = prop.getProperty("dbfs");
         if (StringUtils.isEmpty(dbfsProp) || !NumberUtils.isParsable(dbfsProp)) {
             mp3.setTargetDbfs(0);
@@ -295,8 +296,11 @@ public class YassMain extends JFrame {
         actions = new YassActions(sheet, mp3, lyrics);
         actions.init(prop);
         actions.setTab(mainPanel);
+        songHeader = new SongHeader(actions);
+        actions.setSongHeader(songHeader);
         sheet.setActions(actions);
-
+        sheet.setSongHeader(songHeader);
+        
         // Force tooltips to be lightweight to prevent repaint artifacts with custom-painted components.
         ToolTipManager.sharedInstance().setLightWeightPopupEnabled(true);
 
@@ -313,11 +317,6 @@ public class YassMain extends JFrame {
         actions.setVideo(video);
         mp3.setVideo(video);
 
-        initLyricsLayout();
-
-        sheet.setLayout(null);
-        sheet.add(lyrics);
-        
         YassErrors errors = new YassErrors(actions, prop, actions.createErrorToolbar());
         actions.setErrors(errors);
 
@@ -327,12 +326,6 @@ public class YassMain extends JFrame {
         Container c = getContentPane();
         c.setLayout(new BorderLayout());
         c.add("Center", mainPanel);
-    }
-
-    private void initLyricsLayout() {
-        int lyricsWidth = 450;
-        int lyricsMinHeight = 120;
-        lyrics.setBounds(500, 50, lyricsWidth, lyricsMinHeight);
     }
 
     private void initTempDir() {
@@ -413,7 +406,7 @@ public class YassMain extends JFrame {
             prop.store();
         }
         if (edit) {
-            if (txtFiles.size() > 0) {
+            if (!txtFiles.isEmpty()) {
                 actions.openFiles(txtFiles, false);
             } else if (dirFile != null) {
                 actions.openFiles(dirFile, false);
@@ -537,80 +530,15 @@ public class YassMain extends JFrame {
     }
 
     private JPanel createSheetPanel() {
-        JPanel sheetPanel = new JPanel(new BorderLayout());
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel.add(editToolbar = actions.createFileEditToolbar(), BorderLayout.NORTH);
+
+        JPanel contentPanel = new JPanel(new BorderLayout());
+
+        JSplitPane horizontalSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, songHeader, lyrics);
+        horizontalSplit.setResizeWeight(0.5);
+
         JScrollPane sheetPane = new JScrollPane(sheet);
-
-        sheetPane.getViewport().addChangeListener(e -> {
-            JViewport v = (JViewport) e.getSource();
-            Point p = v.getViewPosition();
-            Dimension r = v.getExtentSize();
-
-            // LYRICS POSITION
-            int lyricsWidth = 450;
-            int newx = (int) p.getX() + r.width - lyricsWidth;
-            int newy = (int) p.getY() + 20; 
-            Point p2 = lyrics.getLocation();
-            boolean lyricsMoved = p2.x != newx || p2.y != newy;
-            if (lyricsMoved) {
-                lyrics.setLocation(newx, newy);
-            }
-            boolean headerMoved = false;
-            if (sheet.getSongHeader() != null) {
-                SongHeader songHeader = sheet.getSongHeader();
-                Dimension headerSize = songHeader.getPreferredSize();
-                int headerX = (int) p.getX();
-                Point headerP = songHeader.getLocation();
-                if (headerP.x != headerX || headerP.y != newy) {
-                    songHeader.setBounds(headerX, newy, headerSize.width, headerSize.height);
-                    headerMoved = true;
-                }
-            }
-            if (lyricsMoved || headerMoved) {
-                sheet.revalidate();
-                sheet.update();
-            }
-        });
-        sheetPane.getViewport().addComponentListener(new ComponentAdapter() {
-            public void componentResized(ComponentEvent e) {
-                actions.stopPlaying();
-
-                JViewport v = (JViewport) e.getSource();
-                Point p = v.getViewPosition();
-                Dimension r = v.getExtentSize();
-
-                // LYRICS POSITION
-                int lyricsWidth = 450;
-                int newx = (int) p.getX() + r.width - lyricsWidth;
-                int newy = (int) p.getY() + 20;
-                Point p2 = lyrics.getLocation();
-                boolean lyricsMoved = p2.x != newx || p2.y != newy;
-                if (lyricsMoved) {
-                    lyrics.setLocation(newx, newy);
-                }
-                boolean headerMoved = false;
-                if (sheet.getSongHeader() != null) {
-                    SongHeader songHeader = sheet.getSongHeader();
-                    Dimension headerSize = songHeader.getPreferredSize();
-                    int headerX = (int) p.getX();
-                    Point headerP = songHeader.getLocation();
-                    if (headerP.x != headerX || headerP.y != newy) {
-                        songHeader.setBounds(headerX, newy, headerSize.width, headerSize.height);
-                        headerMoved = true;
-                    }
-                }
-                if (lyricsMoved || headerMoved) {
-                    sheet.revalidate();
-                    sheet.update();
-                } else {
-                    sheet.updateHeight();
-                    actions.revalidateLyricsArea();
-                }
-                YassTable t = actions.getTable();
-                if (t != null) t.zoomPage();
-            }
-        });
-
-
         sheetPane.setWheelScrollingEnabled(false);
         sheetPane.addMouseWheelListener(e -> {
             if (sheet.isPlaying() || sheet.isTemporaryStop()) {
@@ -623,13 +551,17 @@ public class YassMain extends JFrame {
             actions.getTable().gotoPage(notches < 0 ? -1 : 1);
         });
 
-        sheetPanel.add("North", editToolbar = actions.createFileEditToolbar());
-        sheetPanel.add("Center", sheetPane);
+        verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, horizontalSplit, sheetPane);
+        verticalSplit.setResizeWeight(0.1);
+        actions.setEditorSplit(verticalSplit);
+        contentPanel.add(verticalSplit, BorderLayout.CENTER);
+
+        mainPanel.add(contentPanel, BorderLayout.CENTER);
 
         YassSheetInfo sheetInfo = new YassSheetInfo(sheet, 0);
         sheetInfoPanel = new JPanel(new GridLayout(1, 1));
         sheetInfoPanel.add(sheetInfo);
-        sheetPanel.add("South", sheetInfoPanel);
+        mainPanel.add(sheetInfoPanel, BorderLayout.SOUTH);
 
         // dark mode buttons
         Border emptyBorder = BorderFactory.createCompoundBorder(
@@ -685,11 +617,11 @@ public class YassMain extends JFrame {
                                                                      YassSheet.HI_GRAY_2, 3));
 
         sheetPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        sheetPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
+        sheetPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         sheetPane.getViewport().setScrollMode(JViewport.SIMPLE_SCROLL_MODE);
         sheetPane.setBorder(null);
         sheetPane.getActionMap().clear();
-        return sheetPanel;
+        return mainPanel;
     }
 
     public JPanel createSongListPanel() {

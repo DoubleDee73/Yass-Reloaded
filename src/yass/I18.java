@@ -238,14 +238,17 @@ public class I18 {
         sb.append("You should have received a copy of the GNU General Public License<br>");
         sb.append("along with this program. If not, see <a href=\"https://www.gnu.org/licenses/\">https://www.gnu.org/licenses/</a>.<br>");
         sb.append("<br>");
-        sb.append("Yass uses: ");
+        sb.append("Yass Reloaded uses: ");
         sb.append("Java Look & Feel Graphics Repository, jAudiotagger<br>");
         sb.append("iText, Jazzy Spell Checker, TeX Hyphenator, JInput, FFmpeg, FFmpeg CLI Wrapper, <br>");
         sb.append("Java Media Framework (JMF), Robert Eckstein's Wizard code,<br>");
         sb.append("juniversalchardet, Optimaize Language Detector<br>");
-        sb.append("Speed measure 'Inverse Duration' based on Marcel Taeumel's approach (http://uman.sf.net).<br>");
-        sb.append("Spanish translation by Pantera.<br>");
-        sb.append("Hungarian translation by Skyli.<br>");
+        sb.append("Speed measure 'Inverse Duration' based on Marcel Taeumel's approach (http://uman.sf.net).</p>");
+        sb.append("<p>Supported 3rd Party-Tools: yt-dlp, <a href=\"https://aubio.org/\">Aubio</a></p>");
+        sb.append("<p>Translations: Spanish translation by Pantera, ");
+        sb.append("Hungarian translation by Skyli.</p>");
+        sb.append("Please note, that missing translations were done by AI and Google Translate and might<br>");
+        sb.append("be erroneous. Let me know if there are any errors.<br>");
         sb.append("Licenses are stated in the help section.");
         return sb.toString();
     }

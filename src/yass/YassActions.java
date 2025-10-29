@@ -18,15 +18,20 @@
 package yass;
 
 import com.nexes.wizard.Wizard;
+import lombok.Getter;
+import lombok.Setter;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
+import yass.analysis.PitchDetector;
 import yass.autocorrect.YassAutoCorrect;
 import yass.extras.UsdbSyncerMetaTagCreator;
 import yass.hyphenator.HyphenatorDictionary;
 import yass.musicalkey.MusicalKey;
+import yass.musicbrainz.MusicBrainz;
+import yass.musicbrainz.MusicBrainzInfo;
 import yass.renderer.YassSession;
 import yass.wizard.CreateSongWizard;
 
@@ -57,6 +62,8 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+@Getter
+@Setter
 public class YassActions implements DropTargetListener {
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
@@ -89,13 +96,14 @@ public class YassActions implements DropTargetListener {
     private int recordLength = -1;
     private Timebase playTimebase = Timebase.NORMAL;
     private long playAllStart = -1;
-    private long[][] playAllClicks = null;
+    private Click[] playAllClicks = null;
     private int beforeNextMs = 300;
     private boolean preventTrim = false;
-    long lastTogglePressed = -1;
+    private long lastTogglePressed = -1;
 
     private YassTable table = null;
     private YassLyrics lyrics;
+    private SongHeader songHeader;
     private final YassPlayer mp3;
     private YassPlayList playList = null;
     private YassSongInfo songInfo = null;
@@ -139,12 +147,24 @@ public class YassActions implements DropTargetListener {
     private Pair<Integer, Integer> tempSelection;
     private boolean recording = false;
     public static final KeyboardMapping CURRENT_MAPPING = determineMapping();
-    
+    private boolean keyPressed = false;
+    private int currentEditPage = 0;
     public HyphenatorDictionary hyphenatorDictionary = null;
+    private JSplitPane editorSplit;
+    private KeyboardFocusManager kbdFocus = KeyboardFocusManager.getCurrentKeyboardFocusManager();
 
     private static KeyboardMapping determineMapping() {
         InputContext inputContext = InputContext.getInstance();
         return KeyboardMapping.getKeyboardMapping(inputContext.getLocale());
+    }
+
+    /**
+     * Checks if the current keyboard focus is within the SongHeader component or any of its children.
+     * @return {@code true} if the focus is in the song header, {@code false} otherwise.
+     */
+    private boolean isFocusInSongHeader() {
+        Component focusOwner = kbdFocus.getFocusOwner();
+        return focusOwner != null && songHeader != null && SwingUtilities.isDescendingFrom(focusOwner, songHeader);
     }
 
     private final AWTEventListener playbackStopListener = e -> {
@@ -744,8 +764,17 @@ public class YassActions implements DropTargetListener {
                     activeTable.setVocals(filename);
                 }
                 mp3.openMP3(selectedFile.getAbsolutePath());
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
+                if (audioTag == UltrastarHeaderTag.VOCALS && prop.getBooleanProperty("debug-waveform")) {
+                    mp3.setPitchDataList(PitchDetector.detectPitch(mp3.getTempFile(), prop));
+                }
                 activeTable.setSaved(false);
                 updateActions();
+                sheet.repaint();
             }
         }
     };
@@ -1160,7 +1189,7 @@ public class YassActions implements DropTargetListener {
     private final Action playPage = new AbstractAction(I18.get("edit_play_page")) {
         public void actionPerformed(ActionEvent e) {
             if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+                    || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             playPageOrFrozen(0, false);
@@ -1186,8 +1215,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action playFrozen = new AbstractAction(I18.get("edit_copy_play")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             playPageOrFrozen(0, true);
@@ -1195,8 +1223,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action playBefore = new AbstractAction(I18.get("edit_play_before")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             playSelectionBefore(0);
@@ -1205,8 +1232,7 @@ public class YassActions implements DropTargetListener {
 
     private final Action playNext = new AbstractAction(I18.get("edit_play_next")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             playSelectionNext(0);
@@ -1247,7 +1273,7 @@ public class YassActions implements DropTargetListener {
             }
             int j = table.getSelectionModel().getMaxSelectionIndex();
             tempSelection = new ImmutablePair<>(i, j);
-            long[][] clicks = table.getSelection(i, j, inout, null, false);
+            Click[] clicks = table.getSelection(i, j, inout, null, false);
             inout[0] = Math.max(0, inout[0] - 2000000);
             inout[1] = -1;// inout[1] + 2000000;
 
@@ -1428,7 +1454,7 @@ public class YassActions implements DropTargetListener {
     private final Action joinRows = new AbstractAction(I18.get("edit_join")) {
         public void actionPerformed(ActionEvent e) {
             if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+                    || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             table.joinRows();
@@ -1437,7 +1463,7 @@ public class YassActions implements DropTargetListener {
     private final Action splitRows = new AbstractAction(I18.get("edit_split")) {
         public void actionPerformed(ActionEvent e) {
             if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+                    || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             table.splitRows();
@@ -1445,7 +1471,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action rollLeft = new AbstractAction(I18.get("edit_roll_left")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             table.rollLeft();
@@ -1453,7 +1479,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action rollRight = new AbstractAction(I18.get("edit_roll_right")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             table.rollRight();
@@ -1491,14 +1517,70 @@ public class YassActions implements DropTargetListener {
             sheet.repaint();
         }
     };
+    private final Action prevPagePressed = new AbstractAction() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            stopPlaying();
+            if (!isKeyPressed()) {
+                setCurrentEditPage(table.getPageNumber());
+            }
+            setKeyPressed(true);
+            if (getCurrentEditPage() > 1) {
+                table.gotoPage(-1);
+            }
+        }
+    };
+    private final Action prevPageReleased = new AbstractAction() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            setKeyPressed(false);
+            if (getCurrentEditPage() == 1) {
+                stopPlaying();
+                table.gotoPageNumber(table.getPageCount());
+            }
+        }
+    };
+
     private final Action prevPage = new AbstractAction(I18.get("edit_page_prev")) {
         public void actionPerformed(ActionEvent e) {
             stopPlaying();
             table.gotoPage(-1);
         }
     };
+    private final Action nextPagePressed = new AbstractAction() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
+            stopPlaying();
+            if (!isKeyPressed()) {
+                setCurrentEditPage(table.getPageNumber());
+            }
+            setKeyPressed(true);
+            if (getCurrentEditPage() < table.getPageCount()) {
+                table.gotoPage(1);
+            }
+        }
+    };
+    private final Action nextPageReleased = new AbstractAction() {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
+            setKeyPressed(false);
+            if (getCurrentEditPage() == table.getPageCount()) {
+                stopPlaying();
+                table.gotoPageNumber(1);
+            }
+        }
+    };
     private final Action nextPage = new AbstractAction(I18.get("edit_page_next")) {
         public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
             stopPlaying();
             table.gotoPage(1);
         }
@@ -1551,21 +1633,33 @@ public class YassActions implements DropTargetListener {
     };
     private final Action shiftLeft = new AbstractAction(I18.get("edit_shift_left")) {
         public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
             table.shiftBeat(-1);
         }
     };
     private final Action shiftRight = new AbstractAction(I18.get("edit_shift_right")) {
         public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
             table.shiftBeat(+1);
         }
     };
     private final Action shiftLeftRemainder = new AbstractAction(I18.get("edit_shift_left_remainder")) {
         public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
             table.shiftRemainder(-1);
         }
     };
     private final Action shiftRightRemainder = new AbstractAction(I18.get("edit_shift_right_remainder")) {
         public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
             table.shiftRemainder(+1);
         }
     };
@@ -1601,7 +1695,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action saveAll = new AbstractAction(I18.get("edit_save_all")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing())
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader())
                 return;
             boolean skipSaveConfirmation = getProperties() != null && getProperties().getBooleanProperty("quicksave");
             if (!skipSaveConfirmation && JOptionPane.OK_OPTION != JOptionPane.showConfirmDialog(tab, I18.get("edit_save_all_msg"), I18.get("edit_save_all"), JOptionPane.OK_CANCEL_OPTION))
@@ -1611,7 +1705,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action saveTrack = new AbstractAction(I18.get("edit_save_track")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing())
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader())
                 return;
             boolean skipSaveConfirmation = getProperties() != null && getProperties().getBooleanProperty("quicksave");
             if (table.getDuetTrackCount() > 0) {
@@ -2028,7 +2122,7 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             interruptPlay();
             if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+                    || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             table.setType("*");
@@ -2038,7 +2132,7 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             interruptPlay();
             if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+                    || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             table.setType("F");
@@ -2048,7 +2142,7 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             interruptPlay();
             if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+                    || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             table.setType("R");
@@ -2058,7 +2152,7 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             interruptPlay();
             if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+                    || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             table.setType("G");
@@ -2113,7 +2207,7 @@ public class YassActions implements DropTargetListener {
     private final Action incGap = new AbstractAction(I18.get("edit_gap_add_10")) {
         public void actionPerformed(ActionEvent e) {
             if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+                    || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             table.addGap(+10);
@@ -2122,7 +2216,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action decGap = new AbstractAction(I18.get("edit_gap_sub_10")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             table.addGap(-10);
@@ -2131,7 +2225,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action incGap2 = new AbstractAction(I18.get("edit_gap_add_1000")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             table.addGap(+1000);
@@ -2140,7 +2234,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action decGap2 = new AbstractAction(I18.get("edit_gap_sub_1000")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing()) {
+            if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
             table.addGap(-1000);
@@ -2263,10 +2357,16 @@ public class YassActions implements DropTargetListener {
             if (cancelOpen()) {
                 return;
             }
+            if (songHeader != null) {
+                songHeader.reset();
+            }
             YassTable lastTable = table;
             table.removeAutoSave();
             closeAllTables();
             video.closeVideo();
+            if (mp3 != null) {
+                mp3.closeSharedLine();
+            }
             setView(VIEW_LIBRARY);
             if (!songList.isLoaded()) {
                 songList.load();
@@ -2561,7 +2661,7 @@ public class YassActions implements DropTargetListener {
         // Align
         public void actionPerformed(ActionEvent e) {
             if (lyrics.isEditable() || songList.isEditing()
-                    || isFilterEditing()) {
+                    || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
 
@@ -2572,7 +2672,6 @@ public class YassActions implements DropTargetListener {
                 sheet.enablePan(state);
 
                 sheet.update();
-                revalidateLyricsArea();
                 sheet.repaint();
             }
             if (alignCBI != null) {
@@ -2594,11 +2693,6 @@ public class YassActions implements DropTargetListener {
         progressBar.setString("");
         progressBar.addMouseListener(new MouseAdapter() {
             public void mousePressed(MouseEvent e) {
-                // String dir = prop.getProperty("song-directory");
-                // if (dir != null && dir.length() > 0 && new
-                // File(dir).exists()) {
-                // return;
-                // }
                 SwingUtilities.invokeLater(() -> {
                     progressBar.repaint();
                     new YassLibOptions(prop, YassActions.this, songList, mp3);
@@ -3515,6 +3609,7 @@ public class YassActions implements DropTargetListener {
         icons.put("createSyncerTagsIcon", new ImageIcon(getClass().getResource("/yass/resources/img/usdb_syncer_icon.png")));
         icons.put("quantize16Icon", new ImageIcon(getClass().getResource("/yass/resources/img/quantize_16.png")));
         icons.put("quantize24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/quantize_24.png")));
+        icons.put("MusicBrainzIcon", new ImageIcon(getClass().getResource("/yass/resources/img/musicbrainz_icon.png")));
         enableLyrics.putValue(AbstractAction.SMALL_ICON, getIcon("lyrics16Icon"));
         showPlaylistMenu.putValue(AbstractAction.SMALL_ICON, getIcon("playlist16Icon"));
         showSongInfo.putValue(AbstractAction.SMALL_ICON, getIcon("info16Icon"));
@@ -3522,6 +3617,7 @@ public class YassActions implements DropTargetListener {
         showSongInfoBackground.putValue(AbstractAction.SMALL_ICON, getIcon("empty16Icon"));
         createSyncerTags.putValue(AbstractAction.SMALL_ICON, getResizedIcon("createSyncerTagsIcon", 16));
         editHyphenations.putValue(AbstractAction.SMALL_ICON, getIcon("hyphenate24Icon"));
+        queryMusicBrainz.putValue(AbstractAction.SMALL_ICON, getResizedIcon("MusicBrainzIcon", 16));
         alignToGrid.putValue(AbstractAction.SMALL_ICON, getIcon("quantize16Icon"));
         updateActions();
     }
@@ -3728,6 +3824,7 @@ public class YassActions implements DropTargetListener {
         menu.add(autoCorrectTransposed);
         menu.addSeparator();
         menu.add(editHyphenations);
+        menu.add(queryMusicBrainz);
         menu.add(showOptions);
 
         menu = new JMenu(I18.get("edit_help"));
@@ -5089,13 +5186,13 @@ public class YassActions implements DropTargetListener {
                     public void propsChanged(YassSheet source) {
                         editMenu.setBackground(sheet.darkMode ? sheet.HI_GRAY_2_DARK_MODE : sheet.HI_GRAY_2);
                         for (Component c : editMenu.getComponents()) {
-                            c.setForeground(sheet.darkMode ? sheet.blackDarkMode : sheet.black);
+                            c.setForeground(sheet.darkMode ? sheet.blackDarkMode : Color.BLACK);
                         }
                     }
                 });
                 editMenu.setBackground(sheet.darkMode ? sheet.HI_GRAY_2_DARK_MODE : sheet.HI_GRAY_2);
                 for (Component c : editMenu.getComponents()) {
-                    c.setForeground(sheet.darkMode ? sheet.blackDarkMode : sheet.black);
+                    c.setForeground(sheet.darkMode ? sheet.blackDarkMode : Color.BLACK);
                 }
 
             }
@@ -5884,6 +5981,7 @@ public class YassActions implements DropTargetListener {
             songHeader.getBpmField().setText(bpm + "");
         }
         table.zoomPage();
+        sheet.requestFocus();
     }
 
     public void setVideoGap(int ms) {
@@ -5929,7 +6027,7 @@ public class YassActions implements DropTargetListener {
             j = -1;
         }
         startPlaying();
-        long[][] clicks = table.getSelection(i, j, inout, null, false);
+        Click[] clicks = table.getSelection(i, j, inout, null, false);
         boolean midiEnabled = midiButton.isSelected();
         boolean mp3Enabled = mp3Button.isSelected();
         if (mode == 0) {
@@ -6048,7 +6146,7 @@ public class YassActions implements DropTargetListener {
         int i;
         int j;
         long[] inout = new long[2];
-        long[][] clicks;
+        Click[] clicks;
         if (frozen) {
             long in = sheet.getInSnapshot();
             long out = sheet.getOutSnapshot();
@@ -6099,9 +6197,6 @@ public class YassActions implements DropTargetListener {
         if (editTools != null) {
             editTools.setVisible(!onoff);
         }
-        if (sheet != null && sheet.getSongHeader() != null) {
-            sheet.getSongHeader().setVisible(!onoff);
-        }
     }
 
     private void fullscreen() {
@@ -6117,7 +6212,6 @@ public class YassActions implements DropTargetListener {
         }
         if (currentView == VIEW_EDIT) {
             SwingUtilities.invokeLater(() -> {
-                revalidateLyricsArea();
                 sheet.repaint();
             });
         }
@@ -6224,25 +6318,6 @@ public class YassActions implements DropTargetListener {
         });
     }
 
-
-    public void revalidateLyricsArea() {
-        if (sheet.isLive()) {
-            return;
-        }
-        int newh = sheet.getTopLine() - 30;
-        int lyricsWidth = 450;
-        int lyricsMinHeight = 120;
-        if (newh < lyricsMinHeight) {
-            newh = lyricsMinHeight;
-        }
-
-        int h = lyrics.getBounds().height;
-        if (h != newh) {
-            lyrics.setBounds(500, 30, lyricsWidth, newh);
-            sheet.revalidate();
-        }
-    }
-
     public boolean isRelative() {
         return !sheet.isPanEnabled();
     }
@@ -6252,7 +6327,6 @@ public class YassActions implements DropTargetListener {
         if (alignCBI != null) {
             alignCBI.setState(onoff);
         }
-        revalidateLyricsArea();
     }
 
 
@@ -6418,29 +6492,38 @@ public class YassActions implements DropTargetListener {
     }
 
     private void openEditor(boolean reload) {
-        if (table == null)
-            setActiveTable(firstTable());
-        if (table == null || table.getArtist() == null || table.getTitle() == null)
+        if (table == null || table.getArtist() == null || table.getTitle() == null) {
             return;
-        updateTrackComponent();
-        storeRecentFiles();
-        mp3.reinitSynth(prop.getBooleanProperty("use-sample"));
+        }
+        
         File file;
         if (table.getDirMP3() != null) {
             file = new File(table.getDirMP3());
             if (!file.exists()) {
                 selectAudioFile.actionPerformed(null);
             }
-            mp3.openMP3(table.getDirMP3());
+            if (prop.getBooleanProperty("debug-waveform") && StringUtils.isNotEmpty(table.getVocals())) {
+                mp3.openMP3(table.getDir() + File.separator + table.getVocals());
+                songHeader.setAudioToVocals();
+            } else {
+                mp3.openMP3(table.getDirMP3());
+            }
         } else {
             file = new File(table.getDirFilename());
             mp3.emptyMp3(table);
         }
+        setActiveTable(firstTable());
+        updateTrackComponent();
+        storeRecentFiles();
+        mp3.reinitSynth(prop.getBooleanProperty("use-sample"));
         updateTitle();
 
         sheet.setDuration(mp3.getDuration() / 1000.0);
         sheet.setActiveTable(table);
         table.loadUsdbSyncerMetaFile(table.getDir());
+
+        sheet.getSongHeader().initSongHeader(table);
+
         String vd = table.getVideo();
         if (video != null && vd != null) {
             video.setVideo(table.getDir() + File.separator + vd);
@@ -6515,20 +6598,7 @@ public class YassActions implements DropTargetListener {
             songList.addOpened(t);
         }
         sheet.init(initMic());
-        sheet.initSongHeader(this);
-        if (sheet.getSongHeader() != null) {
-            JViewport v = (JViewport) sheet.getParent();
-            Point p = v.getViewPosition();
-            Dimension r = v.getExtentSize();
-            int lyricsWidth = 450;
-            int newx = (int) p.getX() + r.width - lyricsWidth;
-            int newy = (int) p.getY();
-
-            SongHeader songHeader = sheet.getSongHeader();
-            Dimension headerSize = songHeader.getPreferredSize();
-            int headerX = newx - headerSize.width - 10;
-            songHeader.setBounds(headerX, newy, headerSize.width, headerSize.height);
-        }
+        sheet.repaint();
         table.initAutoSave();
     }
     
@@ -7360,8 +7430,11 @@ public class YassActions implements DropTargetListener {
         am.put("incRight", incRight);
         incRight.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_MASK));
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0), "prevPage");
+        im.put(KeyStroke.getKeyStroke("pressed UP"), "prevPagePressed");
+        im.put(KeyStroke.getKeyStroke("released UP"), "prevPageReleased");
         am.put("prevPage", prevPage);
+        am.put("prevPagePressed", prevPagePressed);
+        am.put("prevPageReleased", prevPageReleased);
         prevPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0));
 
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0), "prevBeat");
@@ -7370,7 +7443,10 @@ public class YassActions implements DropTargetListener {
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "nextBeat");
         am.put("nextBeat", nextBeat);
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0), "nextPage");
+        im.put(KeyStroke.getKeyStroke("pressed DOWN"), "nextPagePressed");
+        im.put(KeyStroke.getKeyStroke("released DOWN"), "nextPageReleased");
+        am.put("nextPagePressed", nextPagePressed);
+        am.put("nextPageReleased", nextPageReleased);
         am.put("nextPage", nextPage);
         nextPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0));
 
@@ -7963,6 +8039,49 @@ public class YassActions implements DropTargetListener {
             hyphenatorDictionary.setVisible(visible);
         }
     }
+
+    public final Action queryMusicBrainz = new AbstractAction("Query MusicBrainz") {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            try {
+                MusicBrainzInfo musicBrainzInfo = new MusicBrainz().queryMusicBrainz(table.getArtist(),
+                                                                                     table.getTitle());
+                if (musicBrainzInfo == null) {
+                    return;
+                }
+                List<KeyValue> options = new ArrayList<>();
+                options.add(new KeyValue(I18.get("lib_year"), musicBrainzInfo.getYear(),
+                                         StringUtils.isEmpty(table.getYear())));
+                options.add(new KeyValue(I18.get("lib_genre"), String.join(", ", musicBrainzInfo.getGenres()),
+                                         StringUtils.isEmpty(table.getGenre())));
+
+                List<KeyValue> selectedOptions = CheckboxOptionsDialog.showCheckboxOptionDialog(
+                        null,
+                        "MusicBrainz: " + table.getArtist() + " - " + table.getTitle(),
+                        "Select Tags",
+                        options
+                );
+
+                if (selectedOptions != null) {
+                    LOGGER.info("Selected options: " + selectedOptions);
+                    for (KeyValue keyValue : selectedOptions) {
+                        if (keyValue.key().equals(I18.get("lib_year"))) {
+                            table.setYear(keyValue.value());
+                        } else if (keyValue.key().equals(I18.get("lib_genre"))) {
+                            table.setGenre(keyValue.value());
+                        }
+                        // Update the header after all values are set
+                        if (sheet != null && sheet.getSongHeader() != null) {
+                            sheet.getSongHeader().initSongHeader(table);
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+    };
+    
     public KeyboardMapping getKeyboardLayout() {
         return CURRENT_MAPPING;
     }
@@ -7990,4 +8109,5 @@ public class YassActions implements DropTargetListener {
 
         return new ImageIcon(resizedImg);
     }
+
 }

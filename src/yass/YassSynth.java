@@ -225,11 +225,8 @@ public class YassSynth {
         try {
             InputStream istream = YassSynth.class.getResourceAsStream("/yass/resources/samples/click.wav");
             AudioInputStream ostream = AudioSystem.getAudioInputStream(new BufferedInputStream(istream));
-            //LOGGER.info(ostream.getFormat());
             AudioInputStream stream = AudioSystem.getAudioInputStream(wavaudioFormat, ostream);
-            //LOGGER.info(stream.getFormat());
             long len = stream.getFrameLength() * wavaudioFormat.getFrameSize();
-            //stream.read(wavdata, 0, (int) len);
 
             buffer = new Vector<>((int) len);
             int nBytesRead = 0;
@@ -333,72 +330,21 @@ public class YassSynth {
         return null;
     }
 
-    static void monoToStereo(byte[] incoming, byte[] outgoing) {
-        for (int i = 0; i < incoming.length; i++) {
-            outgoing[(i * 2)] = incoming[i];
-            outgoing[(i * 2) + 1] = incoming[i];
-        }
-    }
-
     /**
-     * Gets the frame attribute of the YassSynth class
-     *
-     * @param frameNum Description of the Parameter
-     * @return The frame value
+     * Gibt den rohen Klick-Sound aus dem Puffer als byte-Array zurück.
+     * @return byte-Array mit dem Klick-Sound
      */
-    public static byte[] getFrame(int frameNum) {
-        int frame_size = wavaudioFormat.getFrameSize();
-
-        // To read the 'j'th frame in the file:
-        int framePos = (frameNum - 1) * frame_size;
-        byte[] frame = new byte[frame_size];
-        Byte sample;
-        for (int i = 0; i < frame_size; i++) {
-            // LOGGER.info("   -frameNum: "+frameNum+" framePos "+framePos+" i "+i);
-            sample = buffer.get(framePos + i + 1);
-            frame[i] = sample.byteValue();
+    public static byte[] getWavSampleAsByteArray() {
+        if (buffer == null || buffer.isEmpty()) {
+            loadWav();
         }
-        return frame;
-    }
-
-    /**
-     * Gets the lengthInFrames attribute of the YassSynth class
-     *
-     * @return The lengthInFrames value
-     */
-    public static int getLengthInFrames() {
-        int frame_length = audioFormat.getFrameSize();
-        return buffer.size() / frame_length - 1;
-    }
-
-    /**
-     * Description of the Method
-     */
-    public static void playWav() {
-        double snd_pos = 1;// In Frames
-        int frame_length = wavaudioFormat.getFrameSize();
-        int length_in_frames = buffer.size() / frame_length - 1;
-
-        byte[] sample;
-
-        wavsourceDataLine.flush();
-
-        while (Math.floor(snd_pos) <= length_in_frames) {
-
-            int buff_pos = 0;
-            while ((buff_pos < BUFFER_SIZE) & (Math.floor(snd_pos) <= length_in_frames)) {
-                sample = getFrame((int) Math.floor(snd_pos));
-                for (int i = 0; i < frame_length; i++) {
-                    tempBuff[buff_pos++] = sample[i];
-                }
-                snd_pos++;
-            }
-
-            if (buff_pos > 0) {
-                int nBytesWritten = wavsourceDataLine.write(tempBuff, 0, buff_pos);
-            }
+        if (buffer == null || buffer.isEmpty()) {
+            return new byte[0]; // Fallback: leeres Array
         }
+        byte[] result = new byte[buffer.size()];
+        for (int i = 0; i < buffer.size(); i++) {
+            result[i] = buffer.get(i);
+        }
+        return result;
     }
-
 }
-

@@ -1,9 +1,23 @@
 
-# Yass Reloaded Karaoke Editor
-Yass Reloaded is a graphical editor for finetuning Ultrastar karaoke songs. 
-You can drag & drop notes, spread syllables, and find errors. Further you can filter your song library, mass-tag or batch-correct them, or search for lyrics.
+<meta name="description" content="Yass Reloaded is a free, open-source Karaoke editor for Ultrastar songs. Finetune notes, edit lyrics, and manage your song library. Available for Windows, macOS, and Linux.">
+<meta name="keywords" content="Yass, Yass Reloaded, Karaoke, Karaoke Editor, Ultrastar, Ultrastar Deluxe, Song Editor, Lyrics Editor, Open Source, Java, Windows, macOS, Linux">
+
+# Yass Reloaded: The Ultimate Karaoke Editor for Ultrastar
+
+Yass Reloaded is a graphical editor for finetuning Ultrastar karaoke songs. It's a powerful tool for anyone who wants to create, edit, and perfect their own karaoke tracks. You can drag & drop notes, spread syllables, and find errors. Further you can filter your song library, mass-tag or batch-correct them, or search for lyrics.
 
 Yass Reloaded is a fork from Yass 2.4.3 that Saruta has been developing since 2009. Due to time constraints on his behalf and "creative differences" with the other contributors, I decided to go rogue with my fork.
+
+## Features
+
+*   **Graphical Note and Lyric Editing:** Easily drag and drop notes, adjust timing, and edit lyrics with a user-friendly interface.
+*   **Advanced Song Management:** Filter your song library, batch-edit tags, and organize your collection efficiently.
+*   **Error Detection:** Automatically finds common errors in your karaoke files to ensure they play perfectly.
+*   **Wide Audio Format Support:** Thanks to FFmpeg integration, Yass Reloaded supports a vast range of audio formats, including AAC, OGG, and OPUS.
+*   **Improved User Experience:** Numerous tweaks and improvements make the editing process faster and more intuitive.
+*   **Modern and Actively Developed:** Built on Java 21 and continuously updated with new features and bug fixes.
+
+## Supported Languages
 
 Yass Reloaded has been localized to:
 - English
@@ -33,26 +47,26 @@ While JavaFX is no longer required, it may be needed in future releases.
 
 Yass Reloaded requires FFmpeg to support a variety of audio formats.
 https://www.ffmpeg.org/download.html
-- Windows (<code>winget install --id=Gyan.FFmpeg -e</code>) - Check out: https://www.gyan.dev/ffmpeg/builds/
-- MacOS (<code>brew install ffmpeg</code>)
-- Linux (<code>sudo apt install ffmpeg</code>)
+- Windows (`winget install --id=Gyan.FFmpeg -e`) - Check out: https://www.gyan.dev/ffmpeg/builds/
+- MacOS (`brew install ffmpeg`)
+- Linux (`sudo apt install ffmpeg`)
 
 Also, it is highly recommended to download Ultrastar Creator to get you started (https://github.com/UltraStar-Deluxe/UltraStar-Creator)
 
 # Starting Yass Reloaded
-If you install Yass Reloaded with the Windows installer, you can simply run <code>Yass.exe</code>
+If you install Yass Reloaded with the Windows installer, you can simply run `Yass.exe`
 
 Alternatively, you can download the jar file and start it from the console:
 
-On Windows, you can simply do this: <code>java -jar Yass-Reloaded-2025.9.jar</code>
+On Windows, you can simply do this: `java -jar Yass-Reloaded-2025.10.jar`
 
 On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
-<code>export PATH_TO_FX=path/to/javafx-sdk-[whateverversion]/lib</code>
+`export PATH_TO_FX=path/to/javafx-sdk-[whateverversion]/lib`
 
 and then start the jar like so:
 
-<code>java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2025.9.jar</code>
+`java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2025.10.jar`
 
 # Developers
 
@@ -110,10 +124,10 @@ If you like this  app, feel free (but not pressured!) to buy me coffee. Any supp
 # Troubleshooting
 ## Yass Reloaded does nothing after showing the splash screen
 - Have you checked your Java version? 
-  - Open a command line window and type in <code>java -version</code>. 
+  - Open a command line window and type in `java -version`. 
   - You should have Java 21
 - Have you tried opening it as a jar?
-  - Download the jar, open a command line window and type in <code>java -jar Yass-Reloaded-2025.9.jar</code>
+  - Download the jar, open a command line window and type in `java -jar Yass-Reloaded-2025.10.jar`
   - Any error messages are then printed out in the command line window for debugging
 
 ## Cannot find FFmpeg?
@@ -126,15 +140,15 @@ You can also add the path to FFmpeg to the Yass Reloaded configuration file. The
 
 There should be an entry:
 
-<code>&lt;entry key="ffmpegPath">&lt;/entry></code>
+`<entry key="ffmpegPath"></entry>`
 
-If it's not, add it, and put the FFmpeg path before &lt;/entry>, e. g.:
+If it's not, add it, and put the FFmpeg path before </entry>, e. g.:
 
-<code>&lt;entry key="ffmpegPath">/usr/bin&lt;/entry></code>
+`<entry key="ffmpegPath">/usr/bin</entry>`
 
 or
 
-<code>&lt;entry key="ffmpegPath">C:\ffmpeg\bin&lt;/entry></code>
+`<entry key="ffmpegPath">C:\ffmpeg\bin</entry>`
 
 depending on your OS.
 

@@ -55,7 +55,7 @@ public class BpmDetector {
             // Use a managed temporary file to avoid cluttering the user's directories
             tempWavFile = File.createTempFile("yass-bpm-", ".wav");
             tempWavFile.deleteOnExit();
-            YassPlayer player = new YassPlayer(null, false, false);
+            YassPlayer player = new YassPlayer(null, properties);
             player.generateTemp(audioFilePath, Timebase.NORMAL, tempWavFile.getAbsolutePath());
         } catch (IOException e) {
             LOGGER.log(Level.WARNING, "Failed to create temporary WAV for BPM detection", e);

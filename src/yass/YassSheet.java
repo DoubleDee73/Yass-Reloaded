@@ -21,11 +21,9 @@ package yass;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
+import yass.analysis.PitchDetector;
 import yass.musicalkey.MusicalKeyEnum;
-import yass.renderer.YassNote;
-import yass.renderer.YassPlayerNote;
-import yass.renderer.YassSession;
-import yass.renderer.YassTrack;
+import yass.renderer.*;
 
 import javax.swing.*;
 import java.awt.*;
@@ -45,7 +43,7 @@ import java.util.logging.Logger;
 
 @Getter
 @Setter
-public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRenderer {
+public class YassSheet extends JPanel implements YassPlaybackRenderer {
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public final static int NORM_HEIGHT = 20;
@@ -63,17 +61,15 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     public static final int COLOR_WARNING = 8;
     private final Color[] colorSet = new Color[COLORSET_COUNT];
 
-    public static final  Color black = new Color(0,0,0);
-    public static final Color dkGray = new Color(102,102,102);
-    public static final  Color hiGray = new Color(153,153,153);
-    public static final Color HI_GRAY_2 = new Color(230,230,230);
-    public static final  Color white = new Color(255,255,255);
+    public static final Color DK_GRAY = new Color(102, 102, 102);
+    public static final Color HI_GRAY = new Color(153, 153, 153);
+    public static final Color HI_GRAY_2 = new Color(230, 230, 230);
 
-    public static final  Color blackDarkMode = new Color(200,200,200);
+    public static final Color blackDarkMode = new Color(200,200,200);
     public static final Color dkGrayDarkMode = new Color(142,142,142);
     public static final Color hiGrayDarkMode = new Color(100,100,100);
     public static final Color HI_GRAY_2_DARK_MODE = new Color(70,70,70);
-    public static final  Color whiteDarkMode = new Color(50,50,50);
+    public static final Color whiteDarkMode = new Color(50,50,50);
     public static final Color dkGreen = new Color(0,120,0);
     public static final Color dkGreenLight = new Color(50,220,50);
 
@@ -81,18 +77,18 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private static final Color arrowDarkMode = new Color(200, 200, 200, 160);
 
     private static final Color playertextBG = new Color(1f, 1f, 1f, .9f); // used once; deprecated
-    private static final  Color playBlueHi = new Color(1f, 1f, 1f, 1f);  // used once
-    private static final  Color playBlue = new Color(.4f, .6f, .8f, 1f); // used once
-    public static final  Color BLUE = new Color(.4f, .6f, .8f, .7f);
-    public static final  Color blueDrag = new Color(.8f, .9f, 1f, .5f);
-    public static final  Color blueDragDarkMode = new Color(.4f, .6f, .8f, .5f);
-    private static final  Color dkRed = new Color(.8f, .4f, .4f, .7f);
-    public static final  Color playerColor = new Color(1f, .1f, .1f, .5f);
-    private static final  Color playerColor2 = new Color(1f, .1f, .1f, .3f);
-    private static final  Color playerColor3 = new Color(1f, .1f, .1f, .1f);
-    private static final  Color inoutColor = new Color(.9f, .9f, 1f, .5f);
-    private static final  Color inoutSnapshotBarColor = new Color(.3f, .3f, .5f, .7f);
-    private static final  Color inoutBarColor = new Color(.5f, .5f, .7f, .7f);
+    private static final Color playBlueHi = new Color(1f, 1f, 1f, 1f);  // used once
+    private static final Color playBlue = new Color(.4f, .6f, .8f, 1f); // used once
+    public static final Color BLUE = new Color(.4f, .6f, .8f, .7f);
+    public static final Color blueDrag = new Color(.8f, .9f, 1f, .5f);
+    public static final Color blueDragDarkMode = new Color(.4f, .6f, .8f, .5f);
+    private static final Color dkRed = new Color(.8f, .4f, .4f, .7f);
+    public static final Color playerColor = new Color(1f, .1f, .1f, .5f);
+    private static final Color playerColor2 = new Color(1f, .1f, .1f, .3f);
+    private static final Color playerColor3 = new Color(1f, .1f, .1f, .1f);
+    private static final Color inoutColor = new Color(.9f, .9f, 1f, .5f);
+    private static final Color inoutSnapshotBarColor = new Color(.3f, .3f, .5f, .7f);
+    private static final Color inoutBarColor = new Color(.5f, .5f, .7f, .7f);
 
     public static final BasicStroke thinStroke = new BasicStroke(0.5f),
             stdStroke = new BasicStroke(1f), medStroke = new BasicStroke(1.5f),
@@ -100,38 +96,34 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
     @Serial
     private static final long serialVersionUID = 3284920111520989009L;
-    private final static int ACTION_CONTROL = 1, ACTION_ALT = 2,
-            ACTION_CONTROL_ALT = 4, ACTION_NONE = 0;
+    private static final int ACTION_CONTROL = 1;
+    private static final int ACTION_ALT = 2;
+    private static final int ACTION_CONTROL_ALT = 4;
+    private static final int ACTION_NONE = 0;
 
-    private final static int SKETCH_LENGTH = 30;
-    private final static int SKETCH_UP = 1, SKETCH_DOWN = 2, SKETCH_LEFT = 3,
-            SKETCH_RIGHT = 4, SKETCH_NONE = 0;
-    private final static int SKETCH_HORIZONTAL = -1, SKETCH_VERTICAL = -2;
-    private final static int[] GESTURE_UP = new int[]{SKETCH_VERTICAL,
-            SKETCH_UP};
-    private final static int[] GESTURE_UP_DOWN = new int[]{SKETCH_VERTICAL,
-            SKETCH_UP, SKETCH_DOWN};
-    private final static int[] GESTURE_DOWN_UP = new int[]{SKETCH_VERTICAL,
-            SKETCH_DOWN, SKETCH_UP};
-    private final static int[] GESTURE_UP_DOWN_UP = new int[]{
-            SKETCH_VERTICAL, SKETCH_UP, SKETCH_DOWN, SKETCH_UP};
-    private final static int[] GESTURE_DOWN_UP_DOWN = new int[]{
-            SKETCH_VERTICAL, SKETCH_DOWN, SKETCH_UP, SKETCH_DOWN};
-    private final static int[] GESTURE_LEFT = new int[]{SKETCH_HORIZONTAL,
+    private static final int SKETCH_LENGTH = 30;
+    private static final int SKETCH_UP = 1;
+    private static final int SKETCH_DOWN = 2;
+    private static final int SKETCH_LEFT = 3;
+    private static final int SKETCH_RIGHT = 4;
+    private static final int SKETCH_NONE = 0;
+    private static final int SKETCH_HORIZONTAL = -1;
+    private static final int SKETCH_VERTICAL = -2;
+    private static final int[] GESTURE_UP = new int[]{SKETCH_VERTICAL, SKETCH_UP};
+    private static final int[] GESTURE_UP_DOWN = new int[]{SKETCH_VERTICAL, SKETCH_UP, SKETCH_DOWN};
+    private static final int[] GESTURE_DOWN_UP = new int[]{SKETCH_VERTICAL, SKETCH_DOWN, SKETCH_UP};
+    private static final int[] GESTURE_UP_DOWN_UP = new int[]{SKETCH_VERTICAL, SKETCH_UP, SKETCH_DOWN, SKETCH_UP};
+    private static final int[] GESTURE_DOWN_UP_DOWN = new int[]{SKETCH_VERTICAL, SKETCH_DOWN, SKETCH_UP, SKETCH_DOWN};
+    private static final int[] GESTURE_LEFT = new int[]{SKETCH_HORIZONTAL, SKETCH_LEFT};
+    private static final int[] GESTURE_RIGHT = new int[]{SKETCH_HORIZONTAL, SKETCH_RIGHT};
+    private static final int[] GESTURE_LEFT_RIGHT = new int[]{SKETCH_HORIZONTAL, SKETCH_LEFT, SKETCH_RIGHT};
+    private static final int[] GESTURE_RIGHT_LEFT = new int[]{SKETCH_HORIZONTAL, SKETCH_RIGHT, SKETCH_LEFT};
+    private static final int[] GESTURE_LEFT_RIGHT_LEFT = new int[]{SKETCH_HORIZONTAL, SKETCH_LEFT, SKETCH_RIGHT,
             SKETCH_LEFT};
-    private final static int[] GESTURE_RIGHT = new int[]{SKETCH_HORIZONTAL,
+    private static final int[] GESTURE_RIGHT_LEFT_RIGHT = new int[]{SKETCH_HORIZONTAL, SKETCH_RIGHT, SKETCH_LEFT,
             SKETCH_RIGHT};
-    private final static int[] GESTURE_LEFT_RIGHT = new int[]{
-            SKETCH_HORIZONTAL, SKETCH_LEFT, SKETCH_RIGHT};
-    private final static int[] GESTURE_RIGHT_LEFT = new int[]{
-            SKETCH_HORIZONTAL, SKETCH_RIGHT, SKETCH_LEFT};
-    private final static int[] GESTURE_LEFT_RIGHT_LEFT = new int[]{
-            SKETCH_HORIZONTAL, SKETCH_LEFT, SKETCH_RIGHT, SKETCH_LEFT};
-    private final static int[] GESTURE_RIGHT_LEFT_RIGHT = new int[]{
-            SKETCH_HORIZONTAL, SKETCH_RIGHT, SKETCH_LEFT, SKETCH_RIGHT};
-    private final static int[] GESTURE_DOWN = new int[]{SKETCH_VERTICAL,
-            SKETCH_DOWN};
-    private final static int fs = 14;
+    private static final int[] GESTURE_DOWN = new int[]{SKETCH_VERTICAL, SKETCH_DOWN};
+    private static final int fs = 14;
 
     private final Font font = new Font("SansSerif", Font.BOLD, fs);
     private final Font fontv = new Font("SansSerif", Font.PLAIN, fs);
@@ -139,95 +131,57 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private final Font fontb = new Font("SansSerif", Font.BOLD, fs + 2);
     private final Font fontt = new Font("MonoSpaced", Font.PLAIN, fs);
     private final Font fonttb = new Font("MonoSpaced", Font.BOLD, fs + 2);
-    private final Font[] big = new Font[]{new Font("SansSerif", Font.BOLD, fs - 8),
-            new Font("SansSerif", Font.BOLD, fs - 8),
-            new Font("SansSerif", Font.BOLD, fs - 8),
-            new Font("SansSerif", Font.BOLD, fs - 8),
-            new Font("SansSerif", Font.BOLD, fs - 8),
-            new Font("SansSerif", Font.BOLD, fs - 8),
-            new Font("SansSerif", Font.BOLD, fs - 8),
-            new Font("SansSerif", Font.BOLD, fs - 8),
-            new Font("SansSerif", Font.BOLD, fs - 8),
-            new Font("SansSerif", Font.BOLD, fs - 8),
-            new Font("SansSerif", Font.BOLD, fs - 8),
-            new Font("SansSerif", Font.BOLD, fs - 7),
-            new Font("SansSerif", Font.BOLD, fs - 6),
-            new Font("SansSerif", Font.BOLD, fs - 5),
-            new Font("SansSerif", Font.BOLD, fs - 4),
-            new Font("SansSerif", Font.BOLD, fs - 3),
-            new Font("SansSerif", Font.BOLD, fs - 2),
-            new Font("SansSerif", Font.BOLD, fs - 1),
-            new Font("SansSerif", Font.BOLD, fs),
-            new Font("SansSerif", Font.BOLD, fs + 1),
-            new Font("SansSerif", Font.BOLD, fs + 2),
-            new Font("SansSerif", Font.BOLD, fs + 3),
-            new Font("SansSerif", Font.BOLD, fs + 4),
-            new Font("SansSerif", Font.BOLD, fs + 5),
-            new Font("SansSerif", Font.BOLD, fs + 6),
-            new Font("SansSerif", Font.BOLD, fs + 7),
-            new Font("SansSerif", Font.BOLD, fs + 8),
-            new Font("SansSerif", Font.BOLD, fs + 9),
-            new Font("SansSerif", Font.BOLD, fs + 10),
-            new Font("SansSerif", Font.BOLD, fs + 11),
-            new Font("SansSerif", Font.BOLD, fs + 12),
-            new Font("SansSerif", Font.BOLD, fs + 13),
-            new Font("SansSerif", Font.BOLD, fs + 14),
-            new Font("SansSerif", Font.BOLD, fs + 15),
-            new Font("SansSerif", Font.BOLD, fs + 16),
-            new Font("SansSerif", Font.BOLD, fs + 17),
-            new Font("SansSerif", Font.BOLD, fs + 18),
-            new Font("SansSerif", Font.BOLD, fs + 19),
-            new Font("SansSerif", Font.BOLD, fs + 20)};
-    private final static int UNDEFINED = 0;
+    private final Font[] bigFonts = createFontCache();
+    private static final int UNDEFINED = 0;
     private int dragDir = UNDEFINED;
     private int hiliteCue = UNDEFINED, dragMode = UNDEFINED;
 
-    private final static int VERTICAL = 1;
-    private final static int HORIZONTAL = 2;
-    private final static int LEFT = 1;
-    private final static int RIGHT = 2;
-    private final static int CENTER = 3;
-    private final static int CUT = 4;
-    private final static int JOIN_LEFT = 5;
-    private final static int JOIN_RIGHT = 6;
-    private final static int SNAPSHOT = 7;
-    private final static int MOVE_REMAINDER = 8;
-    private final static int SLIDE = 9;
+    private static final int VERTICAL = 1;
+    private static final int HORIZONTAL = 2;
+    private static final int LEFT = 1;
+    private static final int RIGHT = 2;
+    private static final int CENTER = 3;
+    private static final int CUT = 4;
+    private static final int JOIN_LEFT = 5;
+    private static final int JOIN_RIGHT = 6;
+    private static final int SNAPSHOT = 7;
+    private static final int MOVE_REMAINDER = 8;
+    private static final int SLIDE = 9;
 
     // some flags for better button handling
-    private final static int BUTTON_FLAG = 0x100;
-    private final static int PRESSED_FLAG = 0x1000;
+    private static final int BUTTON_FLAG = 0x100;
+    private static final int PRESSED_FLAG = 0x1000;
 
     // buttons which will be handled by getButtonXY()
-    private final static int PREV_PAGE = BUTTON_FLAG | 1;
-    private final static int NEXT_PAGE = BUTTON_FLAG | 2;
-    private final static int PLAY_NOTE = BUTTON_FLAG | 3;
-    private final static int PLAY_PAGE = BUTTON_FLAG | 4;
-    private final static int PLAY_BEFORE = BUTTON_FLAG | 5;
-    private final static int PLAY_NEXT = BUTTON_FLAG | 6;
-    private final static int PREV_SLIDE = BUTTON_FLAG | 7;
-    private final static int NEXT_SLIDE = BUTTON_FLAG | 8;
+    private static final int PREV_PAGE = BUTTON_FLAG | 1;
+    private static final int NEXT_PAGE = BUTTON_FLAG | 2;
+    private static final int PLAY_NOTE = BUTTON_FLAG | 3;
+    private static final int PLAY_PAGE = BUTTON_FLAG | 4;
+    private static final int PLAY_BEFORE = BUTTON_FLAG | 5;
+    private static final int PLAY_NEXT = BUTTON_FLAG | 6;
+    private static final int PREV_SLIDE = BUTTON_FLAG | 7;
+    private static final int NEXT_SLIDE = BUTTON_FLAG | 8;
 
     // button ids for the pressed state
-    private final static int PREV_PAGE_PRESSED = PREV_PAGE | PRESSED_FLAG;
-    private final static int NEXT_PAGE_PRESSED = NEXT_PAGE | PRESSED_FLAG;
-    private final static int PLAY_NOTE_PRESSED = PLAY_NOTE | PRESSED_FLAG;
-    private final static int PLAY_PAGE_PRESSED = PLAY_PAGE | PRESSED_FLAG;
-    private final static int PLAY_BEFORE_PRESSED = PLAY_BEFORE | PRESSED_FLAG;
-    private final static int PLAY_NEXT_PRESSED = PLAY_NEXT | PRESSED_FLAG;
-    private final static int PREV_SLIDE_PRESSED = PREV_SLIDE | PRESSED_FLAG;
-    private final static int NEXT_SLIDE_PRESSED = NEXT_SLIDE | PRESSED_FLAG;
+    private static final int PREV_PAGE_PRESSED = PREV_PAGE | PRESSED_FLAG;
+    private static final int NEXT_PAGE_PRESSED = NEXT_PAGE | PRESSED_FLAG;
+    private static final int PLAY_NOTE_PRESSED = PLAY_NOTE | PRESSED_FLAG;
+    private static final int PLAY_PAGE_PRESSED = PLAY_PAGE | PRESSED_FLAG;
+    private static final int PLAY_BEFORE_PRESSED = PLAY_BEFORE | PRESSED_FLAG;
+    private static final int PLAY_NEXT_PRESSED = PLAY_NEXT | PRESSED_FLAG;
+    private static final int PREV_SLIDE_PRESSED = PREV_SLIDE | PRESSED_FLAG;
+    private static final int NEXT_SLIDE_PRESSED = NEXT_SLIDE | PRESSED_FLAG;
 
-    boolean useSketching = false, useSketchingPlayback = false;
-    AffineTransform identity = new AffineTransform();
-    String bufferlost = I18.get("sheet_msg_buffer_lost");
-    VolatileImage backVolImage = null, plainVolImage = null;
+    boolean useSketching = false;
+    boolean useSketchingPlayback = false;
+    private AffineTransform identity = new AffineTransform();
+    private VolatileImage backVolImage = null;
+    private VolatileImage plainVolImage = null;
     String[] hNoteTable = new String[]{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "B", "H"};
     String[] bNoteTable = new String[]{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
     String[] actualNoteTable = bNoteTable;
     boolean paintHeights = false;
     boolean live = false;
-    String toomuchtext = I18.get("sheet_msg_too_much_text");
     private YassTable table = null;
     private final Vector<YassTable> tables = new Vector<>();
     private final Vector<Vector<YassRectangle>> rects = new Vector<>();
@@ -249,42 +203,42 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private BufferedImage bgImage = null;
     private boolean showVideo = false, showBackground = false;
     private boolean mouseover = true;
-    private boolean paintSnapshot = false, showArrows = true,
-            showPlayerButtons = true, showText = true;
+    private boolean paintSnapshot = false;
+    private boolean showArrows = true;
+    private boolean showPlayerButtons = true;
+    private boolean showText = true;
     private int hiliteAction = 0;
-
-    /*
-     * Description of the Method
-     *
-     * @return Description of the Return Value
-     */
     private long lastTime = -1;
     private String lastTimeString = "";
-    private final int
-            LEFT_BORDER = 36,
-            RIGHT_BORDER = 36,
-            TOP_BORDER = 30,
-            PLAY_PAGE_X = -76,
-            PLAY_PAGE_W = 36,
-            PLAY_BEFORE_X = -36,
-            PLAY_BEFORE_W = 36,
-            PLAY_NOTE_X = 2,
-            PLAY_NOTE_W = 48,
-            PLAY_NEXT_X = 49,
-            PLAY_NEXT_W = 36,
-            PLAYER_BUTTONS_HEIGHT = 64;
-    private int BOTTOM_BORDER = 56,
-            TOP_LINE,
-            TOP_PLAYER_BUTTONS;
+    private static final int LEFT_BORDER = 36;
+    private static final int RIGHT_BORDER = 36;
+    private static final int TOP_BORDER = 30;
+    private static final int PLAY_PAGE_X = -76;
+    private static final int PLAY_PAGE_W = 36;
+    private static final int PLAY_BEFORE_X = -36;
+    private static final int PLAY_BEFORE_W = 36;
+    private static final int PLAY_NOTE_X = 2;
+    private static final int PLAY_NOTE_W = 48;
+    private static final int PLAY_NEXT_X = 49;
+    private static final int PLAY_NEXT_W = 36;
+    private static final int PLAYER_BUTTONS_HEIGHT = 64;
+    private int BOTTOM_BORDER = 56;
+    private int TOP_LINE;
+    private int TOP_PLAYER_BUTTONS;
     private Point[] sketch = null;
     private int sketchPos = 0, dirPos = 0;
     private long sketchStartTime = 0;
     private int[] sketchDirs = null;
     private boolean sketchStarted = false;
     private final Font smallFont = new Font("SansSerif", Font.PLAIN, 10);
-    private int minHeight = 0, maxHeight = 18;
-    private int minBeat = 0, maxBeat = 1000;
-    private int hit = -1, hilite = -1, hiliteHeight = 1000, hhPageMin = 0;
+    private int minHeight = 0;
+    private int maxHeight = 18;
+    private int minBeat = 0;
+    private int maxBeat = 1000;
+    private int hit = -1;
+    private int hilite = -1;
+    private int hiliteHeight = 1000;
+    private int hhPageMin = 0;
     private final int heightBoxWidth = 74;
     private final Rectangle2D.Double select = new Rectangle2D.Double(0, 0, 0, 0);
     private double selectX, selectY;
@@ -292,13 +246,18 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private int dragOffsetX = 0, dragOffsetY = 0, slideX = 0;
     private double dragOffsetXRatio = 0;
     private boolean pan = false, isPlaying = false, isTemporaryStop = false;
-    private double bpm = -1, gap = 0, beatgap = 0, duration = -1;
+    private double bpm = -1;
+    private double gap = 0;
+    private double beatgap = 0;
+    private double duration = -1;
     private int outgap = 0;
     private double cutPercent = .5;
     private BufferedImage image;
     private boolean imageChanged = true;
     private int imageX = -1;
-    private int playerPos = -1, inPoint = -1, outPoint = -1;
+    private int playerPos = -1;
+    private int inPoint = -1;
+    private int outPoint = -1;
     private String message = "";
     private long inSelect = -1, outSelect = -1;
     private long inSnapshot = -1, outSnapshot = -1;
@@ -316,7 +275,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     private boolean versionTextPainted = true;
     private final Vector<Long> tmpNotes = new Vector<>(1024);
     private List<Integer> tmpPitches = new ArrayList<>();
-    private final Dimension dim = new Dimension(1000, 100);
+    private final Dimension dim = new Dimension(1000, 200);
     private Graphics2D pgb = null;
     private int ppos = 0;
     private Point psheetpos = null;
@@ -337,6 +296,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         setFocusable(true);
         Image image = new ImageIcon(this.getClass().getResource("/yass/resources/img/cut.gif")).getImage();
         cutCursor = Toolkit.getDefaultToolkit().createCustomCursor(image, new Point(0, 10), "cut");
+        setLayout(new BorderLayout()); // Layout-Manager setzen
         removeAll();
         setDarkMode(false); // creates TexturePaint
         initKeyListener();
@@ -344,492 +304,501 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         initMouseMotionListener();
     }
 
-    private boolean isMouseOverInteractiveChild(Point p) {
-        if (songHeader != null && songHeader.getBounds().contains(p)) {
-            return true;
+    /**
+     * Creates a cache of Font objects of different sizes to improve rendering performance.
+     * Instead of creating new Font objects during painting, we can pick a pre-made one from this array.
+     *
+     * @return An array of pre-instantiated Font objects.
+      */
+    private static Font[] createFontCache() {
+        final int FONT_ARRAY_SIZE = 39;
+        Font[] fonts = new Font[FONT_ARRAY_SIZE];
+
+        // The logic reconstructs the original array structure in a readable way.
+        // It creates fonts from size 6 (fs-8) up to 34 (fs+20).
+        for (int i = 0; i < FONT_ARRAY_SIZE; i++) {
+            int size;
+            if (i <= 10) { // The first 11 fonts have the minimum size
+                size = fs - 8;
+            } else { // The rest increase in size
+                size = fs - (18 - i);
+            }
+            fonts[i] = new Font("SansSerif", Font.BOLD, size);
         }
+        return fonts;
+    }
+    
+    private boolean isMouseOverInteractiveChild(Point p) {
         return false;
     }
 
     private void initMouseMotionListener() {
         addMouseMotionListener(new MouseMotionAdapter() {
             public void mouseMoved(MouseEvent e) {
-                if (equalsKeyMillis > 0) {
-                    equalsKeyMillis = 0;
-                    equalsDigits = "";
-                }
-                if (isMouseOverInteractiveChild(e.getPoint())) {
-                    // When the mouse is over an interactive child,
-                    // let the child control the cursor and events.
-                    setCursor(Cursor.getDefaultCursor());
-                    return;
-                }
-                if (table == null || rect == null || isPlaying())
-                    return;
-
-                int x = e.getX();
-                int y = e.getY();
-                if (hilite >= 0) {
-                    hilite = -2;
-                } else {
-                    hilite = -1;
-                }
-                if (hiliteCue != UNDEFINED) {
-                    hilite = -2;
-                }
-                hiliteCue = UNDEFINED;
-                hiliteAction = ACTION_NONE;
-
-                boolean shouldRepaint = false;
-
-                if (paintHeights) {
-                    if (x < clip.x + heightBoxWidth && y > TOP_LINE - 10 && (y < clip.height - BOTTOM_BORDER)) {
-                        setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                        if (hiliteHeight < 1000) {
-                            if (y < 0)
-                                y = 0;
-                            if (y > dim.height)
-                                y = dim.height;
-                            int dy;
-                            if (pan) {
-                                dy = (int) Math.round(hhPageMin + (dim.height - y - BOTTOM_BORDER) / hSize);
-                            } else {
-                                dy = (int) Math.round(minHeight + (dim.height - y - BOTTOM_BORDER) / hSize);
-                            }
-
-                            if (hiliteHeight != dy) {
-                                hiliteHeight = dy;
-                                repaint();
-                            }
-                        }
-                        return;
-                    } else {
-                        if (hiliteHeight != 1000) {
-                            shouldRepaint = true;
-                            hiliteHeight = 1000;
-                        }
-                    }
-                }
-                int button = getButtonXY(x, y);
-                if (button != UNDEFINED) {
-                    // generate the hover effect
-                    setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
-                    hiliteCue = button;
-                    repaint();
-                    return;
-                }
-                if (inSelect >= 0 && inSelect != outSelect && y < TOP_BORDER
-                        && x >= toTimeline(Math.min(inSelect, outSelect))
-                        && x <= toTimeline(Math.max(inSelect, outSelect))) {
-                    hiliteCue = SNAPSHOT;
-                    setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                    repaint();
-                    return;
-                }
-                // LYRICS POSITION
-                boolean notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
-                if (!notInLyrics && getComponentCount() > 0 && lyricsVisible) {
-                    // dirty bugfix for lost bounds
-                    Point p2 = lyrics.getLocation();
-                    if ((x - p2.x) > 500) {
-                        Point p = ((JViewport) getParent()).getViewPosition();
-                        Dimension vr = ((JViewport) getParent()).getExtentSize();
-
-                        int newx = (int) p.getX() + vr.width - lyricsWidth;
-
-                        int newy = (int) p.getY() + 50;
-                        if (p2.x != newx || p2.y != newy) {
-                            lyrics.setLocation(newx, newy);
-                            revalidate();
-                            update();
-                        }
-                        repaint();
-                    }
-                }
-                YassRectangle next = null;
-                YassRectangle r;
-                int i = 0;
-                for (Enumeration<?> en = rect.elements(); en.hasMoreElements(); i++) {
-                    if (next != null) {
-                        r = next;
-                        next = (YassRectangle) en.nextElement();
-                    } else {
-                        r = (YassRectangle) en.nextElement();
-                    }
-                    if (next == null) {
-                        next = en.hasMoreElements() ? (YassRectangle) en.nextElement() : null;
-                    }
-                    if (r != null) {
-                        boolean isNote = !r.isType(YassRectangle.GAP) && !r.isType(YassRectangle.START) && !r.isType(YassRectangle.END);
-                        if (r.isPageBreak()) {
-                            if (x > r.x - 5 && x < r.x + 5 && !autoTrim) {
-                                hiliteCue = CENTER;
-                                setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
-                                repaint();
-                                return;
-                            }
-                        } else if (r.contains(x, y)) {
-                            hilite = i;
-                            if (mouseover) {
-                                if (!table.isRowSelected(i)) {
-                                    if (!(e.isShiftDown() || e.isControlDown()))
-                                        table.clearSelection();
-                                    table.addRowSelectionInterval(i, i);
-                                    table.updatePlayerPosition();
-                                }
-                            }
-                            int dragw = r.width > Math.max(wSize, 32) * 3 ? (int) Math.max(wSize, 32) : (r.width > 72 ? 24 : (r.width > 48 ? 16 : 5));
-                            if (Math.abs(r.x - x) < dragw && r.width > 20) {
-                                hiliteCue = LEFT;
-                                hiliteAction = ACTION_CONTROL;
-                            } else if (Math.abs(r.x + r.width - x) < dragw && r.width > 20) {
-                                hiliteCue = RIGHT;
-                                hiliteAction = ACTION_ALT;
-                            } else {
-                                hiliteCue = CENTER;
-                                hiliteAction = ACTION_CONTROL_ALT;
-                            }
-
-                            if (hiliteCue == CENTER) {
-                                setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
-                            } else {
-                                setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
-                            }
-                            repaint();
-                            return;
-                        } else if (table.getMultiSize() > 1
-                                && r.x < x
-                                && (((next == null || next.isPageBreak() || next.hasType(YassRectangle.END)) && x < r.x + r.width)
-                                || (next != null && (!next.isPageBreak() && !next.hasType(YassRectangle.END)) && x < next.x))
-                                && y > clip.height - BOTTOM_BORDER
-                                && y < clip.height - BOTTOM_BORDER + 16) {
-                            hiliteCue = CENTER;
-                            setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
-                            repaint();
-                            return;
-                        } else if (isNote && r.x + wSize / 2 < x
-                                && x < r.x + r.width - wSize / 2
-                                && Math.abs(r.y - y) < hSize && r.width > 5) {
-                            hilite = i;
-                            hiliteCue = CUT;
-                            cutPercent = (x - r.x) / r.width;
-                            setCursor(cutCursor);
-                            repaint();
-                            return;
-                        } else if (isNote && r.x < x && x < r.x + wSize / 2
-                                && r.width > 5) {
-                            if (Math.abs(r.y - y) < hSize) {
-                                hilite = i;
-                                hiliteCue = JOIN_LEFT;
-                                setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
-                                repaint();
-                                return;
-                            }
-                        } else if (isNote && r.x + r.width - wSize / 2 < x
-                                && x < r.x + r.width && r.width > 5) {
-                            if (Math.abs(r.y - y) < hSize) {
-                                hilite = i;
-                                hiliteCue = JOIN_RIGHT;
-                                setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
-                                repaint();
-                                return;
-                            }
-                        }
-                    }
-                }
-                if (y > clip.height - BOTTOM_BORDER + 20 || (y > 20 && y < TOP_LINE - 10 && notInLyrics)) {
-                    setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                    hiliteCue = SLIDE;
-                    repaint();
-                    return;
-                }
-                if (x > playerPos - 10 && x < playerPos && y > TOP_LINE && y < dim.height - BOTTOM_BORDER) {
-                    hiliteCue = MOVE_REMAINDER;
-                    setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
-                    repaint();
-                    return;
-                }
-                setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
-                if (hilite == -2) {
-                    hilite = -1;
-                    repaint();
-                    return;
-                }
-                if (shouldRepaint)
-                    repaint();
+                handleMouseMoved(e);
             }
 
             public void mouseDragged(MouseEvent e) {
-                if (isMouseOverInteractiveChild(e.getPoint())) {
-                    return;
-                }
-                if (rect == null)
-                    return;
-                if (! isMousePressed)
-                    return;
-                boolean left = SwingUtilities.isLeftMouseButton(e);
-                Point p = e.getPoint();
-                int px = Math.max(clip.x, Math.min(p.x, clip.x + clip.width));
-                int py = p.y;
+                handleMouseDragged(e);
+            }
+        });
+    }
+    
+    private void handleMouseMoved(MouseEvent e) {
+        if (equalsKeyMillis > 0) {
+            equalsKeyMillis = 0;
+            equalsDigits = "";
+        }
+        if (isMouseOverInteractiveChild(e.getPoint())) {
+            // When the mouse is over an interactive child,
+            // let the child control the cursor and events.
+            setCursor(Cursor.getDefaultCursor());
+            return;
+        }
+        if (table == null || rect == null || isPlaying()) {
+            return;
+        }
+        int x = e.getX();
+        int y = e.getY();
+        if (hilite >= 0) {
+            hilite = -2;
+        } else {
+            hilite = -1;
+        }
+        if (hiliteCue != UNDEFINED) {
+            hilite = -2;
+        }
+        hiliteCue = UNDEFINED;
+        hiliteAction = ACTION_NONE;
 
-                if ((hiliteCue & BUTTON_FLAG) != 0) {
-                    // we hold a button, which is handled by getButtonXY()
-                    int button = getButtonXY(px, py);
-                    if ((hiliteCue & ~PRESSED_FLAG) == button) {
-                        // the mouse is (again) above the held button
-                        hiliteCue |= PRESSED_FLAG;
+        boolean shouldRepaint = false;
+
+        if (paintHeights) {
+            if (x < clip.x + heightBoxWidth && y > TOP_LINE - 10 && (y < clip.height - BOTTOM_BORDER)) {
+                setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                if (hiliteHeight < 1000) {
+                    if (y < 0)
+                        y = 0;
+                    if (y > dim.height)
+                        y = dim.height;
+                    int dy;
+                    if (pan) {
+                        dy = (int) Math.round(hhPageMin + (dim.height - y - BOTTOM_BORDER) / hSize);
                     } else {
-                        // the mouse is outside the held button
-                        hiliteCue &= ~PRESSED_FLAG;
+                        dy = (int) Math.round(minHeight + (dim.height - y - BOTTOM_BORDER) / hSize);
                     }
-                    repaint();
-                    return;
-                }
 
-                if (paintHeights) {
-                    if (px < clip.x + heightBoxWidth && py > TOP_LINE - 10 && (py < clip.height - BOTTOM_BORDER)) {
-                        if (py < 0)
-                            py = 0;
-                        if (py > dim.height)
-                            py = dim.height;
-                        int dy;
-                        if (pan) {
-                            dy = (int) Math.round(hhPageMin + (dim.height - py - BOTTOM_BORDER) / hSize);
-                        } else {
-                            dy = (int) Math.round(minHeight + (dim.height - py - BOTTOM_BORDER) / hSize);
-                        }
+                    if (hiliteHeight != dy) {
                         hiliteHeight = dy;
                         repaint();
-                        if (hiliteHeight > 200)
-                            return;
-                        long time = System.currentTimeMillis();
-                        if (time - lastMidiTime > 100) {
-                            firePropertyChange("midi", null, pan ? (hiliteHeight - 2) : hiliteHeight);
-                            lastMidiTime = time;
-                        }
+                    }
+                }
+                return;
+            } else {
+                if (hiliteHeight != 1000) {
+                    shouldRepaint = true;
+                    hiliteHeight = 1000;
+                }
+            }
+        }
+        int button = getButtonXY(x, y);
+        if (button != UNDEFINED) {
+            // generate the hover effect
+            setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+            hiliteCue = button;
+            repaint();
+            return;
+        }
+        if (inSelect >= 0 && inSelect != outSelect && y < TOP_BORDER
+                && x >= toTimeline(Math.min(inSelect, outSelect))
+                && x <= toTimeline(Math.max(inSelect, outSelect))) {
+            hiliteCue = SNAPSHOT;
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            repaint();
+            return;
+        }
+        YassRectangle next = null;
+        YassRectangle r;
+        int i = 0;
+        for (Enumeration<?> en = rect.elements(); en.hasMoreElements(); i++) {
+            if (next != null) {
+                r = next;
+                next = (YassRectangle) en.nextElement();
+            } else {
+                r = (YassRectangle) en.nextElement();
+            }
+            if (next == null) {
+                next = en.hasMoreElements() ? (YassRectangle) en.nextElement() : null;
+            }
+            if (r != null) {
+                boolean isNote = !r.isType(YassRectangle.GAP) && !r.isType(YassRectangle.START) && !r.isType(YassRectangle.END);
+                if (r.isPageBreak()) {
+                    if (x > r.x - 5 && x < r.x + 5 && !autoTrim) {
+                        hiliteCue = CENTER;
+                        setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                        repaint();
                         return;
                     }
-                }
-
-                if (hiliteCue == SLIDE && left) {
-                    if (slideX == px)
-                        return;
-                    Point vp = getViewPosition();
-                    int off = px - slideX;
-                    int oldpoff = px - vp.x;
-                    vp.x = vp.x - off;
-                    if (vp.x < 0)
-                        vp.x = 0;
-                    setViewPosition(vp);
-                    slideX = vp.x + oldpoff;
-                    if (playerPos < vp.x || playerPos > vp.x + clip.width) {
-                        int next = nextElement(vp.x);
-                        if (next >= 0) {
-                            YassRow row = table.getRowAt(next);
-                            if (!row.isNote() && next + 1 < table.getRowCount()) {
-                                next = next + 1;
-                                row = table.getRowAt(next);
-                            }
-                            if (row.isNote()) {
-                                table.setRowSelectionInterval(next, next);
-                                table.updatePlayerPosition();
-                            }
+                } else if (r.contains(x, y)) {
+                    hilite = i;
+                    if (mouseover) {
+                        if (!table.isRowSelected(i)) {
+                            if (!(e.isShiftDown() || e.isControlDown()))
+                                table.clearSelection();
+                            table.addRowSelectionInterval(i, i);
+                            table.updatePlayerPosition();
                         }
                     }
-                    setPlayerPosition(-1);
-                    return;
-                }
-                int shiftRemainder = InputEvent.BUTTON1_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK;
-                if ((e.getModifiersEx() & shiftRemainder) == shiftRemainder)
-                    shiftRemainder = 1;
-                else
-                    shiftRemainder = 0;
-                if (hiliteCue == MOVE_REMAINDER)
-                    shiftRemainder = 1;
-
-                if (useSketching) {
-                    if (sketchStarted()) {
-                        addSketch(px, py);
-                        if (!detectSketch()) {
-                            cancelSketch();
-                        } else {
-                            repaint();
-                            return;
-                        }
-                    }
-                }
-
-                if (hit < 0) {
-                    if (left) {
-                        // playerPos = px;
-                        outPoint = px;
-                        outSelect = fromTimeline(outPoint);
-
-                        select.x = Math.min(inPoint, outPoint);
-                        select.y = 0;
-                        select.width = Math.abs(outPoint - inPoint);
-                        select.height = clip.height;
+                    int dragw = r.width > Math.max(wSize, 32) * 3 ? (int) Math.max(wSize, 32) : (r.width > 72 ? 24 : (r.width > 48 ? 16 : 5));
+                    if (Math.abs(r.x - x) < dragw && r.width > 20) {
+                        hiliteCue = LEFT;
+                        hiliteAction = ACTION_CONTROL;
+                    } else if (Math.abs(r.x + r.width - x) < dragw && r.width > 20) {
+                        hiliteCue = RIGHT;
+                        hiliteAction = ACTION_ALT;
                     } else {
-
-                        Point p2 = new Point((int) selectX, (int) selectY);
-                        SwingUtilities.convertPointFromScreen(p2,
-                                YassSheet.this);
-
-                        select.x = Math.min(p2.getX(), px);
-                        select.y = Math.min(p2.getY(), py);
-                        select.width = Math.abs(p2.getX() - (double) px);
-                        select.height = Math.abs(p2.getY() - (double) py);
+                        hiliteCue = CENTER;
+                        hiliteAction = ACTION_CONTROL_ALT;
                     }
 
-                    int n = rect.size();
-                    YassRectangle r;
-                    boolean any = false;
-                    for (int i = 0; i < n; i++) {
-                        r = rect.elementAt(i);
-                        if (r.intersects(select)) {
-                            if (!any) {
-                                if (!(e.isShiftDown() || e.isControlDown())) {
-                                    table.clearSelection();
-                                }
-                            }
-                            if (!table.isRowSelected(i)) {
-                                table.addRowSelectionInterval(i, i);
-                            }
-                            any = true;
-                        }
-                    }
-                    if (any) {
-                        table.updatePlayerPosition();
+                    if (hiliteCue == CENTER) {
+                        setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
                     } else {
-                        table.clearSelection();
-                        playerPos = Math.min(inPoint, outPoint);
-                        table.updatePlayerPosition();
+                        setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
                     }
-
                     repaint();
                     return;
-                }
-
-                long time = System.currentTimeMillis();
-                if (time - lastDragTime < 60)
+                } else if (table.getMultiSize() > 1
+                        && r.x < x
+                        && (((next == null || next.isPageBreak() || next.hasType(YassRectangle.END)) && x < r.x + r.width)
+                        || (next != null && (!next.isPageBreak() && !next.hasType(YassRectangle.END)) && x < next.x))
+                        && y > clip.height - BOTTOM_BORDER
+                        && y < clip.height - BOTTOM_BORDER + 16) {
+                    hiliteCue = CENTER;
+                    setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                    repaint();
                     return;
-                lastDragTime = time;
-                table.setPreventUndo(true);
-                YassRectangle rr = rect.elementAt(hit);
-                table.getRowAt(hit);
-                int pageMin = rr.getPageMin();
-                int x;
-                int dx;
-                int y = py - dragOffsetY;
-                if (y < 0)
-                    y = 0;
-                if (y > dim.height)
-                    y = dim.height;
-                if (y < hSize)
-                    y = (int) -hSize;
-                int dy;
-                if (pan) {
-                    dy = (int) Math.round(pageMin + (dim.height - y - hSize - BOTTOM_BORDER + 1) / hSize) - 2;
-                } else {
-                    dy = (int) Math.round(minHeight + (dim.height - y - hSize - BOTTOM_BORDER + 1) / hSize);
-                }
-
-                YassRow r = table.getRowAt(hit);
-                if (rr.isType(YassRectangle.GAP)) {
-                    x = (int) ((px - dragOffsetXRatio * wSize));
-                    if (paintHeights)
-                        x -= heightBoxWidth;
-                    double gapres = x / wSize;
-                    double gap2 = gapres * 60 * 1000 / (4 * bpm);
-                    gap2 = Math.round(gap2 / 10) * 10;
-                    firePropertyChange("gap", null, (int) gap2);
+                } else if (isNote && r.x + wSize / 2 < x
+                        && x < r.x + r.width - wSize / 2
+                        && Math.abs(r.y - y) < hSize && r.width > 5) {
+                    hilite = i;
+                    hiliteCue = CUT;
+                    cutPercent = (x - r.x) / r.width;
+                    setCursor(cutCursor);
+                    repaint();
                     return;
-                }
-                if (rr.isType(YassRectangle.START)) {
-                    x = (int) ((px - dragOffsetXRatio * wSize));
-                    if (paintHeights)
-                        x -= heightBoxWidth;
-                    double valres = x / wSize;
-                    double val = valres * 60 * 1000 / (4 * bpm);
-                    val = Math.round(val / 10) * 10;
-                    firePropertyChange("start", null, (int) val);
-                    return;
-                }
-                if (rr.isType(YassRectangle.END)) {
-                    x = (int) ((px - dragOffsetXRatio * wSize));
-                    if (paintHeights)
-                        x -= heightBoxWidth;
-                    double valres = x / wSize;
-                    double val = valres * 60 * 1000 / (4 * bpm);
-                    val = Math.round(val / 10) * 10;
-                    table.clearSelection();
-                    // quick hack
-                    firePropertyChange("end", null, (int) val);
-                    table.clearSelection();
-                    return;
-                }
-
-                boolean isPageBreak = r.isPageBreak();
-                if (!isPageBreak) {
-                    int oldy = r.getHeightInt();
-                    if (oldy != dy) {
-                        if (dragDir != HORIZONTAL) {
-                            dragDir = VERTICAL;
-                            firePropertyChange("relHeight", null, (dy - oldy));
-                            return;
-                        }
+                } else if (isNote && r.x < x && x < r.x + wSize / 2
+                        && r.width > 5) {
+                    if (Math.abs(r.y - y) < hSize) {
+                        hilite = i;
+                        hiliteCue = JOIN_LEFT;
+                        setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
+                        repaint();
+                        return;
                     }
-                }
-                boolean isPageBreakMin = false;
-                if (isPageBreak)
-                    isPageBreakMin = r.getBeatInt() == r.getSecondBeatInt();
-                if (!isPageBreakMin && dragMode == RIGHT) {
-                    x = (int) (px - beatgap * wSize - 2 + wSize / 2);
-                    if (paintHeights)
-                        x -= heightBoxWidth;
-                    dx = (int) Math.round(x / wSize);
-                } else {
-                    x = (int) (px - beatgap * wSize - 2 - dragOffsetXRatio * wSize);
-                    if (paintHeights)
-                        x -= heightBoxWidth;
-                    dx = (int) Math.round(x / wSize);
-                }
-                if (isPageBreakMin || dragMode == CENTER) {
-                    int oldx = r.getBeatInt();
-                    if (oldx != dx) {
-                        if (dragDir != VERTICAL) {
-                            dragDir = HORIZONTAL;
-                            if (shiftRemainder != 0) {
-                                firePropertyChange("relBeatRemainder", null, (dx - oldx));
-                            } else {
-                                firePropertyChange("relBeat", null, (dx - oldx));
-                            }
-                        }
-                    }
-                } else if (dragMode == LEFT) {
-                    int oldx = r.getBeatInt();
-                    if (oldx != dx) {
-                        if (dragDir != VERTICAL) {
-                            dragDir = HORIZONTAL;
-                            firePropertyChange("relLeft", null, (dx - oldx));
-                        }
-                    }
-                } else {
-                    // dragMode==RIGHT
-                    int oldx = 0;
-                    if (r.isNote())
-                        oldx = r.getBeatInt() + r.getLengthInt();
-                    else if (r.isPageBreak())
-                        oldx = r.getSecondBeatInt();
-                    if (oldx != dx) {
-                        if (dragDir != VERTICAL) {
-                            dragDir = HORIZONTAL;
-                            firePropertyChange("relRight", null, (dx - oldx));
-                        }
+                } else if (isNote && r.x + r.width - wSize / 2 < x
+                        && x < r.x + r.width && r.width > 5) {
+                    if (Math.abs(r.y - y) < hSize) {
+                        hilite = i;
+                        hiliteCue = JOIN_RIGHT;
+                        setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
+                        repaint();
+                        return;
                     }
                 }
             }
-        });
+        }
+        if (y > clip.height - BOTTOM_BORDER + 20 || (y > 20 && y < TOP_LINE - 10)) {
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            hiliteCue = SLIDE;
+            repaint();
+            return;
+        }
+        if (x > playerPos - 10 && x < playerPos && y > TOP_LINE && y < dim.height - BOTTOM_BORDER) {
+            hiliteCue = MOVE_REMAINDER;
+            setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
+            repaint();
+            return;
+        }
+        setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+        if (hilite == -2) {
+            hilite = -1;
+            repaint();
+            return;
+        }
+        if (shouldRepaint)
+            repaint();
+    }
+    
+    private void handleMouseDragged(MouseEvent e) {
+        if (isMouseOverInteractiveChild(e.getPoint())) {
+            return;
+        }
+        if (rect == null)
+            return;
+        if (! isMousePressed)
+            return;
+        boolean left = SwingUtilities.isLeftMouseButton(e);
+        Point p = e.getPoint();
+        int px = Math.max(clip.x, Math.min(p.x, clip.x + clip.width));
+        int py = p.y;
+
+        if ((hiliteCue & BUTTON_FLAG) != 0) {
+            // we hold a button, which is handled by getButtonXY()
+            int button = getButtonXY(px, py);
+            if ((hiliteCue & ~PRESSED_FLAG) == button) {
+                // the mouse is (again) above the held button
+                hiliteCue |= PRESSED_FLAG;
+            } else {
+                // the mouse is outside the held button
+                hiliteCue &= ~PRESSED_FLAG;
+            }
+            repaint();
+            return;
+        }
+
+        if (paintHeights) {
+            if (px < clip.x + heightBoxWidth && py > TOP_LINE - 10 && (py < clip.height - BOTTOM_BORDER)) {
+                if (py < 0)
+                    py = 0;
+                if (py > dim.height)
+                    py = dim.height;
+                int dy;
+                if (pan) {
+                    dy = (int) Math.round(hhPageMin + (dim.height - py - BOTTOM_BORDER) / hSize);
+                } else {
+                    dy = (int) Math.round(minHeight + (dim.height - py - BOTTOM_BORDER) / hSize);
+                }
+                hiliteHeight = dy;
+                repaint();
+                if (hiliteHeight > 200)
+                    return;
+                long time = System.currentTimeMillis();
+                if (time - lastMidiTime > 100) {
+                    firePropertyChange("midi", null, pan ? (hiliteHeight - 2) : hiliteHeight);
+                    lastMidiTime = time;
+                }
+                return;
+            }
+        }
+
+        if (hiliteCue == SLIDE && left) {
+            if (slideX == px)
+                return;
+            Point vp = getViewPosition();
+            int off = px - slideX;
+            int oldpoff = px - vp.x;
+            vp.x = vp.x - off;
+            if (vp.x < 0)
+                vp.x = 0;
+            setViewPosition(vp);
+            slideX = vp.x + oldpoff;
+            if (playerPos < vp.x || playerPos > vp.x + clip.width) {
+                int next = nextElement(vp.x);
+                if (next >= 0) {
+                    YassRow row = table.getRowAt(next);
+                    if (!row.isNote() && next + 1 < table.getRowCount()) {
+                        next = next + 1;
+                        row = table.getRowAt(next);
+                    }
+                    if (row.isNote()) {
+                        table.setRowSelectionInterval(next, next);
+                        table.updatePlayerPosition();
+                    }
+                }
+            }
+            setPlayerPosition(-1);
+            return;
+        }
+        int shiftRemainder = InputEvent.BUTTON1_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK;
+        if ((e.getModifiersEx() & shiftRemainder) == shiftRemainder)
+            shiftRemainder = 1;
+        else
+            shiftRemainder = 0;
+        if (hiliteCue == MOVE_REMAINDER)
+            shiftRemainder = 1;
+
+        if (useSketching) {
+            if (sketchStarted()) {
+                addSketch(px, py);
+                if (!detectSketch()) {
+                    cancelSketch();
+                } else {
+                    repaint();
+                    return;
+                }
+            }
+        }
+
+        if (hit < 0) {
+            if (left) {
+                // playerPos = px;
+                outPoint = px;
+                outSelect = fromTimeline(outPoint);
+
+                select.x = Math.min(inPoint, outPoint);
+                select.y = 0;
+                select.width = Math.abs(outPoint - inPoint);
+                select.height = clip.height;
+            } else {
+
+                Point p2 = new Point((int) selectX, (int) selectY);
+                SwingUtilities.convertPointFromScreen(p2,
+                                                      YassSheet.this);
+
+                select.x = Math.min(p2.getX(), px);
+                select.y = Math.min(p2.getY(), py);
+                select.width = Math.abs(p2.getX() - (double) px);
+                select.height = Math.abs(p2.getY() - (double) py);
+            }
+
+            int n = rect.size();
+            YassRectangle r;
+            boolean any = false;
+            for (int i = 0; i < n; i++) {
+                r = rect.elementAt(i);
+                if (r.intersects(select)) {
+                    if (!any) {
+                        if (!(e.isShiftDown() || e.isControlDown())) {
+                            table.clearSelection();
+                        }
+                    }
+                    if (!table.isRowSelected(i)) {
+                        table.addRowSelectionInterval(i, i);
+                    }
+                    any = true;
+                }
+            }
+            if (any) {
+                table.updatePlayerPosition();
+            } else {
+                table.clearSelection();
+                playerPos = Math.min(inPoint, outPoint);
+                table.updatePlayerPosition();
+            }
+
+            repaint();
+            return;
+        }
+
+        long time = System.currentTimeMillis();
+        if (time - lastDragTime < 60)
+            return;
+        lastDragTime = time;
+        table.setPreventUndo(true);
+        YassRectangle rr = rect.elementAt(hit);
+        table.getRowAt(hit);
+        int pageMin = rr.getPageMin();
+        int x;
+        int dx;
+        int y = py - dragOffsetY;
+        if (y < 0)
+            y = 0;
+        if (y > dim.height)
+            y = dim.height;
+        if (y < hSize)
+            y = (int) -hSize;
+        int dy;
+        if (pan) {
+            dy = (int) Math.round(pageMin + (dim.height - y - hSize - BOTTOM_BORDER + 1) / hSize) - 2;
+        } else {
+            dy = (int) Math.round(minHeight + (dim.height - y - hSize - BOTTOM_BORDER + 1) / hSize);
+        }
+
+        YassRow r = table.getRowAt(hit);
+        if (rr.isType(YassRectangle.GAP)) {
+            x = (int) ((px - dragOffsetXRatio * wSize));
+            if (paintHeights)
+                x -= heightBoxWidth;
+            double gapres = x / wSize;
+            double gap2 = gapres * 60 * 1000 / (4 * bpm);
+            gap2 = Math.round(gap2 / 10) * 10;
+            firePropertyChange("gap", null, (int) gap2);
+            return;
+        }
+        if (rr.isType(YassRectangle.START)) {
+            x = (int) ((px - dragOffsetXRatio * wSize));
+            if (paintHeights)
+                x -= heightBoxWidth;
+            double valres = x / wSize;
+            double val = valres * 60 * 1000 / (4 * bpm);
+            val = Math.round(val / 10) * 10;
+            firePropertyChange("start", null, (int) val);
+            return;
+        }
+        if (rr.isType(YassRectangle.END)) {
+            x = (int) ((px - dragOffsetXRatio * wSize));
+            if (paintHeights)
+                x -= heightBoxWidth;
+            double valres = x / wSize;
+            double val = valres * 60 * 1000 / (4 * bpm);
+            val = Math.round(val / 10) * 10;
+            table.clearSelection();
+            // quick hack
+            firePropertyChange("end", null, (int) val);
+            table.clearSelection();
+            return;
+        }
+
+        boolean isPageBreak = r.isPageBreak();
+        if (!isPageBreak) {
+            int oldy = r.getHeightInt();
+            if (oldy != dy) {
+                if (dragDir != HORIZONTAL) {
+                    dragDir = VERTICAL;
+                    firePropertyChange("relHeight", null, (dy - oldy));
+                    return;
+                }
+            }
+        }
+        boolean isPageBreakMin = false;
+        if (isPageBreak)
+            isPageBreakMin = r.getBeatInt() == r.getSecondBeatInt();
+        if (!isPageBreakMin && dragMode == RIGHT) {
+            x = (int) (px - beatgap * wSize - 2 + wSize / 2);
+            if (paintHeights)
+                x -= heightBoxWidth;
+            dx = (int) Math.round(x / wSize);
+        } else {
+            x = (int) (px - beatgap * wSize - 2 - dragOffsetXRatio * wSize);
+            if (paintHeights)
+                x -= heightBoxWidth;
+            dx = (int) Math.round(x / wSize);
+        }
+        if (isPageBreakMin || dragMode == CENTER) {
+            int oldx = r.getBeatInt();
+            if (oldx != dx) {
+                if (dragDir != VERTICAL) {
+                    dragDir = HORIZONTAL;
+                    if (shiftRemainder != 0) {
+                        firePropertyChange("relBeatRemainder", null, (dx - oldx));
+                    } else {
+                        firePropertyChange("relBeat", null, (dx - oldx));
+                    }
+                }
+            }
+        } else if (dragMode == LEFT) {
+            int oldx = r.getBeatInt();
+            if (oldx != dx) {
+                if (dragDir != VERTICAL) {
+                    dragDir = HORIZONTAL;
+                    firePropertyChange("relLeft", null, (dx - oldx));
+                }
+            }
+        } else {
+            // dragMode==RIGHT
+            int oldx = 0;
+            if (r.isNote())
+                oldx = r.getBeatInt() + r.getLengthInt();
+            else if (r.isPageBreak())
+                oldx = r.getSecondBeatInt();
+            if (oldx != dx) {
+                if (dragDir != VERTICAL) {
+                    dragDir = HORIZONTAL;
+                    firePropertyChange("relRight", null, (dx - oldx));
+                }
+            }
+        }
     }
 
     private void initMouseListener() {
@@ -951,11 +920,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 boolean twice = e.getClickCount() > 1;
                 boolean one = e.getClickCount() == 1;
 
-                // LYRICS POSITION
-                boolean notInLyrics = (x - getViewPosition().x) < clip.width - lyricsWidth;
-
                 if (y > clip.height - BOTTOM_BORDER + 20
-                        || (y > 20 && y < TOP_LINE - 10 && notInLyrics)) {
+                        || (y > 20 && y < TOP_LINE - 10)) {
                     if (!left || twice || one) {
                         //firePropertyChange("one", null, null);
                         return;
@@ -989,7 +955,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 boolean left = SwingUtilities.isLeftMouseButton(e);
                 if (table == null)
                     return;
-                if (! hasFocus()) {
+                if (!hasFocus()) {
                     requestFocusInWindow();
                     requestFocus();
                 }
@@ -1082,7 +1048,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     if (t != null && t.getMultiSize() == 1) {
                         YassTable.setZoomMode(YassTable.ZOOM_MULTI);
                         enablePan(false);
-                        actions.revalidateLyricsArea();
                         update();
                         repaint();
                     }
@@ -1254,8 +1219,15 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             }
 
             public void keyPressed(KeyEvent e) {
-                if (table == null)
+                if (isFocusInSongHeader()) {
                     return;
+                }
+                if (table == null) {
+                    return;
+                }
+                if (actions.getMP3().isPlaying()) {
+                    actions.interruptPlay();
+                }
                 char c = e.getKeyChar();
                 int code = e.getKeyCode();
                 int shift = KeyEvent.SHIFT_DOWN_MASK;
@@ -1722,7 +1694,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         darkMode = onoff;
         BufferedImage bi = new BufferedImage(4, 4, BufferedImage.TYPE_INT_RGB);
         Graphics2D big = bi.createGraphics();
-        big.setColor(darkMode ? dkGrayDarkMode : dkGray);
+        big.setColor(darkMode ? dkGrayDarkMode : DK_GRAY);
         big.fillRect(0, 0, 4, 2);
         big.setColor(darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2);
         big.fillRect(0, 2, 4, 2);
@@ -1733,7 +1705,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         int w2 = w / 2;
         BufferedImage im = new BufferedImage(w, w, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = im.createGraphics();
-        g.setColor(darkMode ? whiteDarkMode : white);
+        g.setColor(darkMode ? whiteDarkMode : Color.WHITE);
         g.fillRect(0, 0, w, w);
         g.setColor(darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2);
         g.fillRect(0, 0, w2, w2);
@@ -2251,7 +2223,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         // If the table is empty, just paint a gray background and stop.
         if (table == null || rect == null || rect.size() < 1) {
             Graphics2D g2d = (Graphics2D) g;
-            g.setColor(darkMode ? hiGrayDarkMode : hiGray);
+            g.setColor(darkMode ? hiGrayDarkMode : HI_GRAY);
             g2d.fillRect(0, 0, getWidth(), getHeight());
             return;
         }
@@ -2446,7 +2418,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     // backVolImage = createVolatileImage(clip.width, clip.height);
                 case VolatileImage.IMAGE_RESTORED:
                     Graphics2D gc = backVolImage.createGraphics();
-                    gc.drawImage(image, 0, 0, white, null);
+                    gc.drawImage(image, 0, 0, Color.WHITE, null);
                     gc.dispose();
                     break;
             }
@@ -2458,7 +2430,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             LOGGER.info("contents lost (" + i + ")");
         }
         g.drawImage(image, clip.x, clip.y, clip.x + clip.width, clip.y
-                + clip.height, 0, 0, clip.width, clip.height, white, this);
+                + clip.height, 0, 0, clip.width, clip.height, Color.WHITE, this);
     }
 
     /**
@@ -2495,7 +2467,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     // backVolImage = createVolatileImage(clip.width, clip.height);
                 case VolatileImage.IMAGE_RESTORED:
                     Graphics2D gc = backVolImage.createGraphics();
-                    gc.drawImage(image, 0, 0, white, null);
+                    gc.drawImage(image, 0, 0, Color.WHITE, null);
                     gc.dispose();
                     break;
             }
@@ -2508,7 +2480,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             LOGGER.info("contents lost (" + i + ")");
         }
         g.drawImage(image, clip.x, clip.y, clip.x + clip.width, clip.y
-                + clip.height, 0, 0, clip.width, clip.height, white, this);
+                + clip.height, 0, 0, clip.width, clip.height, Color.WHITE, this);
     }
 
     /**
@@ -2539,13 +2511,13 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             int h = (int) (w * 3 / 4.0);
             int yy = clip.height / 2 - h / 2;
 
-            g2.setColor(darkMode ? whiteDarkMode : white);
+            g2.setColor(darkMode ? whiteDarkMode : Color.WHITE);
             g2.fillRect(clip.x, 0, clip.width, yy);
             g2.fillRect(clip.x, yy, clip.width, clip.height);
 
             g2.drawImage(img, clip.x, clip.y + yy, w, h, null);
         } else {
-            g2.setColor(darkMode ? whiteDarkMode : white);
+            g2.setColor(darkMode ? whiteDarkMode : Color.WHITE);
             g2.fillRect(clip.x, clip.y, clip.width, clip.height);
 
             g2.setPaint(bgtex);
@@ -2574,7 +2546,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                             - RIGHT_BORDER, BOTTOM_BORDER + 16);
                 }
             }
-            g2.setColor(darkMode ? whiteDarkMode : white);
+            g2.setColor(darkMode ? whiteDarkMode : Color.WHITE);
         }
     }
 
@@ -2585,21 +2557,63 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
      */
     public void paintWaveform(Graphics2D g2) {
         g2.setColor(darkMode ? dkGreen : dkGreenLight);
-
-        int h = TOP_LINE - 10 + 128;
-
         YassPlayer mp3 = actions.getMP3();
-
-        int lasty = 0;
-        
-        for (int x = clip.x + 1; x < clip.x + clip.width; x++) {
-            double ms = fromTimelineExact(x);
-            int y = mp3.getWaveFormAtMillis(ms);
-            g2.drawLine(x - 1, h - lasty, x, h - y);
-            lasty = y;
+        if (mp3.getAudioBytes() == null) {
+            return;
         }
+        List<PitchDetector.PitchData> pitchDataList = mp3.getPitchDataList();
 
-        g2.setColor(darkMode ? whiteDarkMode : white);
+        if (pitchDataList != null && !pitchDataList.isEmpty()) {
+            int pageMin = minHeight;
+            if (pan) {
+                // In pan mode, the vertical position depends on the lowest note on the current "page".
+                // We find the first visible note to get the correct pageMin.
+                int firstVisibleNoteIndex = firstVisibleNote();
+                if (firstVisibleNoteIndex != -1 && firstVisibleNoteIndex < rect.size()) {
+                    pageMin = rect.elementAt(firstVisibleNoteIndex).getPageMin();
+                } else {
+                    // Fallback to the last known page minimum if no note is visible.
+                    pageMin = hhPageMin;
+                }
+            }
+
+            int pitchDataIndex = 0;
+            for (int x = clip.x; x < clip.x + clip.width; x++) {
+                double timeInSeconds = fromTimelineExact(x) / 1000.0;
+                // Find the matching pitch entry for the current time
+                while (pitchDataIndex < pitchDataList.size() - 1 &&
+                        pitchDataList.get(pitchDataIndex + 1).time() < timeInSeconds) {
+                    pitchDataIndex++;
+                }
+                PitchDetector.PitchData currentPitch = pitchDataList.get(pitchDataIndex);
+
+                // Calculate the Y position based on the pitch, aligned with the note grid
+                double y_center;
+                if (pan) {
+                    // In pan mode, y is relative to the page's minimum height.
+                    // The +2 offset aligns with the note rectangle calculation in updateFromRow.
+                    y_center = dim.height - BOTTOM_BORDER - (currentPitch.pitch() - pageMin + 2) * hSize;
+                } else {
+                    // In normal mode, y is relative to the overall minimum height
+                    y_center = dim.height - BOTTOM_BORDER - (currentPitch.pitch() - minHeight) * hSize;
+                }
+
+                // Get the amplitude of the waveform at this point
+                int amplitude = mp3.getWaveFormAtMillis(timeInSeconds * 1000);
+                // Draw a vertical line representing the amplitude, centered on the pitch
+                g2.drawLine(x, (int) (y_center - amplitude / 2.0), x, (int) (y_center + amplitude / 2.0));
+            }
+        } else {
+            int h = TOP_LINE - 10 + 128; // Feste Mittellinie
+            int lasty = 0;
+            for (int x = clip.x + 1; x < clip.x + clip.width; x++) {
+                double ms = fromTimelineExact(x);
+                int y = mp3.getWaveFormAtMillis(ms);
+                g2.drawLine(x - 1, h - lasty, x, h - y);
+                lasty = y;
+            }
+        }
+        g2.setColor(darkMode ? whiteDarkMode : Color.WHITE);
     }
 
     /**
@@ -2614,9 +2628,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         int w = LEFT_BORDER;
         int h = BOTTOM_BORDER - 16;
 
-        Color fg = darkMode ? hiGrayDarkMode : hiGray;
+        Color fg = darkMode ? hiGrayDarkMode : HI_GRAY;
         Color sh = darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2;
-        Color wt = darkMode ? whiteDarkMode : white;
+        Color wt = darkMode ? whiteDarkMode : Color.WHITE;
         Color arr = darkMode ? arrowDarkMode : arrow;
 
         boolean isPressed = hiliteCue == PREV_PAGE_PRESSED;
@@ -2651,9 +2665,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         int w = LEFT_BORDER;
         int h = BOTTOM_BORDER - 16;
 
-        Color fg = darkMode ? hiGrayDarkMode : hiGray;
+        Color fg = darkMode ? hiGrayDarkMode : HI_GRAY;
         Color sh = darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2;
-        Color wt = darkMode ? whiteDarkMode : white;
+        Color wt = darkMode ? whiteDarkMode : Color.WHITE;
         Color arr = darkMode ? arrowDarkMode : arrow;
 
         boolean isPressed = hiliteCue == PREV_SLIDE_PRESSED;
@@ -2705,9 +2719,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         int w = PLAY_NOTE_W;
         int h = PLAYER_BUTTONS_HEIGHT;
 
-        Color fg = darkMode ? hiGrayDarkMode : hiGray;
+        Color fg = darkMode ? hiGrayDarkMode : HI_GRAY;
         Color sh = darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2;
-        Color wt = darkMode ? whiteDarkMode : white;
+        Color wt = darkMode ? whiteDarkMode : Color.WHITE;
         Color arr = darkMode ? arrowDarkMode : arrow;
 
         boolean isPressed = hiliteCue == PLAY_NOTE_PRESSED;
@@ -2815,7 +2829,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         Line2D.Double line = new Line2D.Double(0, 20, 0, 28);
         double leftx = clip.x;
         double rightx = clip.x + clip.width;
-        g2.setColor(darkMode ? hiGrayDarkMode : hiGray);
+        g2.setColor(darkMode ? hiGrayDarkMode : HI_GRAY);
         g2.setStroke(thinStroke);
         int i = 0, j, strw;
         while (true) {
@@ -2830,10 +2844,10 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             j = i / multiplier;
             if (multiplier == 1 || i % multiplier == 0) {
                 g2.setStroke(j % 4 == 0 ? stdStroke : thinStroke);
-                g2.setColor(j % 4 == 0 ? (darkMode ? dkGrayDarkMode : dkGray) : (darkMode ? hiGrayDarkMode : hiGray));
+                g2.setColor(j % 4 == 0 ? (darkMode ? dkGrayDarkMode : DK_GRAY) : (darkMode ? hiGrayDarkMode : HI_GRAY));
                 g2.draw(line);
                 if (j % 4 == 0) {
-                    g2.setColor(darkMode ? hiGrayDarkMode : hiGray);
+                    g2.setColor(darkMode ? hiGrayDarkMode : HI_GRAY);
                     str = Integer.toString(i);
                     strw = metrics.stringWidth(str);
                     g2.drawString(str, (float) (line.x1 - strw / 2), 8f);
@@ -2859,7 +2873,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         }
 
         g2.setStroke(thinStroke);
-        g2.setColor(darkMode ? hiGrayDarkMode : hiGray);
+        g2.setColor(darkMode ? hiGrayDarkMode : HI_GRAY);
         double miny = dim.height - BOTTOM_BORDER;
         double maxy;
         if (pan) {
@@ -2902,7 +2916,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 g2.setStroke(j % 4 == 0 ? (showBackground || showVideo) ? thickStroke
                         : stdStroke
                         : thinStroke);
-                g2.setColor(j % 4 == 0 ? (darkMode ? hiGrayDarkMode : hiGray) : (darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2));
+                g2.setColor(j % 4 == 0 ? (darkMode ? hiGrayDarkMode : HI_GRAY) : (darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2));
                 g2.draw(line);
             }
             i++;
@@ -2916,7 +2930,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             line.x2 = line.x1 + 4 * multiplier * wSize;
             line.y1 = line.y2 = TOP_LINE - 10;
             g2.setStroke(thickStroke);
-            g2.setColor(darkMode ? dkGrayDarkMode : dkGray);
+            g2.setColor(darkMode ? dkGrayDarkMode : DK_GRAY);
             g2.draw(line);
             String bstr = "B";
             if (multiplier > 1) {
@@ -2975,15 +2989,15 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 }
                 line.y1 = line.y2 = dim.height - BOTTOM_BORDER - (h - minHeight) * hSize;
                 g2.setStroke(h % 12 == 0 ? stdStroke : thinStroke);
-                g2.setColor(h % 12 == 0 ? (darkMode ? hiGrayDarkMode : hiGray) : (darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2));
+                g2.setColor(h % 12 == 0 ? (darkMode ? hiGrayDarkMode : HI_GRAY) : (darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2));
                 g2.draw(line);
             }
 
             // scale numbers
             if (paintHeights) {
-                g2.setColor(darkMode ? hiGrayDarkMode : hiGray);
-                int fs = (int) Math.min(big.length * hSize / 8, big.length - 1);
-                g2.setFont(big[fs]);
+                g2.setColor(darkMode ? hiGrayDarkMode : HI_GRAY);
+                int fs = (int) Math.min(bigFonts.length * hSize / 8, bigFonts.length - 1);
+                g2.setFont(bigFonts[fs]);
                 int fh = g2.getFontMetrics().getAscent();
                 for (int h = minHeight; h < maxHeight; h++) {
                     if (h % 12 == 0) {
@@ -3078,7 +3092,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     g2.fillRect(x + 1, (int) line.y1 - (int) hSize / 2 - 2,
                             whitew, (int) hSize - 2);
                 } else {
-                    g2.setColor(Color.black);
+                    g2.setColor(Color.BLACK);
                     g2.fillRect(x + 1, (int) line.y1 - (int) hSize / 3 - 2,
                             blackw, (int) (2 * hSize / 3) - 3);
 
@@ -3132,12 +3146,12 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     g2.setColor(Color.white);
                     g2.fillRect(x + 1, (int) line.y1 - 9, whitew, 10);
                 } else {
-                    g2.setColor(Color.black);
+                    g2.setColor(Color.BLACK);
                     g2.fillRect(x + 1, (int) line.y1 - 7, blackw, 6);
                 }
 
                 if (h == hiliteHeight) {
-                    g2.setColor(Color.black);
+                    g2.setColor(Color.BLACK);
                 } else {
                     g2.setColor(Color.gray);
                 }
@@ -3153,7 +3167,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 g2.drawString(str, (float) (x + w - strw - 5), (float) (line.y1));
             }
             if (hiliteHeight < 200) {
-                g2.setColor(hiGray);
+                g2.setColor(HI_GRAY);
                 g2.fillRect(clip.x + heightBoxWidth, (int) (dim.height
                         - BOTTOM_BORDER - (hiliteHeight - minHeight + 1)
                         * hSize), clip.width, (int) (2 * hSize));
@@ -3205,10 +3219,10 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 String s = YassUtils.commaTime(d) + "s";
                 int sw = g2.getFontMetrics().stringWidth(s);
 
-                g2.setColor(darkMode ? hiGrayDarkMode : hiGray);
+                g2.setColor(darkMode ? hiGrayDarkMode : HI_GRAY);
                 g2.fillRect(x + xw / 2 - sw / 2 - 5, 11, sw + 10, 9);
 
-                g2.setColor(darkMode ? dkGrayDarkMode : dkGray);
+                g2.setColor(darkMode ? dkGrayDarkMode : DK_GRAY);
                 g2.drawString(s, x + xw / 2 - sw / 2, 18);
             }
         }
@@ -3338,7 +3352,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 if (onoff) {
                     if (!r.isPageBreak() && table.getMultiSize() > 1) {
                         Color bg = pn % 2 == 1
-                                ? (darkMode ? hiGrayDarkMode : hiGray)
+                                ? (darkMode ? hiGrayDarkMode : HI_GRAY)
                                 : (darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2);
                         int w = (next == null || next.isPageBreak() || next.hasType(YassRectangle.END))
                                 ? (int) r.width
@@ -3400,7 +3414,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     }
                     if (r.isType(YassRectangle.START)) {
                         if (!live) {
-                            g2.setColor(darkMode ? dkGrayDarkMode : dkGray);
+                            g2.setColor(darkMode ? dkGrayDarkMode : DK_GRAY);
                             Rectangle2D.Double rec = new Rectangle2D.Double(
                                     r.x, r.y, 2, r.height);
                             g2.fill(rec);
@@ -3414,7 +3428,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     }
                     if (r.isType(YassRectangle.END)) {
                         if (!live) {
-                            g2.setColor(darkMode ? dkGrayDarkMode : dkGray);
+                            g2.setColor(darkMode ? dkGrayDarkMode : DK_GRAY);
                             Rectangle2D.Double rec = new Rectangle2D.Double(
                                     r.x, r.y, 2, r.height);
                             g2.fill(rec);
@@ -3435,7 +3449,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                         {
                             if (!isPlaying && !live) {
                                 g2.setFont(smallFont);
-                                g2.setColor(darkMode ? blackDarkMode : black);
+                                g2.setColor(darkMode ? blackDarkMode : Color.BLACK);
                                 FontMetrics fm = g2.getFontMetrics();
 
                                 YassRow row = table.getRowAt(i);
@@ -3445,7 +3459,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                                 int sw = fm.stringWidth(s);
                                 g2.setColor(darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2);
                                 g2.fillRect(x - sw / 2, 0, sw, 10);
-                                g2.setColor(darkMode ? blackDarkMode : black);
+                                g2.setColor(darkMode ? blackDarkMode : Color.BLACK);
                                 g2.drawString(s, x - sw / 2, 8f);
 
                                 long ms = (long)table.beatToMs(beat);
@@ -3453,7 +3467,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                                 sw = fm.stringWidth(s);
                                 g2.setColor(darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2);
                                 g2.fillRect(x - sw / 2, 10, sw, 10);
-                                g2.setColor(darkMode ? blackDarkMode : black);
+                                g2.setColor(darkMode ? blackDarkMode : Color.BLACK);
                                 g2.drawString(s, x - sw / 2, 18);
                             }
                         }
@@ -3464,8 +3478,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                                 int yoff = 4;
 
                                 Font oldFont = g2.getFont();
-                                g2.setColor(darkMode ? dkGrayDarkMode : dkGray);
-                                g2.setFont(big[15]);
+                                g2.setColor(darkMode ? dkGrayDarkMode : DK_GRAY);
+                                g2.setFont(bigFonts[15]);
                                 FontMetrics metrics = g2.getFontMetrics();
                                 int strw = metrics.stringWidth(beatstr);
                                 int midx = (int) (r.x + r.width / 2);
@@ -3482,8 +3496,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
                                 int midx = (int) (r.x + r.width / 2);
                                 Font oldFont = g2.getFont();
-                                g2.setColor(darkMode ? blackDarkMode : black);
-                                g2.setFont(big[16]);
+                                g2.setColor(darkMode ? blackDarkMode : Color.BLACK);
+                                g2.setFont(bigFonts[16]);
                                 FontMetrics metrics = g2.getFontMetrics();
                                 int strw = metrics.stringWidth(lenstr);
                                 int lenx = (int) (r.x + r.width - 2 - strw);
@@ -3513,8 +3527,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                                 int yoff = 4;
                                 int midx = (int) (r.x + r.width / 2);
                                 Font oldFont = g2.getFont();
-                                g2.setColor(darkMode ? blackDarkMode : black);
-                                g2.setFont(big[16]);
+                                g2.setColor(darkMode ? blackDarkMode : Color.BLACK);
+                                g2.setFont(bigFonts[16]);
                                 FontMetrics metrics = g2.getFontMetrics();
                                 int strw = metrics.stringWidth(hstr);
                                 int hx = (int) (r.x + 3);
@@ -3655,7 +3669,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                                 g2.setClip(clip);
 
                                 if (wSize / 2 > 5) {
-                                    g2.setColor(white);
+                                    g2.setColor(Color.WHITE);
                                     int hh = (int) (r.y - hSize / 2);
                                     g2.drawLine((int) (r.x + 3), hh, (int) (r.x
                                             + wSize / 2 - 4), hh);
@@ -3723,7 +3737,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                             g2.draw(r);
                         } else if (r.width > 1.4) {
                             Color c = table.isRowSelected(i) ? colorSet[YassSheet.COLOR_ACTIVE]
-                                    : (darkMode ? dkGrayDarkMode : dkGray);
+                                    : (darkMode ? dkGrayDarkMode : DK_GRAY);
                             g2.setColor(c);
 
                             smallRect.x1 = r.x;
@@ -3736,7 +3750,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                             g2.draw(smallRect);
                         } else {
                             Color c = table.isRowSelected(i) ? colorSet[YassSheet.COLOR_ACTIVE]
-                                    : (darkMode ? dkGrayDarkMode : dkGray);
+                                    : (darkMode ? dkGrayDarkMode : DK_GRAY);
                             g2.setColor(c);
 
                             smallRect.x1 = r.x;
@@ -3761,7 +3775,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     public void paintPlainRectangles(Graphics2D g2) {
         YassRectangle r;
         new YassRectangle();
-        Color borderCol = darkMode ? dkGrayDarkMode : dkGray;
+        Color borderCol = darkMode ? dkGrayDarkMode : DK_GRAY;
 
         int cx = clip.x;
         int cw = clip.width;
@@ -3864,9 +3878,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             int length = row.getLengthInt();
             int height = row.getHeightInt();
             r.x = (timelineGap + beat) * wSize + 1;
-            if (paintHeights) {
+            if (paintHeights)
                 r.x += heightBoxWidth;
-            }
             if (pan) {
                 r.y = dim.height - BOTTOM_BORDER - (height - pageMin + 2)
                         * hSize - hSize + 1;
@@ -3940,7 +3953,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             return;
         }
         Color c = table.getTableColor();
-        if (c==null) c = Color.black;
+        if (c==null) c = Color.BLACK;
         paintTableText(g2, table, rect, c.darker(), c, 0, -clip.x, true);
     }
 
@@ -4010,8 +4023,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
             if (info && r.isType(YassRectangle.FIRST)) {
                 String s = Integer.toString(pn);
-                g2.setColor(darkMode ? dkGrayDarkMode : dkGray);
-                g2.setFont(big[18]);
+                g2.setColor(darkMode ? dkGrayDarkMode : DK_GRAY);
+                g2.setFont(bigFonts[18]);
                 // g2.drawString(s, (float) (r.x + offx + 5), 18);
                 g2.drawString(s, (float) (r.x + offx + 5), clip.height
                         - BOTTOM_BORDER + 14);
@@ -4029,11 +4042,11 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 // 6) * (playerPos - r.x) / r.width);
                 // g2.setFont(big[shade]);
                 // } else {
-                g2.setFont(big[18]);
+                g2.setFont(bigFonts[18]);
                 // }
             } else {
                 g2.setColor(c2);
-                g2.setFont(big[18]);
+                g2.setFont(bigFonts[18]);
 
                 if (r.isType(YassRectangle.FREESTYLE)) {
                     g2.setFont(fonti);
@@ -4054,12 +4067,12 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             strw = metrics.stringWidth(str);
 
             if (off == 0 && strw > r.width) {
-                g2.setFont(big[15]);
+                g2.setFont(bigFonts[15]);
                 metrics = g2.getFontMetrics();
                 strw = metrics.stringWidth(str);
             }
             if (off == 0 && strw > r.width) {
-                g2.setFont(big[13]);
+                g2.setFont(bigFonts[13]);
                 metrics = g2.getFontMetrics();
                 strw = metrics.stringWidth(str);
             }
@@ -4074,21 +4087,21 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
 
             if (strw <= r.width) {
                 if (off == 0) {
-                    g2.setColor(darkMode ? whiteDarkMode : white);
+                    g2.setColor(darkMode ? whiteDarkMode : Color.WHITE);
                 }
                 g2.drawString(str, sx, sh);
             } else {
-                g2.setFont(big[18]);
+                g2.setFont(bigFonts[24]);
                 metrics = g2.getFontMetrics();
                 strw = metrics.stringWidth(ostr);
                 strh = metrics.getAscent();
                 if (strh > r.width + 4) {
-                    g2.setFont(big[15]);
+                    g2.setFont(bigFonts[15]);
                     metrics = g2.getFontMetrics();
                     strh = metrics.getAscent();
                 }
                 if (strh > r.width + 4) {
-                    g2.setFont(big[13]);
+                    g2.setFont(bigFonts[13]);
                     metrics = g2.getFontMetrics();
                     strh = metrics.getAscent();
                 }
@@ -4108,7 +4121,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     g2.translate(sx, sh);
                     g2.rotate(-Math.PI / 2);
 
-                    g2.setColor(darkMode ? dkGrayDarkMode : dkGray);
+                    g2.setColor(darkMode ? dkGrayDarkMode : DK_GRAY);
                     g2.drawString(ostr, 0, 0);
 
                     g2.rotate(Math.PI / 2);
@@ -4125,16 +4138,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
      */
     public boolean isLive() {
         return live;
-    }
-
-    /**
-     * Sets the live attribute of the YassSheet object
-     *
-     * @param onoff The new live value
-     */
-    public void setLive(boolean onoff) {
-        getComponent(0).setVisible(!onoff);
-        live = onoff;
     }
 
     /**
@@ -4160,8 +4163,8 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         }
         if (waitms > 3000) {
             String s = Integer.toString(sec);
-            g2.setFont(big[24]);
-            g2.setColor(white);
+            g2.setFont(bigFonts[24]);
+            g2.setColor(Color.WHITE);
             FontMetrics metrics = g2.getFontMetrics();
             int strw = metrics.stringWidth(s);
             float sx = leftx + 30 - strw / 2;
@@ -4248,17 +4251,17 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                 continue;
             str = str.replace(YassRow.SPACE, ' ');
 
-            g2.setFont(big[24]);
+            g2.setFont(bigFonts[24]);
             g2.setColor(colorSet[YassSheet.COLOR_SHADE]);
             metrics = g2.getFontMetrics();
             strw = metrics.stringWidth(str);
             strwidth += strw;
         }
         if (strwidth > clip.width) {
-            str = toomuchtext;
+            str = I18.get("sheet_msg_too_much_text");
             strwidth = metrics.stringWidth(str);
 
-            g2.setFont(big[24]);
+            g2.setFont(bigFonts[24]);
             g2.setColor(colorSet[YassSheet.COLOR_SHADE]);
 
             float sx = clip.width / 2 - strwidth / 2;
@@ -4298,7 +4301,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             }
             str = str.replace(YassRow.SPACE, ' ');
 
-            g2.setFont(big[24]);
+            g2.setFont(bigFonts[24]);
             g2.setColor(darkMode ? colorSet[YassSheet.COLOR_NORMAL] : colorSet[YassSheet.COLOR_SHADE]);
             metrics = g2.getFontMetrics();
             strw = metrics.stringWidth(str);
@@ -4309,10 +4312,10 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             int offy = 0;
             if (isPlaying) {
                 if (playerPos >= r.x && playerPos < r.x + r.width) {
-                    int shade = (int) ((big.length - 1) - (big.length - 24)
+                    int shade = (int) ((bigFonts.length - 1) - (bigFonts.length - 24)
                             * (playerPos - r.x) / r.width);
                     g2.setColor(darkMode ? colorSet[YassSheet.COLOR_NORMAL] : colorSet[YassSheet.COLOR_SHADE]);
-                    g2.setFont(big[shade]);
+                    g2.setFont(bigFonts[shade]);
                     metrics = g2.getFontMetrics();
                     int strw2 = metrics.stringWidth(str);
                     int strh2 = metrics.getHeight();
@@ -4427,7 +4430,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
     public void paintMessage(Graphics2D g2) {
         if (message == null || message.length() < 1)
             return;
-        g2.setFont(big[19]);
+        g2.setFont(bigFonts[19]);
         FontMetrics metrics = g2.getFontMetrics();
         metrics.stringWidth(message);
         metrics.getHeight();
@@ -5066,7 +5069,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         if (YassTable.getZoomMode() == YassTable.ZOOM_ONE) {
             YassTable.setZoomMode(YassTable.ZOOM_MULTI);
             enablePan(false);
-            actions.revalidateLyricsArea();
             update();
         }
         Point vp = getViewPosition();
@@ -5094,7 +5096,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         if (YassTable.getZoomMode() == YassTable.ZOOM_ONE) {
             YassTable.setZoomMode(YassTable.ZOOM_MULTI);
             enablePan(false);
-            actions.revalidateLyricsArea();
             update();
         }
         Point vp = getViewPosition();
@@ -5230,7 +5231,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     int h = plain.getHeight();
                     int hh = (int) (w * 3 / 4.0);
                     int yy = h / 2 - hh / 2;
-                    pgb.setColor(white);
+                    pgb.setColor(Color.WHITE);
                     pgb.fillRect(0, 0, w, yy);
                     pgb.fillRect(0, yy, w, h);
                     pgb.drawImage(img, 0, yy, w, hh, null);
@@ -5248,7 +5249,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
                     int h = plain.getHeight();
                     int hh = (int) (w * 3 / 4.0);
                     int yy = h / 2 - hh / 2;
-                    pgb.setColor(white);
+                    pgb.setColor(Color.WHITE);
                     pgb.fillRect(0, 0, w, yy);
                     pgb.fillRect(0, yy, w, h);
                     pgb.drawImage(img, 0, yy, w, hh, null);
@@ -5267,7 +5268,7 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             }
 
             if (getPlainBuffer().contentsLost())
-                setErrorMessage(bufferlost);
+                setErrorMessage(I18.get("sheet_msg_buffer_lost"));
             if (isPlaybackInterrupted())
                 return;
             paintText(pgb);
@@ -5342,12 +5343,6 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
         this.lyrics = lyrics;
     }
 
-
-    public void initSongHeader(YassActions actions) {
-        songHeader = new SongHeader(actions, getActiveTable());
-        add(songHeader);
-    }
-
     public void clearTempPitches() {
         this.tmpPitches = new ArrayList<>();
     }
@@ -5378,5 +5373,9 @@ public class YassSheet extends JPanel implements yass.renderer.YassPlaybackRende
             i++;
         } while (!exit);
     }
-
+    
+    private boolean isFocusInSongHeader() {
+        Component focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+        return focusOwner != null && songHeader != null && SwingUtilities.isDescendingFrom(focusOwner, songHeader);
+    }
 }

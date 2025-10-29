@@ -31,8 +31,7 @@ public class SplashFrame extends JWindow {
     private JProgressBar progressBar;
     private OutlinedLabel textLabel;
     
-    public SplashFrame(YassPlayer yassPlayer,
-                       YassSheet yassSheet) {
+    public SplashFrame() {
         JPanel content = new JPanel(new BorderLayout());
         setName(I18.get("splash_title"));
         JLabel imageLabel = new JLabel(new ImageIcon(getClass().getResource("/yass/resources/splash/splash.png"))); // Bilddatei hinzufügen
@@ -53,6 +52,9 @@ public class SplashFrame extends JWindow {
 
         pack();
         setLocationRelativeTo(null); // Splash-Screen in der Mitte anzeigen
+    }
+
+    public void initNoteMap(YassPlayer yassPlayer, YassSheet yassSheet) {
         setVisible(true);
         yassPlayer.initNoteMap();
         byte[] note;
@@ -69,18 +71,23 @@ public class SplashFrame extends JWindow {
                 label.add(I18.get("splash_load"));
             }
             label.add(noteName);
-            textLabel.setText(label.toString());
-            textLabel.repaint();
-            progressBar.setValue(100 * counter++ / 176);
+            updateProgress(label.toString(), 100 * counter++ / 176);
             note = yassPlayer.createNotePlayer(path);
             yassPlayer.addNoteToMap(note, i, true);
-            progressBar.setValue(100 * counter++ / 176);
+            updateProgress(label.toString(), 100 * counter++ / 176);
             note = yassPlayer.createNotePlayer("samples/shortnotes/" + i);
             yassPlayer.addNoteToMap(note, i, false);
             progressBar.repaint();
         }
         setVisible(false);
         dispose();
+    }
+    
+    public void updateProgress(String label, int value) {
+        setVisible(true);
+        textLabel.setText(label);
+        textLabel.repaint();
+        progressBar.setValue(value);
     }
 }
 
