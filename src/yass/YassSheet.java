@@ -291,6 +291,10 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
     private YassMain owner;
     private List<Integer> noteMapping;
 
+    // Index of the note currently being timed in "record mode". Set by YassActions.
+    private int recordingNoteIndex = -1;
+
+
     public YassSheet() {
         super(false);
         setFocusable(true);
@@ -409,6 +413,37 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             repaint();
             return;
         }
+        if (table != null) {
+            double previewStart = table.getPreviewStart();
+            if (previewStart >= 0) {
+                int previewX = toTimeline(previewStart * 1000);
+                if (x >= previewX - 2 && x <= previewX + 2) {
+                    setToolTipText(String.format("Preview Start: %.2f s", previewStart));
+                    return;
+                }
+            }
+            int medleyStart = table.getMedleyStartBeat();
+            if (medleyStart >= 0) {
+                int medleyX = beatToTimeline(medleyStart);
+                if (x >= medleyX - 2 && x <= medleyX + 2) {
+                    setToolTipText(String.format("Medley Start: %d ms", medleyX));
+                    return;
+                }
+            }
+            int medleyEnd = table.getMedleyEndBeat();
+            if (medleyEnd >= 0) {
+                int medleyX = beatToTimeline(medleyEnd);
+                if (x >= medleyX - 2 && x <= medleyX + 2) {
+                    setToolTipText(String.format("Medley End: %d ms", medleyX));
+                    return;
+                }
+            }
+        }
+        // Clear tooltip when not hovering over anything specific
+        if (getToolTipText() != null) {
+            setToolTipText(null);
+        }
+
         if (inSelect >= 0 && inSelect != outSelect && y < TOP_BORDER
                 && x >= toTimeline(Math.min(inSelect, outSelect))
                 && x <= toTimeline(Math.max(inSelect, outSelect))) {
@@ -2860,6 +2895,32 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             }
             i++;
         }
+
+        // Draw preview start indicator
+        if (table != null) {
+            double previewStart = table.getPreviewStart();
+            if (previewStart >= 0) {
+                int previewX = toTimeline(previewStart * 1000);
+                g2.setColor(dkGreen);
+                g2.setStroke(thickStroke); // 2px wide
+                g2.drawLine(previewX, 0, previewX, TOP_BORDER);
+            }
+            int medleyStart = table.getMedleyStartBeat();
+            if (medleyStart >= 0) {
+                int medleyX = beatToTimeline(medleyStart);
+                g2.setColor(dkGreen);
+                g2.setStroke(thickStroke); // 2px wide
+                g2.drawLine(medleyX, 0, medleyX, TOP_BORDER);
+            }
+
+            int medleyEnd = table.getMedleyEndBeat();
+            if (medleyEnd >= 0) {
+                int medleyX = beatToTimeline(medleyEnd);
+                g2.setColor(dkGreen);
+                g2.setStroke(thickStroke); // 2px wide
+                g2.drawLine(medleyX, 0, medleyX, TOP_BORDER);
+            }
+        }
     }
 
     /**
@@ -3016,6 +3077,82 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                     g2.drawString(s, (int) line.x2 - 5 - sw, (int) (y + 12 * hSize - fh / 2));
                 }
             }
+        }
+
+        // Draw dynamic markers for PreviewStart, MedleyStart, and MedleyEnd
+        if (table != null && !live) {
+            double previewStart = table.getPreviewStart();
+            if (previewStart >= 0) {
+                int previewX = toTimeline(previewStart * 1000);
+                drawMarker(g2, previewX, "Preview Start");
+            }
+
+            int medleyStartBeat = table.getMedleyStartBeat();
+            if (medleyStartBeat >= 0) {
+                int medleyX = beatToTimeline(medleyStartBeat);
+                drawMarker(g2, medleyX, "Medley Start");
+            }
+
+            int medleyEndBeat = table.getMedleyEndBeat();
+            if (medleyEndBeat >= 0) {
+                int medleyX = beatToTimeline(medleyEndBeat);
+                drawMarker(g2, medleyX, "Medley End");
+            }
+        }
+    }
+
+    /**
+     * Draws a vertical marker line with a label for special time points like PreviewStart.
+     * The marker is positioned dynamically above or below notes to avoid overlap.
+     *
+     * @param g2    The Graphics2D context.
+     * @param x     The x-coordinate for the marker.
+     * @param label The text to display next to the marker.
+     */
+    private void drawMarker(Graphics2D g2, int x, String label) {
+        if (x < clip.x || x > clip.x + clip.width) {
+            return; // Don't draw if outside the visible area
+        }
+
+        // --- Find notes at the marker's position to determine vertical placement ---
+        double avgNoteY = 0;
+        int noteCount = 0;
+        for (YassRectangle r : rect) {
+            if (r.y > 0 && x >= r.x && x <= r.x + r.width) {
+                avgNoteY += r.y + r.height / 2.0;
+                noteCount++;
+            }
+        }
+        if (noteCount > 0) {
+            avgNoteY /= noteCount;
+        }
+
+        // --- Determine marker's vertical position ---
+        int gridHeight = dim.height - BOTTOM_BORDER - (TOP_LINE - 10);
+        int gridCenterY = TOP_LINE - 10 + gridHeight / 2;
+        int markerY;
+        // If notes are in the upper half, place marker below. Otherwise, place it above.
+        if (noteCount > 0 && avgNoteY < gridCenterY) {
+            markerY = TOP_LINE - 10 + (gridHeight * 3 / 4); // Lower third
+        } else {
+            markerY = TOP_LINE - 10 + (gridHeight / 4); // Upper third
+        }
+
+        // --- Draw the marker and label ---
+        g2.setColor(dkGreen);
+        g2.setStroke(thickStroke);
+        g2.drawLine(x, markerY - 12, x, markerY + 12); // 24pt high line
+
+        // Use a bigger font and dark-mode-aware color for the label
+        g2.setFont(font);
+        g2.setColor(darkMode ? blackDarkMode : Color.BLACK);
+
+        // Position "Medley End" to the left, others to the right
+        if ("Medley End".equals(label)) {
+            int labelWidth = g2.getFontMetrics().stringWidth(label);
+            g2.drawString(label, x - labelWidth - 5, markerY + 5); // Label to the left
+        } else {
+            g2.drawString(label, x + 5, markerY + 5); // Label to the right
         }
     }
 
@@ -4173,22 +4310,33 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         }
     }
 
+    /**
+     * Paints the karaoke text at the bottom of the screen.
+     * - In normal playback mode, it shows the text at the current player position.
+     * - In "record mode" (when recordingNoteIndex is set), it shows the current line to be timed
+     *   and the next line as a preview.
+     * @param g2 The Graphics2D context.
+     */
     public void paintPlayerText(Graphics2D g2) {
-        String str;
-        int strw;
-        int strh;
-        YassRectangle r = null;
-        YassRow row = null;
-        FontMetrics metrics = null;
-
-        int strpos = 0;
-
         if (table == null) {
             return;
         }
 
-        int i = table.getSelectionModel().getMinSelectionIndex();
-        int j = table.getSelectionModel().getMaxSelectionIndex();
+        int i, j;
+        if (recordingNoteIndex != -1) {
+            // --- RECORD MODE ---
+            // The current line is determined by the recordingNoteIndex, which is controlled by the record action.
+            i = j = recordingNoteIndex;
+        } else if (isPlaying) {
+            // --- PLAYBACK MODE ---
+            // Find the current note based on the player position, ignoring any static selection.
+            i = j = nextElement();
+        } else {
+            // --- EDIT MODE (STATIC) ---
+            // Show the line based on the user's selection in the table.
+            i = table.getSelectionModel().getMinSelectionIndex();
+            j = table.getSelectionModel().getMaxSelectionIndex();
+        }
 
         if (i < 0) {
             i = nextElement();
@@ -4200,8 +4348,11 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         if (j < 0)
             j = i;
         int[] ij = table.enlargeToPages(i, j);
+        if (ij == null) return;
+
         i = ij[0];
         j = ij[1];
+
         if (showVideo() || showBackground()) {
             int leftx = 0;
             g2.setColor(playertextBG);
@@ -4210,129 +4361,121 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             else
                 g2.fillRect(leftx + LEFT_BORDER, clip.height - BOTTOM_BORDER + 16, clip.width - LEFT_BORDER - RIGHT_BORDER, BOTTOM_BORDER - 16);
         }
-        float sh = clip.height - 12;
 
-        int k = 0;
-        Enumeration<?> en = ((YassTableModel) table.getModel()).getData().elements();
-        Enumeration<?> ren = rect.elements();
-        for (; ren.hasMoreElements() && en.hasMoreElements(); k++) {
-            r = (YassRectangle) ren.nextElement();
-            row = (YassRow) en.nextElement();
-            if (k == i)
-                break;
-        }
-        if (k != i || row == null)
-            return;
+        // --- Paint the primary (current) line ---
+        paintLyricLine(g2, i, j, 0, bigFonts[24]);
 
-        boolean first = true;
-        int strwidth = 0;
-        while (ren.hasMoreElements() && en.hasMoreElements() && k <= j) {
-            if (!first) {
-                r = (YassRectangle) ren.nextElement();
-                row = (YassRow) en.nextElement();
-                k++;
-            } else {
-                first = false;
+        // --- In record mode, paint the next line as a preview ---
+        if (recordingNoteIndex != -1) {
+            int nextLineStart = j + 1;
+            while (nextLineStart < table.getRowCount() && !table.getRowAt(nextLineStart).isNote()) {
+                nextLineStart++;
             }
 
-            str = row.getText();
-            if (r.isType(YassRectangle.GAP))
-                continue;
-            if (r.isType(YassRectangle.START))
-                continue;
-            if (r.isType(YassRectangle.END))
-                continue;
-            if (r.isPageBreak()) {
-                if (strwidth == 0)
-                    continue;
-                str = " / ";
-            }
-            if (str.length() < 1)
-                continue;
-            str = str.replace(YassRow.SPACE, ' ');
-
-            g2.setFont(bigFonts[24]);
-            g2.setColor(colorSet[YassSheet.COLOR_SHADE]);
-            metrics = g2.getFontMetrics();
-            strw = metrics.stringWidth(str);
-            strwidth += strw;
-        }
-        if (strwidth > clip.width) {
-            str = I18.get("sheet_msg_too_much_text");
-            strwidth = metrics.stringWidth(str);
-
-            g2.setFont(bigFonts[24]);
-            g2.setColor(colorSet[YassSheet.COLOR_SHADE]);
-
-            float sx = clip.width / 2 - strwidth / 2;
-            g2.drawString(str, sx, sh);
-            return;
-        }
-
-        k = 0;
-        en = ((YassTableModel) table.getModel()).getData().elements();
-        for (ren = rect.elements(); ren.hasMoreElements()
-                && en.hasMoreElements() && k <= j; k++) {
-            r = (YassRectangle) ren.nextElement();
-            row = (YassRow) en.nextElement();
-
-            if (k < i) {
-                continue;
-            }
-
-            str = row.getText();
-            if (r.isType(YassRectangle.GAP)) {
-                continue;
-            }
-            if (r.isType(YassRectangle.START)) {
-                continue;
-            }
-            if (r.isType(YassRectangle.END)) {
-                continue;
-            }
-            if (r.isPageBreak()) {
-                if (strwidth == 0) {
-                    continue;
-                }
-                str = " / ";
-            }
-            if (str.length() < 1) {
-                continue;
-            }
-            str = str.replace(YassRow.SPACE, ' ');
-
-            g2.setFont(bigFonts[24]);
-            g2.setColor(darkMode ? colorSet[YassSheet.COLOR_NORMAL] : colorSet[YassSheet.COLOR_SHADE]);
-            metrics = g2.getFontMetrics();
-            strw = metrics.stringWidth(str);
-            strh = metrics.getHeight();
-
-            int offx = 0;
-
-            int offy = 0;
-            if (isPlaying) {
-                if (playerPos >= r.x && playerPos < r.x + r.width) {
-                    int shade = (int) ((bigFonts.length - 1) - (bigFonts.length - 24)
-                            * (playerPos - r.x) / r.width);
-                    g2.setColor(darkMode ? colorSet[YassSheet.COLOR_NORMAL] : colorSet[YassSheet.COLOR_SHADE]);
-                    g2.setFont(bigFonts[shade]);
-                    metrics = g2.getFontMetrics();
-                    int strw2 = metrics.stringWidth(str);
-                    int strh2 = metrics.getHeight();
-                    offx = -(strw2 - strw) / 2;
-                    offy = (strh2 - strh) / 4;
-                }
-            } else {
-                if (playerPos >= r.x - 2 && playerPos < r.x + r.width) {
-                    g2.setColor(darkMode ? colorSet[YassSheet.COLOR_ACTIVE] : colorSet[YassSheet.COLOR_ACTIVE]);
+            if (nextLineStart < table.getRowCount()) {
+                int[] next_ij = table.enlargeToPages(nextLineStart, nextLineStart);
+                if (next_ij != null) {
+                    // Paint the preview line below the primary line, with a smaller font.
+                    paintLyricLine(g2, next_ij[0], next_ij[1], 25, bigFonts[18]);
                 }
             }
-            float sx = clip.width / 2 - strwidth / 2 + strpos;
-            strpos += strw;
-            g2.drawString(str, sx + offx, sh + offy);
         }
     }
 
+    /**
+     * Helper method to paint a single line of lyrics.
+     * @param g2 The Graphics2D context.
+     * @param firstRow The index of the first row of the line.
+     * @param lastRow The index of the last row of the line.
+     * @param yOffset The vertical offset to draw the text at.
+     * @param font The font to use for drawing.
+     */
+    private void paintLyricLine(Graphics2D g2, int firstRow, int lastRow, int yOffset, Font font) {
+        // --- 1. Calculate total width to check for overflow and for centering ---
+        int totalWidth = 0;
+        FontMetrics metrics = g2.getFontMetrics(font);
+
+        for (int k = firstRow; k <= lastRow; k++) {
+            YassRow row = table.getRowAt(k);
+            if (row == null || !row.isNote()) continue;
+
+            String text = row.getText().replace(YassRow.SPACE, ' ');
+            if (StringUtils.isNotEmpty(text)) {
+                totalWidth += metrics.stringWidth(text);
+            }
+        }
+
+        if (totalWidth > clip.width) {
+            String str = I18.get("sheet_msg_too_much_text");
+            int strw = metrics.stringWidth(str);
+            float sx = clip.width / 2f - strw / 2f;
+            float sy = clip.height - 12 - yOffset;
+            g2.setFont(font);
+            g2.setColor(colorSet[YassSheet.COLOR_ERROR]);
+            g2.drawString(str, sx, sy);
+            return;
+        }
+
+        // --- 2. Draw the syllables one by one, centered ---
+        float currentX = clip.width / 2f - totalWidth / 2f;
+        float sy = clip.height - 12 - yOffset;
+
+        for (int k = firstRow; k <= lastRow; k++) {
+            YassRow row = table.getRowAt(k);
+            YassRectangle r = rect.elementAt(k);
+            if (row == null || !row.isNote()) continue;
+
+            String text = row.getText().replace(YassRow.SPACE, ' ');
+            if (StringUtils.isEmpty(text)) continue;
+
+            // Determine font and color for the current syllable
+            Font currentFont = font;
+            Color currentColor = darkMode ? colorSet[YassSheet.COLOR_NORMAL] : colorSet[YassSheet.COLOR_SHADE];
+            int verticalAdjust = 0;
+
+            if (isPlaying || recordingNoteIndex != -1) {
+                boolean isActiveNote = (recordingNoteIndex != -1 && k == recordingNoteIndex) ||
+                                       (recordingNoteIndex == -1 && playerPos >= r.x && playerPos < r.x + r.width);
+
+                // Highlight the active syllable during playback or recording
+                if (isActiveNote) {
+                    currentColor = colorSet[YassSheet.COLOR_ACTIVE];
+
+                    // "Grow" effect for the active syllable
+                    // In normal playback, grow is based on player position.
+                    // In record mode, the note is "active" but doesn't grow automatically.
+                    if (isPlaying && recordingNoteIndex == -1) {
+                        int sizeIndex = 24 + (int) ((bigFonts.length - 1 - 24) * (playerPos - r.x) / r.width);
+                        if (sizeIndex >= 0 && sizeIndex < bigFonts.length) {
+                            currentFont = bigFonts[sizeIndex];
+                            FontMetrics growMetrics = g2.getFontMetrics(currentFont);
+                            int growStrw = growMetrics.stringWidth(text);
+                            int baseStrw = g2.getFontMetrics(font).stringWidth(text);
+                            currentX -= (growStrw - baseStrw) / 2f;
+                            verticalAdjust = (growMetrics.getHeight() - metrics.getHeight()) / 4;
+                        }
+                    }
+                }
+            }
+
+            g2.setFont(currentFont);
+            g2.setColor(currentColor);
+            g2.drawString(text, currentX, sy - verticalAdjust);
+
+            // Reset X position if it was adjusted for the "grow" effect
+            if (verticalAdjust != 0) {
+                int growStrw = g2.getFontMetrics(currentFont).stringWidth(text);
+                int baseStrw = g2.getFontMetrics(font).stringWidth(text);
+                currentX += (growStrw - baseStrw) / 2f;
+            }
+
+            currentX += g2.getFontMetrics(font).stringWidth(text);
+        }
+    }
+
+    public void setRecordingNoteIndex(int index) {
+        this.recordingNoteIndex = index;
+    }
     public Vector<Long> getTemporaryNotes() {
         return tmpNotes;
     }

@@ -1100,6 +1100,12 @@ public class YassUtils {
     public List<String> splitLyricsToLines(String[] lines, int startBeat) {
         List<String> textLines = new ArrayList<>();
         for (String line : lines) {
+            if (StringUtils.isEmpty(line) || line.equalsIgnoreCase("chorus") ||
+                    line.equalsIgnoreCase("bridge") ||
+                    line.equalsIgnoreCase("verse") ||
+                    line.equalsIgnoreCase("outro")) {
+                continue;
+            }
             List<String> rows = createRowsFromLine(line, startBeat);
             textLines.addAll(rows);
             YassRow tempRow = new YassRow(rows.get(rows.size() -1));
@@ -1232,6 +1238,7 @@ public class YassUtils {
 
     public static boolean isUrlReachable(String urlString) {
         try {
+            urlString = urlString.replace("images.fanart.tv", "assets.fanart.tv");
             URL url = new URL(urlString);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("HEAD"); // oder "GET", wenn HEAD nicht unterstützt wird

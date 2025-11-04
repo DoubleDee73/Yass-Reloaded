@@ -25,7 +25,6 @@ import com.jfposton.ytdlp.YtDlpRequest;
 import org.apache.commons.lang3.StringUtils;
 import yass.I18;
 import yass.analysis.BpmDetector;
-import yass.analysis.SubtitleParser;
 import yass.options.YtDlpPanel;
 
 import javax.swing.*;
@@ -36,8 +35,6 @@ import java.awt.event.ActionListener;
 import java.io.File;
 import java.io.Serial;
 import java.net.URL;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 import static yass.wizard.CreateSongWizard.LOGGER;
 
@@ -226,7 +223,6 @@ public class YouTube extends JPanel {
             splash.appendText("Using manual subtitles");
         }
 
-        parseSubtitles(splash);
         detectBpm(splash);
     }
 
@@ -238,23 +234,6 @@ public class YouTube extends JPanel {
             splash.appendText("Download failed. Error: " + error.trim());
         } else {
             splash.appendText("Download failed. Please check the log for errors.");
-        }
-    }
-
-    private void parseSubtitles(DownloadSplashFrame splash) {
-        String subtitlePath = wizard.getValue("subtitle");
-        if (StringUtils.isEmpty(subtitlePath)) {
-            return;
-        }
-        File subtitleFile = new File(subtitlePath);
-        if (subtitleFile.exists()) {
-            splash.appendText("Parsing subtitles for lyrics...");
-            Map<Integer, String> subtitles = SubtitleParser.parse(subtitleFile);
-            if (!subtitles.isEmpty()) {
-                String lyricsText = subtitles.values().stream().collect(Collectors.joining("\n"));
-                wizard.setValue("lyrics", lyricsText);
-                splash.appendText("Lyrics successfully extracted from subtitles.");
-            }
         }
     }
 

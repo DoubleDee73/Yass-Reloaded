@@ -6946,4 +6946,33 @@ public class YassTable extends JTable {
         }
         timer.cancel();
     }
+
+    public void togglePreviewMedley(UltrastarHeaderTag type) {
+        int[] rows = getSelectedRows();
+        boolean remove = (rows == null || rows.length < 1);
+
+        YassRow headerRow = tm.getCommentRow(type.getTagName());
+        if (remove && headerRow != null) {
+            tm.getData().remove(headerRow);
+        } else {
+            YassRow row = getRowAt(rows[0]);
+            if (!row.isNote()) {
+                return;
+            }
+            double previewTime = Precision.round((beatToMs(row.getBeatInt()) / 1000), 2);
+            if (headerRow != null && Double.toString(previewTime).replace(",", ".").equals(headerRow.getHeaderComment())) {
+                tm.getData().remove(headerRow);
+            } else {
+                switch (type) {
+                    case PREVIEWSTART -> setPreviewStart(previewTime);
+                    case MEDLEYSTARTBEAT -> setMedleyStartBeat(row.getBeatInt());
+                    case MEDLEYENDBEAT -> setMedleyEndBeat(row.getBeatInt() + row.getLengthInt());
+                    default -> {
+                        return;
+                    }
+                }
+            }
+        }
+        tm.fireTableDataChanged();
+    }
 }

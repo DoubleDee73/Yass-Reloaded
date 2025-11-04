@@ -537,10 +537,36 @@ public class YassActions implements DropTargetListener {
             songList.printSongs();
         }
     };
-    Action setPreviewStart = new AbstractAction(I18.get("lib_previewstart")) {
+    Action setPreviewStart = new AbstractAction(I18.get("edit_togglepreview")) {
         public void actionPerformed(ActionEvent e) {
-            int[] inout = songInfo.getInOut();
-            songList.setPreviewStart(inout[0]);
+            if (currentView == VIEW_LIBRARY) {
+                int[] inout = songInfo.getInOut();
+                songList.setPreviewStart(inout[0]);
+            }
+        }
+    };
+    Action togglePreview = new AbstractAction(I18.get("lib_previewstart")) {
+        public void actionPerformed(ActionEvent e) {
+            if (currentView == VIEW_LIBRARY) {
+                return;
+            }
+            table.togglePreviewMedley(UltrastarHeaderTag.PREVIEWSTART);
+        }
+    };
+    Action toggleMedleyStart = new AbstractAction(I18.get("edit_togglemedleystart")) {
+        public void actionPerformed(ActionEvent e) {
+            if (currentView == VIEW_LIBRARY) {
+                return;
+            }
+            table.togglePreviewMedley(UltrastarHeaderTag.MEDLEYSTARTBEAT);
+        }
+    };
+    Action toggleMedleyEnd = new AbstractAction(I18.get("edit_togglemedleyend")) {
+        public void actionPerformed(ActionEvent e) {
+            if (currentView == VIEW_LIBRARY) {
+                return;
+            }
+            table.togglePreviewMedley(UltrastarHeaderTag.MEDLEYENDBEAT);
         }
     };
     Action setMedleyStartEnd = new AbstractAction(
@@ -1272,11 +1298,20 @@ public class YassActions implements DropTargetListener {
                 return;
             }
             int j = table.getSelectionModel().getMaxSelectionIndex();
+            if (i == j && table.getRowCount() > i && table.getRowCount() > 2) {
+                j = table.getRowCount() - 2;
+            }
+            int firstNoteToRecord = i;
+            while (firstNoteToRecord < table.getRowCount() && !table.getRowAt(firstNoteToRecord).isNote()) {
+                firstNoteToRecord++;
+            }
+            sheet.setRecordingNoteIndex(firstNoteToRecord);
+
             tempSelection = new ImmutablePair<>(i, j);
             Click[] clicks = table.getSelection(i, j, inout, null, false);
             inout[0] = Math.max(0, inout[0] - 2000000);
             inout[1] = -1;// inout[1] + 2000000;
-
+            awt.setLastNoteIndex(j);
             if (clicks != null) {
                 recordLength = clicks.length;
 
@@ -3798,6 +3833,9 @@ public class YassActions implements DropTargetListener {
         menu.add(rap);
         menu.add(freestyle);
         menu.addSeparator();
+        menu.add(togglePreview);
+        menu.add(setMedleyStartEnd);
+        menu.addSeparator();
         menu.add(minus);
         menu.add(space);
         menu.addSeparator();
@@ -6122,13 +6160,16 @@ public class YassActions implements DropTargetListener {
         }
         awt.reset();
         setRecording(true);
-        Toolkit.getDefaultToolkit().addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK | AWTEvent.KEY_EVENT_MASK);
+        Toolkit.getDefaultToolkit()
+               .addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK |
+                       AWTEvent.KEY_EVENT_MASK);
     }
 
     private void stopRecording() {
         mp3.interruptMP3();
         setRecording(false);
         tempSelection = null;
+        sheet.setRecordingNoteIndex(-1); // IMPORTANT: Reset recording mode
         Toolkit.getDefaultToolkit().removeAWTEventListener(awt);
     }
 
@@ -7675,7 +7716,24 @@ public class YassActions implements DropTargetListener {
         im.put(KeyStroke.getKeyStroke("~"), "addEndian");
         am.put("addEndian", addEndian);
         addEndian.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0));
-        
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UNDERSCORE, InputEvent.SHIFT_DOWN_MASK), "minus");
+        am.put("minus", minus);
+        minus.putValue(AbstractAction.ACCELERATOR_KEY,
+                       KeyStroke.getKeyStroke(KeyEvent.VK_UNDERSCORE, InputEvent.SHIFT_DOWN_MASK));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.SHIFT_DOWN_MASK), "togglePreview");
+        am.put("togglePreview", togglePreview);
+        togglePreview.putValue(AbstractAction.ACCELERATOR_KEY,
+                               KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.SHIFT_DOWN_MASK));
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, 0), "toggleMedleyStart");
+        am.put("toggleMedleyStart", toggleMedleyStart);
+        toggleMedleyStart.putValue(AbstractAction.ACCELERATOR_KEY,
+                               KeyStroke.getKeyStroke(KeyEvent.VK_A, 0));
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.SHIFT_DOWN_MASK), "toggleMedleyEnd");
+        am.put("toggleMedleyEnd", toggleMedleyEnd);
+        toggleMedleyEnd.putValue(AbstractAction.ACCELERATOR_KEY,
+                               KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.SHIFT_DOWN_MASK));
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_DOWN_MASK), "alignGrid");
         am.put("alignGrid", alignToGrid);
         alignToGrid.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_DOWN_MASK));
@@ -7890,7 +7948,15 @@ public class YassActions implements DropTargetListener {
 
     class TapNoteListener implements AWTEventListener {
         private boolean lastWasPressed = false;
+        // --- Add state for the listener ---
+        private int currentNoteIndex = -1;
+        private int lastNoteIndex = -1;
 
+        public void setLastNoteIndex(int index) {
+            this.lastNoteIndex = index;
+            // Initialize the starting note index
+            this.currentNoteIndex = table.getSelectionModel().getMinSelectionIndex();
+        }
         public void reset() {
             lastWasPressed = false;
         }
@@ -7920,6 +7986,19 @@ public class YassActions implements DropTargetListener {
                 if (!pressed && lastWasPressed) {
                     mp3.stopNote();
                     sheet.getTemporaryNotes().addElement(currentPosition);
+                    // --- STEP 2 & 3: Advance to the next note and update the sheet ---
+                    currentNoteIndex++;
+                    // Skip non-note rows like page breaks
+                    while (currentNoteIndex <= lastNoteIndex && !table.getRowAt(currentNoteIndex).isNote()) {
+                        currentNoteIndex++;
+                    }
+                    if (currentNoteIndex > lastNoteIndex) {
+                        // All notes are done, stop recording
+                        stopRecording();
+                    } else {
+                        // Tell the sheet to display the next line
+                        sheet.setRecordingNoteIndex(currentNoteIndex);
+                    }
                     added = true;
                 }
                 lastWasPressed = pressed;
@@ -7940,6 +8019,17 @@ public class YassActions implements DropTargetListener {
                 }
                 if (!pressed && lastWasPressed) {
                     sheet.getTemporaryNotes().addElement(mp3.getPosition());
+                    currentNoteIndex++;
+                    // Skip non-note rows
+                    while (currentNoteIndex <= lastNoteIndex && !table.getRowAt(currentNoteIndex).isNote()) {
+                        currentNoteIndex++;
+                    }
+
+                    if (currentNoteIndex > lastNoteIndex) {
+                        stopRecording();
+                    } else {
+                        sheet.setRecordingNoteIndex(currentNoteIndex);
+                    }
                     added = true;
                 }
                 lastWasPressed = pressed;
@@ -7948,6 +8038,7 @@ public class YassActions implements DropTargetListener {
             if (added) {
                 if (sheet.getTemporaryNotes().size() >= 2 * recordLength) {
                     stopRecording();
+                    sheet.repaint();
                 }
             }
         }

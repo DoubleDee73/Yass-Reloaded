@@ -125,32 +125,36 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
             return;
         }
         String videoLine = song.getVideo();
-        if (SYNCER_TAGS.stream().noneMatch(tag -> videoLine.startsWith(tag + "="))) {
+        String commentTag = song.getCommentTag();
+        if (SYNCER_TAGS.stream().noneMatch(tag -> videoLine.startsWith(tag + "=")) && 
+                StringUtils.isEmpty(commentTag)) {
             return;
         }
-        if (StringUtils.isNotEmpty(song.getCommentTag()) && song.getCommentTag()
-                                                                .startsWith(
-                                                                        "#" + UltrastarHeaderTag.VIDEO.getTagName())) {
-            int ok = JOptionPane.showConfirmDialog(this, I18.get("usdb_syncer_restore_desc"),
-                                                   I18.get("usdb_syncer_restore_title"),
-                                                   JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
-            if (ok == JOptionPane.YES_OPTION) {
-                String video = song.getCommentTag().substring(UltrastarHeaderTag.VIDEO.getTagName().length() + 1);
-                String tempComment;
-                if (video.contains("|")) {
-                    tempComment = video.substring(video.indexOf("|") + 1);
-                    video = video.substring(0, video.indexOf("|"));
-                } else {
-                    tempComment = "";
+        if (StringUtils.isNotEmpty(commentTag)) {
+            if (commentTag.startsWith("#" + UltrastarHeaderTag.VIDEO.getTagName())) {
+                int ok = JOptionPane.showConfirmDialog(this, I18.get("usdb_syncer_restore_desc"),
+                                                       I18.get("usdb_syncer_restore_title"),
+                                                       JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+                if (ok == JOptionPane.YES_OPTION) {
+                    String video = song.getCommentTag().substring(UltrastarHeaderTag.VIDEO.getTagName().length() + 1);
+                    String tempComment;
+                    if (video.contains("|")) {
+                        tempComment = video.substring(video.indexOf("|") + 1);
+                        video = video.substring(0, video.indexOf("|"));
+                    } else {
+                        tempComment = "";
+                    }
+                    song.setCommentTag(tempComment);
+                    song.setVideo(video);
+                    song.storeFile(song.getDirFilename());
+                    JOptionPane.showConfirmDialog(this, I18.get("usdb_syncer_restored"),
+                                                  I18.get("usdb_syncer_restore_title"),
+                                                  JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE);
+                } else if (ok == JOptionPane.CANCEL_OPTION) {
+                    dispose();
                 }
-                song.setCommentTag(tempComment);
-                song.setVideo(video);
-                song.storeFile(song.getDirFilename());
-                JOptionPane.showConfirmDialog(this, I18.get("usdb_syncer_restored"),
-                                              I18.get("usdb_syncer_restore_title"),
-                                              JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE);
-            } else if (ok == JOptionPane.CANCEL_OPTION) {
-                dispose();
+            } else if (commentTag.startsWith("v=")) {
+                prefilledTags.put("v", commentTag.substring(2));
             }
         }
     }
