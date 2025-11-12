@@ -469,33 +469,35 @@ public class SongHeader extends JPanel implements YassSheetListener {
      * @param sheet The YassSheet instance to be updated by the listeners.
      */
     private void addListeners(YassSheet sheet) {
-        audioSelector.addItemListener(e -> {
-            YassTable table = sheet.getTable();
-            if (e.getStateChange() == ItemEvent.DESELECTED && audioField != null) {
-                if (isInternalUpdate) {
-                    return;
+        if(audioSelector!=null) {
+            audioSelector.addItemListener(e -> {
+                YassTable table = sheet.getTable();
+                if (e.getStateChange() == ItemEvent.DESELECTED && audioField != null) {
+                    if (isInternalUpdate) {
+                        return;
+                    }
+                    LOGGER.info("SongHeader: Deselecting " + e.getItem() + ": " + audioField.getText());
+                    table.setAudioByTag(e.getItem().toString(), audioField.getText());
                 }
-                LOGGER.info("SongHeader: Deselecting " + e.getItem() + ": " + audioField.getText());
-                table.setAudioByTag(e.getItem().toString(), audioField.getText());
-            }
-            if (e.getStateChange() == ItemEvent.SELECTED && audioField != null) {
-                if (isInternalUpdate) {
-                    return;
+                if (e.getStateChange() == ItemEvent.SELECTED && audioField != null) {
+                    if (isInternalUpdate) {
+                        return;
+                    }
+                    YassRow mp3Row = table.getCommentRow(e.getItem() + ":");
+                    if (mp3Row != null) {
+                        YassProperties properties = actions.getProperties();
+                        audioField.setText(mp3Row.getHeaderComment());
+                        LOGGER.info("SongHeader: Selecting " + e.getItem() + ": " + audioField.getText());
+                        audioField.repaint();
+                        actions.openMp3(table.getDir() + File.separator + mp3Row.getHeaderComment());
+                    } else {
+                        LOGGER.info("SongHeader: Selecting. No " + e.getItem() + " configured");
+                        audioField.setText(StringUtils.EMPTY);
+                    }
+                    sheet.refreshImage();
                 }
-                YassRow mp3Row = table.getCommentRow(e.getItem() + ":");
-                if (mp3Row != null) {
-                    YassProperties properties = actions.getProperties();
-                    audioField.setText(mp3Row.getHeaderComment());
-                    LOGGER.info("SongHeader: Selecting " + e.getItem() + ": " + audioField.getText());
-                    audioField.repaint();
-                    actions.openMp3(table.getDir() + File.separator + mp3Row.getHeaderComment());
-                } else {
-                    LOGGER.info("SongHeader: Selecting. No " + e.getItem() + " configured");
-                    audioField.setText(StringUtils.EMPTY);
-                }
-                sheet.refreshImage();
-            }
-        });
+            });
+        }
 
         YassUtils.addChangeListener(audioField, e -> {
             if (isInternalUpdate) {
@@ -586,7 +588,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         if (player.getPitchDataList() != null && !player.getPitchDataList().isEmpty()) {
             return;
         }
-        if (this.audioSelector.getSelectedItem()
+        if (audioSelector!=null && audioSelector.getSelectedItem()
                               .toString()
                               .equalsIgnoreCase(UltrastarHeaderTag.VOCALS.toString()) &&
                 prop.getBooleanProperty("debug-waveform") && player.getTempFile() != null) {
@@ -599,6 +601,10 @@ public class SongHeader extends JPanel implements YassSheetListener {
     }
     
     public void setAudioToVocals() {
+        if(audioSelector==null)
+        {
+            return;
+        }
         setInternalUpdate(true);
         audioSelector.setSelectedItem(UltrastarHeaderTag.VOCALS.toString());
         setInternalUpdate(false);
@@ -719,7 +725,9 @@ public class SongHeader extends JPanel implements YassSheetListener {
     public void reset() {
         isInternalUpdate = true; // Disable listeners
 
-        audioSelector.setSelectedIndex(0);
+        if(audioSelector!=null) {
+            audioSelector.setSelectedIndex(0);
+        }
         audioField.setText("");
         gapSpinner.setTime(0);
         bpmField.setText("");
