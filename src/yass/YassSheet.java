@@ -468,7 +468,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             if (r != null) {
                 boolean isNote = !r.isType(YassRectangle.GAP) && !r.isType(YassRectangle.START) && !r.isType(YassRectangle.END);
                 if (r.isPageBreak()) {
-                    if (x > r.x - 5 && x < r.x + 5 && !autoTrim) {
+                    if (x > r.x - 5 && x < r.x + 5 && !autoTrim
+                        && y >= TOP_LINE) {
+
                         hiliteCue = CENTER;
                         setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
                         repaint();
@@ -1109,7 +1111,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                     if (r == null)
                         break;
                     if (r.isPageBreak()) {
-                        if (x > r.x - 5 && x < r.x + 5) {
+                        if (x > r.x - 5 && x < r.x + 5
+                            && y >= TOP_LINE) {
+
                             hit = i;
                             dragOffsetX = (int) (e.getX() - r.x);
                             dragOffsetY = (int) (e.getY() - r.y);
@@ -2164,6 +2168,10 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
     }
 
     public void setViewPosition(Point p) {
+        if(p==null)
+        {
+            return;
+        }
         ((JViewport) getParent()).setViewPosition(p);
         clip = getClipBounds();
     }
@@ -3426,8 +3434,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
 
     public void paintRectangles(Graphics2D g2) {
         Enumeration<YassTable> ts = tables.elements();
-        for (Enumeration<Vector<YassRectangle>> e = rects.elements(); e
-                .hasMoreElements(); ) {
+        for (Enumeration<Vector<YassRectangle>> e = rects.elements(); e.hasMoreElements(); ) {
             Vector<YassRectangle> r = e.nextElement();
             YassTable t = ts.nextElement();
             if (r == rect) {
@@ -4799,37 +4806,34 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         int maxH = -128;
         int minB = 100000;
         int maxB = 0;
-
-        Enumeration<YassTable> et = tables.elements();
-        for (Enumeration<Vector<YassRectangle>> e = rects.elements(); e.hasMoreElements() && et.hasMoreElements(); ) {
-            Vector<YassRectangle> r = e.nextElement();
-            YassTable t = et.nextElement();
-            int i = 0;
+        
+        // enumerate all row vectors and rect vectors
+        Enumeration<YassTable> eTables = tables.elements();
+        Enumeration<Vector<YassRectangle>> eRects = rects.elements();
+        while (eRects.hasMoreElements() && eTables.hasMoreElements()) {
+            Vector<YassRectangle> vRects = eRects.nextElement();
+            YassTable table = eTables.nextElement();
+            if (vRects.size() != table.getRowCount())
+            {
+                LOGGER.severe("number of rows and rect elements do not match: "+vRects.size()+" != "+table.getRowCount());
+                continue;
+            }
             int pn = 1;
-            Enumeration<?> ren = r.elements();
-            Enumeration<?> ten = ((YassTableModel) t.getModel()).getData().elements();
-            YassRow row = null;
-            YassRow prev;
-            YassRow next = null;
-            while (ren.hasMoreElements()) {
-                prev = row;
-                if (next != null) {
-                    row = next;
-                    next = ten.hasMoreElements() ? (YassRow) ten.nextElement() : null;
-                } else
-                    row = (YassRow) ten.nextElement();
-                if (next == null)
-                    next = ten.hasMoreElements() ? (YassRow) ten.nextElement() : null;
+            Vector<YassRow> vRows = ((YassTableModel) table.getModel()).getData();
+            YassRow prev = null;
+            for(int i = 0; i < vRects.size();i++){
+                YassRow row = vRows.elementAt(i);
+                YassRectangle rect = vRects.elementAt(i);
+
                 if (row.isNote())
                     outgap = Math.max(outgap, row.getBeatInt() + row.getLengthInt());
                 else if (row.isPageBreak())
                     outgap = Math.max(outgap, row.getSecondBeatInt());
-                YassRectangle rr = (YassRectangle) ren.nextElement();
-                updateFromRow(t, i++, prev, row, rr);
-                if (rr.isPageBreak()) {
-                    rr.setPageNumber(++pn);
+                updateFromRow(table, i, prev, row, rect);
+                if (rect.isPageBreak()) {
+                    rect.setPageNumber(++pn);
                     // should better add PAGE_BREAK type
-                    rr.removeType(YassRectangle.DEFAULT);
+                    rect.removeType(YassRectangle.DEFAULT);
                 }
                 // beat/height range
                 if (row.isNote()) {
@@ -4839,9 +4843,10 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                     minB = Math.min(minB, row.getBeatInt());
                     maxB = Math.max(maxB, row.getBeatInt() + row.getLengthInt());
                 }
+                prev = row;
             }
         }
-
+        
         // beat/height range
         if (minH == 128)
             minH = 0;

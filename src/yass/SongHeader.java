@@ -588,7 +588,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         if (player.getPitchDataList() != null && !player.getPitchDataList().isEmpty()) {
             return;
         }
-        if (this.audioSelector.getSelectedItem()
+        if (audioSelector!=null && audioSelector.getSelectedItem()
                               .toString()
                               .equalsIgnoreCase(UltrastarHeaderTag.VOCALS.toString()) &&
                 prop.getBooleanProperty("debug-waveform") && player.getTempFile() != null) {
@@ -601,6 +601,10 @@ public class SongHeader extends JPanel implements YassSheetListener {
     }
     
     public void setAudioToVocals() {
+        if(audioSelector==null)
+        {
+            return;
+        }
         setInternalUpdate(true);
         audioSelector.setSelectedItem(UltrastarHeaderTag.VOCALS.toString());
         setInternalUpdate(false);
@@ -721,7 +725,9 @@ public class SongHeader extends JPanel implements YassSheetListener {
     public void reset() {
         isInternalUpdate = true; // Disable listeners
 
-        audioSelector.setSelectedIndex(0);
+        if(audioSelector!=null) {
+            audioSelector.setSelectedIndex(0);
+        }
         audioField.setText("");
         gapSpinner.setTime(0);
         bpmField.setText("");
