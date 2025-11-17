@@ -37,6 +37,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -180,6 +181,9 @@ public class Lyrics extends JPanel {
 
     private void parseSubtitles(String subtitlePath) {
         if (StringUtils.isEmpty(subtitlePath)) {
+            if (subtitles != null && !subtitles.isEmpty()) {
+                subtitles = new HashMap<>();
+            }
             return;
         }
         java.io.File subtitleFile = new java.io.File(subtitlePath);

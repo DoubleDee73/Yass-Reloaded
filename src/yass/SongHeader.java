@@ -81,6 +81,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
 
     /**
      * Creates the main panel containing all the song header controls.
+     *
      * @param actions The application actions.
      * @return The fully constructed main panel.
      */
@@ -147,10 +148,11 @@ public class SongHeader extends JPanel implements YassSheetListener {
         setInternalUpdate(false);
         return mainPanel;
     }
-    
+
     /**
      * Creates the panel for audio file selection and management.
-     * @param table The table model containing song data.
+     *
+     * @param table          The table model containing song data.
      * @param yassProperties The application properties.
      * @return The audio panel.
      */
@@ -317,7 +319,8 @@ public class SongHeader extends JPanel implements YassSheetListener {
     private SuggestingTagField createGenreField(YassProperties yassProperties) {
         // Create the suggestion provider function
         Function<String, List<String>> genreSuggester = (input) -> {
-            String genreTags = yassProperties.getProperty("genre-tag", "") + "|" + yassProperties.getProperty("genre-more-tag", "");
+            String genreTags = yassProperties.getProperty("genre-tag", "") + "|" +
+                    yassProperties.getProperty("genre-more-tag", "");
             String[] allGenres = genreTags.split("\\|");
             return Arrays.stream(allGenres)
                          .map(String::trim)
@@ -330,7 +333,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         field.setPreferredSize(new Dimension(100, 30));
         return field;
     }
-    
+
     private SuggestingTagField createTagField(YassProperties yassProperties) {
         // Create the suggestion provider function
         Function<String, List<String>> tagsSuggester = (input) -> {
@@ -347,7 +350,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         field.setPreferredSize(new Dimension(100, 30));
         return field;
     }
-    
+
     private JPanel createGapSpinnerPanel() {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
@@ -376,8 +379,8 @@ public class SongHeader extends JPanel implements YassSheetListener {
             determinePitches();
         }
         setInternalUpdate(true);
-        gapSpinner.setTime((int)table.getGap());
-        gapSpinner.setDuration((int)(table.getGap() * 10));
+        gapSpinner.setTime((int) table.getGap());
+        gapSpinner.setDuration((int) (table.getGap() * 10));
         bpmField.setText(String.valueOf(table.getBPM()));
         int duration = actions.getMP3() != null ? (int) (actions.getMP3().getDuration() / 1000) : 10000;
         startSpinner.setTime((int) (table.getStart() * 1000));
@@ -416,7 +419,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         labels.add(label);
 
         bpmField = new JTextField("");
-        bpmField.setPreferredSize(new Dimension(75, 30)); 
+        bpmField.setPreferredSize(new Dimension(75, 30));
         bpmPanel.add(bpmField);
         textFields.add(bpmField);
         Dimension buttonSize = new Dimension(40, 30);
@@ -466,6 +469,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
 
     /**
      * Adds all necessary event listeners to the components.
+     *
      * @param sheet The YassSheet instance to be updated by the listeners.
      */
     private void addListeners(YassSheet sheet) {
@@ -526,7 +530,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
             }
             actions.setStart(startSpinner.getTime());
         });
-                                                    
+
         endSpinner.getSpinner().addChangeListener(e -> {
             if (isInternalUpdate) {
                 return;
@@ -581,16 +585,16 @@ public class SongHeader extends JPanel implements YassSheetListener {
             table.setTags(tagField.getText());
         });
     }
-    
+
     private void determinePitches() {
         YassProperties prop = actions.getProperties();
         YassPlayer player = actions.getMP3();
         if (player.getPitchDataList() != null && !player.getPitchDataList().isEmpty()) {
             return;
         }
-        if (audioSelector!=null && audioSelector.getSelectedItem()
-                              .toString()
-                              .equalsIgnoreCase(UltrastarHeaderTag.VOCALS.toString()) &&
+        if (audioSelector != null && audioSelector.getSelectedItem()
+                                                  .toString()
+                                                  .equalsIgnoreCase(UltrastarHeaderTag.VOCALS.toString()) &&
                 prop.getBooleanProperty("debug-waveform") && player.getTempFile() != null) {
             player.setPitchDataList(
                     PitchDetector.detectPitch(player.getTempFile(), prop));
@@ -599,16 +603,16 @@ public class SongHeader extends JPanel implements YassSheetListener {
             player.setPitchDataList(Collections.emptyList());
         }
     }
-    
+
     public void setAudioToVocals() {
-        if(audioSelector==null)
-        {
+        if (audioSelector == null) {
             return;
         }
         setInternalUpdate(true);
         audioSelector.setSelectedItem(UltrastarHeaderTag.VOCALS.toString());
         setInternalUpdate(false);
     }
+
     private JButton createActionButton(Action action, String iconName, Dimension size) {
         JButton button = new JButton();
         button.setAction(action);
@@ -648,6 +652,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         }
         return null;
     }
+
     public String getSelectedAudio() {
         if (audioSelector == null) {
             return UltrastarHeaderTag.MP3.name();
@@ -680,8 +685,8 @@ public class SongHeader extends JPanel implements YassSheetListener {
                 ((JButton) c).getModel().addChangeListener(e -> {
                     ButtonModel model = (ButtonModel) e.getSource();
                     c.setBackground(model.isRollover()
-                            ? (YassSheet.BLUE)
-                            : YassSheet.HI_GRAY_2);
+                                            ? (YassSheet.BLUE)
+                                            : YassSheet.HI_GRAY_2);
                     ((JButton) c).setBorder(model.isRollover() ? rolloverBorder : emptyBorder);
                 });
             }
@@ -689,8 +694,8 @@ public class SongHeader extends JPanel implements YassSheetListener {
                 ((JToggleButton) c).getModel().addChangeListener(e -> {
                     ButtonModel model = (ButtonModel) e.getSource();
                     c.setBackground(model.isRollover()
-                            ? (YassSheet.BLUE)
-                            : YassSheet.HI_GRAY_2);
+                                            ? (YassSheet.BLUE)
+                                            : YassSheet.HI_GRAY_2);
                     ((JToggleButton) c).setBorder(model.isRollover() ? rolloverBorder : emptyBorder);
                 });
             }
@@ -717,7 +722,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         }
         repaint();
     }
-    
+
     private YassTable getTable() {
         return getActions().getTable();
     }
@@ -725,7 +730,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
     public void reset() {
         isInternalUpdate = true; // Disable listeners
 
-        if(audioSelector!=null) {
+        if (audioSelector != null) {
             audioSelector.setSelectedIndex(0);
         }
         audioField.setText("");

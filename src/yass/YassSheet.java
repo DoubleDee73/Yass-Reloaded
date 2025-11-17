@@ -2479,13 +2479,13 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
     /**
      * Description of the Method
      *
-     * @param g Description of the Parameter
+     * @param g2 Description of the Parameter
      * @param x Description of the Parameter
      * @param y Description of the Parameter
      * @param w Description of the Parameter
      * @param h Description of the Parameter
      */
-    public synchronized void paintBackBuffer(Graphics2D g, int x, int y, int w,
+    public synchronized void paintBackBuffer(Graphics2D g2, int x, int y, int w,
                                              int h) {
         final int MAX_TRIES = 5;
         for (int i = 0; i < MAX_TRIES; i++) {
@@ -2499,12 +2499,12 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                     image = null;
                     plainVolImage.flush();
                     plainVolImage = null;
-                    image = g.getDeviceConfiguration().createCompatibleImage(
+                    image = g2.getDeviceConfiguration().createCompatibleImage(
                             clip.width, clip.height, Transparency.TRANSLUCENT);
-                    backVolImage = g.getDeviceConfiguration()
+                    backVolImage = g2.getDeviceConfiguration()
                             .createCompatibleVolatileImage(clip.width, clip.height,
                                     Transparency.OPAQUE);
-                    plainVolImage = g.getDeviceConfiguration()
+                    plainVolImage = g2.getDeviceConfiguration()
                             .createCompatibleVolatileImage(clip.width, clip.height,
                                     Transparency.OPAQUE);
                     // backVolImage = createVolatileImage(clip.width, clip.height);
@@ -2515,14 +2515,14 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                     break;
             }
 
-            g.drawImage(backVolImage, clip.x + x, clip.y + y, clip.x + x + w,
+            g2.drawImage(backVolImage, clip.x + x, clip.y + y, clip.x + x + w,
                     clip.y + y + h, x, y, x + w, y + h, this);
             if (!backVolImage.contentsLost()) {
                 return;
             }
             LOGGER.info("contents lost (" + i + ")");
         }
-        g.drawImage(image, clip.x, clip.y, clip.x + clip.width, clip.y
+        g2.drawImage(image, clip.x, clip.y, clip.x + clip.width, clip.y
                 + clip.height, 0, 0, clip.width, clip.height, Color.WHITE, this);
     }
 
@@ -3090,21 +3090,24 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         // Draw dynamic markers for PreviewStart, MedleyStart, and MedleyEnd
         if (table != null && !live) {
             double previewStart = table.getPreviewStart();
+            int medleyStartBeat = table.getMedleyStartBeat();
+            boolean overlap = (previewStart >= 0 && medleyStartBeat >= 0 &&
+                               Math.abs(toTimeline(previewStart * 1000) - beatToTimeline(medleyStartBeat)) < 1);
+
             if (previewStart >= 0) {
                 int previewX = toTimeline(previewStart * 1000);
-                drawMarker(g2, previewX, "Preview Start");
+                drawMarker(g2, previewX, "Preview Start", false);
             }
 
-            int medleyStartBeat = table.getMedleyStartBeat();
             if (medleyStartBeat >= 0) {
                 int medleyX = beatToTimeline(medleyStartBeat);
-                drawMarker(g2, medleyX, "Medley Start");
+                drawMarker(g2, medleyX, "Medley Start", overlap);
             }
 
             int medleyEndBeat = table.getMedleyEndBeat();
             if (medleyEndBeat >= 0) {
                 int medleyX = beatToTimeline(medleyEndBeat);
-                drawMarker(g2, medleyX, "Medley End");
+                drawMarker(g2, medleyX, "Medley End", false);
             }
         }
     }
@@ -3116,8 +3119,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
      * @param g2    The Graphics2D context.
      * @param x     The x-coordinate for the marker.
      * @param label The text to display next to the marker.
+     * @param lower If true, draw the marker in the lower part of the grid.
      */
-    private void drawMarker(Graphics2D g2, int x, String label) {
+    private void drawMarker(Graphics2D g2, int x, String label, boolean lower) {
         if (x < clip.x || x > clip.x + clip.width) {
             return; // Don't draw if outside the visible area
         }
@@ -3140,7 +3144,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         int gridCenterY = TOP_LINE - 10 + gridHeight / 2;
         int markerY;
         // If notes are in the upper half, place marker below. Otherwise, place it above.
-        if (noteCount > 0 && avgNoteY < gridCenterY) {
+        if ((noteCount > 0 && avgNoteY < gridCenterY) || lower) {
             markerY = TOP_LINE - 10 + (gridHeight * 3 / 4); // Lower third
         } else {
             markerY = TOP_LINE - 10 + (gridHeight / 4); // Upper third
@@ -3364,7 +3368,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                 String s = YassUtils.commaTime(d) + "s";
                 int sw = g2.getFontMetrics().stringWidth(s);
 
-                g2.setColor(darkMode ? hiGrayDarkMode : HI_GRAY);
+                g2.setColor(darkMode ? HI_GRAY_2_DARK_MODE : HI_GRAY_2);
                 g2.fillRect(x + xw / 2 - sw / 2 - 5, 11, sw + 10, 9);
 
                 g2.setColor(darkMode ? dkGrayDarkMode : DK_GRAY);

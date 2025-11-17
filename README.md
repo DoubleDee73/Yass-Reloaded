@@ -58,7 +58,7 @@ If you install Yass Reloaded with the Windows installer, you can simply run `Yas
 
 Alternatively, you can download the jar file and start it from the console:
 
-On Windows, you can simply do this: `java -jar Yass-Reloaded-2025.10.jar`
+On Windows, you can simply do this: `java -jar Yass-Reloaded-2025.11.jar`
 
 On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
@@ -66,7 +66,7 @@ On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
 and then start the jar like so:
 
-`java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2025.10.jar`
+`java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2025.11.jar`
 
 # Developers
 
@@ -127,7 +127,7 @@ If you like this  app, feel free (but not pressured!) to buy me coffee. Any supp
   - Open a command line window and type in `java -version`. 
   - You should have Java 21
 - Have you tried opening it as a jar?
-  - Download the jar, open a command line window and type in `java -jar Yass-Reloaded-2025.10.jar`
+  - Download the jar, open a command line window and type in `java -jar Yass-Reloaded-2025.11.jar`
   - Any error messages are then printed out in the command line window for debugging
 
 ## Cannot find FFmpeg?

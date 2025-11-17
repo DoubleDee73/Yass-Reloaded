@@ -3863,6 +3863,7 @@ public class YassActions implements DropTargetListener {
         menu.addSeparator();
         menu.add(editHyphenations);
         menu.add(queryMusicBrainz);
+        menu.add(suggestGoldenNotes);
         menu.add(showOptions);
 
         menu = new JMenu(I18.get("edit_help"));
@@ -6106,6 +6107,9 @@ public class YassActions implements DropTargetListener {
                 pos = (long) sheet.getLeftMs();
             }
         }
+        if (end - pos <= 0) {
+            return;
+        }
         startPlaying();
 
         mp3.setMIDIEnabled(false);
@@ -6143,6 +6147,9 @@ public class YassActions implements DropTargetListener {
             } else {
                 end = (long) sheet.getMaxVisibleMs();
             }
+        }
+        if (end - pos <= 0) {
+            return;
         }
 
         startPlaying();
@@ -7153,7 +7160,7 @@ public class YassActions implements DropTargetListener {
                 }
             }
         }
-
+        refreshLibrary();
         boolean starteditor = hash.get("starteditor").equals("true");
         if (!standAlone) {
             if (file != null) {
@@ -8131,7 +8138,7 @@ public class YassActions implements DropTargetListener {
         }
     }
 
-    public final Action queryMusicBrainz = new AbstractAction("Query MusicBrainz") {
+    public final Action queryMusicBrainz = new AbstractAction(I18.get("edit_musicbrainz")) {
         @Override
         public void actionPerformed(ActionEvent e) {
             try {
@@ -8172,7 +8179,16 @@ public class YassActions implements DropTargetListener {
             }
         }
     };
-    
+    private final Action suggestGoldenNotes = new AbstractAction(I18.get("edit_suggest_golden_notes")) {
+        public void actionPerformed(ActionEvent e) {
+            interruptPlay();
+            if (lyrics.isEditable() || songList.isEditing()
+                    || isFilterEditing() || isFocusInSongHeader()) {
+                return;
+            }
+            table.suggestGoldenNotes();
+        }
+    };
     public KeyboardMapping getKeyboardLayout() {
         return CURRENT_MAPPING;
     }

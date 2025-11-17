@@ -71,11 +71,10 @@
             <systemPath>${project.basedir}/lib/jinput-raw.dll</systemPath>
         </dependency>
         
-        <!-- use maven Plugin install-file to install the jar to the local repo -->
         <dependency>
             <groupId>com.swabunga</groupId>
             <artifactId>jazzy</artifactId>
-            <version>1.0.0</version>
+            <version>1.0</version>
             <scope>compile</scope>
         </dependency>
 
@@ -231,8 +230,8 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <project.version>2025.10</project.version>
-        <project.semantic.version>2025.10</project.semantic.version>
+        <project.version>2025.11</project.version>
+        <project.semantic.version>2025.11</project.semantic.version>
     </properties>
 
     <build>
