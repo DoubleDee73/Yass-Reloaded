@@ -1,0 +1,114 @@
+name: Build Yass Reloaded
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Java 21
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Build JAR
+        run: mvn clean package
+      - name: Build Runtime & Installer
+        run: |
+          jlink --module-path "%JAVA_HOME%\jmods;javafx-jmods\windows-x64" ^
+                --add-modules java.base,java.desktop,javafx.swing,javafx.media ^
+                --output yass-runtime
+          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar --runtime-image yass-runtime --type exe
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v3
+        with:
+          name: Yass-Windows
+          path: *.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Java 21
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Build JAR
+        run: mvn clean package
+      - name: Build Runtime & Installer
+        run: |
+          jlink --module-path "$JAVA_HOME/jmods:javafx-jmods/linux-x64" \
+                --add-modules java.base,java.desktop,javafx.swing,javafx.media \
+                --output yass-runtime
+          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar --runtime-image yass-runtime --type deb
+      - name: Upload Linux Installer
+        uses: actions/upload-artifact@v3
+        with:
+          name: Yass-Linux
+          path: *.deb
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Java 21
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Build JAR
+        run: mvn clean package
+      - name: Build Runtime & Installer
+        run: |
+          jlink --module-path "$JAVA_HOME/jmods:javafx-jmods/macos-x64" \
+                --add-modules java.base,java.desktop,javafx.swing,javafx.media \
+                --output yass-runtime
+          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar --runtime-image yass-runtime --type app-image
+      - name: Upload macOS Installer
+        uses: actions/upload-artifact@v3
+        with:
+          name: Yass-macOS
+          path: *.app
+
+build-macos-aarch64:
+  runs-on: macos-latest
+  steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Java 21
+      uses: actions/setup-java@v3
+      with:
+        distribution: temurin
+        java-version: 21
+
+    - name: Build JAR
+      run: mvn clean package
+
+    - name: Build Runtime & Installer (macOS aarch64)
+      run: |
+        jlink \
+          --module-path "$JAVA_HOME/jmods:javafx-jmods/macos-aarch64" \
+          --add-modules java.base,java.desktop,javafx.swing,javafx.media \
+          --strip-debug \
+          --no-header-files \
+          --no-man-pages \
+          --output yass-runtime
+        
+        jpackage \
+          --input target \
+          --name "Yass Reloaded" \
+          --main-jar Yass-Reloaded.jar \
+          --runtime-image yass-runtime \
+          --type app-image
+
+    - name: Upload macOS aarch64 Installer
+      uses: actions/upload-artifact@v3
+      with:
+        name: Yass-macOS-aarch64
+        path: *.app

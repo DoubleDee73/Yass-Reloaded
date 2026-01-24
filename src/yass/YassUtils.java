@@ -1147,7 +1147,7 @@ public class YassUtils {
         String[] words = line.split(" ");
         List<String> rows = new ArrayList<>();
         for (String word : words) {
-            if (YassTable.FIXED_UPPERCASE.contains(word.toUpperCase())) {
+            if (YassTable.FIXED_UPPERCASE.contains(word.trim())) {
                 word = StringUtils.capitalize(word);
             }
             List<String> syllables = createRowsFromWord(word, startBeat);

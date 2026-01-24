@@ -2,13 +2,30 @@
 <meta name="description" content="Yass Reloaded is a free, open-source Karaoke editor for Ultrastar songs. Finetune notes, edit lyrics, and manage your song library. Available for Windows, macOS, and Linux.">
 <meta name="keywords" content="Yass, Yass Reloaded, Karaoke, Karaoke Editor, Ultrastar, Ultrastar Deluxe, Song Editor, Lyrics Editor, Open Source, Java, Windows, macOS, Linux">
 
-# Yass Reloaded: The Ultimate Karaoke Editor for Ultrastar
+# Yass Reloaded – Open-Source Karaoke Editor for UltraStar Songs
 
-Yass Reloaded is a graphical editor for finetuning Ultrastar karaoke songs. It's a powerful tool for anyone who wants to create, edit, and perfect their own karaoke tracks. You can drag & drop notes, spread syllables, and find errors. Further you can filter your song library, mass-tag or batch-correct them, or search for lyrics.
+## What is Yass Reloaded?
 
-Yass Reloaded is a fork from Yass 2.4.3 that Saruta has been developing since 2009. Due to time constraints on his behalf and "creative differences" with the other contributors, I decided to go rogue with my fork.
+Yass Reloaded is a free, open-source karaoke editor for creating, editing, and maintaining UltraStar and UltraStar Deluxe song files.  
+It allows karaoke creators to precisely edit notes, timing, and lyrics, manage large song libraries, and fix common errors in existing karaoke tracks.
 
-## Features
+The application is written in Java and runs on Windows, macOS, and Linux.  
+It is actively developed and based on modern Java (Java 21).
+
+Yass Reloaded provides a graphical user interface for fine-tuning UltraStar karaoke songs.
+You can drag and drop notes, adjust syllables, correct timing issues, and quickly detect common formatting errors.
+
+In addition, Yass Reloaded offers powerful tools for managing karaoke libraries, including filtering, mass-tagging, and batch correction of song metadata.
+
+## Who is this for?
+
+Yass Reloaded is designed for:
+- UltraStar karaoke song creators
+- Karaoke enthusiasts who want to edit lyrics and timing precisely
+- Users maintaining large UltraStar song libraries
+- Advanced users who need batch editing and error detection
+
+## Features of the UltraStar Karaoke Editor
 
 *   **Graphical Note and Lyric Editing:** Easily drag and drop notes, adjust timing, and edit lyrics with a user-friendly interface.
 *   **Advanced Song Management:** Filter your song library, batch-edit tags, and organize your collection efficiently.
@@ -30,17 +47,21 @@ Yass Reloaded has been localized to:
 French has just recently been added and been translated by AI. Please let me know, if you find any mistakes or missing translations.
 If you want to help me localize Yass Reloaded to your language, please let me know as well.
 
-# Main Differences to the original Yass
-- Better support for audio formats. Note, that FFmpeg is now required, so support any audio format that FFmpeg supports, such as AAC, OGG or OPUS
-- Improved UX: Coming from someone who has created hundreds of songs, many little tweaks and improvements have gone into Yass Reloaded to make things easier
-  - Better copy-pasting
-  - BPM, GAP, START, END tags can now directly be edited without having to open additional dialogs
-- Faster bugfixing: Many issues, that are still open in the original Yass have already been dealt with in Yass Reloaded. Any new issues that arise will also be reviewed and fixed
-- The Ultrastar community has decided to enhance the current Ultrastar format by adding new tags. Theses enhancements are also constantly incorporated into the software.
-- Is developed in Java 21 instead of Java 8. Third party libraries will be kept up-to-date
+## Project Background
+Yass Reloaded is a fork of Yass 2.4.3, originally developed by Saruta since 2009.  
+Due to limited maintenance and different development goals, this fork was created to modernize the codebase, improve usability, and actively incorporate new UltraStar format extensions.
 
-# Downloads
-Binaries can be found in the [Release Section](https://github.com/DoubleDee73/Yass/releases)
+## Differences Compared to the Original Yass
+- Extended audio format support via FFmpeg (AAC, OGG, OPUS and more)
+- Improved user experience focused on real-world karaoke song creation
+- Faster bug fixing and active maintenance
+- Support for new and extended UltraStar song format tags
+- Modern Java 21 codebase instead of legacy Java 8
+
+## Downloads
+
+Prebuilt binaries for Windows, macOS, and Linux are available in the GitHub
+[Release Section](https://github.com/DoubleDee73/Yass/releases)
 
 Min. Requirement is Java 21 (e. g. Open JDK ZuluFX https://www.azul.com/downloads/).
 While JavaFX is no longer required, it may be needed in future releases.

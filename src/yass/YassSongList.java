@@ -4650,22 +4650,33 @@ public class YassSongList extends JTable {
     }
 
     private AudioInstrumentalFlag handleAudioFiles(YassSong song, List<String> files) {
-        String[] temp = prop.getProperty("audio-qualifier").split("\\|");
+        String[] audioQuali = prop.getProperty("audio-qualifier").split("\\|");
+        String[] instQuali = prop.getProperty("instrumental-qualifier").split("\\|");
         String audio = song.getAudio();
+        String inst = song.getInstrumental();
+        String bestAudioByPart = findFilenameByPart(files, audioQuali);
+        String bestInstByPart = findFilenameByPart(files, instQuali);
         if (StringUtils.isEmpty(audio) || !files.contains(audio)) {
-            audio = findFilenameByPart(files, temp);
+            audio = bestAudioByPart;
             if (audio != null) {
                 song.setAudio(audio);
                 song.setSaved(false);
             }
+        } 
+        if (StringUtils.isNotEmpty(audio) && StringUtils.isNotEmpty(inst) &&
+                bestInstByPart == null && !audio.equalsIgnoreCase(bestAudioByPart)
+                && inst.equals(bestAudioByPart)) {
+            inst = audio;
+            song.setInstrumental(audio);
+            song.setAudio(bestAudioByPart);
+            song.setSaved(false);
+            files.remove(inst);
         }
         if (audio != null) {
             files.remove(audio);
         }
-        temp = prop.getProperty("instrumental-qualifier").split("\\|");
-        String inst = song.getInstrumental();
         if (StringUtils.isEmpty(inst) || !files.contains(inst)) {
-            inst = findFilenameByPart(files, temp);
+            inst = findFilenameByPart(files, instQuali);
             if (inst != null) {
                 song.setInstrumental(inst);
                 song.setSaved(false);
@@ -4675,10 +4686,10 @@ public class YassSongList extends JTable {
         if (inst != null) {
             files.remove(inst);
         }
-        temp = prop.getProperty("vocals-qualifier").split("\\|");
+        audioQuali = prop.getProperty("vocals-qualifier").split("\\|");
         String vocals = song.getVocals();
         if (StringUtils.isEmpty(vocals) || !files.contains(vocals)) {
-            vocals = findFilenameByPart(files, temp);
+            vocals = findFilenameByPart(files, audioQuali);
             if (vocals != null) {
                 song.setVocals(vocals);
                 song.setSaved(false);
@@ -5265,7 +5276,7 @@ public class YassSongList extends JTable {
             if (dirs != null) {
                 for (int i = 0; i < dirs.length && notInterrupted; i++) {
                     String name = dirs[i].getName();
-                    String namelow = name.toLowerCase();
+                        String namelow = name.toLowerCase();
                     if (dirs[i].isDirectory()) {
                         collect(data, dirs[i], d.getName());
                     } else {

@@ -117,7 +117,9 @@ public class YassTable extends JTable {
 
     private Set<String> tags = new HashSet<>();
 
-    public static final List<String> FIXED_UPPERCASE = List.of("I", "I'm", "I’m");
+    public static final List<String> FIXED_UPPERCASE = List.of("I", "I'm", "I’m", "I've", "I’ve", "I'd", "I’d", "I'll",
+                                                               "I’ll", "Monday", "Tuesday", "Wednesday", "Thursday",
+                                                               "Friday", "Saturday", "Sunday");
 
     public Timer timer;
 
