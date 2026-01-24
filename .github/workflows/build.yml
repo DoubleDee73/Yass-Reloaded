@@ -17,6 +17,14 @@ jobs:
         with:
           distribution: zulu
           java-version: 21
+      - name: Install Jazzy JAR
+        run: mvn install:install-file \
+            -DgroupId=com.swabunga \
+            -DartifactId=jazzy \
+            -Dversion=1.0 \
+            -Dpackaging=jar \
+            -Dfile=lib/jazzy.jar
+
       - name: Build JAR
         run: mvn clean package
       - name: Build Runtime & Installer
