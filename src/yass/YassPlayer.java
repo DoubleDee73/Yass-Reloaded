@@ -1540,7 +1540,7 @@ public class YassPlayer {
         AudioFile audioFile;
         try {
             audioFile = AudioFileIO.read(new File(filename));
-            Tag tag = audioFile.getTag();
+            Tag tag = audioFile.getTagOrCreateAndSetDefault();
             tag.setField(FieldKey.KEY, musicalKeyEnum.getRelevantKey());
             audioFile.commit();
         } catch (CannotReadException | IOException | TagException | ReadOnlyFileException | InvalidAudioFrameException |

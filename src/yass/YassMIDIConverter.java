@@ -1647,7 +1647,7 @@ public class YassMIDIConverter implements DropTargetListener {
         public Component getListCellRendererComponent(JList<?> list,
                                                       Object value, int index, boolean isSelected,
                                                       boolean cellHasFocus) {
-            int selectedIndex = ((Integer) value).intValue();
+            int selectedIndex = value == null ? 0 : ((Integer) value).intValue();
             if (isSelected) {
                 setBackground(list.getSelectionBackground());
                 setForeground(colors[selectedIndex % colors.length]);

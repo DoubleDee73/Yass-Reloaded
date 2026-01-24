@@ -53,7 +53,7 @@ public class CreateSongWizard extends Wizard {
     Lyrics lyrics = null;
     LyricsForMIDI lyricsformidi = null;
     MIDI midi = null;
-    Tap tap = null;
+    Tap tap;
     YouTube youtube = null;
 
     private YassProperties yassProperties;
@@ -120,6 +120,7 @@ public class CreateSongWizard extends Wizard {
             public void aboutToDisplayPanel() {
                 setValue("melodytable", "");
                 lyrics.setText(getValue("lyrics"));
+                lyrics.setSubtitleFile(getValue("subtitle"));
             }
 
 
@@ -403,5 +404,13 @@ public class CreateSongWizard extends Wizard {
         }
         // This regex removes text in brackets or parentheses that contains keywords like "video", "lyric", "official", etc.
         return title.replaceAll("(?i)\\s*[(\\[{].*?\\b(official|video|lyric|audio|visualizer|performance|session|HD|HQ|4K|1080p|720p)\\b.*?[)\\]}]", "").trim();
+    }
+
+    /**
+     * Returns the instance of the Lyrics panel.
+     * @return The Lyrics panel.
+     */
+    public Lyrics getLyricsPanel() {
+        return lyrics;
     }
 }

@@ -117,7 +117,9 @@ public class YassTable extends JTable {
 
     private Set<String> tags = new HashSet<>();
 
-    public static final List<String> FIXED_UPPERCASE = List.of("I", "I'm", "I’m");
+    public static final List<String> FIXED_UPPERCASE = List.of("I", "I'm", "I’m", "I've", "I’ve", "I'd", "I’d", "I'll",
+                                                               "I’ll", "Monday", "Tuesday", "Wednesday", "Thursday",
+                                                               "Friday", "Saturday", "Sunday");
 
     public Timer timer;
 
@@ -6541,9 +6543,88 @@ public class YassTable extends JTable {
 
     // EDITORS
 
+    public void suggestGoldenNotes() {
+        int currentGolden = getDurationGolden();
+        while (currentGolden < idealGoldenBeats) {
+            currentGolden += findLongNotesForGolden();
+        }
+        tm.fireTableDataChanged();
+    }
+
+    private int findLongNotesForGolden() {
+        List<YassRow> longestWord = new ArrayList<>();
+        int longestWordLength = 0;
+
+        List<YassRow> currentWord = new ArrayList<>();
+        int currentWordLength = 0;
+
+        boolean isUncommonSpacingAfter = prop.isUncommonSpacingAfter();
+
+        for (YassRow row : getModelData()) {
+            if (!row.isRegularNote()) {
+                continue;
+            }
+
+            currentWord.add(row);
+            currentWordLength += row.getLengthInt();
+
+            boolean isWordBoundary = false;
+            if (isUncommonSpacingAfter) {
+                // Das Wort endet, wenn die Silbe mit einem Leerzeichen endet.
+                if (row.endsWithSpace()) {
+                    isWordBoundary = true;
+                }
+            } else {
+                // Das Wort endet, wenn die *nächste* Silbe mit einem Leerzeichen beginnt (oder wir am Ende sind).
+                int nextNoteIndex = getModelData().indexOf(row) + 1;
+                if (nextNoteIndex < getModelData().size()) {
+                    YassRow nextRow = getModelData().get(nextNoteIndex);
+                    // Springe über Nicht-Noten-Zeilen
+                    while (!nextRow.isNote() && nextNoteIndex < getModelData().size() - 1) {
+                        nextRow = getModelData().get(++nextNoteIndex);
+                    }
+                    if (nextRow.isNote() && nextRow.startsWithSpace()) {
+                        isWordBoundary = true;
+                    } else if (!nextRow.isNote()) { // Ende des Songs
+                        isWordBoundary = true;
+                    }
+                } else { // Letzte Note im Song
+                    isWordBoundary = true;
+                }
+            }
+
+            if (isWordBoundary) {
+                if (currentWordLength > longestWordLength) {
+                    longestWordLength = currentWordLength;
+                    longestWord = new ArrayList<>(currentWord);
+                }
+                currentWord.clear();
+                currentWordLength = 0;
+            }
+        }
+
+        for (YassRow rowToMark : longestWord) {
+            markAsGolden(rowToMark);
+        }
+
+        return longestWordLength;
+    }
+
+    private void markAsGolden(YassRow row) {
+        if (row.isBeat()) {
+            row.setType("*");
+        } else if (row.isRap()) {
+            row.setType("G");
+        }
+    }
+
     public void setGoldenPoints(int goldenPoints, int idealGoldenPoints,
                                 int goldenVariance, int durationGolden, int idealGoldenBeats,
                                 String diff) {
+
+
+
+
         this.goldenPoints = goldenPoints;
         this.idealGoldenPoints = idealGoldenPoints;
         this.goldenVariance = goldenVariance;
@@ -6945,5 +7026,37 @@ public class YassTable extends JTable {
             return;
         }
         timer.cancel();
+    }
+
+    public void togglePreviewMedley(UltrastarHeaderTag type) {
+        int[] rows = getSelectedRows();
+        boolean remove = (rows == null || rows.length < 1);
+
+        YassRow headerRow = tm.getCommentRow(type.getTagName());
+        if (remove && headerRow != null) {
+            tm.getData().remove(headerRow);
+        } else {
+            if (rows == null || rows.length != 1) {
+                return;
+            }
+            YassRow row = getRowAt(rows[0]);
+            if (!row.isNote()) {
+                return;
+            }
+            double previewTime = Precision.round((beatToMs(row.getBeatInt()) / 1000), 2);
+            if (headerRow != null && Double.toString(previewTime).replace(",", ".").equals(headerRow.getHeaderComment())) {
+                tm.getData().remove(headerRow);
+            } else {
+                switch (type) {
+                    case PREVIEWSTART -> setPreviewStart(previewTime);
+                    case MEDLEYSTARTBEAT -> setMedleyStartBeat(row.getBeatInt());
+                    case MEDLEYENDBEAT -> setMedleyEndBeat(row.getBeatInt() + row.getLengthInt());
+                    default -> {
+                        return;
+                    }
+                }
+            }
+        }
+        tm.fireTableDataChanged();
     }
 }

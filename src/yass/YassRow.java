@@ -419,6 +419,10 @@ public class YassRow implements Cloneable, Comparable<Object> {
     public boolean isFreeStyle() {
         return s[0].equals("F");
     }
+    
+    public boolean isRegularNote() {
+        return isBeat() || isRap();
+    }
 
     public boolean isRap() {
         return s[0].equals("R");

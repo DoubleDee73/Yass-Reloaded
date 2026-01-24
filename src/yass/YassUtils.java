@@ -64,6 +64,15 @@ public class YassUtils {
     
     private int defaultLength = 2;
     private boolean spacingAfter = true;
+
+    private static final String[] SONG_PARTS = {"intro", "chorus", "bridge", "verse", "outro"};
+    private static final Pattern SONG_PART_PATTERN;
+
+    static {
+        String joined = String.join("|", SONG_PARTS);
+        // (?i) = case-insensitive; erlaubt optionale [, ( am Anfang und ], ) am Ende sowie optionale Zahl nach dem Wort
+        SONG_PART_PATTERN = Pattern.compile("(?i)^\\s*[\\[\\(]?\\s*(?:" + joined + ")(?:\\s+\\d+)?\\s*[\\]\\)]?\\s*$");
+    }
     
     /**
      * Gets the songDir attribute of the YassUtils class
@@ -1100,6 +1109,9 @@ public class YassUtils {
     public List<String> splitLyricsToLines(String[] lines, int startBeat) {
         List<String> textLines = new ArrayList<>();
         for (String line : lines) {
+            if (isSongPartLine(line)) {
+                continue;
+            }
             List<String> rows = createRowsFromLine(line, startBeat);
             textLines.addAll(rows);
             YassRow tempRow = new YassRow(rows.get(rows.size() -1));
@@ -1110,6 +1122,21 @@ public class YassUtils {
         return textLines;
     }
 
+
+    /**
+     * Liefert true, wenn die Zeile leer ist oder ein Song-Part-Marker wie
+     * "chorus", "[chorus]", "(chorus)" oder "[chorus 1]" darstellt.
+     */
+    private static boolean isSongPartLine(String line) {
+        if (line == null) {
+            return true; // wie StringUtils.isEmpty -> skip
+        }
+        if (StringUtils.isEmpty(line.trim())) {
+            return true;
+        }
+        return SONG_PART_PATTERN.matcher(line.trim()).matches();
+    }
+    
     /**
      * Create a list of rows
      * @param line
@@ -1120,6 +1147,9 @@ public class YassUtils {
         String[] words = line.split(" ");
         List<String> rows = new ArrayList<>();
         for (String word : words) {
+            if (YassTable.FIXED_UPPERCASE.contains(word.trim())) {
+                word = StringUtils.capitalize(word);
+            }
             List<String> syllables = createRowsFromWord(word, startBeat);
             rows.addAll(syllables);
             YassRow tempRow = new YassRow(syllables.get(syllables.size() - 1));
@@ -1232,6 +1262,7 @@ public class YassUtils {
 
     public static boolean isUrlReachable(String urlString) {
         try {
+            urlString = urlString.replace("images.fanart.tv", "assets.fanart.tv");
             URL url = new URL(urlString);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("HEAD"); // oder "GET", wenn HEAD nicht unterstützt wird
