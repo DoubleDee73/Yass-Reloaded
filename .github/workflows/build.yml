@@ -26,7 +26,7 @@ jobs:
                 --output yass-runtime
           jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar --runtime-image yass-runtime --type exe
       - name: Upload Windows Installer
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Yass-Windows
           path: '*.exe'
@@ -49,7 +49,7 @@ jobs:
                 --output yass-runtime
           jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar --runtime-image yass-runtime --type deb
       - name: Upload Linux Installer
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Yass-Linux
           path: '*.deb'
@@ -72,7 +72,7 @@ jobs:
                 --output yass-runtime
           jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar --runtime-image yass-runtime --type app-image
       - name: Upload macOS Installer
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Yass-macOS
           path: '*.app'
@@ -109,7 +109,7 @@ jobs:
             --type app-image
   
       - name: Upload macOS aarch64 Installer
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Yass-macOS-aarch64
           path: '*.app'
