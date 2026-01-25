@@ -79,50 +79,43 @@ jobs:
         with:
           name: Yass-Linux
           path: dist/*.deb
-
-    # -------------------------
-    # MacOS (Intel & Apple Silicon)
-    # -------------------------
-    build-macos:
-      strategy:
-        matrix:
-          include:
-            - os: macos-latest
-              arch: x64
-            - os: macos-14 # GitHub's M1/M2 Runner
-              arch: aarch64
-      runs-on: ${{ matrix.os }}
-
-      steps:
-        - uses: actions/checkout@v4
-
-        - name: Set up Java
-          uses: actions/setup-java@v4
-          with:
-            distribution: zulu
-            java-version: ${{ env.JAVA_VERSION }}
-            cache: 'maven'
-
-        - name: Build with Maven
-          run: mvn clean package -DskipTests
-
-        - name: Prepare Libs
-          run: |
-            mkdir -p package-input
-            cp target/Yass-Reloaded.jar package-input/
-            cp lib/*.jar package-input/ 2>/dev/null || true
-
-        - name: Build MacOS App Image
-          run: |
-            jpackage --type app-image \
-              --dest dist \
-              --name "Yass Reloaded" \
-              --main-jar Yass-Reloaded.jar \
-              --main-class yass.YassMain \
-              --input package-input
-
-        - name: Upload MacOS Artifact
-          uses: actions/upload-artifact@v4
-          with:
-            name: Yass-macOS-${{ matrix.arch }}
-            path: dist/*.app
+  # -------------------------
+  # MacOS (Intel & Apple Silicon)
+  # -------------------------
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            arch: x64
+          - os: macos-14 # GitHub's M1/M2 Runner
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'maven'
+      - name: Build with Maven
+        run: mvn clean package -DskipTests
+      - name: Prepare Libs
+        run: |
+          mkdir -p package-input
+          cp target/Yass-Reloaded.jar package-input/
+          cp lib/*.jar package-input/ 2>/dev/null || true
+      - name: Build MacOS App Image
+        run: |
+          jpackage --type app-image \
+            --dest dist \
+            --name "Yass Reloaded" \
+            --main-jar Yass-Reloaded.jar \
+            --main-class yass.YassMain \
+            --input package-input
+      - name: Upload MacOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yass-macOS-${{ matrix.arch }}
+          path: dist/*.app
