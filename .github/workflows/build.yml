@@ -33,13 +33,12 @@ jobs:
 
       - name: Download JavaFX JMODs
         run: |
-          curl -L -o javafx-windows-jmods.zip https://download2.gluonhq.com/openjfx/21.0.2/openjfx-21.0.2_windows-x64_bin-sdk.zip
-          tar -xf javafx-windows-jmods.zip
-          # Die JMODs liegen jetzt in openjfx-21.0.2/lib
-
+          curl -L -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/21.0.2/openjfx-21.0.2_windows-x64_bin-jmods.zip
+          powershell -Command "Expand-Archive -Path javafx-jmods.zip -DestinationPath openjfx-21.0.2"
+          
       - name: Build Runtime & Installer
         run: |
-          jlink --module-path "%JAVA_HOME%\jmods;openjfx-21.0.2\lib" --add-modules java.base,java.desktop,javafx.swing,javafx.media  --output yass-runtime
+          jlink --module-path "%JAVA_HOME%\jmods;openjfx-21.0.2" --add-modules java.base,java.desktop,javafx.swing,javafx.media --output yass-runtime
           jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar --runtime-image yass-runtime --type exe
 
       - name: Upload Windows Installer
@@ -65,8 +64,8 @@ jobs:
 
       - name: Download JavaFX JMODs
         run: |
-          curl -L -o javafx-linux-jmods.tar.gz https://download2.gluonhq.com/openjfx/21.0.2/openjfx-21.0.2_linux-x64_bin-sdk.tar.gz
-          tar -xzf javafx-linux-jmods.tar.gz
+          curl -L -o javafx-jmods.tar.gz https://download2.gluonhq.com/openjfx/21.0.2/openjfx-21.0.2_linux-x64_bin-jmods.tar.gz
+          tar -xzf javafx-jmods.tar.gz -C openjfx-21.0.2
           # Die JMODs liegen jetzt in openjfx-21.0.2/lib
 
       - name: Build Runtime & Installer
@@ -99,17 +98,24 @@ jobs:
 
       - name: Download JavaFX JMODs
         run: |
-          curl -L -o javafx-macos-jmods.tar.gz https://download2.gluonhq.com/openjfx/21.0.2/openjfx-21.0.2_macos-x64_bin-sdk.tar.gz
-          tar -xzf javafx-macos-jmods.tar.gz
-          # Die JMODs liegen jetzt in openjfx-21.0.2/lib
+          curl -L -o javafx-jmods.tar.gz https://download2.gluonhq.com/openjfx/21.0.2/openjfx-21.0.2_macos-x64_bin-jmods.tar.gz
+          mkdir -p openjfx-21.0.2
+          tar -xzf javafx-jmods.tar.gz -C openjfx-21.0.2
 
       - name: Build Runtime & Installer
         run: |
-          jlink --module-path "$JAVA_HOME/jmods:openjfx-21.0.2/lib" \
-                --add-modules java.base,java.desktop,javafx.swing,javafx.media \
-                --output yass-runtime
-          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar \
-                   --runtime-image yass-runtime --type app-image
+          jlink \
+            --module-path "$JAVA_HOME/jmods:openjfx-21.0.2" \
+            --add-modules java.base,java.desktop,javafx.swing,javafx.media \
+            --strip-debug --no-header-files --no-man-pages \
+            --output yass-runtime
+
+          jpackage \
+            --input target \
+            --name "Yass Reloaded" \
+            --main-jar Yass-Reloaded.jar \
+            --runtime-image yass-runtime \
+            --type app-image
 
       - name: Upload macOS Installer
         uses: actions/upload-artifact@v4
@@ -133,18 +139,24 @@ jobs:
 
       - name: Download JavaFX JMODs (aarch64)
         run: |
-          curl -L -o javafx-macos-aarch64-jmods.tar.gz https://download2.gluonhq.com/openjfx/21.0.2/openjfx-21.0.2_macos-aarch64_bin-sdk.tar.gz
-          tar -xzf javafx-macos-aarch64-jmods.tar.gz
-          # Die JMODs liegen jetzt in openjfx-21.0.2/lib
+          curl -L -o javafx-jmods.tar.gz https://download2.gluonhq.com/openjfx/21.0.2/openjfx-21.0.2_macos-aarch64_bin-jmods.tar.gz
+          mkdir -p openjfx-21.0.2
+          tar -xzf javafx-jmods.tar.gz -C openjfx-21.0.2
 
       - name: Build Runtime & Installer (macOS aarch64)
         run: |
-          jlink --module-path "$JAVA_HOME/jmods:openjfx-21.0.2/lib" \
-                --add-modules java.base,java.desktop,javafx.swing,javafx.media \
-                --strip-debug --no-header-files --no-man-pages \
-                --output yass-runtime
-          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar \
-                   --runtime-image yass-runtime --type app-image
+          jlink \
+            --module-path "$JAVA_HOME/jmods:openjfx-21.0.2" \
+            --add-modules java.base,java.desktop,javafx.swing,javafx.media \
+            --strip-debug --no-header-files --no-man-pages \
+            --output yass-runtime
+
+          jpackage \
+            --input target \
+            --name "Yass Reloaded" \
+            --main-jar Yass-Reloaded.jar \
+            --runtime-image yass-runtime \
+            --type app-image
 
       - name: Upload macOS aarch64 Installer
         uses: actions/upload-artifact@v4
