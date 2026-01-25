@@ -18,8 +18,6 @@
 
 package yass;
 
-import com.swabunga.spell.engine.SpellDictionaryHashMap;
-import com.swabunga.spell.swing.JTextComponentSpellChecker;
 import org.jetbrains.annotations.NotNull;
 import yass.autocorrect.YassAutoCorrect;
 
@@ -29,10 +27,8 @@ import javax.swing.plaf.basic.BasicScrollBarUI;
 import javax.swing.text.*;
 import java.awt.*;
 import java.awt.event.*;
-import java.io.*;
-import java.nio.file.Files;
+import java.io.File;
 import java.util.Enumeration;
-import java.util.Hashtable;
 import java.util.StringTokenizer;
 import java.util.Vector;
 import java.util.logging.Level;
@@ -82,9 +78,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
     private boolean preventFireUpdate = false;
     private boolean preventHyphenKeys = true;
     private boolean isFormatting = false;
-    private Hashtable<Object, Object> spellCheckers;
 
-    private JTextComponentSpellChecker spellCheckerComp = null;
     private FindReplace frDialog;
 
     private long lastTime = -1;
@@ -221,17 +215,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
      */
     public YassLyrics(YassProperties p) {
         prop = p;
-        spellCheckers = new Hashtable<Object, Object>();
-        StringTokenizer st = new StringTokenizer(prop.getProperty("dicts"), "|");
-        while (st.hasMoreTokens()) {
-            StringTokenizer st2 = new StringTokenizer(st.nextToken(), "()-_");
-            String language = st2.nextToken();
-            String country = st2.hasMoreTokens() ? st2.nextToken() : "";
-            String lc = country.length() > 0 ? language + "_" + country
-                    : language;
-            spellCheckers.put(lc, lc);
-        }
-
         StyleContext sc = new StyleContext();
         DefaultStyledDocument doc = new DefaultStyledDocument(sc);
 
@@ -346,14 +329,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 
             public void focusLost(FocusEvent e) {
                 // LOGGER.info("lyrics focus lost");
-                if (spellCheckerComp != null) {
-                    if (spellCheckerComp.getHandler().getPopup() != null
-                            && spellCheckerComp.getHandler().getPopup()
-                                               .isVisible()) {
-                        return;
-                    }
-                }
-
+                
                 if (frDialog == null || !frDialog.isVisible()) {
                     finishEditing();
                 }
@@ -853,95 +829,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
         public LanguageLoader(String language) {
             lang = language;
         }
-
-        /**
-         * Main processing method for the LanguageLoader object
-         */
-        public void run() {
-            StringTokenizer st = new StringTokenizer(lang, "()-_");
-            String language = st.nextToken();
-            String country = st.hasMoreTokens() ? st.nextToken() : "";
-            String lc = country.length() > 0 ? language + "_" + country : language;
-
-            // LOGGER.info("# remove spell check");
-            if (spellCheckerComp != null) {
-                spellCheckerComp.stopAutoSpellCheck(lyricsArea);
-            }
-            spellCheckerComp = null;
-            Object sc = spellCheckers.get(lc);
-            if (sc == null) {
-                sc = spellCheckers.get(language);
-            }
-            if (sc != null) {
-                if (sc instanceof String) {
-                    try {
-                        InputStream is;
-                        File f = new File(userdir + File.separator + sc
-                                                  + ".dic");
-                        if (f.exists()) {
-                            is = Files.newInputStream(f.toPath());
-                        } else {
-                            is = getClass().getResourceAsStream(
-                                    "/yass/resources/spell/" + sc + ".dic");
-                        }
-                        // LOGGER.info("/spell/"+sc+".dic");
-                        SpellDictionaryHashMap dict = new SpellDictionaryHashMap(new InputStreamReader(is));
-                        String user = prop.getProperty("user-dicts")
-                                + File.separator + "user_" + sc + ".dic";
-                        File userfile = new File(user);
-                        // userfile.createNewFile() throws ioexception
-                        new File(prop.getProperty("user-dicts")).mkdirs();
-                        try {
-                            BufferedWriter out = new BufferedWriter(
-                                    new FileWriter(user));
-                            out.write("yass\n");
-                            out.close();
-                        } catch (IOException e) {
-                        }
-                        SpellDictionaryHashMap dict_user = new SpellDictionaryHashMap(userfile);
-                        // LOGGER.info("# add spell check");
-                        spellCheckerComp = new JTextComponentSpellChecker(dict,
-                                                                          dict_user, I18.get("tool_spellcheck"));
-                        spellCheckers.put(sc, spellCheckerComp);
-                    } catch (Exception e) {
-                        // LOGGER.log(Level.INFO, e.getMessage(), e);
-                    }
-                } else {
-                    spellCheckerComp = (JTextComponentSpellChecker) sc;
-                }
-            }
-
-            // LOGGER.info("# start spell check");
-            try {
-                if (spellCheckerComp != null) {
-                    isSpellChecking = true;
-
-                    preventFireUpdate = true;
-                    table.getModel().removeTableModelListener(tableListener);
-                    table.getSelectionModel().removeListSelectionListener(
-                            tableSelectionListener);
-                    lyricsArea.removeCaretListener(caretListener);
-
-                    // bug: triggers table update
-                    spellCheckerComp.startAutoSpellCheck(lyricsArea);
-                    spellCheckerComp.getHandler().markupSpelling(lyricsArea);
-
-                    lyricsArea.addCaretListener(caretListener);
-                    table.getSelectionModel().addListSelectionListener(
-                            tableSelectionListener);
-                    table.getModel().addTableModelListener(tableListener);
-                    preventFireUpdate = false;
-
-                    isSpellChecking = false;
-                    tableListener.tableChanged(null);
-                } else {
-                    isSpellChecking = false;
-                    tableListener.tableChanged(null);
-                }
-            } catch (Exception e) {
-                // LOGGER.info("startup bug spellchecker during setLanguage");
-            }
-        }
     }
 
     /**
@@ -962,18 +849,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
         table.getSelectionModel().addListSelectionListener(
                 tableSelectionListener);
         table.getModel().addTableModelListener(tableListener);
-    }
-
-    private boolean isSpellChecking = false;
-
-    /**
-     * Description of the Method
-     */
-    public void spellLyrics() {
-        isSpellChecking = true;
-        spellCheckerComp.spellCheck(lyricsArea);
-        spellCheckerComp.getHandler().markupSpelling(lyricsArea);
-        isSpellChecking = false;
     }
 
     int initialBlinkRate = 500;
@@ -1015,9 +890,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                                                               notSelectStyle,
                                                               false);
 
-        // if (spellCheckerComp != null) {
-        // spellCheckerComp.getHandler().markupSpelling(lyricsArea);
-        // }
     }
 
     /**
@@ -1068,15 +940,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
         preventFireUpdate = true;
 
         lyricsArea.setText(table.getText());
-        try {
-            if (spellCheckerComp != null && lyricsArea.isVisible()) {
-                spellCheckerComp.getHandler().markupSpelling(lyricsArea);
-            }
-        } catch (Exception e) {
-            // LOGGER.info("startup bug spellchecker during setTable");
-        }
-        // startup problems
-
         checkLength();
         preventFireUpdate = false;
 
@@ -1090,9 +953,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                 return;
             }
             if (lyricsArea.isEditable()) {
-                return;
-            }
-            if (isSpellChecking) {
                 return;
             }
             if (preventFireUpdate) {
@@ -1112,13 +972,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
             }
 
             updateSelection();
-            try {
-                if (spellCheckerComp != null && lyricsArea.isVisible()) {
-                    spellCheckerComp.getHandler().markupSpelling(lyricsArea);
-                }
-            } catch (Exception ex) {
-                // LOGGER.info("startup bug spellchecker during tableUpdate");
-            }
             lyricsArea.addCaretListener(caretListener);
             table.getSelectionModel().addListSelectionListener(
                     tableSelectionListener);
@@ -2034,9 +1887,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
     private CaretListener caretListener = new CaretListener() {
         public void caretUpdate(CaretEvent e) {
             if (preventFireUpdate) {
-                return;
-            }
-            if (isSpellChecking) {
                 return;
             }
             if (table == null) {

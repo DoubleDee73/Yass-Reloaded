@@ -240,7 +240,7 @@ public class I18 {
         sb.append("<br>");
         sb.append("Yass Reloaded uses: ");
         sb.append("Java Look & Feel Graphics Repository, jAudiotagger<br>");
-        sb.append("iText, Jazzy Spell Checker, TeX Hyphenator, JInput, FFmpeg, FFmpeg CLI Wrapper, <br>");
+        sb.append("iText, TeX Hyphenator, JInput, FFmpeg, FFmpeg CLI Wrapper, <br>");
         sb.append("Java Media Framework (JMF), Robert Eckstein's Wizard code,<br>");
         sb.append("juniversalchardet, Optimaize Language Detector, TwelveMonkeys ImageIO<br>");
         sb.append("Speed measure 'Inverse Duration' based on Marcel Taeumel's approach (http://uman.sf.net).</p>");

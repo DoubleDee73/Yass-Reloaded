@@ -225,11 +225,6 @@ public class YassActions implements DropTargetListener {
         }
     };
 
-    private final Action spellLyrics = new AbstractAction(I18.get("edit_spellcheck")) {
-        public void actionPerformed(ActionEvent e) {
-            lyrics.spellLyrics();
-        }
-    };
     private final Action selectAllSongs = new AbstractAction(I18.get("lib_select_all")) {
         public void actionPerformed(ActionEvent e) {
             if (currentView == VIEW_LIBRARY)
@@ -3845,7 +3840,6 @@ public class YassActions implements DropTargetListener {
         menu.add(shiftEnding);
         menu.add(shiftEndingLeft);
         menu.add(findLyrics);
-        menu.add(spellLyrics);
 
         menu = new JMenu(I18.get("edit_extras"));
         menu.setMnemonic(KeyEvent.VK_X);
@@ -5457,7 +5451,6 @@ public class YassActions implements DropTargetListener {
         editLyrics.setEnabled(isOpened);
         homeSong.setEnabled(isOpened);
         findLyrics.setEnabled(isOpened);
-        spellLyrics.setEnabled(isOpened);
         nextPage.setEnabled(isOpened);
         prevPage.setEnabled(isOpened);
         morePages.setEnabled(isOpened);
