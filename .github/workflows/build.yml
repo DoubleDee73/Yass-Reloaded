@@ -39,11 +39,8 @@ jobs:
 
       - name: Build Runtime & Installer
         run: |
-          jlink --module-path "%JAVA_HOME%\jmods;openjfx-21.0.2\lib" ^
-                --add-modules java.base,java.desktop,javafx.swing,javafx.media ^
-                --output yass-runtime
-          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar ^
-                   --runtime-image yass-runtime --type exe
+          jlink --module-path "%JAVA_HOME%\jmods;openjfx-21.0.2\lib" --add-modules java.base,java.desktop,javafx.swing,javafx.media  --output yass-runtime
+          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar --runtime-image yass-runtime --type exe
 
       - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
