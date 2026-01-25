@@ -254,6 +254,7 @@
     </properties>
 
     <build>
+        <finalName>Yass-Reloaded</finalName>
         <sourceDirectory>src</sourceDirectory>
         <resources>
             <resource>
