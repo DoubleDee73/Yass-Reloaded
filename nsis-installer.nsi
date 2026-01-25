@@ -132,6 +132,7 @@ Page directory
 
 Section $(Sec_ContextMenuText)
   SetOutPath "$INSTDIR"
+  File /r "dist-img\YassReloaded\*.*"
   WriteRegStr HKCR "Directory\shell\yass" "" $(ContextMenu_Edit)
   WriteRegStr HKCR "Directory\shell\yass\command" "" '"$INSTDIR\yass.exe" "%1"'
   WriteRegStr HKCR "SystemFileAssociations\.txt\shell\yass" "" $(ContextMenu_Edit)

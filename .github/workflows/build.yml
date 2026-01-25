@@ -3,21 +3,36 @@ name: Build Yass Reloaded
 on:
   push:
     branches: [ main ]
-  release:
-    types: [ published ]
   workflow_dispatch:
 
 env:
   JAVA_VERSION: "21"
-  JAVAFX_VERSION: "21.0.2"
 
 jobs:
-  
-  # -------------------------
-  # WINDOWS x64
-  # -------------------------
-  build-windows:
-    runs-on: windows-latest
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            artifact_type: nsis
+          - os: ubuntu-latest
+            name: Linux
+            artifact_type: deb
+          - os: macos-13 # Intel Mac
+            name: macOS-Intel
+            arch: x64
+            classifier: mac
+            artifact_type: dmg
+          - os: macos-latest # Apple Silicon Mac (M1/M2/M3)
+            name: macOS-ARM
+            arch: aarch64
+            classifier: mac-aarch64
+            artifact_type: dmg
+
     steps:
       - uses: actions/checkout@v4
 
@@ -25,97 +40,51 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '21'
-          cache: 'maven' # Cache beschleunigt den Build enorm
-
-      - name: Build with Maven
-        run: mvn clean package
-
-      - name: Build Installer (jpackage)
-        # Wir nutzen hier die vom Maven-Build erzeugten Dateien im 'target' Ordner
-        run: |
-          jpackage --type exe `
-            --dest dist `
-            --name "Yass Reloaded" `
-            --main-jar Yass-Reloaded.jar `
-            --input target/ `
-            --main-class yass.YassMain `
-            --win-shortcut --win-menu
-
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: zulu
           java-version: ${{ env.JAVA_VERSION }}
+          architecture: ${{ matrix.arch }}
           cache: 'maven'
 
       - name: Build with Maven
-        run: mvn clean package -DskipTests
+        # Wir übergeben den Plattform-Classifier für JavaFX, damit die richtigen nativen Libs geladen werden
+        run: mvn clean package -DskipTests -Djavafx.platform=${{ matrix.classifier }}
 
-      - name: Prepare Libs
+      - name: Prepare Package Input
+        shell: bash
         run: |
           mkdir -p package-input
-          cp target/Yass-Reloaded.jar package-input/
-          # Kopiert deine lokalen System-JARs aus dem lib-Ordner mit ein
-          cp lib/*.jar package-input/ 2>/dev/null || true 
+          cp target/yass-reloaded.jar package-input/
+          [ -d "lib" ] && cp lib/*.jar package-input/ || true
 
-      - name: Build Debian Package
+      # --- WINDOWS: NSIS BUILD ---
+      - name: Build Windows Installer (NSIS)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
         run: |
-          jpackage --type deb \
+          # Erstellt das App-Image (JRE + JAR)
+          jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar yass-reloaded.jar --input package-input
+          # Startet deinen NSIS-Compiler
+          makensis nsis-installer.nsi
+
+      # --- LINUX & MACOS: JPACKAGE BUILD ---
+      - name: Build Linux/macOS Package
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          jpackage \
+            --type ${{ matrix.artifact_type }} \
             --dest dist \
-            --name "Yass-Reloaded" \
-            --main-jar Yass-Reloaded.jar \
+            --name "Yass-Reloaded-${{ matrix.name }}" \
+            --main-jar yass-reloaded.jar \
             --main-class yass.YassMain \
             --input package-input \
-            --linux-shortcut --linux-menu-group "Multimedia"
+            --vendor "DoubleDee"
 
-      - name: Upload Linux Installer
+      # --- ARTIFACT UPLOAD ---
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Yass-Linux
-          path: dist/*.deb
-  # -------------------------
-  # MacOS (Intel & Apple Silicon)
-  # -------------------------
-  build-macos:
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            arch: x64
-          - os: macos-14 # GitHub's M1/M2 Runner
-            arch: aarch64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: zulu
-          java-version: ${{ env.JAVA_VERSION }}
-          cache: 'maven'
-      - name: Build with Maven
-        run: mvn clean package -DskipTests
-      - name: Prepare Libs
-        run: |
-          mkdir -p package-input
-          cp target/Yass-Reloaded.jar package-input/
-          cp lib/*.jar package-input/ 2>/dev/null || true
-      - name: Build MacOS App Image
-        run: |
-          jpackage --type app-image \
-            --dest dist \
-            --name "Yass Reloaded" \
-            --main-jar Yass-Reloaded.jar \
-            --main-class yass.YassMain \
-            --input package-input
-      - name: Upload MacOS Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Yass-macOS-${{ matrix.arch }}
-          path: dist/*.app
+          name: Yass-${{ matrix.name }}
+          path: |
+            dist/*.deb
+            dist/*.dmg
+            *.exe
