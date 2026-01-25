@@ -31,11 +31,6 @@ jobs:
       - name: Install Jazzy JAR
         run: mvn install:install-file -DgroupId=com.swabunga -DartifactId=jazzy -Dversion=1.0 -Dpackaging=jar -Dfile=lib/jazzy.jar
 
-      - name: Download JavaFX
-        run: |
-          curl -L -o javafx.zip https://download2.gluonhq.com/openjfx/${{ env.JAVAFX_VERSION }}/openjfx-${{ env.JAVAFX_VERSION }}_windows-x64_bin-sdk.zip
-          tar -xf javafx.zip
-
       - name: Build JAR
         run: mvn clean package
 
@@ -72,11 +67,6 @@ jobs:
       - name: Install Jazzy JAR
         run: mvn install:install-file -DgroupId=com.swabunga -DartifactId=jazzy -Dversion=1.0 -Dpackaging=jar -Dfile=lib/jazzy.jar
 
-      - name: Download JavaFX
-        run: |
-          curl -L -o javafx.tar.gz https://download2.gluonhq.com/openjfx/${{ env.JAVAFX_VERSION }}/openjfx-${{ env.JAVAFX_VERSION }}_linux-x64_bin-sdk.tar.gz
-          tar -xzf javafx.tar.gz
-
       - name: Build JAR
         run: mvn clean package
 
@@ -112,11 +102,6 @@ jobs:
 
       - name: Install Jazzy JAR
         run: mvn install:install-file -DgroupId=com.swabunga -DartifactId=jazzy -Dversion=1.0 -Dpackaging=jar -Dfile=lib/jazzy.jar
-
-      - name: Download JavaFX
-        run: |
-          curl -L -o javafx.tar.gz https://download2.gluonhq.com/openjfx/${{ env.JAVAFX_VERSION }}/openjfx-${{ env.JAVAFX_VERSION }}_macos-aarch64_bin-sdk.tar.gz
-          tar -xzf javafx.tar.gz
 
       - name: Build JAR
         run: mvn clean package
