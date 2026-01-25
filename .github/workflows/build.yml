@@ -33,7 +33,7 @@ jobs:
 
       - name: Download JavaFX
         run: |
-          curl -L -o javafx.zip https://download.openjfx.io/openjfx/${{ env.JAVAFX_VERSION }}/openjfx-${{ env.JAVAFX_VERSION }}_windows-x64_bin-sdk.zip
+          curl -L -o javafx.zip https://download2.gluonhq.com/openjfx/${{ env.JAVAFX_VERSION }}/openjfx-${{ env.JAVAFX_VERSION }}_windows-x64_bin-sdk.zip
           tar -xf javafx.zip
 
       - name: Build JAR
@@ -74,7 +74,7 @@ jobs:
 
       - name: Download JavaFX
         run: |
-          curl -L -o javafx.tar.gz https://download.openjfx.io/openjfx/${{ env.JAVAFX_VERSION }}/openjfx-${{ env.JAVAFX_VERSION }}_linux-x64_bin-sdk.tar.gz
+          curl -L -o javafx.tar.gz https://download2.gluonhq.com/openjfx/${{ env.JAVAFX_VERSION }}/openjfx-${{ env.JAVAFX_VERSION }}_linux-x64_bin-sdk.tar.gz
           tar -xzf javafx.tar.gz
 
       - name: Build JAR
@@ -115,7 +115,7 @@ jobs:
 
       - name: Download JavaFX
         run: |
-          curl -L -o javafx.tar.gz https://download.openjfx.io/openjfx/${{ env.JAVAFX_VERSION }}/openjfx-${{ env.JAVAFX_VERSION }}_macos-aarch64_bin-sdk.tar.gz
+          curl -L -o javafx.tar.gz https://download2.gluonhq.com/openjfx/${{ env.JAVAFX_VERSION }}/openjfx-${{ env.JAVAFX_VERSION }}_macos-aarch64_bin-sdk.tar.gz
           tar -xzf javafx.tar.gz
 
       - name: Build JAR
