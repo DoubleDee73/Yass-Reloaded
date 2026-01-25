@@ -18,12 +18,8 @@ jobs:
           distribution: zulu
           java-version: 21
       - name: Install Jazzy JAR
-        run: mvn install:install-file \
-            -DgroupId=com.swabunga \
-            -DartifactId=jazzy \
-            -Dversion=1.0 \
-            -Dpackaging=jar \
-            -Dfile=lib/jazzy.jar
+        run: mvn install:install-file -DgroupId=com.swabunga -DartifactId=jazzy ^
+            -Dversion=1.0 -Dpackaging=jar -Dfile=lib/jazzy.jar
 
       - name: Build JAR
         run: mvn clean package
@@ -32,7 +28,8 @@ jobs:
           jlink --module-path "%JAVA_HOME%\jmods;javafx-jmods\windows-x64" ^
                 --add-modules java.base,java.desktop,javafx.swing,javafx.media ^
                 --output yass-runtime
-          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar --runtime-image yass-runtime --type exe
+          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar ^
+                   --runtime-image yass-runtime --type exe
       - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
         with:
@@ -52,10 +49,11 @@ jobs:
         run: mvn clean package
       - name: Build Runtime & Installer
         run: |
-          jlink --module-path "$JAVA_HOME/jmods:javafx-jmods/linux-x64" \
-                --add-modules java.base,java.desktop,javafx.swing,javafx.media \
+          jlink --module-path "$JAVA_HOME/jmods:javafx-jmods/linux-x64" ^
+                --add-modules java.base,java.desktop,javafx.swing,javafx.media ^
                 --output yass-runtime
-          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar --runtime-image yass-runtime --type deb
+          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar ^
+                   --runtime-image yass-runtime --type deb
       - name: Upload Linux Installer
         uses: actions/upload-artifact@v4
         with:
@@ -75,10 +73,11 @@ jobs:
         run: mvn clean package
       - name: Build Runtime & Installer
         run: |
-          jlink --module-path "$JAVA_HOME/jmods:javafx-jmods/macos-x64" \
-                --add-modules java.base,java.desktop,javafx.swing,javafx.media \
+          jlink --module-path "$JAVA_HOME/jmods:javafx-jmods/macos-x64" ^
+                --add-modules java.base,java.desktop,javafx.swing,javafx.media ^
                 --output yass-runtime
-          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar --runtime-image yass-runtime --type app-image
+          jpackage --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar ^
+                   --runtime-image yass-runtime --type app-image
       - name: Upload macOS Installer
         uses: actions/upload-artifact@v4
         with:
@@ -101,20 +100,14 @@ jobs:
   
       - name: Build Runtime & Installer (macOS aarch64)
         run: |
-          jlink \
-            --module-path "$JAVA_HOME/jmods:javafx-jmods/macos-aarch64" \
-            --add-modules java.base,java.desktop,javafx.swing,javafx.media \
-            --strip-debug \
-            --no-header-files \
-            --no-man-pages \
-            --output yass-runtime
+          jlink ^
+            --module-path "$JAVA_HOME/jmods:javafx-jmods/macos-aarch64" ^
+            --add-modules java.base,java.desktop,javafx.swing,javafx.media ^
+            --strip-debug --no-header-files --no-man-pages --output yass-runtime
           
-          jpackage \
-            --input target \
-            --name "Yass Reloaded" \
-            --main-jar Yass-Reloaded.jar \
-            --runtime-image yass-runtime \
-            --type app-image
+          jpackage ^
+            --input target --name "Yass Reloaded" --main-jar Yass-Reloaded.jar ^
+            --runtime-image yass-runtime --type app-image
   
       - name: Upload macOS aarch64 Installer
         uses: actions/upload-artifact@v4
