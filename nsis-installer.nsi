@@ -1,9 +1,5 @@
-﻿!ifndef VERSION
-  !define VERSION "2026"
-!endif
-
-Name "Yass Reloaded ${VERSION}"
-OutFile "yass-installer-${VERSION}.exe"
+﻿Name "Yass Reloaded 2026.1"
+OutFile "yass-installer-2026.1.exe"
 
 Unicode true
 SetCompressor lzma

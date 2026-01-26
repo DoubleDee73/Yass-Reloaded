@@ -64,20 +64,13 @@ jobs:
       - name: Install NSIS
         if: matrix.os == 'windows-latest'
         run: choco install nsis -y
-  
+
       - name: Build Windows Installer (NSIS)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          [xml]$pom = Get-Content pom.xml
-          $APP_VERSION = $pom.project.version
-          if ($APP_VERSION -eq $null) { $APP_VERSION = "2025.11" } # Fallback
-          echo "Baue Version: $APP_VERSION"
-          
-          jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar Yass-Reloaded.jar --input package-input
-          
-          $NSIS_EXE = "C:\Program Files (x86)\NSIS\makensis.exe"
-          & $NSIS_EXE "/DVERSION=$APP_VERSION" nsis-installer.nsi
+          jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar Yass-Reloaded.jar --input package-input --icon "src/yass/resources/icons/yass-multi-icon.ico"
+          & "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
           
       - name: Upload Windows Artifact
         if: matrix.os == 'windows-latest'
