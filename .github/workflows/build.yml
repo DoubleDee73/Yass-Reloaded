@@ -58,17 +58,20 @@ jobs:
       # --- WINDOWS: NSIS BUILD ---
       - name: Build Windows Installer (NSIS)
         if: matrix.os == 'windows-latest'
-        shell: pwsh
+        shell: cmd
         run: |
+          echo "Erstelle App-Image..."
           jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar Yass-Reloaded.jar --input package-input
-
-          if (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe") {
-            Write-Host "NSIS gefunden, starte Kompiliervorgang..."
-            & "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
-          } else {
-            Write-Error "NSIS wurde unter dem Standardpfad nicht gefunden! Suche alternative Pfade..."
-            Get-ChildItem -Path "C:\Program Files*\NSIS*" -Recurse -Filter "makensis.exe"
-         }
+          
+          echo "Pruefe ob NSIS existiert..."
+          if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
+              echo "NSIS gefunden, starte Build..."
+              "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
+          ) else (
+              echo "NSIS nicht gefunden im Standardpfad!"
+              dir "C:\Program Files (x86)\"
+              exit 1
+          )
 
       # --- LINUX & MACOS: JPACKAGE BUILD ---
       - name: Build Linux/macOS Package
