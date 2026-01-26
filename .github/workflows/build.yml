@@ -60,15 +60,15 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: cmd
         run: |
-          echo "Erstelle App-Image..."
+          echo "Create App-Image..."
           jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar Yass-Reloaded.jar --input package-input
           
-          echo "Pruefe ob NSIS existiert..."
+          echo "Check if NSIS existiert..."
           if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
-              echo "NSIS gefunden, starte Build..."
+              echo "NSIS found, starting Build..."
               "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
           ) else (
-              echo "NSIS nicht gefunden im Standardpfad!"
+              echo "NSIS not found!"
               dir "C:\Program Files (x86)\"
               exit 1
           )
