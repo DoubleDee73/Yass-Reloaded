@@ -61,8 +61,14 @@ jobs:
         shell: pwsh
         run: |
           jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar Yass-Reloaded.jar --input package-input
-          
-          & "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
+
+          if (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe") {
+            Write-Host "NSIS gefunden, starte Kompiliervorgang..."
+            & "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
+          } else {
+            Write-Error "NSIS wurde unter dem Standardpfad nicht gefunden! Suche alternative Pfade..."
+            Get-ChildItem -Path "C:\Program Files*\NSIS*" -Recurse -Filter "makensis.exe"
+         }
 
       # --- LINUX & MACOS: JPACKAGE BUILD ---
       - name: Build Linux/macOS Package
