@@ -52,7 +52,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p package-input
-          cp target/yass-reloaded.jar package-input/
+          cp target/Yass-Reloaded.jar package-input/
           [ -d "lib" ] && cp lib/*.jar package-input/ || true
 
       # --- WINDOWS: NSIS BUILD ---
