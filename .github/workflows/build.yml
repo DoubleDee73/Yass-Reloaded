@@ -56,22 +56,18 @@ jobs:
           [ -d "lib" ] && cp lib/*.jar package-input/ || true
 
       # --- WINDOWS: NSIS BUILD ---
+      - name: Install NSIS
+        if: matrix.os == 'windows-latest'
+        run: choco install nsis -y
+  
       - name: Build Windows Installer (NSIS)
         if: matrix.os == 'windows-latest'
-        shell: cmd
+        shell: pwsh
         run: |
-          echo "Create App-Image..."
           jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar Yass-Reloaded.jar --input package-input
           
-          echo "Check if NSIS existiert..."
-          if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
-              echo "NSIS found, starting Build..."
-              "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
-          ) else (
-              echo "NSIS not found!"
-              dir "C:\Program Files (x86)\"
-              exit 1
-          )
+          $env:PATH += ";C:\Program Files (x86)\NSIS"
+          makensis nsis-installer.nsi
 
       # --- LINUX & MACOS: JPACKAGE BUILD ---
       - name: Build Linux/macOS Package
