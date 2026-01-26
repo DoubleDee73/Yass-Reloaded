@@ -62,8 +62,7 @@ jobs:
         run: |
           jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar Yass-Reloaded.jar --input package-input
           
-          $env:PATH += ";C:\Program Files (x86)\NSIS"
-          makensis nsis-installer.nsi
+          & "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
 
       # --- LINUX & MACOS: JPACKAGE BUILD ---
       - name: Build Linux/macOS Package
