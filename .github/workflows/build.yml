@@ -18,16 +18,15 @@ jobs:
         include:
           - os: windows-latest
             name: Windows
+            arch: x64
+            classifier: win
             artifact_type: nsis
           - os: ubuntu-latest
             name: Linux
-            artifact_type: deb
-          - os: macos-13 # Intel Mac
-            name: macOS-Intel
             arch: x64
-            classifier: mac
-            artifact_type: dmg
-          - os: macos-latest # Apple Silicon Mac (M1/M2/M3)
+            classifier: linux
+            artifact_type: deb
+          - os: macos-latest
             name: macOS-ARM
             arch: aarch64
             classifier: mac-aarch64
@@ -45,7 +44,8 @@ jobs:
           cache: 'maven'
 
       - name: Build with Maven
-        # Wir übergeben den Plattform-Classifier für JavaFX, damit die richtigen nativen Libs geladen werden
+        # Unter Windows nutzen wir shell: bash, damit der Maven-Aufruf plattformübergreifend gleich funktioniert
+        shell: bash
         run: mvn clean package -DskipTests -Djavafx.platform=${{ matrix.classifier }}
 
       - name: Prepare Package Input
@@ -60,9 +60,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          # Erstellt das App-Image (JRE + JAR)
           jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar yass-reloaded.jar --input package-input
-          # Startet deinen NSIS-Compiler
           makensis nsis-installer.nsi
 
       # --- LINUX & MACOS: JPACKAGE BUILD ---
