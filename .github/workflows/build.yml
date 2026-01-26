@@ -60,7 +60,9 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar yass-reloaded.jar --input package-input
+          jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar Yass-Reloaded.jar --input package-input
+          
+          $env:PATH += ";C:\Program Files (x86)\NSIS"
           makensis nsis-installer.nsi
 
       # --- LINUX & MACOS: JPACKAGE BUILD ---
@@ -72,7 +74,7 @@ jobs:
             --type ${{ matrix.artifact_type }} \
             --dest dist \
             --name "Yass-Reloaded-${{ matrix.name }}" \
-            --main-jar yass-reloaded.jar \
+            --main-jar Yass-Reloaded.jar \
             --main-class yass.YassMain \
             --input package-input \
             --vendor "DoubleDee"
