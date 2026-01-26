@@ -31,6 +31,11 @@ jobs:
             arch: aarch64
             classifier: mac-aarch64
             artifact_type: dmg
+          - os: macos-latest
+            name: macOS-x64
+            arch: x64
+            classifier: mac
+            artifact_type: dmg
 
     steps:
       - uses: actions/checkout@v4
@@ -80,6 +85,7 @@ jobs:
         with:
           name: Yass-Windows
           path: "*.exe"
+          overwrite: true
 
       # --- LINUX & MACOS: JPACKAGE BUILD ---
       - name: Build Linux/macOS Package
