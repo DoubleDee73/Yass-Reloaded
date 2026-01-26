@@ -2,3 +2,5 @@
 /.run
 /release
 /target
+/package-input/
+/dist-img/

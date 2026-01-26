@@ -1,6 +1,9 @@
-﻿Name "Yass"
+﻿!ifndef VERSION
+  !define VERSION "v-unknown"
+!endif
 
-OutFile ".\target\yass-installer-2025.11.exe"
+Name "Yass Reloaded ${VERSION}"
+OutFile "yass-installer-${VERSION}.exe"
 
 Unicode true
 SetCompressor lzma
@@ -132,47 +135,38 @@ Page directory
 
 Section $(Sec_ContextMenuText)
   SetOutPath "$INSTDIR"
-  File /r "dist-img\YassReloaded\*.*"
+  # Packt alles inklusive JRE ein 
+  File /r "dist-img\YassReloaded\*.*" 
   WriteRegStr HKCR "Directory\shell\yass" "" $(ContextMenu_Edit)
-  WriteRegStr HKCR "Directory\shell\yass\command" "" '"$INSTDIR\yass.exe" "%1"'
+  # Geändert auf YassReloaded.exe [cite: 23]
+  WriteRegStr HKCR "Directory\shell\yass\command" "" '"$INSTDIR\YassReloaded.exe" "%1"'
   WriteRegStr HKCR "SystemFileAssociations\.txt\shell\yass" "" $(ContextMenu_Edit)
-  WriteRegStr HKCR "SystemFileAssociations\.txt\shell\yass\command" "" '"$INSTDIR\yass.exe" "%1"'
+  WriteRegStr HKCR "SystemFileAssociations\.txt\shell\yass\command" "" '"$INSTDIR\YassReloaded.exe" "%1"'
 SectionEnd
 
 Section $(Sec_ContextMenuKar)
   SetOutPath "$INSTDIR"
-
+  # Alle MIDI/Kar Registry-Einträge auf YassReloaded.exe angepasst [cite: 22]
   ReadRegStr $R0 HKCR ".mid" ""
   StrCmp $R0 "" NoDefaultMid DefaultMid
 NoDefaultMid:
   WriteRegStr HKCR ".mid\shell\yass" "" $(ContextMenu_Convert)
-  WriteRegStr HKCR ".mid\shell\yass\command" "" '"$INSTDIR\yass.exe" "%1"'
+  WriteRegStr HKCR ".mid\shell\yass\command" "" '"$INSTDIR\YassReloaded.exe" "%1"'
   Goto EndMid
 DefaultMid:
   WriteRegStr HKCR "$R0\shell\yass" "" $(ContextMenu_Convert)
-  WriteRegStr HKCR "$R0\shell\yass\command" "" '"$INSTDIR\yass.exe" "%1"'
+  WriteRegStr HKCR "$R0\shell\yass\command" "" '"$INSTDIR\YassReloaded.exe" "%1"'
 EndMid:
-
-  ReadRegStr $R0 HKCR ".midi" ""
-  StrCmp $R0 "" NoDefaultMidi DefaultMidi
-NoDefaultMidi:
-  WriteRegStr HKCR ".midi\shell\yass" "" $(ContextMenu_Convert)
-  WriteRegStr HKCR ".midi\shell\yass\command" "" '"$INSTDIR\yass.exe" "%1"'
-  Goto EndMidi
-DefaultMidi:
-  WriteRegStr HKCR "$R0\shell\yass" "" $(ContextMenu_Convert)
-  WriteRegStr HKCR "$R0\shell\yass\command" "" '"$INSTDIR\yass.exe" "%1"'
-EndMidi:
 
   ReadRegStr $R0 HKCR ".kar" ""
   StrCmp $R0 "" NoDefaultKar DefaultKar
 NoDefaultKar:
   WriteRegStr HKCR ".kar\shell\yass" "" $(ContextMenu_Convert)
-  WriteRegStr HKCR ".kar\shell\yass\command" "" '"$INSTDIR\yass.exe" "%1"'
+  WriteRegStr HKCR ".kar\shell\yass\command" "" '"$INSTDIR\YassReloaded.exe" "%1"'
   Goto EndKar
 DefaultKar:
   WriteRegStr HKCR "$R0\shell\yass" "" $(ContextMenu_Convert)
-  WriteRegStr HKCR "$R0\shell\yass\command" "" '"$INSTDIR\yass.exe" "%1"'
+  WriteRegStr HKCR "$R0\shell\yass\command" "" '"$INSTDIR\YassReloaded.exe" "%1"'
 EndKar:
 
 SectionEnd
@@ -180,21 +174,20 @@ SectionEnd
 Section $(Sec_ContextMenuDir)
   SetOutPath "$INSTDIR"
   WriteRegStr HKCR "Directory\shell\yass" "" $(ContextMenu_Edit)
-  WriteRegStr HKCR "Directory\shell\yass\command" "" '"$INSTDIR\yass.exe" "%1"'
+  WriteRegStr HKCR "Directory\shell\yass\command" "" '"$INSTDIR\YassReloaded.exe" "%1"'
 SectionEnd
 
 Section $(Sec_Desktop)
-  SetOutPath $INSTDIR
-  CreateShortCut "$DESKTOP\Yass Editor.lnk" "$OUTDIR\yass.exe" "-lib" 
-# "$INSTDIR\yass-edit.ico"
-#  CreateShortCut "$DESKTOP\Yass Player.lnk" "$OUTDIR\yass.exe" "-play"
+  SetOutPath "$INSTDIR"
+  # Shortcut auf die neue EXE [cite: 24]
+  CreateShortCut "$DESKTOP\Yass Editor.lnk" "$INSTDIR\YassReloaded.exe" "-lib"
 SectionEnd
 
 Page instfiles
 Section
   SetShellVarContext all
   SetOutPath $INSTDIR
-  File ".\target\yass.exe"
+  File /r "dist-img\YassReloaded\*.*"
 #  File ".\lib\fobs4jmf.dll"
 #  File ".\lib\jinput-raw.dll"
 #  File ".\lib\jinput-dx8.dll"
@@ -210,10 +203,10 @@ Section
   StrCpy $R1 $R0 1
   StrCmp $R1 ">" skip
 	CreateDirectory "$SMPROGRAMS\Yass Reloaded"
-#	CreateShortCut "$SMPROGRAMS\Yass Reloaded\Yass Player.lnk" "$INSTDIR\yass.exe" "-play"
-	CreateShortCut "$SMPROGRAMS\Yass Reloaded\Yass Editor.lnk" "$INSTDIR\yass.exe" "-lib"
+#	CreateShortCut "$SMPROGRAMS\Yass Reloaded\Yass Player.lnk" "$INSTDIR\YassReloaded.exe" "-play"
+	CreateShortCut "$SMPROGRAMS\Yass Reloaded\Yass Editor.lnk" "$INSTDIR\YassReloaded.exe" "-lib"
 # "$INSTDIR\yass-edit.ico"
-	CreateShortCut "$SMPROGRAMS\Yass Reloaded\Yass Converter.lnk" "$INSTDIR\yass.exe" "-convert"
+	CreateShortCut "$SMPROGRAMS\Yass Reloaded\Yass Converter.lnk" "$INSTDIR\YassReloaded.exe" "-convert"
 	CreateShortCut "$SMPROGRAMS\Yass Reloaded\Uninstall Yass Reloaded.lnk" "$INSTDIR\uninstall.exe"
   skip:
 SectionEnd
@@ -261,7 +254,7 @@ Section "Uninstall"
   RMDir /r "$SMPROGRAMS\Yass Reloaded"
   Delete "$INSTDIR\Yass Reloaded 1.0.1.pref"
   Delete "$INSTDIR\fobs4jmf.dll"
-  Delete "$INSTDIR\yass.exe"
+  Delete "$INSTDIR\YassReloaded.exe"
   Delete "$INSTDIR\uninstall.exe"
   RMDir  "$INSTDIR"
 
