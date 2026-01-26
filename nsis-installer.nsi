@@ -1,5 +1,5 @@
 ﻿!ifndef VERSION
-  !define VERSION "v-unknown"
+  !define VERSION "2026"
 !endif
 
 Name "Yass Reloaded ${VERSION}"

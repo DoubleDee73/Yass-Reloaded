@@ -64,17 +64,15 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          $APP_VERSION = mvn help:evaluate -Dexpression=project.version -q -DforceStdout
+          [xml]$pom = Get-Content pom.xml
+          $APP_VERSION = $pom.project.version
+          if ($APP_VERSION -eq $null) { $APP_VERSION = "2025.11" } # Fallback
           echo "Baue Version: $APP_VERSION"
-
+          
           jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar Yass-Reloaded.jar --input package-input
           
-          $NSIS_PATH = Get-Command makensis.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
-          if (!$NSIS_PATH) {
-              $NSIS_PATH = "C:\Program Files (x86)\NSIS\makensis.exe"
-          }
-          
-          & $NSIS_PATH /DVERSION=$APP_VERSION nsis-installer.nsi
+          $NSIS_EXE = "C:\Program Files (x86)\NSIS\makensis.exe"
+          & $NSIS_EXE "/DVERSION=$APP_VERSION" nsis-installer.nsi
           
       - name: Upload Windows Artifact
         if: matrix.os == 'windows-latest'
