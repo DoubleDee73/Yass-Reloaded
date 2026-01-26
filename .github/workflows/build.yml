@@ -83,8 +83,10 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
-          name: Yass-Windows
+          # Erzeugt Namen wie "Yass-Windows-Run1-Attempt2"
+          name: Yass-${{ matrix.name }}-Run${{ github.run_number }}-Att${{ github.run_attempt }}
           path: "*.exe"
+          # Wir lassen overwrite trotzdem drin, falls GitHub es doch schluckt
           overwrite: true
 
       # --- LINUX & MACOS: JPACKAGE BUILD ---
