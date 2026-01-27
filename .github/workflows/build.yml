@@ -76,6 +76,12 @@ jobs:
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
+          EXTRA_OPTS=""
+            
+          if [ "${{ matrix.os }}" == "ubuntu-22.04" ]; then
+            EXTRA_OPTS="--linux-package-deps ffmpeg,aubio-tools"
+          fi
+          
           jpackage \
             --type ${{ matrix.artifact_type }} \
             --dest dist \
@@ -84,7 +90,7 @@ jobs:
             --main-class yass.YassMain \
             --input package-input \
             --vendor "DoubleDee" \
-            --linux-package-deps "ffmpeg, aubio-tools"
+            $EXTRA_OPTS
 
       # --- ARTIFACT UPLOAD ---
       - name: Upload Artifacts
