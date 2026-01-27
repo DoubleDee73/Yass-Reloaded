@@ -51,7 +51,14 @@ jobs:
       - name: Build with Maven
         shell: bash
         run: mvn clean package -DskipTests -Djavafx.platform=${{ matrix.classifier }}
-        
+
+      - name: Prepare Package Input
+        shell: bash
+        run: |
+          mkdir -p package-input
+          cp target/Yass-Reloaded.jar package-input/
+          [ -d "lib" ] && cp lib/*.jar package-input/ || true
+
       # --- WINDOWS: NSIS BUILD ---
       - name: Install NSIS
         if: matrix.os == 'windows-latest'
