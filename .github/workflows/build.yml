@@ -21,7 +21,7 @@ jobs:
             arch: x64
             classifier: win
             artifact_type: nsis
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             name: Linux
             arch: x64
             classifier: linux
@@ -49,17 +49,9 @@ jobs:
           cache: 'maven'
 
       - name: Build with Maven
-        # Unter Windows nutzen wir shell: bash, damit der Maven-Aufruf plattformübergreifend gleich funktioniert
         shell: bash
         run: mvn clean package -DskipTests -Djavafx.platform=${{ matrix.classifier }}
-
-      - name: Prepare Package Input
-        shell: bash
-        run: |
-          mkdir -p package-input
-          cp target/Yass-Reloaded.jar package-input/
-          [ -d "lib" ] && cp lib/*.jar package-input/ || true
-
+        
       # --- WINDOWS: NSIS BUILD ---
       - name: Install NSIS
         if: matrix.os == 'windows-latest'
@@ -72,16 +64,6 @@ jobs:
           jpackage --type app-image --dest dist-img --name "YassReloaded" --main-jar Yass-Reloaded.jar --input package-input --icon "src/yass/resources/icons/yass-multi-icon.ico"
           & "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
           
-      - name: Upload Windows Artifact
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          # Erzeugt Namen wie "Yass-Windows-Run1-Attempt2"
-          name: Yass-${{ matrix.name }}-Run${{ github.run_number }}-Att${{ github.run_attempt }}
-          path: "*.exe"
-          # Wir lassen overwrite trotzdem drin, falls GitHub es doch schluckt
-          overwrite: true
-
       # --- LINUX & MACOS: JPACKAGE BUILD ---
       - name: Build Linux/macOS Package
         if: matrix.os != 'windows-latest'
@@ -90,18 +72,26 @@ jobs:
           jpackage \
             --type ${{ matrix.artifact_type }} \
             --dest dist \
-            --name "Yass-Reloaded-${{ matrix.name }}" \
+            --name "Yass-Reloaded" \
             --main-jar Yass-Reloaded.jar \
             --main-class yass.YassMain \
             --input package-input \
-            --vendor "DoubleDee"
+            --vendor "DoubleDee" \
+            --linux-package-deps "ffmpeg, aubio-tools"
 
       # --- ARTIFACT UPLOAD ---
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Yass-${{ matrix.name }}
+          name: Yass-Reloaded-${{ matrix.name }}
           path: |
             dist/*.deb
             dist/*.dmg
             *.exe
+          if-no-files-found: warn
+
+      - name: Upload Plain JAR (Portable)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yass-Reloaded-JAR-${{ matrix.classifier }}
+          path: package-input/Yass-Reloaded.jar
