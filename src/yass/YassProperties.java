@@ -186,7 +186,7 @@ public class YassProperties extends Properties {
         p.putIfAbsent("import-directory", "");
 
         p.putIfAbsent("yass-version", YassActions.VERSION);
-        p.putIfAbsent("ultrastar-format-version", UltrastarHeaderTagVersion.UNITY.version);
+        p.putIfAbsent("ultrastar-format-version", UltrastarHeaderTagVersion.SHINY.version);
         p.putIfAbsent("ffmpegPath", "");
         p.putIfAbsent("ytdlpPath", "");
         p.putIfAbsent("aubioPath", "");

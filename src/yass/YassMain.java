@@ -24,6 +24,7 @@ import yass.ffmpeg.FFMPEGLocator;
 import yass.logger.YassLogger;
 import yass.stats.YassStats;
 import yass.titlecase.PhrasalVerbManager;
+import yass.video.YassVideoDialog;
 
 import javax.sound.midi.MidiUnavailableException;
 import javax.swing.*;
@@ -313,9 +314,11 @@ public class YassMain extends JFrame {
         JPanel songListPanel = createSongListPanel();
         JPanel sheetPanel = createSheetPanel();
 
-        YassVideo video = new YassVideo(prop, sheet);
-        actions.setVideo(video);
+        YassVideoDialog video = new YassVideoDialog(this, mp3, actions);
+        actions.setVideoDialog(video);
         mp3.setVideo(video);
+        video.setOnGapChanged(actions::setVideoGap);
+        video.setOnFileChanged(actions::setVideoFile);
 
         YassErrors errors = new YassErrors(actions, prop, actions.createErrorToolbar());
         actions.setErrors(errors);

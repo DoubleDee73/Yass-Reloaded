@@ -50,6 +50,7 @@ import yass.renderer.YassNote;
 import yass.renderer.YassPlaybackRenderer;
 import yass.renderer.YassPlayerNote;
 import yass.renderer.YassSession;
+import yass.video.YassVideoDialog;
 
 import javax.sound.sampled.*;
 import java.awt.image.BufferedImage;
@@ -82,7 +83,7 @@ public class YassPlayer {
     boolean live = false;
     private YassPlaybackRenderer playbackRenderer;
     private YassMIDI midi;
-    private YassVideo video = null;
+    private YassVideoDialog video = null;
     private YassProperties properties;
     private byte midis[][];
     private long duration = 0, position = -1, seekInOffset = 0,
@@ -247,7 +248,7 @@ public class YassPlayer {
      *
      * @param v The new video value
      */
-    public void setVideo(YassVideo v) {
+    public void setVideo(YassVideoDialog v) {
         video = v;
     }
 
@@ -1049,7 +1050,7 @@ public class YassPlayer {
                 playbackRenderer.setPlaybackInterrupted(false);
 
                 if (video != null && playbackRenderer.showVideo()) {
-                    video.setTime((int) inMillis);
+                    video.updateTime((int) inMillis);
                 }
                 if (bgImage != null && playbackRenderer.showBackground()) {
                     playbackRenderer.setBackgroundImage(bgImage);
@@ -1065,7 +1066,7 @@ public class YassPlayer {
                     playbackRenderer.setPause(false);
                     playbackRenderer.startPlayback();
                     if (video != null && playbackRenderer.showVideo()) {
-                        video.playVideo();
+                        video.play();
                     }
                 }
                 firePlayerStarted();
@@ -1166,8 +1167,11 @@ public class YassPlayer {
                             }
                         }
                     }
-                    if (video != null && playbackRenderer.showVideo()) {
-                        playbackRenderer.setVideoFrame(video.getFrame());
+                    if (video != null) {
+                        if (playbackRenderer.showVideo()) {
+                            // playbackRenderer.setVideoFrame(video.getFrame()); // No longer needed with JFXPanel
+                        }
+                        video.updateTime(currentMillis);
                     }
                     playbackRenderer.updatePlayback(currentMillis);
                 }
@@ -1210,7 +1214,7 @@ public class YassPlayer {
                 }
                 playbackRenderer.setPlaybackInterrupted(false);
                 if (video != null && playbackRenderer.showVideo()) {
-                    video.stopVideo();
+                    video.stop();
                 }
                 playbackRenderer.finishPlayback();
             }

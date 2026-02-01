@@ -638,18 +638,26 @@ public class YassTable extends JTable {
 
     public void setVideoGap(double g) {
         vgap = g;
-        String s = Double.toString(vgap).replace('.', ',');
-        if (s.endsWith(",0")) {
+        String s = Double.toString(vgap).replace(',', '.');
+        if (s.endsWith(".0")) {
             s = s.substring(0, s.length() - 2);
         }
         YassRow r = tm.getCommentRow("VIDEOGAP:");
         if (r == null) {
+            if (s.equals("0")) {
+                return;
+            }
             r = new YassRow("#", "VIDEOGAP:", s, "", "");
             YassRow v = tm.getCommentRow("VIDEO:");
             int i = v != null ? tm.getData().indexOf(v) : 0;
             tm.getData().insertElementAt(r, i + 1);
             tm.fireTableDataChanged();
         } else {
+            if (s.equals("0")) {
+                tm.getData().removeElement(r);
+                tm.fireTableDataChanged();
+                return;
+            }
             String old = r.getHeaderComment();
             if (!s.equals(old)) {
                 r.setComment(s);

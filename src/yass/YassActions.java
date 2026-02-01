@@ -33,11 +33,10 @@ import yass.musicalkey.MusicalKey;
 import yass.musicbrainz.MusicBrainz;
 import yass.musicbrainz.MusicBrainzInfo;
 import yass.renderer.YassSession;
+import yass.video.YassVideoDialog;
 import yass.wizard.CreateSongWizard;
 
 import javax.swing.*;
-import javax.swing.event.ChangeEvent;
-import javax.swing.event.ChangeListener;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.plaf.basic.BasicComboBoxRenderer;
@@ -87,10 +86,9 @@ public class YassActions implements DropTargetListener {
     private PlayListBoxListener plBoxListener = null;
     private final Font groupsFont = new Font("SansSerif", Font.BOLD, 14);
     private JDialog errDialog = null;
-    private JDialog gapDialog = null;
     private JTextField bpmField = null;
-    private TimeSpinner gapSpinner = null, startSpinner = null, endSpinner = null, vgapSpinner = null;
-    private JDialog vgapDialog = null, srcDialog = null;
+    private TimeSpinner gapSpinner = null, startSpinner = null, endSpinner = null;
+    private JDialog srcDialog = null;
     private JTextPane helpPane = null;
     private int vmark = 0;
     private int recordLength = -1;
@@ -107,7 +105,7 @@ public class YassActions implements DropTargetListener {
     private final YassPlayer mp3;
     private YassPlayList playList = null;
     private YassSongInfo songInfo = null;
-    private YassVideo video = null;
+    private YassVideoDialog videoDialog = null;
     private YassErrors errors = null;
     private YassProperties prop = null;
     private YassAutoCorrect auto = null;
@@ -140,7 +138,6 @@ public class YassActions implements DropTargetListener {
     private JComponent editTools = null;
     private boolean soonStarting = false;
     private JMenuBar editMenu = null, libMenu = null;
-    private JToolBar videoToolbar = null;
     private int x;
     private int y;
     private final TapNoteListener awt = new TapNoteListener();
@@ -680,7 +677,7 @@ public class YassActions implements DropTargetListener {
                 return;
             }
 
-            setVideoMark(video.getTime());
+            setVideoMark(videoDialog.getTime());
         }
     };
     final Action setStartHere = new AbstractAction(I18.get("tool_audio_start_here")) {
@@ -949,39 +946,18 @@ public class YassActions implements DropTargetListener {
     };
     private final Action showVideoGap = new AbstractAction(I18.get("edit_videogap")) {
         public void actionPerformed(ActionEvent e) {
-            sheet.showVideo(true);
-
-            if (vgapDialog != null) {
-                if (vgapDialog.isShowing()) {
-                    sheet.showVideo(false);
-                    vgapDialog.setVisible(false);
-                    return;
-                }
-                vgapDialog.pack();
-                vgapDialog.setVisible(true);
-                return;
+            if (videoDialog == null) {
+                Window window = SwingUtilities.getWindowAncestor(tab);
+                Frame owner = (window instanceof Frame) ? (Frame) window : null;
+                videoDialog = new YassVideoDialog(owner, mp3, YassActions.this);
+                videoDialog.setOnGapChanged(gap -> setVideoGap(gap));
+                videoDialog.setOnFileChanged(file -> setVideoFile(file));
             }
-
-            updateGapBpm();
-
-            JDialog fh = vgapDialog = new JDialog(new OwnerFrame());
-            fh.setTitle(I18.get("edit_videogap_title"));
-            fh.setAlwaysOnTop(true);
-            fh.addWindowListener(new WindowAdapter() {
-                public void windowClosing(WindowEvent e) {
-                    sheet.showVideo(false);
-                    // video.closeVideo();
-                    e.getWindow().dispose();
-                }
-            });
             updateVideo();
-
-            fh.add("Center", createVideoToolbar());
-            fh.pack();
-            fh.setVisible(true);
-
+            videoDialog.setVisible(true);
+            
             long time = sheet.fromTimeline(sheet.getPlayerPosition());
-            video.setTime((int) time);
+            videoDialog.updateTime((int) time);
         }
     };
     private final Action showLibTable = new AbstractAction(I18.get("lib_source")) {
@@ -1040,8 +1016,10 @@ public class YassActions implements DropTargetListener {
             videoButton.setSelected(true);
 
             long time = sheet.fromTimeline(sheet.getPlayerPosition());
-            video.setTime((int) time);
-            video.refreshPlayer();
+            if (videoDialog != null) {
+                videoDialog.updateTime((int) time);
+//                videoDialog.refreshPlayer();
+            }
             sheet.repaint();
         }
     };
@@ -1051,8 +1029,8 @@ public class YassActions implements DropTargetListener {
             onoff = !onoff;
 
             if (onoff) {
-                video.setTime(0);
-                if (video.getFrame() != null) {
+                if (videoDialog != null) videoDialog.updateTime(0);
+                if (videoDialog != null && videoDialog.isVisible()) {
                     sheet.showVideo(true);
                     sheet.showBackground(false);
                     showVideoToggle.setSelected(true);
@@ -1070,8 +1048,10 @@ public class YassActions implements DropTargetListener {
             videoButton.setSelected(onoff);
 
             long time = sheet.fromTimeline(sheet.getPlayerPosition());
-            video.setTime((int) time);
-            video.refreshPlayer();
+            if (videoDialog != null) {
+                videoDialog.updateTime((int) time);
+//                videoDialog.refreshPlayer();
+            }
             sheet.repaint();
         }
     };
@@ -1149,14 +1129,16 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             int n = sheet.getPlayerPosition();
             long t = sheet.fromTimeline(n);
-            setVideoGap((int) (vmark - t));
+            videoDialog.setVideoGap((int) (vmark - t));
 
             setVideoMark(0);
             vmarkButton.setSelected(false);
 
             long time = sheet.fromTimeline(sheet.getPlayerPosition());
-            video.setTime((int) time);
-            video.refreshPlayer();
+            if (videoDialog != null) {
+                videoDialog.updateTime((int) time);
+//                videoDialog.refreshPlayer();
+            }
         }
     };
     /**
@@ -1478,7 +1460,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action enableVideoAudio = new AbstractAction(I18.get("tool_video_audio_toggle")) {
         public void actionPerformed(ActionEvent e) {
-            video.muteVideo(!videoAudioButton.isSelected());
+//            if (videoDialog != null) videoDialog.muteVideo(!videoAudioButton.isSelected());
         }
     };
     private final Action joinRows = new AbstractAction(I18.get("edit_join")) {
@@ -2393,7 +2375,7 @@ public class YassActions implements DropTargetListener {
             YassTable lastTable = table;
             table.removeAutoSave();
             closeAllTables();
-            video.closeVideo();
+            if (videoDialog != null) videoDialog.closeVideo();
             if (mp3 != null) {
                 mp3.closeSharedLine();
             }
@@ -3054,7 +3036,7 @@ public class YassActions implements DropTargetListener {
         // updateRaw();
         // updateCover();
         // updateBackground();
-        // updateVideo();
+//         updateVideo();
         isUpdating = false;
         updateTrackComponent();
         updateActions();
@@ -3230,8 +3212,8 @@ public class YassActions implements DropTargetListener {
 
         sheet.setActiveTable(table);
         String vd = table.getVideo();
-        if (video != null && vd != null) {
-            video.setVideo(table.getDir() + File.separator + vd);
+        if (videoDialog != null && vd != null) {
+            videoDialog.setVideo(table.getDir() + File.separator + vd);
         }
         String bg = table.getBackgroundTag();
         if (bg != null) {
@@ -3271,15 +3253,6 @@ public class YassActions implements DropTargetListener {
 
     public YassPlayer getMP3() {
         return mp3;
-    }
-
-    public YassVideo getVideo() {
-        return video;
-    }
-
-    public void setVideo(YassVideo v) {
-        video = v;
-        // video.setStoreAction(saveVideo);
     }
 
     public void setSongInfo(YassSongInfo c) {
@@ -3458,6 +3431,8 @@ public class YassActions implements DropTargetListener {
         icons.put("movie24Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/media/Movie24.gif")));
         icons.put("fastforward16Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/media/FastForward16.gif")));
         icons.put("fastforward24Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/media/FastForward24.gif")));
+        icons.put("pause24Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/media/Pause24.gif")));
+        icons.put("play24Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/media/Play24.gif")));
         icons.put("rewind16Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/media/Rewind16.gif")));
         icons.put("rewind24Icon", new ImageIcon(getClass().getResource("/yass/resources/toolbarButtonGraphics/media/Rewind24.gif")));
         icons.put("empty16Icon", new ImageIcon(getClass().getResource("/yass/resources/img/Empty16.gif")));
@@ -5515,9 +5490,6 @@ public class YassActions implements DropTargetListener {
         if (gapSpinner != null) {
             gapSpinner.setEnabled(isOpened);
         }
-        if (vgapSpinner != null) {
-            vgapSpinner.setEnabled(isOpened);
-        }
         if (startSpinner != null) {
             startSpinner.setEnabled(isOpened);
         }
@@ -5656,68 +5628,6 @@ public class YassActions implements DropTargetListener {
         songInfo.stopPlayer();
     }
 
-
-    private JComponent createVideoToolbar() {
-        if (videoToolbar != null) {
-            return videoToolbar;
-        }
-
-        JToolBar t = new JToolBar(I18.get("tool_video"));
-        videoToolbar = t;
-        t.setFloatable(false);
-        AbstractButton b;
-
-        if (YassVideoUtils.useFOBS) {
-            t.add(videoAudioButton = new JToggleButton());
-            videoAudioButton.setAction(enableVideoAudio);
-            videoAudioButton.setToolTipText(videoAudioButton.getText());
-            videoAudioButton.setText("");
-            videoAudioButton.setIcon(getIcon("mute24Icon"));
-            videoAudioButton.setSelectedIcon(getIcon("nomute24Icon"));
-            videoAudioButton.setFocusable(false);
-            videoAudioButton.setSelected(true);
-            t.addSeparator();
-        }
-        vgapSpinner = new TimeSpinner(I18.get("tool_video_gap"), 0, 10000, TimeSpinner.NEGATIVE);
-        t.add(vgapSpinner);
-        vgapSpinner.getSpinner().setFocusable(false);
-        vgapSpinner.getSpinner().addChangeListener(new ChangeListener() {
-            public void stateChanged(ChangeEvent e) {
-                if (!isUpdating) {
-                    setVideoGap(vgapSpinner.getTime());
-                }
-            }
-        });
-        Dimension d = vgapSpinner.getPreferredSize();
-        d.height = t.getPreferredSize().height;
-        vgapSpinner.setMaximumSize(d);
-
-        if (YassVideoUtils.useFOBS) {
-            t.add(Box.createHorizontalGlue());
-
-            t.add(vmarkButton = new JToggleButton());
-            vmarkButton.setAction(setVideoMarkHere);
-            vmarkButton.setToolTipText(vmarkButton.getText());
-            vmarkButton.setText("");
-            vmarkButton.setIcon(getIcon("copy24Icon"));
-            vmarkButton.setFocusable(false);
-            t.add(b = new JButton());
-            b.setAction(setVideoGapHere);
-            b.setToolTipText(b.getText());
-            b.setText("");
-            b.setIcon(getIcon("paste24Icon"));
-            b.setFocusable(false);
-            t.add(b = new JButton());
-            b.setAction(removeVideoGap);
-            b.setToolTipText(b.getText());
-            b.setText("");
-            b.setIcon(getIcon("delete24Icon"));
-            b.setFocusable(false);
-        }
-        return t;
-    }
-
-
     public void updatePlayerPosition() {
         if (sheet == null) {
             return;
@@ -5741,15 +5651,15 @@ public class YassActions implements DropTargetListener {
             sheet.setPlayerPosition(-1);
         }
 
-        if (video != null && sheet.showVideo()) {
+        if (videoDialog != null && sheet.showVideo()) {
             if (vmark != 0) {
-                video.setTime(vmark);
+                videoDialog.updateTime(vmark);
                 return;
             }
             long time;
             time = sheet.fromTimeline(sheet.getPlayerPosition());
             if (!sheet.isLive()) {
-                video.setTime((int) time);
+                videoDialog.updateTime((int) time);
             }
         }
     }
@@ -6017,9 +5927,10 @@ public class YassActions implements DropTargetListener {
     }
 
     public void setVideoGap(int ms) {
-        for (YassTable t: getOpenTables(table))
+        for (YassTable t : getOpenTables(table)) {
             t.setVideoGap(ms / 1000.0);
-        updateVideoGap();
+        }
+//        updateVideoGap();
     }
 
     private void setVideoMark(int ms) {
@@ -6027,16 +5938,10 @@ public class YassActions implements DropTargetListener {
     }
 
     private void updateVideoGap() {
-        double vgap = table.getVideoGap();
-        int ms = (int) (vgap * 1000);
-
-        if (vgapSpinner != null) {
-            vgapSpinner.setTime(ms);
-            int dur = (int) (mp3.getDuration() / 1000);
-            vgapSpinner.setDuration(dur);
+        if (table == null) {
+            return;
         }
-        if (video != null && sheet.showVideo())
-            video.setVideoGap(ms);
+        table.setVideoGap(videoDialog.getVideoGapMs() / 1000);
     }
 
     private void playSelection(int mode) {
@@ -6566,8 +6471,8 @@ public class YassActions implements DropTargetListener {
         sheet.getSongHeader().initSongHeader(table);
 
         String vd = table.getVideo();
-        if (video != null && vd != null) {
-            video.setVideo(table.getDir() + File.separator + vd);
+        if (videoDialog != null && vd != null) {
+            videoDialog.setVideo(table.getDir() + File.separator + vd);
         }
         if (StringUtils.isEmpty(vd)) {
             File temp = findFile(file.getParentFile(), List.of(".mp4", ".mkv", ".avi"));
@@ -6632,7 +6537,6 @@ public class YassActions implements DropTargetListener {
         // prevent unsetting saved icon
         isUpdating = true;
         updateLyrics();
-        updateVideo(); // todo: really?
         isUpdating = false;
 
         for (YassTable t: openTables) {
@@ -6815,10 +6719,9 @@ public class YassActions implements DropTargetListener {
             if (v != null) {
                 vd = d + File.separator + v;
             }
+            videoDialog.setVideo(vd);
+            videoDialog.setVideoGap((int)(table.getVideoGap() * 1000));
         }
-        video.setVideo(vd);
-
-        updateVideoGap();
     }
 
     public List<YassTable> mergeTableAndSave(YassTable table, boolean backup) {
@@ -7003,8 +6906,8 @@ public class YassActions implements DropTargetListener {
         updateTitle();
         if (table != null) { // todo: unused
             String vd = table.getVideo();
-            if (video != null && vd != null) {
-                video.setVideo(table.getDir() + File.separator + vd);
+            if (videoDialog != null && vd != null) {
+                videoDialog.setVideo(table.getDir() + File.separator + vd);
             }
             String bg = table.getBackgroundTag();
             if (bg != null) {
@@ -8208,6 +8111,13 @@ public class YassActions implements DropTargetListener {
         g2.dispose();
 
         return new ImageIcon(resizedImg);
+    }
+
+    public void setVideoFile(String filename) {
+        for (YassTable t: openTables) {
+            t.setVideo(filename);
+        }
+        updateVideo();
     }
 
 }
