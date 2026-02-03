@@ -27,11 +27,14 @@ import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
 import javafx.scene.media.MediaView;
 import javafx.util.Duration;
+import net.bramp.ffmpeg.FFmpeg;
+import net.bramp.ffmpeg.FFprobe;
+import net.bramp.ffmpeg.builder.FFmpegBuilder;
+import net.bramp.ffmpeg.probe.FFmpegProbeResult;
+import net.bramp.ffmpeg.probe.FFmpegStream;
 import org.apache.commons.lang3.StringUtils;
-import yass.I18;
-import yass.TimeSpinner;
-import yass.YassActions;
-import yass.YassPlayer;
+import yass.*;
+import yass.ffmpeg.FFMPEGLocator;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -39,7 +42,9 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
+import java.io.IOException;
 import java.util.function.Consumer;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class YassVideoDialog extends JDialog {
@@ -61,12 +66,14 @@ public class YassVideoDialog extends JDialog {
     private int videoGapMs = 0; // in milliseconds
     private Consumer<Integer> onGapChanged;
     private Consumer<String> onFileChanged;
+    private boolean isInternalUpdate = false;
+    private File video;
 
     public YassVideoDialog(Frame owner, YassPlayer yassPlayer, YassActions yassActions) {
         super(owner, "Video Preview", false); // Non-modal
         this.yassPlayer = yassPlayer;
         this.yassActions = yassActions;
-
+        isInternalUpdate = true;
         setSize(1000, 700);
         setLayout(new BorderLayout());
         setLocationRelativeTo(owner); // Center relative to the main window
@@ -125,15 +132,6 @@ public class YassVideoDialog extends JDialog {
         leftControls.add(Box.createHorizontalStrut(10));
 
         gapSpinner = new TimeSpinner(I18.get("tool_video_gap"), 0, 100000, TimeSpinner.NEGATIVE);
-        gapSpinner.getSpinner().addChangeListener(e -> {
-            int ms = gapSpinner.getTime();
-            if (ms != videoGapMs) {
-                videoGapMs = ms;
-                if (onGapChanged != null) {
-                    onGapChanged.accept(ms);
-                }
-            }
-        });
         leftControls.add(gapSpinner);
         controlsPanel.add(leftControls, BorderLayout.WEST);
 
@@ -152,12 +150,38 @@ public class YassVideoDialog extends JDialog {
 
         southPanel.add(controlsPanel);
         add(southPanel, BorderLayout.SOUTH);
+        initListeners();
+        isInternalUpdate = false;
+    }
 
+    private void initListeners() {
+        if (!isInternalUpdate) {
+            return;
+        }
+        gapSpinner.getSpinner().addChangeListener(e -> {
+            int ms = gapSpinner.getTime();
+            if (ms != videoGapMs) {
+                videoGapMs = ms;
+                if (onGapChanged != null) {
+                    onGapChanged.accept(ms);
+                }
+            }
+        });
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
                 stop();
             }
+        });
+        YassUtils.addChangeListener(videoFile, e -> {
+            if (yassActions == null || yassActions.getTable() == null) {
+                return;
+            }
+            String current = yassActions.getTable().getVideo();
+            if (current.equalsIgnoreCase(videoFile.getText())) {
+                return;
+            }
+            yassActions.getTable().setVideo(videoFile.getText());
         });
     }
 
@@ -172,7 +196,7 @@ public class YassVideoDialog extends JDialog {
     private void chooseVideoFile() {
         JFileChooser chooser = new JFileChooser();
         if (videoFile != null && StringUtils.isNotEmpty(videoFile.getText())) {
-            chooser.setCurrentDirectory(new File(videoFile.getText()).getParentFile());
+            chooser.setCurrentDirectory(new File(yassActions.getTable().getDir()));
         } else {
             String songDir = yassActions.getTable() != null ? yassActions.getTable().getDir() : null;
             if (songDir != null) {
@@ -216,8 +240,11 @@ public class YassVideoDialog extends JDialog {
             closeVideo();
             return;
         }
-        videoFile.setText(vd.replace('\\', '/'));
-        loadVideoFile(videoFile.getText());
+        video = new File(vd.replace('\\', '/'));
+        if (StringUtils.isEmpty(vd) || !video.exists()) {
+            return;
+        }
+        loadVideoFile(vd);
     }
 
     public void setVideoGap(int seconds) {
@@ -258,7 +285,6 @@ public class YassVideoDialog extends JDialog {
                     }
                 } else {
                     if (finalTargetTime >= 0) {
-//                         mediaPlayer.play();
                         mediaPlayer.seek(Duration.seconds(finalTargetTime));
                     }
                 }
@@ -277,50 +303,115 @@ public class YassVideoDialog extends JDialog {
                 if (mediaPlayer != null) {
                     mediaPlayer.dispose();
                 }
-
+                if (StringUtils.isEmpty(path)) {
+                    return;
+                }
                 File file = new File(path);
-                if (!file.exists()) {
+                if (!file.exists() || file.isDirectory()) {
                     SwingUtilities.invokeLater(() -> videoFile.setText(""));
                     return;
                 }
+                videoFile.setText(file.getName());
+                setTitle(I18.get("video_dialog_title") + " - " + file.getName());
+                if (needsTransCoding(path)) {
+                    file = transcodeToTempMp4(path);
+                }
 
-                Media media = new Media(file.toURI().toString());
-                mediaPlayer = new MediaPlayer(media);
-                mediaPlayer.setAutoPlay(false);
-                mediaPlayer.setVolume(0);
-
-                MediaView mediaView = new MediaView(mediaPlayer);
-                BorderPane root = new BorderPane();
-                root.setCenter(mediaView);
-
-                mediaView.fitWidthProperty().bind(root.widthProperty());
-                mediaView.fitHeightProperty().bind(root.heightProperty());
-                mediaView.setPreserveRatio(true);
-
-                Scene scene = new Scene(root, javafx.scene.paint.Color.BLACK);
-                jfxPanel.setScene(scene);
-
-                mediaPlayer.setOnReady(() -> {
-                    videoDurationSeconds = media.getDuration().toSeconds();
-                    gapSpinner.setDuration((int) (videoDurationSeconds * 1000));
-                    SwingUtilities.invokeLater(() -> {
-                        timeSlider.setEnabled(true);
-                        videoFile.setText(file.getName());
-                        setTitle(I18.get("video_dialog_title") + " - " + file.getName());
-                    });
-                });
+                initMediaPlayer(file);
 
                 mediaPlayer.setOnError(() -> {
-                    SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, "Media Error: " +
-                            mediaPlayer.getError().getMessage()));
+                    try {
+                        File fallback = transcodeToTempMp4(path);
+                        initMediaPlayer(fallback);
+                    } catch (Exception ex) {
+                        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
+                                                                                       "Media Error: " +
+                                                                                               mediaPlayer.getError()
+                                                                                                          .getMessage()));
+                    }
                 });
 
             } catch (Exception e) {
-                LOGGER.log(java.util.logging.Level.SEVERE, "Error loading video: " + path, e);
+                LOGGER.log(Level.SEVERE, "Error loading video: " + path, e);
                 SwingUtilities.invokeLater(
                         () -> JOptionPane.showMessageDialog(this, "Error loading video: " + e.getMessage()));
             }
         });
+    }
+
+    private void initMediaPlayer(File file) {
+        Media media = new Media(file.toURI().toString());
+        mediaPlayer = new MediaPlayer(media);
+        mediaPlayer.setAutoPlay(false);
+        mediaPlayer.setVolume(0);
+
+        MediaView mediaView = new MediaView(mediaPlayer);
+        BorderPane root = new BorderPane();
+        root.setCenter(mediaView);
+
+        mediaView.fitWidthProperty().bind(root.widthProperty());
+        mediaView.fitHeightProperty().bind(root.heightProperty());
+        mediaView.setPreserveRatio(true);
+
+        Scene scene = new Scene(root, javafx.scene.paint.Color.BLACK);
+        jfxPanel.setScene(scene);
+
+        mediaPlayer.setOnReady(() -> {
+            videoDurationSeconds = media.getDuration().toSeconds();
+            gapSpinner.setDuration((int) (videoDurationSeconds * 1000));
+            SwingUtilities.invokeLater(() -> {
+                timeSlider.setEnabled(true);
+            });
+        });
+    }
+
+    private boolean needsTransCoding(String path) throws IOException {
+        FFprobe ffprobe = FFMPEGLocator.getInstance().getFfprobe();
+        FFmpegProbeResult probe = ffprobe.probe(path);
+
+        String videoCodec = probe.getStreams().stream()
+                                 .filter(s -> s.codec_type == FFmpegStream.CodecType.VIDEO)
+                                 .map(s -> s.codec_name)
+                                 .findFirst()
+                                 .orElse(null);
+        String audioCodec = probe.getStreams().stream()
+                                 .filter(s -> s.codec_type == FFmpegStream.CodecType.AUDIO)
+                                 .map(s -> s.codec_name)
+                                 .findFirst()
+                                 .orElse(null);
+        if (videoCodec == null) {
+            return true;
+        }
+
+        return switch (videoCodec.toLowerCase()) {
+            case "av1", "vp9", "vp8", "hevc", "h265", "prores", "theora" -> true;
+            default -> false;
+        } || (audioCodec != null && switch (audioCodec.toLowerCase()) {
+            case "opus", "vorbis", "flac" -> true;
+            default -> false;
+        });
+    }
+
+    private File transcodeToTempMp4(String inputPath) throws IOException {
+        FFmpeg ffmpeg = FFMPEGLocator.getInstance().getFfmpeg();
+        File tempFile = new File(YassPlayer.USER_PATH, "yass_video_temp.mp4");
+        FFmpegBuilder builder = new FFmpegBuilder()
+                .setInput(inputPath)
+                .overrideOutputFiles(true)
+                .addOutput(tempFile.getAbsolutePath())
+                .setFormat("mp4")
+                .setVideoCodec("libx264")
+                .addExtraArgs("-an")
+                .addExtraArgs("-preset", "ultrafast")
+                .addExtraArgs("-tune", "zerolatency")
+                .addExtraArgs("-crf", "23")
+                .addExtraArgs("-pix_fmt", "yuv420p")
+                .addExtraArgs("-profile:v", "baseline")
+                .addExtraArgs("-level", "3.0")
+                .addExtraArgs("-movflags", "+faststart")
+                .done();
+        ffmpeg.run(builder);
+        return tempFile;
     }
 
     private void togglePlayPause() {
@@ -328,19 +419,30 @@ public class YassVideoDialog extends JDialog {
             yassPlayer.interruptMP3();
             pause();
         } else {
-            double currentSliderPos = timeSlider.getValue() / 1000.0;
-            double videoTime = currentSliderPos * videoDurationSeconds;
+            double sliderPos = timeSlider.getValue() / 1000.0;
+            double virtualVideoTime = sliderPos * videoDurationSeconds;
 
-            double audioStartTime = videoTime - (videoGapMs / 1000.0);
-            if (audioStartTime < 0) {
-                audioStartTime = 0;
-            }
+            double audioStartTime = virtualVideoTime - (videoGapMs / 1000.0);
+            audioStartTime = Math.max(0, audioStartTime);
 
-            long startMs = (long) (audioStartTime * 1000);
+            long audioStartMs = (long) (audioStartTime * 1000);
 
-            yassPlayer.playSelection(startMs * 1000, -1, null);
+            double seekVideoTime = getSeekableVideoTime(virtualVideoTime);
+            yassPlayer.setAudioEnabled(true);
+            yassPlayer.setMIDIEnabled(false);
+            yassPlayer.playSelection(audioStartMs * 1000, -1, null);
+
+            seekVideo(seekVideoTime);
             play();
         }
+    }
+
+    private double getVirtualVideoTime(double audioSeconds) {
+        return audioSeconds + (videoGapMs / 1000.0);
+    }
+
+    private double getSeekableVideoTime(double virtualVideoTime) {
+        return Math.max(0, virtualVideoTime);
     }
 
     public int getVideoGapMs() {

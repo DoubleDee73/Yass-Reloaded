@@ -1,11 +1,11 @@
 package com.jfposton.ytdlp;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jfposton.ytdlp.mapper.VideoFormat;
 import com.jfposton.ytdlp.mapper.VideoInfo;
 import com.jfposton.ytdlp.mapper.VideoThumbnail;
 import com.jfposton.ytdlp.utils.StreamGobbler;
 import com.jfposton.ytdlp.utils.StreamProcessExtractor;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.File;
 import java.io.IOException;
@@ -271,15 +271,7 @@ public class YtDlp {
 
         // Parse result
         ObjectMapper objectMapper = new ObjectMapper();
-        VideoInfo videoInfo;
-
-        try {
-            videoInfo = objectMapper.readValue(response.getOut(), VideoInfo.class);
-        } catch (IOException e) {
-            throw new YtDlpException("Unable to parse video information: " + e.getMessage());
-        }
-
-        return videoInfo;
+        return objectMapper.readValue(response.getOut(), VideoInfo.class);
     }
 
     /**

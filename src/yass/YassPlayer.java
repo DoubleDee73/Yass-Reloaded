@@ -28,6 +28,7 @@ import net.bramp.ffmpeg.job.FFmpegJob;
 import net.bramp.ffmpeg.probe.FFmpegFormat;
 import net.bramp.ffmpeg.probe.FFmpegProbeResult;
 import net.bramp.ffmpeg.probe.FFmpegStream;
+import net.bramp.ffmpeg.progress.Progress;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -62,6 +63,7 @@ import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -938,7 +940,6 @@ public class YassPlayer {
         long in, out;
         Click[] clicks;
         Timebase timebase;
-
         /**
          * Constructor for the PlayThread object
          *
@@ -1050,7 +1051,7 @@ public class YassPlayer {
                 playbackRenderer.setPlaybackInterrupted(false);
 
                 if (video != null && playbackRenderer.showVideo()) {
-                    video.updateTime((int) inMillis);
+                    video.updateTime(inMillis);
                 }
                 if (bgImage != null && playbackRenderer.showBackground()) {
                     playbackRenderer.setBackgroundImage(bgImage);
@@ -1075,7 +1076,12 @@ public class YassPlayer {
             byte[] pianoAndClicks = createAudioStreamFromClicks(clicks, timebase.timerate, playClicks, midiEnabled, inpoint);
             byte[] audioData = getAudioBytesInRange(inMillis + (int) seekInOffsetMs,
                                                     outMillis + (int) seekOutOffsetMs);
-            byte[] mixedAudio = mixAudioStereo(audioData, pianoAndClicks);
+            byte[] mixedAudio;
+            if (playAudio) {
+                mixedAudio = mixAudioStereo(audioData, pianoAndClicks);
+            } else {
+                mixedAudio = pianoAndClicks;
+            }
             playAudioData(mixedAudio, audioBytesFormat, audioData.length, onPlaybackStarted);
             try {
                 playbackStartLatch.await();
@@ -1329,13 +1335,11 @@ public class YassPlayer {
                      .setAudioSampleRate(44100)
                      .done();
         FFmpegExecutor executor = new FFmpegExecutor(ffmpeg, fFprobe);
-        // Eine thread-sichere Variable, um den Fortschritt zwischen den Threads zu teilen.
-        final java.util.concurrent.atomic.AtomicReference<net.bramp.ffmpeg.progress.Progress> progressHolder = new java.util.concurrent.atomic.AtomicReference<>();
+        final AtomicReference<Progress> progressHolder = new AtomicReference<>();
         FFmpegJob job = executor.createJob(fFmpegBuilder, progress -> {
             if (durationNs == null) {
                 return;
             }
-            // Aktualisiere den Fortschritt. Dies wird im Hintergrund-Thread aufgerufen.
             progressHolder.set(progress);
         });
 

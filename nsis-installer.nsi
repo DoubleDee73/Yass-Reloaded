@@ -1,5 +1,5 @@
-﻿Name "Yass Reloaded 2026.1"
-OutFile "yass-installer-2026.1.exe"
+﻿Name "Yass Reloaded 2026.2"
+OutFile "yass-installer-2026.2.exe"
 
 Unicode true
 SetCompressor lzma
