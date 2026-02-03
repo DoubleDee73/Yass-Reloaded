@@ -9,7 +9,7 @@ Yass Reloaded is a free, open-source karaoke editor for creating, editing, and m
 It allows karaoke creators to precisely edit notes, timing, and lyrics, manage large song libraries, and fix common errors in existing karaoke tracks.
 
 The application is written in Java and runs on Windows, macOS, and Linux.  
-It is actively developed and based on modern Java (Java 21).
+It is actively developed and based on modern Java (Java 25).
 
 Yass Reloaded provides a graphical user interface for fine-tuning UltraStar karaoke songs.
 You can drag and drop notes, adjust syllables, correct timing issues, and quickly detect common formatting errors.
@@ -31,7 +31,7 @@ Yass Reloaded is designed for:
 *   **Error Detection:** Automatically finds common errors in your karaoke files to ensure they play perfectly.
 *   **Wide Audio Format Support:** Thanks to FFmpeg integration, Yass Reloaded supports a vast range of audio formats, including AAC, OGG, and OPUS.
 *   **Improved User Experience:** Numerous tweaks and improvements make the editing process faster and more intuitive.
-*   **Modern and Actively Developed:** Built on Java 21 and continuously updated with new features and bug fixes.
+*   **Modern and Actively Developed:** Built on Java 25 and continuously updated with new features and bug fixes.
 
 ## Supported Languages
 
@@ -55,14 +55,14 @@ Due to limited maintenance and different development goals, this fork was create
 - Improved user experience focused on real-world karaoke song creation
 - Faster bug fixing and active maintenance
 - Support for new and extended UltraStar song format tags
-- Modern Java 21 codebase instead of legacy Java 8
+- Modern Java 25 codebase instead of legacy Java 8
 
 ## Downloads
 
 Prebuilt binaries for Windows, macOS, and Linux are available in the GitHub
 [Release Section](https://github.com/DoubleDee73/Yass/releases)
 
-Min. Requirement is Java 21 (e. g. Open JDK ZuluFX https://www.azul.com/downloads/).
+Min. Requirement is Java 25 (e.g. Open JDK ZuluFX https://www.azul.com/downloads/).
 While JavaFX is no longer required, it may be needed in future releases.
 
 Yass Reloaded requires FFmpeg to support a variety of audio formats.
@@ -116,12 +116,13 @@ Speed measure 'Inverse Duration' based on Marcel Taeumel's approach (http://uman
 yt-dlp is used to download audio and video files from YouTube
 https://github.com/yt-dlp/yt-dlp#release-files
 ## aubio
-aubio is used to determine the BPM when using the Song Creation Wizard
+aubio is used to determine the BPM when using the Song Creation Wizard and visualizing the pitch of the vocal track in the song editor
 https://aubio.org/download
+You should select the package WITHOUT bundled ffMpeg
 
 # License
 
-Copyright (C) 2009-2023 Saruta, 2023-2025 DoubleDee 
+Copyright (C) 2009-2023 Saruta, 2023-2026 DoubleDee 
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -145,7 +146,7 @@ If you like this  app, feel free (but not pressured!) to buy me coffee. Any supp
 ## Yass Reloaded does nothing after showing the splash screen
 - Have you checked your Java version? 
   - Open a command line window and type in `java -version`. 
-  - You should have Java 21
+  - You should have Java 25
 - Have you tried opening it as a jar?
   - Download the jar, open a command line window and type in `java -jar Yass-Reloaded-2025.11.jar`
   - Any error messages are then printed out in the command line window for debugging
