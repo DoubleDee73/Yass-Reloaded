@@ -51,7 +51,15 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           architecture: ${{ matrix.arch }}
           cache: maven
-
+          
+      - name: Verify Java Runtime
+        shell: bash
+        run: |
+          echo "=== Java ==="
+          java -version
+          echo "=== Maven ==="
+          mvn -version
+      
       - name: Build with Maven
         shell: bash
         run: mvn clean package -DskipTests -Djavafx.platform=${{ matrix.classifier }}
