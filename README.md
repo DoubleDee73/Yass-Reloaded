@@ -62,16 +62,52 @@ Due to limited maintenance and different development goals, this fork was create
 Prebuilt binaries for Windows, macOS, and Linux are available in the GitHub
 [Release Section](https://github.com/DoubleDee73/Yass/releases)
 
+### Windows
+
+**Recommended:**  
+Download and run the Windows installer:
+
+- `Yass-Reloaded-XXXX-win-x64.exe`
+
+Java is bundled. No manual setup required.
+
+### macOS
+
+Download the macOS build matching your system:
+
+- Apple Silicon (M1/M2/M3): `*-macos-aarch64.dmg`
+- Intel Macs: `*-macos-x64.dmg`
+
+Java is bundled.
+
+If macOS blocks the app:
+- Right-click → Open → Confirm
+
+### Linux
+
+Options:
+
+- `*.AppImage` (recommended, portable)
+- or run the Fat JAR (see below)
+
+FFmpeg must be installed via your package manager.
+
+## Running the Fat JAR (Advanced)
+
+If no native build is available, you can use the Fat JAR:
+
+```bash
+java -jar Yass-Reloaded-XXXX-fat.jar
+```
+### Requirements for starting the JAR
 Min. Requirement is Java 25 (e.g. Open JDK ZuluFX https://www.azul.com/downloads/).
-While JavaFX is no longer required, it may be needed in future releases.
+
 
 Yass Reloaded requires FFmpeg to support a variety of audio formats.
 https://www.ffmpeg.org/download.html
 - Windows (`winget install --id=Gyan.FFmpeg -e`) - Check out: https://www.gyan.dev/ffmpeg/builds/
 - MacOS (`brew install ffmpeg`)
 - Linux (`sudo apt install ffmpeg`)
-
-Also, it is highly recommended to download Ultrastar Creator to get you started (https://github.com/UltraStar-Deluxe/UltraStar-Creator)
 
 # Starting Yass Reloaded
 If you install Yass Reloaded with the Windows installer, you can simply run `Yass.exe`
