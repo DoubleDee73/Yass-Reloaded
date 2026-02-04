@@ -31,7 +31,7 @@ Yass Reloaded is designed for:
 *   **Error Detection:** Automatically finds common errors in your karaoke files to ensure they play perfectly.
 *   **Wide Audio Format Support:** Thanks to FFmpeg integration, Yass Reloaded supports a vast range of audio formats, including AAC, OGG, and OPUS.
 *   **Improved User Experience:** Numerous tweaks and improvements make the editing process faster and more intuitive.
-*   **Modern and Actively Developed:** Built on Java 25 and continuously updated with new features and bug fixes.
+*   **Modern and Actively Developed:** Built on Java 21 and continuously updated with new features and bug fixes.
 
 ## Supported Languages
 
@@ -55,7 +55,7 @@ Due to limited maintenance and different development goals, this fork was create
 - Improved user experience focused on real-world karaoke song creation
 - Faster bug fixing and active maintenance
 - Support for new and extended UltraStar song format tags
-- Modern Java 25 codebase instead of legacy Java 8
+- Modern Java 21 codebase instead of legacy Java 8
 
 ## Downloads
 
@@ -100,7 +100,7 @@ If no native build is available, you can use the Fat JAR:
 java -jar Yass-Reloaded-XXXX-fat.jar
 ```
 ### Requirements for starting the JAR
-Min. Requirement is Java 25 (e.g. Open JDK ZuluFX https://www.azul.com/downloads/).
+Min. Requirement is Java 21 (e.g. Open JDK ZuluFX https://www.azul.com/downloads/).
 
 
 Yass Reloaded requires FFmpeg to support a variety of audio formats.
@@ -114,7 +114,7 @@ If you install Yass Reloaded with the Windows installer, you can simply run `Yas
 
 Alternatively, you can download the jar file and start it from the console:
 
-On Windows, you can simply do this: `java -jar Yass-Reloaded-2025.11.jar`
+On Windows, you can simply do this: `java -jar Yass-Reloaded-2026.2.jar`
 
 On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
@@ -122,7 +122,7 @@ On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
 and then start the jar like so:
 
-`java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2025.11.jar`
+`java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2026.3.jar`
 
 # Developers
 
@@ -134,7 +134,6 @@ Basic setup is described in the Wiki: https://github.com/SarutaSan72/Yass/wiki/D
 - [jAudiotagger](https://www.jthink.net/jaudiotagger)
 - [FFmpeg CLI Wrapper for Java](https://github.com/bramp/ffmpeg-cli-wrapper)
 - iText
-- Jazzy Spell Checker
 - JInput
 - TeX Hyphenator
 - [Optimaize Language Detector](https://github.com/optimaize/language-detector)
@@ -182,9 +181,9 @@ If you like this  app, feel free (but not pressured!) to buy me coffee. Any supp
 ## Yass Reloaded does nothing after showing the splash screen
 - Have you checked your Java version? 
   - Open a command line window and type in `java -version`. 
-  - You should have Java 25
+  - You should have Java 21
 - Have you tried opening it as a jar?
-  - Download the jar, open a command line window and type in `java -jar Yass-Reloaded-2025.11.jar`
+  - Download the jar, open a command line window and type in `java -jar Yass-Reloaded-2026.2.jar`
   - Any error messages are then printed out in the command line window for debugging
 
 ## Cannot find FFmpeg?

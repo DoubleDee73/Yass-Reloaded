@@ -26,7 +26,7 @@ import yass.titlecase.TitleCaseConverter
 class TitleCaseConverterSpec extends Specification {
     def 'toApTitleCase should convert a title into title case'() {
         given:
-        PhrasalVerbManager.setInstance(null);
+        PhrasalVerbManager.setInstance(null)
 
         expect:
         TitleCaseConverter.toApTitleCase(input) == expectation

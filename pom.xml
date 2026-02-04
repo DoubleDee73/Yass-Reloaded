@@ -70,7 +70,7 @@
             <type>dll</type>
             <systemPath>${project.basedir}/lib/jinput-raw.dll</systemPath>
         </dependency>
-        
+
         <!-- https://mvnrepository.com/artifact/net.java.jutils/jutils -->
         <dependency>
             <groupId>net.java.jutils</groupId>
@@ -222,7 +222,7 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <version>1.18.42</version>
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.openjfx</groupId>
@@ -247,12 +247,12 @@
     </dependencies>
 
     <properties>
-        <maven.compiler.source>25</maven.compiler.source>
-        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.version>2026.2</project.version>
         <project.semantic.version>2026.2</project.semantic.version>
-        <javafx.version>25.0.2</javafx.version>
+        <javafx.version>21.0.2</javafx.version>
     </properties>
 
     <build>
@@ -275,6 +275,20 @@
         </resources>
         <testSourceDirectory>test/groovy</testSourceDirectory>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.15.0</version>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>1.18.32</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
@@ -308,7 +322,8 @@
                         <configuration>
                             <createDependencyReducedPom>true</createDependencyReducedPom>
                             <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>yass.YassMain</mainClass> <!-- Deine Main-Klasse -->
                                 </transformer>
                             </transformers>
