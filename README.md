@@ -9,7 +9,7 @@ Yass Reloaded is a free, open-source karaoke editor for creating, editing, and m
 It allows karaoke creators to precisely edit notes, timing, and lyrics, manage large song libraries, and fix common errors in existing karaoke tracks.
 
 The application is written in Java and runs on Windows, macOS, and Linux.  
-It is actively developed and based on modern Java (Java 25).
+It is actively developed and based on modern Java (Java 21).
 
 Yass Reloaded provides a graphical user interface for fine-tuning UltraStar karaoke songs.
 You can drag and drop notes, adjust syllables, correct timing issues, and quickly detect common formatting errors.
