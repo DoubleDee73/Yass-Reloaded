@@ -125,9 +125,10 @@ jobs:
           draft: true
           tag_name: ${{ github.ref_name || inputs.tag }}
           files: |
-            dist/*.deb
-            dist/*.dmg
-            *.exe
+            dist/Yass-Reloaded-macos-x64.dmg
+            dist/Yass-Reloaded-macos-arm64.dmg
+            dist/Yass-Reloaded-linux-amd64.deb
+            dist/Yass-Reloaded-windows-x64.exe
             package-input/Yass-Reloaded.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

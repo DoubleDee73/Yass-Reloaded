@@ -67,7 +67,7 @@ Prebuilt binaries for Windows, macOS, and Linux are available in the GitHub
 **Recommended:**  
 Download and run the Windows installer:
 
-- `Yass-Reloaded-XXXX-win-x64.exe`
+- `yass-installer-2026.2.exe`
 
 Java is bundled. No manual setup required.
 
@@ -75,8 +75,8 @@ Java is bundled. No manual setup required.
 
 Download the macOS build matching your system:
 
-- Apple Silicon (M1/M2/M3): `*-macos-aarch64.dmg`
-- Intel Macs: `*-macos-x64.dmg`
+- Apple Silicon (M1/M2/M3): `Yass-Reloaded-macOS-ARM.dmg`
+- Intel Macs: `Yass-Reloaded-macos-x64.dmg`
 
 Java is bundled.
 
@@ -86,9 +86,9 @@ If macOS blocks the app:
 ### Linux
 
 Options:
-
+- Debian/Ubuntu: `yass-reloaded-amd64.deb`
 - `*.AppImage` (recommended, portable)
-- or run the Fat JAR (see below)
+- or run the Fat JAR `Yass-Reloaded.jar` (see below)
 
 FFmpeg must be installed via your package manager.
 
@@ -97,7 +97,7 @@ FFmpeg must be installed via your package manager.
 If no native build is available, you can use the Fat JAR:
 
 ```bash
-java -jar Yass-Reloaded-XXXX-fat.jar
+java -jar Yass-Reloaded.jar
 ```
 ### Requirements for starting the JAR
 Min. Requirement is Java 21 (e.g. Open JDK ZuluFX https://www.azul.com/downloads/).
@@ -114,7 +114,7 @@ If you install Yass Reloaded with the Windows installer, you can simply run `Yas
 
 Alternatively, you can download the jar file and start it from the console:
 
-On Windows, you can simply do this: `java -jar Yass-Reloaded-2026.2.jar`
+On Windows, you can simply do this: `java -jar Yass-Reloaded.jar`
 
 On Mac/Linux, it is recommended, that you add a runtime variable like so:
 
