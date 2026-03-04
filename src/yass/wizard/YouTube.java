@@ -47,6 +47,7 @@ public class YouTube extends JPanel {
     private static final long serialVersionUID = 1L;
     private CreateSongWizard wizard;
     private JTextField youTubeUrl = null;
+    private int fallbackLevel = 0; // 0=Strict, 1=Relaxed Codec, 2=Best
 
     public YouTube(CreateSongWizard wizard) {
         this.wizard = wizard;
@@ -104,8 +105,11 @@ public class YouTube extends JPanel {
         if (StringUtils.isEmpty(getYouTubeUrl())) {
             return;
         }
-        final DownloadSplashFrame splash = new DownloadSplashFrame(SwingUtilities.getWindowAncestor(this));
+        fallbackLevel = 0; // Reset fallback level on new download
+        startDownload(new DownloadSplashFrame(SwingUtilities.getWindowAncestor(this)));
+    }
 
+    private void startDownload(DownloadSplashFrame splash) {
         new Thread(() -> {
             try {
                 YtDlpRequest request = buildYtDlpRequest();
@@ -119,7 +123,9 @@ public class YouTube extends JPanel {
             }
         }, "yt-dlp-downloader").start();
 
-        splash.setVisible(true);
+        if (!splash.isVisible()) {
+            splash.setVisible(true);
+        }
     }
 
     private YtDlpRequest buildYtDlpRequest() {
@@ -131,7 +137,13 @@ public class YouTube extends JPanel {
         YtDlpRequest request = new YtDlpRequest(getYouTubeUrl().trim());
         request.setDirectory(tempDir.getAbsolutePath());
         request.setOption("output", "%(title)s.v_%(vcodec)s.a_%(acodec)s.%(ext)s");
-        request.setOption("format", buildVideoFormatString());
+        
+        if (fallbackLevel == 2) {
+            LOGGER.info("Using fallback format 'best'");
+            request.setOption("format", "best");
+        } else {
+            request.setOption("format", buildVideoFormatString());
+        }
 
         String audioFormat = wizard.getProperty(YtDlpPanel.YTDLP_AUDIO_FORMAT);
         if (StringUtils.isNotEmpty(audioFormat)) {
@@ -153,12 +165,17 @@ public class YouTube extends JPanel {
         String videoCodec = wizard.getProperty(YtDlpPanel.YTDLP_VIDEO_CODEC);
         String videoResolution = wizard.getProperty(YtDlpPanel.YTDLP_VIDEO_RESOLUTION);
         StringBuilder ytDlpArgs = new StringBuilder("bestvideo");
-        if (StringUtils.isNotEmpty(videoCodec)) {
+        
+        // Level 0: Use Codec if set
+        if (fallbackLevel == 0 && StringUtils.isNotEmpty(videoCodec)) {
             ytDlpArgs.append(videoCodec);
         }
+        
+        // Level 0 & 1: Use Resolution if set
         if (StringUtils.isNotEmpty(videoResolution)) {
             ytDlpArgs.append(videoResolution);
         }
+        
         ytDlpArgs.append(",bestaudio");
         String audioBitrate = wizard.getProperty(YtDlpPanel.YTDLP_AUDIO_BITRATE);
         if (StringUtils.isNotEmpty(audioBitrate)) {
@@ -180,10 +197,10 @@ public class YouTube extends JPanel {
                 SwingUtilities.invokeLater(() -> {
                     if (exitCode == 0) {
                         handleDownloadSuccess(splash);
+                        splash.enableCloseButton();
                     } else {
                         handleDownloadFailure(exitCode, err, splash);
                     }
-                    splash.enableCloseButton();
                 });
             }
 
@@ -227,6 +244,18 @@ public class YouTube extends JPanel {
     }
 
     private void handleDownloadFailure(int exitCode, String error, DownloadSplashFrame splash) {
+        if (fallbackLevel < 2 && error != null && error.contains("Requested format is not available")) {
+            fallbackLevel++;
+            String msg = (fallbackLevel == 1) 
+                ? "Requested format not available. Retrying with relaxed codec constraints..." 
+                : "Requested format not available. Retrying with fallback format 'best'...";
+            
+            LOGGER.warning(msg);
+            splash.appendText(msg);
+            startDownload(splash);
+            return;
+        }
+
         LOGGER.severe("yt-dlp process failed with exit code: " + exitCode);
         if (StringUtils.isNotEmpty(error)) {
             LOGGER.severe("yt-dlp error output:\n" + error);
@@ -235,6 +264,7 @@ public class YouTube extends JPanel {
         } else {
             splash.appendText("Download failed. Please check the log for errors.");
         }
+        splash.enableCloseButton();
     }
 
     private void detectBpm(DownloadSplashFrame splash) {

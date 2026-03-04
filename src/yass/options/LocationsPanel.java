@@ -20,8 +20,11 @@ package yass.options;
 
 import org.apache.commons.lang3.StringUtils;
 import yass.I18;
+import yass.ffmpeg.FFMPEGLocator;
 
+import javax.swing.*;
 import java.io.File;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -31,6 +34,11 @@ import java.io.File;
 public class LocationsPanel extends OptionsPanel {
 
     private static final long serialVersionUID = -7453496938869803003L;
+    private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+
+    public LocationsPanel() {
+        super();
+    }
 
     /**
      * Gets the body attribute of the DirPanel object
@@ -112,5 +120,36 @@ public class LocationsPanel extends OptionsPanel {
             }
         }
         return null;
+    }
+
+    @Override
+    public void setProperty(String key, String value) {
+        String oldValue = getProperty(key);
+        super.setProperty(key, value);
+
+        if ("ffmpegPath".equals(key)) {
+            if (value != null && !value.equals(oldValue)) {
+                if (StringUtils.isNotEmpty(value)) {
+                    // Use invokeLater to ensure UI updates (like the text field) happen before any dialog blocks
+                    SwingUtilities.invokeLater(() -> {
+                        LOGGER.info("FFmpeg path changed to: " + value + ". Re-initializing FFMPEGLocator.");
+                        FFMPEGLocator.initFfmpeg(value); // Re-initialize with the new path
+
+                        // Validate the new path immediately
+                        if (FFMPEGLocator.getInstance().getFfmpeg() == null || FFMPEGLocator.getInstance().getFfprobe() == null) {
+                            JOptionPane.showMessageDialog(this,
+                                    "<html>" + I18.get("ffmpeg_folder_invalid") + "</html>",
+                                    I18.get("ffmpeg_folder_invalid_title"),
+                                    JOptionPane.ERROR_MESSAGE);
+                        }
+                    });
+                } else {
+                    SwingUtilities.invokeLater(() -> {
+                        LOGGER.info("FFmpeg path cleared. Resetting FFMPEGLocator to use system PATH.");
+                        FFMPEGLocator.getInstance(null);
+                    });
+                }
+            }
+        }
     }
 }

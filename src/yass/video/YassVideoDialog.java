@@ -39,6 +39,8 @@ import yass.ffmpeg.FFMPEGLocator;
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
@@ -171,6 +173,21 @@ public class YassVideoDialog extends JDialog {
             @Override
             public void windowClosing(WindowEvent e) {
                 stop();
+                Platform.runLater(() -> {
+                    if (mediaPlayer != null) {
+                        mediaPlayer.dispose();
+                        mediaPlayer = null;
+                    }
+                    jfxPanel.setScene(null);
+                });
+            }
+        });
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentShown(ComponentEvent e) {
+                if (video != null && video.exists() && mediaPlayer == null) {
+                    loadVideoFile(video.getAbsolutePath());
+                }
             }
         });
         YassUtils.addChangeListener(videoFile, e -> {
@@ -288,6 +305,11 @@ public class YassVideoDialog extends JDialog {
                         mediaPlayer.seek(Duration.seconds(finalTargetTime));
                     }
                 }
+            } else {
+                // Try to recover if mediaPlayer is null but we have a video file
+                if (video != null && video.exists()) {
+                     loadVideoFile(video.getAbsolutePath());
+                }
             }
         });
     }
@@ -295,14 +317,19 @@ public class YassVideoDialog extends JDialog {
     public void closeVideo() {
         stop();
         videoFile.setText("");
+        video = null;
     }
 
     private void loadVideoFile(String path) {
         Platform.runLater(() -> {
             try {
                 if (mediaPlayer != null) {
+                    mediaPlayer.stop();
                     mediaPlayer.dispose();
+                    mediaPlayer = null;
                 }
+                jfxPanel.setScene(null);
+
                 if (StringUtils.isEmpty(path)) {
                     return;
                 }
@@ -329,6 +356,11 @@ public class YassVideoDialog extends JDialog {
                                                                                                mediaPlayer.getError()
                                                                                                           .getMessage()));
                     }
+                });
+
+                mediaPlayer.setOnHalted(() -> {
+                    LOGGER.log(Level.WARNING, "MediaPlayer halted, attempting to reload.");
+                    loadVideoFile(path);
                 });
 
             } catch (Exception e) {
@@ -369,27 +401,47 @@ public class YassVideoDialog extends JDialog {
         FFprobe ffprobe = FFMPEGLocator.getInstance().getFfprobe();
         FFmpegProbeResult probe = ffprobe.probe(path);
 
-        String videoCodec = probe.getStreams().stream()
+        FFmpegStream videoStream = probe.getStreams().stream()
                                  .filter(s -> s.codec_type == FFmpegStream.CodecType.VIDEO)
-                                 .map(s -> s.codec_name)
                                  .findFirst()
                                  .orElse(null);
+
+        if (videoStream == null || videoStream.codec_name == null) {
+            return true;
+        }
+
+        if (!"h264".equalsIgnoreCase(videoStream.codec_name)) {
+            return true;
+        }
+
+        if (videoStream.pix_fmt != null) {
+            String pix = videoStream.pix_fmt.toLowerCase();
+            if (!pix.contains("yuv420p") && !pix.contains("yuvj420p")) {
+                return true;
+            }
+        }
+
+        if (probe.getFormat() != null && probe.getFormat().format_name != null) {
+            String format = probe.getFormat().format_name.toLowerCase();
+            if (!format.contains("mp4") && !format.contains("mov")) {
+                return true;
+            }
+        }
+
         String audioCodec = probe.getStreams().stream()
                                  .filter(s -> s.codec_type == FFmpegStream.CodecType.AUDIO)
                                  .map(s -> s.codec_name)
                                  .findFirst()
                                  .orElse(null);
-        if (videoCodec == null) {
-            return true;
+
+        if (audioCodec != null) {
+            switch (audioCodec.toLowerCase()) {
+                case "opus", "vorbis", "flac":
+                    return true;
+            }
         }
 
-        return switch (videoCodec.toLowerCase()) {
-            case "av1", "vp9", "vp8", "hevc", "h265", "prores", "theora" -> true;
-            default -> false;
-        } || (audioCodec != null && switch (audioCodec.toLowerCase()) {
-            case "opus", "vorbis", "flac" -> true;
-            default -> false;
-        });
+        return false;
     }
 
     private File transcodeToTempMp4(String inputPath) throws IOException {
@@ -454,6 +506,10 @@ public class YassVideoDialog extends JDialog {
             if (mediaPlayer != null) {
                 mediaPlayer.play();
                 SwingUtilities.invokeLater(() -> playPauseButton.setIcon(yassActions.getIcon("pause24Icon")));
+            } else {
+                if (video != null && video.exists()) {
+                    loadVideoFile(video.getAbsolutePath());
+                }
             }
         });
     }

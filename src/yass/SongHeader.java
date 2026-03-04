@@ -383,6 +383,9 @@ public class SongHeader extends JPanel implements YassSheetListener {
         gapSpinner.setDuration((int) (table.getGap() * 10));
         bpmField.setText(String.valueOf(table.getBPM()));
         int duration = actions.getMP3() != null ? (int) (actions.getMP3().getDuration() / 1000) : 10000;
+        if ((table.getStart() * 1000) > duration && table.getStart() > 1000) {
+            table.setStart(table.getStart() / 1000);
+        }
         startSpinner.setTime((int) (table.getStart() * 1000));
         startSpinner.setDuration(duration);
         int end = table.getEnd() > 0 ? (int) table.getEnd() : 10000;
@@ -489,7 +492,6 @@ public class SongHeader extends JPanel implements YassSheetListener {
                     }
                     YassRow mp3Row = table.getCommentRow(e.getItem() + ":");
                     if (mp3Row != null) {
-                        YassProperties properties = actions.getProperties();
                         audioField.setText(mp3Row.getHeaderComment());
                         LOGGER.info("SongHeader: Selecting " + e.getItem() + ": " + audioField.getText());
                         audioField.repaint();

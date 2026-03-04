@@ -135,7 +135,7 @@ Basic setup is described in the Wiki: https://github.com/SarutaSan72/Yass/wiki/D
 - [FFmpeg CLI Wrapper for Java](https://github.com/bramp/ffmpeg-cli-wrapper)
 - iText
 - JInput
-- TeX Hyphenator
+- TeX Hyphenatorpeg
 - [Optimaize Language Detector](https://github.com/optimaize/language-detector)
 - [JAudiotagger](https://www.jthink.net/jaudiotagger/)
 - Java Media Framework (JMF)

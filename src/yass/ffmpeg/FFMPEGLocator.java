@@ -56,17 +56,22 @@ public class FFMPEGLocator {
 
     public static FFMPEGLocator getInstance(String ffmpegPath) {
         if (INSTANCE == null) {
-            if (StringUtils.isNotEmpty(ffmpegPath)) {
-                try {
-                    INSTANCE = new FFMPEGLocator(new FFmpeg(ffmpegPath + File.separator + "ffmpeg"),
-                                                 new FFprobe(ffmpegPath + File.separator + "ffprobe"));
-                    INSTANCE.setPath(ffmpegPath);
-                } catch (IOException e) {
-                    LOGGER.info("Could not find ffmpeg at the given location " + ffmpegPath);
-                }
-            } else {
-                INSTANCE = new FFMPEGLocator(null, null);
+            initFfmpeg(ffmpegPath);
+        }
+        return INSTANCE;
+    }
+    
+    public static FFMPEGLocator initFfmpeg(String ffmpegPath) {
+        if (StringUtils.isNotEmpty(ffmpegPath)) {
+            try {
+                INSTANCE = new FFMPEGLocator(new FFmpeg(ffmpegPath + File.separator + "ffmpeg"),
+                                             new FFprobe(ffmpegPath + File.separator + "ffprobe"));
+                INSTANCE.setPath(ffmpegPath);
+            } catch (IOException e) {
+                LOGGER.info("Could not find ffmpeg at the given location " + ffmpegPath);
             }
+        } else {
+            INSTANCE = new FFMPEGLocator(null, null);
         }
         return INSTANCE;
     }

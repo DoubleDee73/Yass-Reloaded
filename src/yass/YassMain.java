@@ -21,6 +21,7 @@ package yass;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 import yass.ffmpeg.FFMPEGLocator;
+import yass.ffmpeg.FfmpegDownloader;
 import yass.logger.YassLogger;
 import yass.stats.YassStats;
 import yass.titlecase.PhrasalVerbManager;
@@ -498,11 +499,12 @@ public class YassMain extends JFrame {
     private boolean validateFfmpeg(FFMPEGLocator ffmpegLocator, boolean hideHint) {
         if (ffmpegLocator == null || ffmpegLocator.getFfmpeg() == null || ffmpegLocator.getFfprobe() == null) {
             if (!hideHint) {
-                JOptionPane.showConfirmDialog(this, "<html>" +
-                                                      I18.get("tool_prefs_ffmpeg")
-                                                      + "</html>",
-                                              I18.get("tool_prefs_ffmpeg_title"),
-                                              JOptionPane.OK_CANCEL_OPTION, JOptionPane.INFORMATION_MESSAGE);
+                String newPath = FfmpegDownloader.promptForFfmpegInstallation(this);
+                if (newPath != null) {
+                    prop.setProperty("ffmpegPath", newPath);
+                    // Re-validate with the new path
+                    return validateFfmpeg(FFMPEGLocator.getInstance(newPath), true);
+                }
             }
             return false;
         } else {

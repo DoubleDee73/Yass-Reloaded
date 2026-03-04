@@ -6151,14 +6151,14 @@ public class YassActions implements DropTargetListener {
     }
 
     private void updateStartEnd() {
-        int start = (int) (table.getStart() * 1000);
         SongHeader songHeader = sheet.getSongHeader();
-        songHeader.getStartSpinner().setTime(start);
+        int start = (int) (table.getStart() * 1000);
         int end = (int) table.getEnd();
         int dur = (int) (mp3.getDuration() / 1000);
         if (end < 0) {
             end = dur;
         }
+        songHeader.getStartSpinner().setTime(start);
         songHeader.getEndSpinner().setTime(end);
 
         songHeader.getStartSpinner().setDuration(dur);
