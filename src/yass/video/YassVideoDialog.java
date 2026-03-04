@@ -41,6 +41,7 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
@@ -68,8 +69,14 @@ public class YassVideoDialog extends JDialog {
     private int videoGapMs = 0; // in milliseconds
     private Consumer<Integer> onGapChanged;
     private Consumer<String> onFileChanged;
+    private Runnable onDialogClosed;
     private boolean isInternalUpdate = false;
     private File video;
+
+    private static final long UI_THROTTLE_NS    = 16_000_000L; // ~60 fps for slider/label
+    private static final long SEEK_THROTTLE_NS  = 100_000_000L; // 100 ms for FX seek
+    private long lastUiUpdateNs   = 0;
+    private long lastSeekUpdateNs = 0;
 
     public YassVideoDialog(Frame owner, YassPlayer yassPlayer, YassActions yassActions) {
         super(owner, "Video Preview", false); // Non-modal
@@ -153,7 +160,64 @@ public class YassVideoDialog extends JDialog {
         southPanel.add(controlsPanel);
         add(southPanel, BorderLayout.SOUTH);
         initListeners();
+        initKeyBindings();
         isInternalUpdate = false;
+    }
+
+    private void initKeyBindings() {
+        InputMap im = getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        ActionMap am = getRootPane().getActionMap();
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), "togglePlayPause");
+        am.put("togglePlayPause", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                togglePlayPause();
+            }
+        });
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0), "stepBack");
+        am.put("stepBack", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                stepMs(-10);
+            }
+        });
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "stepForward");
+        am.put("stepForward", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                stepMs(+10);
+            }
+        });
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, KeyEvent.SHIFT_DOWN_MASK), "stepBackLarge");
+        am.put("stepBackLarge", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                stepMs(-1000);
+            }
+        });
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, KeyEvent.SHIFT_DOWN_MASK), "stepForwardLarge");
+        am.put("stepForwardLarge", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                stepMs(+1000);
+            }
+        });
+    }
+
+    private void stepMs(int deltaMs) {
+        if (videoDurationSeconds <= 0) {
+            return;
+        }
+        double currentSeconds = (timeSlider.getValue() / 1000.0) * videoDurationSeconds;
+        double newSeconds = Math.max(0, Math.min(currentSeconds + deltaMs / 1000.0, videoDurationSeconds));
+        seekVideo(newSeconds);
+        yassPlayer.interruptMP3();
+        int newSliderValue = (int) ((newSeconds / videoDurationSeconds) * 1000);
+        SwingUtilities.invokeLater(() -> {
+            isSliderDragging = false;
+            timeSlider.setValue(newSliderValue);
+            timeLabel.setText(formatTime(newSeconds));
+        });
     }
 
     private void initListeners() {
@@ -180,6 +244,9 @@ public class YassVideoDialog extends JDialog {
                     }
                     jfxPanel.setScene(null);
                 });
+                if (onDialogClosed != null) {
+                    onDialogClosed.run();
+                }
             }
         });
         addComponentListener(new ComponentAdapter() {
@@ -208,6 +275,10 @@ public class YassVideoDialog extends JDialog {
 
     public void setOnGapChanged(Consumer<Integer> callback) {
         this.onGapChanged = callback;
+    }
+
+    public void setOnDialogClosed(Runnable callback) {
+        this.onDialogClosed = callback;
     }
 
     private void chooseVideoFile() {
@@ -261,13 +332,16 @@ public class YassVideoDialog extends JDialog {
         if (StringUtils.isEmpty(vd) || !video.exists()) {
             return;
         }
-        loadVideoFile(vd);
+        if (isVisible()) {
+            loadVideoFile(vd);
+        }
+        // If not visible, componentShown will call loadVideoFile when the dialog is opened.
     }
 
     public void setVideoGap(int seconds) {
         if (this.videoGapMs != seconds) {
             this.videoGapMs = seconds;
-            gapSpinner.setTime(seconds);
+            SwingUtilities.invokeLater(() -> gapSpinner.setTime(seconds));
         }
     }
 
@@ -282,7 +356,10 @@ public class YassVideoDialog extends JDialog {
             targetVideoTime = 0;
         }
 
-        if (videoDurationSeconds > 0) {
+        long now = System.nanoTime();
+
+        if (videoDurationSeconds > 0 && (now - lastUiUpdateNs) >= UI_THROTTLE_NS) {
+            lastUiUpdateNs = now;
             final double finalVideoTime = targetVideoTime;
             SwingUtilities.invokeLater(() -> {
                 int sliderValue = (int) ((finalVideoTime / videoDurationSeconds) * 1000);
@@ -291,78 +368,107 @@ public class YassVideoDialog extends JDialog {
             });
         }
 
-        final double finalTargetTime = targetVideoTime;
-        Platform.runLater(() -> {
-            if (mediaPlayer != null) {
-                if (mediaPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
-                    double currentVideoTime = mediaPlayer.getCurrentTime().toSeconds();
-                    double diff = Math.abs(currentVideoTime - finalTargetTime);
-                    if (diff > 0.1) {
-                        mediaPlayer.seek(Duration.seconds(finalTargetTime));
+        if ((now - lastSeekUpdateNs) >= SEEK_THROTTLE_NS) {
+            lastSeekUpdateNs = now;
+            final double finalTargetTime = targetVideoTime;
+            Platform.runLater(() -> {
+                if (mediaPlayer != null) {
+                    if (mediaPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
+                        double currentVideoTime = mediaPlayer.getCurrentTime().toSeconds();
+                        double diff = Math.abs(currentVideoTime - finalTargetTime);
+                        if (diff > 0.1) {
+                            mediaPlayer.seek(Duration.seconds(finalTargetTime));
+                        }
+                    } else {
+                        if (finalTargetTime >= 0) {
+                            mediaPlayer.seek(Duration.seconds(finalTargetTime));
+                        }
                     }
                 } else {
-                    if (finalTargetTime >= 0) {
-                        mediaPlayer.seek(Duration.seconds(finalTargetTime));
+                    // Try to recover if mediaPlayer is null but we have a video file
+                    if (video != null && video.exists()) {
+                        loadVideoFile(video.getAbsolutePath());
                     }
                 }
-            } else {
-                // Try to recover if mediaPlayer is null but we have a video file
-                if (video != null && video.exists()) {
-                     loadVideoFile(video.getAbsolutePath());
-                }
-            }
-        });
+            });
+        }
     }
 
     public void closeVideo() {
         stop();
-        videoFile.setText("");
         video = null;
+        SwingUtilities.invokeLater(() -> videoFile.setText(""));
     }
 
+    private static final int MAX_RELOAD_ATTEMPTS = 2;
+
     private void loadVideoFile(String path) {
+        loadVideoFile(path, 0);
+    }
+
+    private void loadVideoFile(String path, int attempt) {
+        if (StringUtils.isEmpty(path)) {
+            return;
+        }
+        File file = new File(path);
+        if (!file.exists() || file.isDirectory()) {
+            SwingUtilities.invokeLater(() -> videoFile.setText(""));
+            return;
+        }
+
+        // Tear down the existing player on the FX thread first, then hand off to a
+        // background thread for the blocking ffprobe/ffmpeg work.
         Platform.runLater(() -> {
+            if (mediaPlayer != null) {
+                mediaPlayer.stop();
+                mediaPlayer.dispose();
+                mediaPlayer = null;
+            }
+            jfxPanel.setScene(null);
+        });
+
+        SwingUtilities.invokeLater(() -> {
+            videoFile.setText(file.getName());
+            setTitle(I18.get("video_dialog_title") + " - " + file.getName());
+        });
+
+        Thread.ofVirtual().name("yass-video-loader").start(() -> {
             try {
-                if (mediaPlayer != null) {
-                    mediaPlayer.stop();
-                    mediaPlayer.dispose();
-                    mediaPlayer = null;
-                }
-                jfxPanel.setScene(null);
+                File mediaFile = needsTransCoding(path) ? transcodeToTempMp4(path) : file;
+                Platform.runLater(() -> {
+                    initMediaPlayer(mediaFile);
 
-                if (StringUtils.isEmpty(path)) {
-                    return;
-                }
-                File file = new File(path);
-                if (!file.exists() || file.isDirectory()) {
-                    SwingUtilities.invokeLater(() -> videoFile.setText(""));
-                    return;
-                }
-                videoFile.setText(file.getName());
-                setTitle(I18.get("video_dialog_title") + " - " + file.getName());
-                if (needsTransCoding(path)) {
-                    file = transcodeToTempMp4(path);
-                }
+                    mediaPlayer.setOnError(() -> {
+                        MediaPlayer failed = mediaPlayer;
+                        String errorMessage = failed.getError() != null ? failed.getError().getMessage() : "unknown error";
+                        Platform.runLater(() -> {
+                            failed.dispose();
+                            mediaPlayer = null;
+                            jfxPanel.setScene(null);
+                        });
+                        Thread.ofVirtual().name("yass-video-error-transcode").start(() -> {
+                            try {
+                                File fallback = transcodeToTempMp4(path);
+                                Platform.runLater(() -> initMediaPlayer(fallback));
+                            } catch (Exception ex) {
+                                LOGGER.log(Level.SEVERE, "Fallback transcode failed: " + errorMessage, ex);
+                                SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
+                                        "Media Error: " + errorMessage));
+                            }
+                        });
+                    });
 
-                initMediaPlayer(file);
-
-                mediaPlayer.setOnError(() -> {
-                    try {
-                        File fallback = transcodeToTempMp4(path);
-                        initMediaPlayer(fallback);
-                    } catch (Exception ex) {
-                        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
-                                                                                       "Media Error: " +
-                                                                                               mediaPlayer.getError()
-                                                                                                          .getMessage()));
-                    }
+                    mediaPlayer.setOnHalted(() -> {
+                        if (attempt >= MAX_RELOAD_ATTEMPTS) {
+                            LOGGER.log(Level.SEVERE, "MediaPlayer halted after " + attempt + " reload attempt(s), giving up: " + path);
+                            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
+                                    I18.get("video_dialog_halted_error")));
+                            return;
+                        }
+                        LOGGER.log(Level.WARNING, "MediaPlayer halted, reload attempt " + (attempt + 1) + " of " + MAX_RELOAD_ATTEMPTS + ": " + path);
+                        loadVideoFile(path, attempt + 1);
+                    });
                 });
-
-                mediaPlayer.setOnHalted(() -> {
-                    LOGGER.log(Level.WARNING, "MediaPlayer halted, attempting to reload.");
-                    loadVideoFile(path);
-                });
-
             } catch (Exception e) {
                 LOGGER.log(Level.SEVERE, "Error loading video: " + path, e);
                 SwingUtilities.invokeLater(
@@ -386,12 +492,12 @@ public class YassVideoDialog extends JDialog {
         mediaView.setPreserveRatio(true);
 
         Scene scene = new Scene(root, javafx.scene.paint.Color.BLACK);
-        jfxPanel.setScene(scene);
+        SwingUtilities.invokeLater(() -> jfxPanel.setScene(scene));
 
         mediaPlayer.setOnReady(() -> {
             videoDurationSeconds = media.getDuration().toSeconds();
-            gapSpinner.setDuration((int) (videoDurationSeconds * 1000));
             SwingUtilities.invokeLater(() -> {
+                gapSpinner.setDuration((int) (videoDurationSeconds * 1000));
                 timeSlider.setEnabled(true);
             });
         });
@@ -539,11 +645,13 @@ public class YassVideoDialog extends JDialog {
         });
     }
 
+    /** Returns the current slider position as milliseconds. */
     public int getTime() {
         if (timeSlider == null || videoDurationSeconds <= 0) {
             return 0;
         }
-        return (int) (timeSlider.getValue() * videoDurationSeconds);
+        double fraction = timeSlider.getValue() / 1000.0;
+        return (int) (fraction * videoDurationSeconds * 1000);
     }
 
     public void seekVideo(double seconds) {

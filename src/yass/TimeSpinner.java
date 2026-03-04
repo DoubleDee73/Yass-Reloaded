@@ -104,9 +104,13 @@ public class TimeSpinner extends JPanel {
                 new KeyAdapter() {
                     public void keyTyped(KeyEvent e) {
                         char c = e.getKeyChar();
-                        if (!((Character.isDigit(c) || c == ',' || c == '.'))) {
-                            e.consume();
+                        if (Character.isDigit(c) || c == ',' || c == '.') {
+                            return;
                         }
+                        if (c == '-' && ((Number) msModel.getMinimum()).intValue() < 0 && tf.getCaretPosition() == 0 && !tf.getText().contains("-")) {
+                            return;
+                        }
+                        e.consume();
                     }
                 });
 

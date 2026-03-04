@@ -979,9 +979,16 @@ public class YassActions implements DropTargetListener {
                 videoDialog = new YassVideoDialog(owner, mp3, YassActions.this);
                 videoDialog.setOnGapChanged(gap -> setVideoGap(gap));
                 videoDialog.setOnFileChanged(file -> setVideoFile(file));
+                videoDialog.setOnDialogClosed(() -> videoButton.setSelected(false));
+            }
+            if (videoDialog.isVisible()) {
+                videoDialog.setVisible(false);
+                videoButton.setSelected(false);
+                return;
             }
             updateVideo();
             videoDialog.setVisible(true);
+            videoButton.setSelected(true);
 
             long time = sheet.fromTimeline(sheet.getPlayerPosition());
             videoDialog.updateTime((int) time);
@@ -2514,9 +2521,6 @@ public class YassActions implements DropTargetListener {
             YassTable lastTable = table;
             table.removeAutoSave();
             closeAllTables();
-            if (videoDialog != null) {
-                videoDialog.closeVideo();
-            }
             if (mp3 != null) {
                 mp3.closeSharedLine();
             }
@@ -3438,6 +3442,13 @@ public class YassActions implements DropTargetListener {
     public void setErrors(YassErrors i) {
         errors = i;
         errors.setAutoCorrect(auto);
+    }
+
+    public void setVideoDialog(YassVideoDialog dialog) {
+        videoDialog = dialog;
+        videoDialog.setOnGapChanged(this::setVideoGap);
+        videoDialog.setOnFileChanged(this::setVideoFile);
+        videoDialog.setOnDialogClosed(() -> videoButton.setSelected(false));
     }
 
     public void setPlayList(YassPlayList p) {
@@ -5451,6 +5462,9 @@ public class YassActions implements DropTargetListener {
             menuHolder.setJMenuBar(editMenu);
             currentView = VIEW_EDIT;
         } else if (n == VIEW_LIBRARY) {
+            if (videoDialog != null) {
+                videoDialog.closeVideo();
+            }
             main.removeAll();
             // LOGGER.info("init view 1");
             main.add("Center", libComponent);
@@ -6654,6 +6668,9 @@ public class YassActions implements DropTargetListener {
         // open editor, load all tracks
         if (!append) {
             closeAllTables();
+            if (videoDialog != null) {
+                videoDialog.closeVideo();
+            }
         }
 
         // add all (but only if not opened yet)
