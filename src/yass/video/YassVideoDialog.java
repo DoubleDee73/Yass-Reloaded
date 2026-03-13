@@ -36,11 +36,19 @@ import org.apache.commons.lang3.StringUtils;
 import yass.*;
 import yass.ffmpeg.FFMPEGLocator;
 
+import com.jfposton.ytdlp.YtDlp;
+import com.jfposton.ytdlp.YtDlpCallback;
+import com.jfposton.ytdlp.YtDlpRequest;
+import yass.options.YtDlpPanel;
+import yass.wizard.DownloadSplashFrame;
+
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
+import java.awt.event.ActionEvent;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
@@ -48,6 +56,8 @@ import java.io.IOException;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class YassVideoDialog extends JDialog {
 
@@ -68,8 +78,19 @@ public class YassVideoDialog extends JDialog {
     private int videoGapMs = 0; // in milliseconds
     private Consumer<Integer> onGapChanged;
     private Consumer<String> onFileChanged;
+    private Runnable onDialogClosed;
     private boolean isInternalUpdate = false;
     private File video;
+
+    private static final long UI_THROTTLE_NS    = 16_000_000L; // ~60 fps for slider/label
+    private static final long SEEK_THROTTLE_NS  = 100_000_000L; // 100 ms for FX seek
+    private static final Pattern YOUTUBE_ID_PATTERN = Pattern.compile(
+            "(?:youtube\\.com/(?:watch\\?v=|shorts/|embed/)|youtu\\.be/)([A-Za-z0-9_-]{11})");
+    private long lastUiUpdateNs   = 0;
+    private long lastSeekUpdateNs = 0;
+
+    /** Logical playhead position in seconds, updated immediately on stepMs so rapid key presses accumulate correctly. */
+    private double logicalPositionSeconds = 0;
 
     public YassVideoDialog(Frame owner, YassPlayer yassPlayer, YassActions yassActions) {
         super(owner, "Video Preview", false); // Non-modal
@@ -102,6 +123,7 @@ public class YassVideoDialog extends JDialog {
                 double pos = timeSlider.getValue() / 1000.0;
                 if (videoDurationSeconds > 0) {
                     double videoTime = pos * videoDurationSeconds;
+                    logicalPositionSeconds = videoTime; // keep logical position in sync
                     seekVideo(videoTime);
 
                     double audioTime = videoTime - videoGapMs;
@@ -142,6 +164,8 @@ public class YassVideoDialog extends JDialog {
         videoFile = new JTextField();
         filePanel.add(videoFile, BorderLayout.CENTER);
 
+        videoFile.addActionListener((ActionEvent e) -> onVideoFieldEnter());
+
         JButton openFileButton = new JButton();
         openFileButton.setIcon(yassActions.getIcon("open24Icon"));
         openFileButton.setToolTipText(I18.get("video_dialog_open"));
@@ -153,7 +177,121 @@ public class YassVideoDialog extends JDialog {
         southPanel.add(controlsPanel);
         add(southPanel, BorderLayout.SOUTH);
         initListeners();
+        initKeyBindings();
         isInternalUpdate = false;
+    }
+
+    private void initKeyBindings() {
+        InputMap im = getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        ActionMap am = getRootPane().getActionMap();
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), "togglePlayPause");
+        am.put("togglePlayPause", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                togglePlayPause();
+            }
+        });
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0), "stepBack");
+        am.put("stepBack", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                stepMs(-10);
+            }
+        });
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "stepForward");
+        am.put("stepForward", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                stepMs(+10);
+            }
+        });
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, KeyEvent.SHIFT_DOWN_MASK), "stepBackLarge");
+        am.put("stepBackLarge", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                stepMs(-1000);
+            }
+        });
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, KeyEvent.SHIFT_DOWN_MASK), "stepForwardLarge");
+        am.put("stepForwardLarge", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                stepMs(+1000);
+            }
+        });
+
+        im.put(KeyStroke.getKeyStroke("ctrl shift LEFT"), "stepBackXLarge");
+        am.put("stepBackXLarge", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                stepMs(-10000);
+            }
+        });
+
+        im.put(KeyStroke.getKeyStroke("ctrl shift RIGHT"), "stepForwardXLarge");
+        am.put("stepForwardXLarge", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                stepMs(+10000);
+            }
+        });
+
+        // Override the JTextField's built-in Ctrl+Shift+Left/Right word-selection bindings
+        // so they don't consume the event before the window-level action fires.
+        videoFile.getInputMap(JComponent.WHEN_FOCUSED)
+                 .put(KeyStroke.getKeyStroke("ctrl shift LEFT"), "stepBackXLarge");
+        videoFile.getInputMap(JComponent.WHEN_FOCUSED)
+                 .put(KeyStroke.getKeyStroke("ctrl shift RIGHT"), "stepForwardXLarge");
+        videoFile.getActionMap().put("stepBackXLarge", am.get("stepBackXLarge"));
+        videoFile.getActionMap().put("stepForwardXLarge", am.get("stepForwardXLarge"));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "close");
+        am.put("close", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                dispatchEvent(new WindowEvent(YassVideoDialog.this, WindowEvent.WINDOW_CLOSING));
+            }
+        });
+    }
+
+    private void stepMs(int deltaMs) {
+        if (videoDurationSeconds <= 0) {
+            return;
+        }
+        // Use logicalPositionSeconds (updated immediately) rather than timeSlider.getValue(),
+        // which may lag behind due to SwingUtilities.invokeLater queuing. This ensures rapid
+        // key presses (e.g. holding Left/Right) accumulate correctly instead of all starting
+        // from the same stale slider position.
+        logicalPositionSeconds = Math.max(0, Math.min(logicalPositionSeconds + deltaMs / 1000.0, videoDurationSeconds));
+        final double newVideoTime = logicalPositionSeconds;
+
+        boolean wasPlaying = yassPlayer.isPlaying();
+        if (wasPlaying) {
+            yassPlayer.interruptMP3();
+        }
+
+        // Seek the video immediately so the frame updates right away
+        seekVideo(newVideoTime);
+
+        if (wasPlaying) {
+            // Reset throttle so updateTime drives the video seek on the very first tick
+            lastSeekUpdateNs = 0;
+            double audioStartTime = Math.max(0, newVideoTime - (videoGapMs / 1000.0));
+            long audioStartMs = (long) (audioStartTime * 1000);
+            yassPlayer.setAudioEnabled(true);
+            yassPlayer.setMIDIEnabled(false);
+            yassPlayer.playSelection(audioStartMs * 1000, -1, null);
+            // Defer play() briefly so the audio clock is established before JavaFX free-runs.
+            // updateTime() will have fired at least once by then, putting the video at the
+            // correct position before JavaFX takes over smooth playback.
+            Timer timer = new Timer(150, e -> play());
+            timer.setRepeats(false);
+            timer.start();
+        }
+
+        int newSliderValue = (int) ((newVideoTime / videoDurationSeconds) * 1000);
+        SwingUtilities.invokeLater(() -> {
+            isSliderDragging = false;
+            timeSlider.setValue(newSliderValue);
+            timeLabel.setText(formatTime(newVideoTime));
+        });
     }
 
     private void initListeners() {
@@ -180,6 +318,9 @@ public class YassVideoDialog extends JDialog {
                     }
                     jfxPanel.setScene(null);
                 });
+                if (onDialogClosed != null) {
+                    onDialogClosed.run();
+                }
             }
         });
         addComponentListener(new ComponentAdapter() {
@@ -208,6 +349,209 @@ public class YassVideoDialog extends JDialog {
 
     public void setOnGapChanged(Consumer<Integer> callback) {
         this.onGapChanged = callback;
+    }
+
+    public void setOnDialogClosed(Runnable callback) {
+        this.onDialogClosed = callback;
+    }
+
+    private void onVideoFieldEnter() {
+        String text = videoFile.getText().trim();
+        if (StringUtils.isEmpty(text)) {
+            return;
+        }
+
+        // Only intercept when no video is loaded yet and the text looks like a YouTube URL
+        if (video != null && video.exists()) {
+            return;
+        }
+
+        Matcher matcher = YOUTUBE_ID_PATTERN.matcher(text);
+        if (!matcher.find()) {
+            return;
+        }
+        String youtubeId = matcher.group(1);
+
+        // Check prerequisites
+        YassProperties props = yassActions.getProperties();
+        String ytdlpPath = props.getProperty("ytdlpPath");
+        if (StringUtils.isEmpty(ytdlpPath) || !new File(ytdlpPath).exists()) {
+            JOptionPane.showMessageDialog(this,
+                    I18.get("video_dialog_ytdlp_not_configured"),
+                    I18.get("video_dialog_ytdlp_error_title"),
+                    JOptionPane.WARNING_MESSAGE);
+            videoFile.setText("");
+            return;
+        }
+        String videoCodec = props.getProperty(YtDlpPanel.YTDLP_VIDEO_CODEC);
+        String videoResolution = props.getProperty(YtDlpPanel.YTDLP_VIDEO_RESOLUTION);
+        if (StringUtils.isEmpty(videoCodec) && StringUtils.isEmpty(videoResolution)) {
+            JOptionPane.showMessageDialog(this,
+                    I18.get("video_dialog_ytdlp_no_video_settings"),
+                    I18.get("video_dialog_ytdlp_error_title"),
+                    JOptionPane.WARNING_MESSAGE);
+            videoFile.setText("");
+            return;
+        }
+
+        int confirm = JOptionPane.showConfirmDialog(this,
+                I18.get("video_dialog_ytdlp_confirm"),
+                I18.get("video_dialog_ytdlp_confirm_title"),
+                JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) {
+            videoFile.setText("");
+            return;
+        }
+
+        downloadVideoFromYouTube(text, youtubeId, ytdlpPath, videoCodec, videoResolution);
+    }
+
+    private void downloadVideoFromYouTube(String url, String youtubeId, String ytdlpPath,
+                                          String videoCodec, String videoResolution) {
+        YassTable table = yassActions.getTable();
+        if (table == null) {
+            return;
+        }
+        String songDir = table.getDir();
+        if (StringUtils.isEmpty(songDir)) {
+            return;
+        }
+
+        YtDlp.setExecutablePath(ytdlpPath);
+
+        YtDlpRequest request = new YtDlpRequest(url.trim());
+        request.setDirectory(songDir);
+        request.setOption("output", "%(title)s.v_%(vcodec)s.%(ext)s");
+
+        // Build video-only format string
+        StringBuilder format = new StringBuilder("bestvideo");
+        if (StringUtils.isNotEmpty(videoCodec)) {
+            format.append(videoCodec);
+        }
+        if (StringUtils.isNotEmpty(videoResolution)) {
+            format.append(videoResolution);
+        }
+        request.setOption("format", format.toString());
+        request.setOption("no-audio");
+
+        DownloadSplashFrame splash = new DownloadSplashFrame(this);
+
+        final String[] downloadedPath = {null};
+
+        YtDlpCallback callback = new YtDlpCallback() {
+            @Override
+            public void onProcessStarted(Process process, YtDlpRequest req) {}
+
+            @Override
+            public void onProcessFinished(int exitCode, String out, String err) {
+                SwingUtilities.invokeLater(() -> {
+                    if (exitCode != 0) {
+                        splash.appendText(I18.get("video_dialog_ytdlp_failed"));
+                        videoFile.setText("");
+                        splash.enableCloseButton();
+                        return;
+                    }
+
+                    // Resolve the downloaded file — fall back to scanning the song dir
+                    // for any video file whose name contains the yt-dlp codec marker
+                    File downloaded = downloadedPath[0] != null ? new File(downloadedPath[0]) : null;
+                    if (downloaded == null || !downloaded.exists()) {
+                        File[] candidates = new File(songDir).listFiles(f ->
+                                !f.isDirectory() && f.getName().contains(".v_"));
+                        if (candidates != null && candidates.length == 1) {
+                            downloaded = candidates[0];
+                            LOGGER.info("Resolved downloaded file via directory scan: " + downloaded.getAbsolutePath());
+                        }
+                    }
+
+                    if (downloaded == null || !downloaded.exists()) {
+                        splash.appendText(I18.get("video_dialog_ytdlp_failed"));
+                        videoFile.setText("");
+                        splash.enableCloseButton();
+                        return;
+                    }
+
+                    String ext = downloaded.getName().contains(".")
+                            ? downloaded.getName().substring(downloaded.getName().lastIndexOf('.')).toLowerCase()
+                            : "";
+                    // Rename to "Artist - Title.ext"
+                    String artist = table.getArtist();
+                    String title  = table.getTitle();
+                    String targetName = YassSong.toFilename(artist + " - " + title + ext);
+                    File target = new File(songDir, targetName);
+                    if (downloaded.renameTo(target)) {
+                        LOGGER.info("Renamed downloaded video to: " + target.getAbsolutePath());
+                    } else {
+                        // rename failed — use the downloaded file as-is
+                        target = downloaded;
+                        LOGGER.warning("Could not rename to Artist - Title, using: " + target.getName());
+                    }
+
+                    // Update #VIDEO tag and text field
+                    table.setVideo(target.getName());
+                    videoFile.setText(target.getName());
+
+                    // Update #COMMENT tag with v=<youtubeId>
+                    String entry = "v=" + youtubeId;
+                    String existing = table.getCommentTag();
+                    if (StringUtils.isEmpty(existing)) {
+                        table.setCommentTag(entry);
+                    } else if (!existing.contains(entry)) {
+                        table.setCommentTag(existing + "," + entry);
+                    }
+
+                    // Load the video into the player — call loadVideoFile directly since
+                    // the dialog is already visible and setVideo's isVisible() check is
+                    // unreliable while the modal splash is blocking the window.
+                    final String finalPath = target.getAbsolutePath();
+                    video = target;
+                    loadVideoFile(finalPath);
+
+                    splash.appendText(I18.get("video_dialog_ytdlp_success"));
+                    splash.enableCloseButton();
+                });
+            }
+
+            @Override
+            public void onOutput(String line) {
+                if (line == null) return;
+                SwingUtilities.invokeLater(() -> {
+                    LOGGER.info(line);
+                    splash.appendText(line);
+                    // Capture the downloaded file path from yt-dlp output
+                    if (line.contains("[download] Destination:")) {
+                        String path = line.substring(line.indexOf(":") + 2).trim();
+                        File f = new File(path);
+                        if (!f.isAbsolute()) {
+                            f = new File(songDir, path);
+                        }
+                        if (!path.endsWith(".part")) {
+                            downloadedPath[0] = f.getAbsolutePath();
+                        }
+                    }
+                });
+            }
+
+            @Override
+            public void onProgressUpdate(float progress, long etaInSeconds) {
+                SwingUtilities.invokeLater(() -> splash.updateProgress(progress, etaInSeconds));
+            }
+        };
+
+        Thread.ofVirtual().name("yass-video-yt-download").start(() -> {
+            try {
+                YtDlp.executeAsync(request, callback);
+            } catch (Exception ex) {
+                LOGGER.log(Level.SEVERE, "yt-dlp download failed", ex);
+                SwingUtilities.invokeLater(() -> {
+                    splash.appendText("Error: " + ex.getMessage());
+                    splash.enableCloseButton();
+                    videoFile.setText("");
+                });
+            }
+        });
+
+        splash.setVisible(true); // blocks (modal) until closed
     }
 
     private void chooseVideoFile() {
@@ -261,13 +605,16 @@ public class YassVideoDialog extends JDialog {
         if (StringUtils.isEmpty(vd) || !video.exists()) {
             return;
         }
-        loadVideoFile(vd);
+        if (isVisible()) {
+            loadVideoFile(vd);
+        }
+        // If not visible, componentShown will call loadVideoFile when the dialog is opened.
     }
 
     public void setVideoGap(int seconds) {
         if (this.videoGapMs != seconds) {
             this.videoGapMs = seconds;
-            gapSpinner.setTime(seconds);
+            SwingUtilities.invokeLater(() -> gapSpinner.setTime(seconds));
         }
     }
 
@@ -282,7 +629,11 @@ public class YassVideoDialog extends JDialog {
             targetVideoTime = 0;
         }
 
-        if (videoDurationSeconds > 0) {
+        long now = System.nanoTime();
+
+        if (videoDurationSeconds > 0 && (now - lastUiUpdateNs) >= UI_THROTTLE_NS) {
+            lastUiUpdateNs = now;
+            logicalPositionSeconds = targetVideoTime; // keep logical position in sync during playback
             final double finalVideoTime = targetVideoTime;
             SwingUtilities.invokeLater(() -> {
                 int sliderValue = (int) ((finalVideoTime / videoDurationSeconds) * 1000);
@@ -291,78 +642,107 @@ public class YassVideoDialog extends JDialog {
             });
         }
 
-        final double finalTargetTime = targetVideoTime;
-        Platform.runLater(() -> {
-            if (mediaPlayer != null) {
-                if (mediaPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
-                    double currentVideoTime = mediaPlayer.getCurrentTime().toSeconds();
-                    double diff = Math.abs(currentVideoTime - finalTargetTime);
-                    if (diff > 0.1) {
-                        mediaPlayer.seek(Duration.seconds(finalTargetTime));
+        if ((now - lastSeekUpdateNs) >= SEEK_THROTTLE_NS) {
+            lastSeekUpdateNs = now;
+            final double finalTargetTime = targetVideoTime;
+            Platform.runLater(() -> {
+                if (mediaPlayer != null) {
+                    if (mediaPlayer.getStatus() == MediaPlayer.Status.PLAYING) {
+                        double currentVideoTime = mediaPlayer.getCurrentTime().toSeconds();
+                        double diff = Math.abs(currentVideoTime - finalTargetTime);
+                        if (diff > 0.1) {
+                            mediaPlayer.seek(Duration.seconds(finalTargetTime));
+                        }
+                    } else {
+                        if (finalTargetTime >= 0) {
+                            mediaPlayer.seek(Duration.seconds(finalTargetTime));
+                        }
                     }
                 } else {
-                    if (finalTargetTime >= 0) {
-                        mediaPlayer.seek(Duration.seconds(finalTargetTime));
+                    // Try to recover if mediaPlayer is null but we have a video file
+                    if (video != null && video.exists()) {
+                        loadVideoFile(video.getAbsolutePath());
                     }
                 }
-            } else {
-                // Try to recover if mediaPlayer is null but we have a video file
-                if (video != null && video.exists()) {
-                     loadVideoFile(video.getAbsolutePath());
-                }
-            }
-        });
+            });
+        }
     }
 
     public void closeVideo() {
         stop();
-        videoFile.setText("");
         video = null;
+        SwingUtilities.invokeLater(() -> videoFile.setText(""));
     }
 
+    private static final int MAX_RELOAD_ATTEMPTS = 2;
+
     private void loadVideoFile(String path) {
+        loadVideoFile(path, 0);
+    }
+
+    private void loadVideoFile(String path, int attempt) {
+        if (StringUtils.isEmpty(path)) {
+            return;
+        }
+        File file = new File(path);
+        if (!file.exists() || file.isDirectory()) {
+            SwingUtilities.invokeLater(() -> videoFile.setText(""));
+            return;
+        }
+
+        // Tear down the existing player on the FX thread first, then hand off to a
+        // background thread for the blocking ffprobe/ffmpeg work.
         Platform.runLater(() -> {
+            if (mediaPlayer != null) {
+                mediaPlayer.stop();
+                mediaPlayer.dispose();
+                mediaPlayer = null;
+            }
+            jfxPanel.setScene(null);
+        });
+
+        SwingUtilities.invokeLater(() -> {
+            videoFile.setText(file.getName());
+            setTitle(I18.get("video_dialog_title") + " - " + file.getName());
+        });
+
+        Thread.ofVirtual().name("yass-video-loader").start(() -> {
             try {
-                if (mediaPlayer != null) {
-                    mediaPlayer.stop();
-                    mediaPlayer.dispose();
-                    mediaPlayer = null;
-                }
-                jfxPanel.setScene(null);
+                File mediaFile = needsTransCoding(path) ? transcodeToTempMp4(path) : file;
+                Platform.runLater(() -> {
+                    initMediaPlayer(mediaFile);
 
-                if (StringUtils.isEmpty(path)) {
-                    return;
-                }
-                File file = new File(path);
-                if (!file.exists() || file.isDirectory()) {
-                    SwingUtilities.invokeLater(() -> videoFile.setText(""));
-                    return;
-                }
-                videoFile.setText(file.getName());
-                setTitle(I18.get("video_dialog_title") + " - " + file.getName());
-                if (needsTransCoding(path)) {
-                    file = transcodeToTempMp4(path);
-                }
+                    mediaPlayer.setOnError(() -> {
+                        MediaPlayer failed = mediaPlayer;
+                        String errorMessage = failed.getError() != null ? failed.getError().getMessage() : "unknown error";
+                        Platform.runLater(() -> {
+                            failed.dispose();
+                            mediaPlayer = null;
+                            jfxPanel.setScene(null);
+                        });
+                        Thread.ofVirtual().name("yass-video-error-transcode").start(() -> {
+                            try {
+                                File fallback = transcodeToTempMp4(path);
+                                Platform.runLater(() -> initMediaPlayer(fallback));
+                            } catch (Exception ex) {
+                                LOGGER.log(Level.SEVERE, "Fallback transcode failed: " + errorMessage, ex);
+                                SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
+                                        "Media Error: " + errorMessage));
+                            }
+                        });
+                    });
 
-                initMediaPlayer(file);
-
-                mediaPlayer.setOnError(() -> {
-                    try {
-                        File fallback = transcodeToTempMp4(path);
-                        initMediaPlayer(fallback);
-                    } catch (Exception ex) {
-                        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
-                                                                                       "Media Error: " +
-                                                                                               mediaPlayer.getError()
-                                                                                                          .getMessage()));
-                    }
+                    mediaPlayer.setOnHalted(() -> {
+                        if (attempt >= MAX_RELOAD_ATTEMPTS) {
+                            LOGGER.log(Level.SEVERE, "MediaPlayer halted after " + attempt + " reload attempt(s), giving up: " + path);
+                            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
+                                    I18.get("video_dialog_halted_error")));
+                            return;
+                        }
+                        LOGGER.log(Level.WARNING, "MediaPlayer halted, reload attempt " + (attempt + 1) + " of " + MAX_RELOAD_ATTEMPTS + ": " + path);
+                        loadVideoFile(path, attempt + 1);
+                    });
                 });
-
-                mediaPlayer.setOnHalted(() -> {
-                    LOGGER.log(Level.WARNING, "MediaPlayer halted, attempting to reload.");
-                    loadVideoFile(path);
-                });
-
             } catch (Exception e) {
                 LOGGER.log(Level.SEVERE, "Error loading video: " + path, e);
                 SwingUtilities.invokeLater(
@@ -386,12 +766,12 @@ public class YassVideoDialog extends JDialog {
         mediaView.setPreserveRatio(true);
 
         Scene scene = new Scene(root, javafx.scene.paint.Color.BLACK);
-        jfxPanel.setScene(scene);
+        SwingUtilities.invokeLater(() -> jfxPanel.setScene(scene));
 
         mediaPlayer.setOnReady(() -> {
             videoDurationSeconds = media.getDuration().toSeconds();
-            gapSpinner.setDuration((int) (videoDurationSeconds * 1000));
             SwingUtilities.invokeLater(() -> {
+                gapSpinner.setDuration((int) (videoDurationSeconds * 1000));
                 timeSlider.setEnabled(true);
             });
         });
@@ -539,11 +919,13 @@ public class YassVideoDialog extends JDialog {
         });
     }
 
+    /** Returns the current slider position as milliseconds. */
     public int getTime() {
         if (timeSlider == null || videoDurationSeconds <= 0) {
             return 0;
         }
-        return (int) (timeSlider.getValue() * videoDurationSeconds);
+        double fraction = timeSlider.getValue() / 1000.0;
+        return (int) (fraction * videoDurationSeconds * 1000);
     }
 
     public void seekVideo(double seconds) {

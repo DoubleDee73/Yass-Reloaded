@@ -475,6 +475,11 @@ public class YassProperties extends Properties {
         p.putIfAbsent("titlecase", "off");
         
         p.putIfAbsent("wizard-skip-midi", "USE_MIDI");
+        p.putIfAbsent("mvsep-api-token", "");
+        p.putIfAbsent("mvsep-model", "karaoke_lead_back");
+        p.putIfAbsent("mvsep-output-format", "flac");
+        p.putIfAbsent("mvsep-instrumental-default", "instrumental");
+        p.putIfAbsent("mvsep-poll-interval", "15");
         p.putIfAbsent("ytdlp-audio-format", "m4a");
         p.putIfAbsent("ytdlp-audio-bitrate", "320");
         p.putIfAbsent("ytdlp-video-codec", "");
@@ -668,4 +673,8 @@ public class YassProperties extends Properties {
         return getUsFormatVersion().getNumericVersion() >= 1.1d;
     }
 }
+
+
+
+
 

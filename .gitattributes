@@ -1,0 +1,5 @@
+*.properties text working-tree-encoding=UTF-8
+*.java text working-tree-encoding=UTF-8
+*.groovy text working-tree-encoding=UTF-8
+*.xml text working-tree-encoding=UTF-8
+*.md text working-tree-encoding=UTF-8

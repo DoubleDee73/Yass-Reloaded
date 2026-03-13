@@ -74,12 +74,14 @@ public class YassOptions extends JDialog {
         DefaultMutableTreeNode checker = new DefaultMutableTreeNode(I18.get("options_errors"));
         DefaultMutableTreeNode editor = new DefaultMutableTreeNode(I18.get("options_editor"));
         DefaultMutableTreeNode wizard = new DefaultMutableTreeNode(I18.get("options_wizard"));
+        DefaultMutableTreeNode externalTools = new DefaultMutableTreeNode(I18.get("options_external_tools"));
         DefaultMutableTreeNode advanced = new DefaultMutableTreeNode(I18.get("options_advanced"));
         top.add(library);
         top.add(meta);
         top.add(checker);
         top.add(editor);
         top.add(wizard);
+        top.add(externalTools);
         top.add(advanced);
 
         OptionsPanel.loadProperties(prop);
@@ -90,7 +92,6 @@ public class YassOptions extends JDialog {
         addPanel(library, I18.get("options_groups_2"), new Group2Panel());
         addPanel(library, I18.get("options_sorting"), new SortPanel());
         addPanel(library, I18.get("options_printer"), new PrintPanel());
-        addPanel(library, I18.get("options_locations"), new LocationsPanel());
         addPanel(library, I18.get("options_filetypes"), new FiletypePanel());
 
         addPanel(meta, I18.get("options_languages"), new LanguagePanel());
@@ -111,6 +112,8 @@ public class YassOptions extends JDialog {
         addPanel(wizard, I18.get("options_wizard_defaults"), new WizardPanel());
         addPanel(wizard, I18.get("options_wizard_ytdlp"), new YtDlpPanel(ytDlpVersion));
 
+        addPanel(externalTools, I18.get("options_locations"), new LocationsPanel());
+        addPanel(externalTools, I18.get("options_external_tools_mvsep"), new MvsepPanel());
         addPanel(advanced, I18.get("options_advanced_audio"), new AudioPanel());
         addPanel(advanced, I18.get("options_advanced_debug"), new DebugPanel());
 
@@ -291,4 +294,5 @@ public class YassOptions extends JDialog {
     
     
 }
+
 
