@@ -2609,45 +2609,37 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         if (pitchDataList != null && !pitchDataList.isEmpty()) {
             int pageMin = minHeight;
             if (pan) {
-                // In pan mode, the vertical position depends on the lowest note on the current "page".
-                // We find the first visible note to get the correct pageMin.
                 int firstVisibleNoteIndex = firstVisibleNote();
                 if (firstVisibleNoteIndex != -1 && firstVisibleNoteIndex < rect.size()) {
                     pageMin = rect.elementAt(firstVisibleNoteIndex).getPageMin();
                 } else {
-                    // Fallback to the last known page minimum if no note is visible.
                     pageMin = hhPageMin;
                 }
             }
 
+            int pitchTranspose = getWaveformPitchTranspose(pitchDataList);
             int pitchDataIndex = 0;
             for (int x = clip.x; x < clip.x + clip.width; x++) {
                 double timeInSeconds = fromTimelineExact(x) / 1000.0;
-                // Find the matching pitch entry for the current time
                 while (pitchDataIndex < pitchDataList.size() - 1 &&
                         pitchDataList.get(pitchDataIndex + 1).time() < timeInSeconds) {
                     pitchDataIndex++;
                 }
                 PitchDetector.PitchData currentPitch = pitchDataList.get(pitchDataIndex);
+                int displayPitch = currentPitch.pitch() + pitchTranspose;
 
-                // Calculate the Y position based on the pitch, aligned with the note grid
-                double y_center;
+                double yCenter;
                 if (pan) {
-                    // In pan mode, y is relative to the page's minimum height.
-                    // The +2 offset aligns with the note rectangle calculation in updateFromRow.
-                    y_center = dim.height - BOTTOM_BORDER - (currentPitch.pitch() - pageMin + 2) * hSize;
+                    yCenter = dim.height - BOTTOM_BORDER - (displayPitch - pageMin + 2) * hSize;
                 } else {
-                    // In normal mode, y is relative to the overall minimum height
-                    y_center = dim.height - BOTTOM_BORDER - (currentPitch.pitch() - minHeight) * hSize;
+                    yCenter = dim.height - BOTTOM_BORDER - (displayPitch - minHeight) * hSize;
                 }
 
-                // Get the amplitude of the waveform at this point
                 int amplitude = mp3.getWaveFormAtMillis(timeInSeconds * 1000);
-                // Draw a vertical line representing the amplitude, centered on the pitch
-                g2.drawLine(x, (int) (y_center - amplitude / 2.0), x, (int) (y_center + amplitude / 2.0));
+                g2.drawLine(x, (int) (yCenter - amplitude / 2.0), x, (int) (yCenter + amplitude / 2.0));
             }
         } else {
-            int h = TOP_LINE - 10 + 128; // Feste Mittellinie
+            int h = TOP_LINE - 10 + 128;
             int lasty = 0;
             for (int x = clip.x + 1; x < clip.x + clip.width; x++) {
                 double ms = fromTimelineExact(x);
@@ -2659,11 +2651,51 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         g2.setColor(darkMode ? whiteDarkMode : Color.WHITE);
     }
 
-    /**
-     * Description of the Method
-     *
-     * @param g2 Description of the Parameter
-     */
+    private int getWaveformPitchTranspose(List<PitchDetector.PitchData> pitchDataList) {
+        if (table == null || pitchDataList == null || pitchDataList.isEmpty()) {
+            return 0;
+        }
+
+        int noteMin = Integer.MAX_VALUE;
+        int noteMax = Integer.MIN_VALUE;
+        for (int i = 0; i < table.getRowCount(); i++) {
+            YassRow row = table.getRowAt(i);
+            if (!row.isNote()) {
+                continue;
+            }
+            int height = row.getHeightInt();
+            noteMin = Math.min(noteMin, height);
+            noteMax = Math.max(noteMax, height);
+        }
+        if (noteMin == Integer.MAX_VALUE) {
+            return 0;
+        }
+
+        int pitchMin = Integer.MAX_VALUE;
+        int pitchMax = Integer.MIN_VALUE;
+        for (PitchDetector.PitchData pitchData : pitchDataList) {
+            pitchMin = Math.min(pitchMin, pitchData.pitch());
+            pitchMax = Math.max(pitchMax, pitchData.pitch());
+        }
+
+        int bestOffset = 0;
+        int bestOverlap = Integer.MIN_VALUE;
+        int bestCenterDistance = Integer.MAX_VALUE;
+        int noteCenter = noteMin + noteMax;
+        for (int offset = -48; offset <= 48; offset += 12) {
+            int shiftedMin = pitchMin + offset;
+            int shiftedMax = pitchMax + offset;
+            int overlap = Math.min(noteMax, shiftedMax) - Math.max(noteMin, shiftedMin);
+            int centerDistance = Math.abs((shiftedMin + shiftedMax) - noteCenter);
+            if (overlap > bestOverlap || (overlap == bestOverlap && centerDistance < bestCenterDistance)) {
+                bestOffset = offset;
+                bestOverlap = overlap;
+                bestCenterDistance = centerDistance;
+            }
+        }
+        return bestOffset;
+    }
+
     public void paintArrows(Graphics2D g2) {
 
         int x = clip.x;// + (paintHeights ? heightBoxWidth : 0);
@@ -3556,7 +3588,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                     if (r.isType(YassRectangle.GAP)) {
                         if (!live) {
                             g2.setColor(col);
-                            g2.drawString("【", (float)r.x, (float)r.y + 8);
+                            g2.drawString("Ã£â‚¬Â", (float)r.x, (float)r.y + 8);
                         }
                         continue;
                     }
@@ -5531,3 +5563,5 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         return focusOwner != null && songHeader != null && SwingUtilities.isDescendingFrom(focusOwner, songHeader);
     }
 }
+
+

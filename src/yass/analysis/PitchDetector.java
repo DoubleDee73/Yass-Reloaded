@@ -76,10 +76,9 @@ public class PitchDetector {
             int exitCode = process.waitFor();
             if (exitCode == 0) {
                 LOGGER.info("Aubio pitch detection found " + rawPitchData.size() + " raw pitched frames.");
-                // Wende die neue Kontur-Korrektur an
-                finalPitchData = correctOctaveErrorsWithFixedSegmentation(rawPitchData);
-                LOGGER.info(
-                        "Applied pitch contour correction. Resulting " + finalPitchData.size() + " pitched frames.");
+                // Wende Kontur-Korrektur und eine lokale Mehrheitsbildung an.
+                finalPitchData = stabilizePitchContour(correctOctaveErrorsWithFixedSegmentation(rawPitchData));
+                LOGGER.info("Applied pitch contour correction and stabilization. Resulting " + finalPitchData.size() + " pitched frames.");
                 return finalPitchData;
             } else {
                 // Handle errors by logging them
@@ -96,20 +95,20 @@ public class PitchDetector {
     }
 
     /**
-     * Korrigiert Oktavfehler durch Segmentierung der Tonhöhenkontur in musikalische Phrasen.
+     * Korrigiert Oktavfehler durch Segmentierung der TonhÃƒÂ¶henkontur in musikalische Phrasen.
      * <p>
      * Der Algorithmus funktioniert in drei Schritten:
-     * 1. <b>Segmentierung</b>: Die rohen Tonhöhendaten werden in Segmente (Phrasen) unterteilt. Ein neues Segment
+     * 1. <b>Segmentierung</b>: Die rohen TonhÃƒÂ¶hendaten werden in Segmente (Phrasen) unterteilt. Ein neues Segment
      * beginnt nach einer Pause von mehr als {@code SILENCE_THRESHOLD_MS}.
-     * 2. <b>Analyse</b>: Für jedes Segment wird die "dominante Oktave" bestimmt, indem ein Histogramm
+     * 2. <b>Analyse</b>: FÃƒÂ¼r jedes Segment wird die "dominante Oktave" bestimmt, indem ein Histogramm
      * der Oktaven aller Noten im Segment erstellt wird.
      * 3. <b>Korrektur</b>: Jede Note im Segment wird zur dominanten Oktave verschoben, falls sie ein
-     * Oktav-Ausreißer ist. Dies bewahrt die relative Melodiekontur, korrigiert aber große Sprünge.
+     * Oktav-AusreiÃƒÅ¸er ist. Dies bewahrt die relative Melodiekontur, korrigiert aber groÃƒÅ¸e SprÃƒÂ¼nge.
      * <p>
-     * Zusätzlich werden harte Grenzen (E2-C6) angewendet, um extrem unrealistische Tonhöhen zu eliminieren.
+     * ZusÃƒÂ¤tzlich werden harte Grenzen (E2-C6) angewendet, um extrem unrealistische TonhÃƒÂ¶hen zu eliminieren.
      *
-     * @param rawPitchData Die rohe Liste der von Aubio erkannten Tonhöhen.
-     * @return Eine neue Liste von PitchData mit korrigierten Tonhöhen.
+     * @param rawPitchData Die rohe Liste der von Aubio erkannten TonhÃƒÂ¶hen.
+     * @return Eine neue Liste von PitchData mit korrigierten TonhÃƒÂ¶hen.
      */
     public static List<PitchData> correctOctaveErrorsWithFixedSegmentation(List<PitchData> rawPitchData) {
         if (rawPitchData == null || rawPitchData.isEmpty()) {
@@ -129,8 +128,8 @@ public class PitchDetector {
         Map<Long, List<PitchData>> segmentsMap = new TreeMap<>();
 
         for (PitchData pd : rawPitchData) {
-            // Berechne den Startzeitpunkt des 125ms-Fensters, in das dieser Pitch fällt
-            // Die Zeit wird relativ zum ersten Pitch berechnet, dann in 125ms-Blöcke gerastert
+            // Berechne den Startzeitpunkt des 125ms-Fensters, in das dieser Pitch fÃƒÂ¤llt
+            // Die Zeit wird relativ zum ersten Pitch berechnet, dann in 125ms-BlÃƒÂ¶cke gerastert
             long relativeTimeMs = (long) ((pd.time() - firstPitchTime) * 1000);
             long segmentStartRelativeMs = (long) (Math.floor(relativeTimeMs / SEGMENT_DURATION_MS) * SEGMENT_DURATION_MS);
             long segmentStartAbsoluteMs = (long) (firstPitchTime * 1000 + segmentStartRelativeMs);
@@ -145,7 +144,7 @@ public class PitchDetector {
                 continue;
             }
 
-            // 1. Finde die dominante Oktave für dieses Segment
+            // 1. Finde die dominante Oktave fÃƒÂ¼r dieses Segment
             Map<Integer, Integer> octaveHistogram = new HashMap<>();
             for (PitchData pd : segment) {
                 int midiNote = pd.pitch() + 60;
@@ -163,7 +162,7 @@ public class PitchDetector {
                 int currentMidiNote = pd.pitch() + 60;
                 int correctedMidiNote = currentMidiNote;
 
-                // Verschiebe die Note in die Nähe der dominanten Oktave
+                // Verschiebe die Note in die NÃƒÂ¤he der dominanten Oktave
                 // Solange die Note mehr als eine halbe Oktave von der Mitte der dominanten Oktave entfernt ist
                 while (correctedMidiNote - (dominantOctave * 12 + 6) > 6) {
                     correctedMidiNote -= 12;
@@ -188,15 +187,93 @@ public class PitchDetector {
                     LOGGER.finest(String.format("Corrected octave for note at %.2fs from %d (MIDI %d) to %d (MIDI %d) in segment starting at %.2fms",
                                                 pd.time(), pd.pitch(), currentMidiNote, correctedPitch, correctedMidiNote, segment.get(0).time() * 1000));
                 } else {
-                    correctedData.add(pd); // Keine Korrektur, füge Originaldaten hinzu
+                    correctedData.add(pd); // Keine Korrektur, fÃƒÂ¼ge Originaldaten hinzu
                 }
             }
         }
 
-        // Sortiere die Daten am Ende neu, da die Verarbeitung pro Segment die Reihenfolge ändern könnte (obwohl 
+        // Sortiere die Daten am Ende neu, da die Verarbeitung pro Segment die Reihenfolge ÃƒÂ¤ndern kÃƒÂ¶nnte (obwohl 
         // unwahrscheinlich)
         correctedData.sort(Comparator.comparing(PitchData::time));
         return correctedData;
+    }
+
+    private static List<PitchData> stabilizePitchContour(List<PitchData> pitchData) {
+        if (pitchData == null || pitchData.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        final float WINDOW_SECONDS = 0.35f;
+        final float GAP_RESET_SECONDS = 0.12f;
+        final List<PitchData> stabilizedData = new ArrayList<>(pitchData.size());
+        int windowStart = 0;
+        int windowEnd = 0;
+        Integer previousStablePitch = null;
+
+        for (int i = 0; i < pitchData.size(); i++) {
+            PitchData current = pitchData.get(i);
+            if (i > 0 && Math.abs(current.time() - pitchData.get(i - 1).time()) > GAP_RESET_SECONDS) {
+                previousStablePitch = null;
+            }
+
+            float minTime = current.time() - WINDOW_SECONDS / 2.0f;
+            float maxTime = current.time() + WINDOW_SECONDS / 2.0f;
+
+            while (windowStart < pitchData.size() && pitchData.get(windowStart).time() < minTime) {
+                windowStart++;
+            }
+            while (windowEnd < pitchData.size() && pitchData.get(windowEnd).time() <= maxTime) {
+                windowEnd++;
+            }
+
+            Map<Integer, Integer> pitchHistogram = new HashMap<>();
+            for (int j = windowStart; j < windowEnd; j++) {
+                PitchData sample = pitchData.get(j);
+                pitchHistogram.put(sample.pitch(), pitchHistogram.getOrDefault(sample.pitch(), 0) + 1);
+            }
+
+            int stablePitch = chooseStablePitch(pitchHistogram, current.pitch(), previousStablePitch);
+            previousStablePitch = stablePitch;
+
+            if (stablePitch == current.pitch()) {
+                stabilizedData.add(current);
+            } else {
+                double stabilizedFreq = C4_FREQ * Math.pow(2.0, stablePitch / 12.0);
+                stabilizedData.add(new PitchData(current.time(), stablePitch, freqToNoteName(stabilizedFreq)));
+            }
+        }
+
+        return stabilizedData;
+    }
+
+    private static int chooseStablePitch(Map<Integer, Integer> pitchHistogram, int fallbackPitch,
+                                         Integer previousStablePitch) {
+        if (pitchHistogram.isEmpty()) {
+            return fallbackPitch;
+        }
+
+        int bestPitch = fallbackPitch;
+        int bestCount = -1;
+        for (Map.Entry<Integer, Integer> entry : pitchHistogram.entrySet()) {
+            int candidatePitch = entry.getKey();
+            int candidateCount = entry.getValue();
+            if (candidateCount > bestCount) {
+                bestPitch = candidatePitch;
+                bestCount = candidateCount;
+                continue;
+            }
+            if (candidateCount == bestCount) {
+                if (previousStablePitch != null &&
+                        Math.abs(candidatePitch - previousStablePitch) < Math.abs(bestPitch - previousStablePitch)) {
+                    bestPitch = candidatePitch;
+                    continue;
+                }
+                if (Math.abs(candidatePitch - fallbackPitch) < Math.abs(bestPitch - fallbackPitch)) {
+                    bestPitch = candidatePitch;
+                }
+            }
+        }
+        return bestPitch;
     }
 
 
@@ -240,7 +317,7 @@ public class PitchDetector {
         }
         final String[] noteNames = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
         int midi = (int) Math.round(69 + 12 * Math.log(freq / 440.0) / Math.log(2));
-        int noteIdx = (midi + 1200) % 12; // +1200 für negatives Handling
+        int noteIdx = (midi + 1200) % 12; // +1200 fÃƒÂ¼r negatives Handling
         int octave = (midi / 12) - 1;
         return noteNames[noteIdx] + octave;
     }

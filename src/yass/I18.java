@@ -244,7 +244,7 @@ public class I18 {
         sb.append("Java Media Framework (JMF), Robert Eckstein's Wizard code,<br>");
         sb.append("juniversalchardet, Optimaize Language Detector, TwelveMonkeys ImageIO<br>");
         sb.append("Speed measure 'Inverse Duration' based on Marcel Taeumel's approach (http://uman.sf.net).</p>");
-        sb.append("<p>Supported 3rd Party-Tools: yt-dlp, <a href=\"https://aubio.org/\">Aubio</a></p>");
+        sb.append("<p>Supported 3rd Party-Tools: yt-dlp, <a href=\"https://aubio.org/\">Aubio</a></p>, <a href=\"https://mvsep.com/\">MVSEP</a>");
         sb.append("<p>Translations: Spanish translation by Pantera, ");
         sb.append("Hungarian translation by Skyli.</p>");
         sb.append("Please note, that missing translations were done by AI and Google Translate and might<br>");

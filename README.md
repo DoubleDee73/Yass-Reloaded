@@ -67,7 +67,7 @@ Prebuilt binaries for Windows, macOS, and Linux are available in the GitHub
 **Recommended:**  
 Download and run the Windows installer:
 
-- `yass-installer-2026.2.exe`
+- `yass-installer-2026.3.exe`
 
 Java is bundled. No manual setup required.
 
@@ -75,8 +75,8 @@ Java is bundled. No manual setup required.
 
 Download the macOS build matching your system:
 
-- Apple Silicon (M1/M2/M3): `Yass-Reloaded-macOS-ARM.dmg`
-- Intel Macs: `Yass-Reloaded-macos-x64.dmg`
+- Apple Silicon (M1/M2/M3): `yass-macos-arm64.dmg`
+- Intel Macs: `yass-macos-x64.dmg`
 
 Java is bundled.
 
@@ -86,8 +86,7 @@ If macOS blocks the app:
 ### Linux
 
 Options:
-- Debian/Ubuntu: `yass-reloaded-amd64.deb`
-- `*.AppImage` (recommended, portable)
+- Debian/Ubuntu: `yass-linux-amd64.deb`
 - or run the Fat JAR `Yass-Reloaded.jar` (see below)
 
 FFmpeg must be installed via your package manager.
@@ -110,7 +109,7 @@ https://www.ffmpeg.org/download.html
 - Linux (`sudo apt install ffmpeg`)
 
 # Starting Yass Reloaded
-If you install Yass Reloaded with the Windows installer, you can simply run `Yass.exe`
+If you install Yass Reloaded with the Windows installer, you can simply run `yass.exe`
 
 Alternatively, you can download the jar file and start it from the console:
 
@@ -150,10 +149,18 @@ Speed measure 'Inverse Duration' based on Marcel Taeumel's approach (http://uman
 ## yt-dlp
 yt-dlp is used to download audio and video files from YouTube
 https://github.com/yt-dlp/yt-dlp#release-files
+
 ## aubio
-aubio is used to determine the BPM when using the Song Creation Wizard and visualizing the pitch of the vocal track in the song editor
+aubio is used to determine the BPM when using the Song Creation Wizard and visualizing the pitch of the vocal track in 
+the song editor
 https://aubio.org/download
 You should select the package WITHOUT bundled ffMpeg
+
+## MVSEP
+MVSEP can be configured in `External Tools > MVSEP` and is used for cloud-based stem separation.
+Yass Reloaded can upload the current `#AUDIO` file, monitor the separation job, download the finished stems into the 
+song folder, and link `#VOCALS` / `#INSTRUMENTAL` automatically when possible.
+https://mvsep.com/
 
 # License
 
@@ -183,7 +190,7 @@ If you like this  app, feel free (but not pressured!) to buy me coffee. Any supp
   - Open a command line window and type in `java -version`. 
   - You should have Java 21
 - Have you tried opening it as a jar?
-  - Download the jar, open a command line window and type in `java -jar Yass-Reloaded-2026.2.jar`
+  - Download the jar, open a command line window and type in `java -jar Yass-Reloaded-2026.3.jar`
   - Any error messages are then printed out in the command line window for debugging
 
 ## Cannot find FFmpeg?
