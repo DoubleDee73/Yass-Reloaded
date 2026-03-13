@@ -84,8 +84,19 @@ jobs:
         shell: pwsh
         run: |
           jpackage --type app-image --dest dist-img --name "yass" --main-jar Yass-Reloaded.jar --input package-input --icon "src/yass/resources/icons/yass-multi-icon.ico"
-          where.exe makensis
-          $nsis = (Get-Command makensis.exe -ErrorAction Stop).Source
+          $candidates = @(
+            "${env:ProgramFiles(x86)}\NSIS\makensis.exe",
+            "${env:ProgramFiles}\NSIS\makensis.exe",
+            "${env:ChocolateyInstall}\bin\makensis.exe"
+          )
+          $nsis = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+          if (-not $nsis -and $env:ChocolateyInstall) {
+            $nsis = Get-ChildItem -Path "${env:ChocolateyInstall}\lib" -Recurse -Filter makensis.exe -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $nsis) {
+            throw "makensis.exe not found after NSIS installation"
+          }
           & $nsis nsis-installer.nsi
           
       # --- LINUX & MACOS: JPACKAGE BUILD ---
