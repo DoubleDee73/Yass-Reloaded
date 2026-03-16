@@ -629,6 +629,7 @@ public class CreateSongWizard extends Wizard {
                     Thread.currentThread().interrupt();
                 } catch (ExecutionException ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    LOGGER.severe("Separate & Transcribe failed: " + cause.getMessage());
                     if (lyrics != null) {
                         lyrics.setWizardStatusText(I18.get("create_lyrics_separate_transcribe_status_failed"));
                         lyrics.refreshIntegrationAvailability();
