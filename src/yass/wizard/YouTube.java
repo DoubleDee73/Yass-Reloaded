@@ -307,7 +307,7 @@ public class YouTube extends JPanel {
 
         // If ffmpeg was not found for merging but the media files were already downloaded,
         // treat this as a success — the files exist and the merge error is a false failure.
-        if (error != null && error.contains("ffprobe and ffmpeg not found") && shouldReuseExistingDownload()) {
+        if (error != null && error.contains("ffprobe and ffmpeg not found") && findExistingDownloadByYouTubeId() != null) {
             LOGGER.warning("ffmpeg not found for merging, but media files already exist. Treating as success.");
             handleDownloadSuccess(splash);
             splash.enableCloseButton();
