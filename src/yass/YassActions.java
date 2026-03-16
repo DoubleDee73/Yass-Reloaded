@@ -64,6 +64,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.MessageFormat;
 import java.util.*;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.logging.Level;
@@ -3036,7 +3037,7 @@ public class YassActions implements DropTargetListener {
         }
     }
 
-    private boolean applyWizardTranscriptionOutputs(String songFile, WizardTranscriptionState state) {
+    private boolean applyWizardTranscriptionOutputs(String songFile, WizardTranscriptionState state, String correctedLyrics) {
         if (StringUtils.isBlank(songFile) || state == null || state.getTranscriptionResult() == null) {
             return false;
         }
@@ -3056,7 +3057,9 @@ public class YassActions implements DropTargetListener {
                 return false;
             }
 
-            new yass.alignment.TranscriptNoteRebuildService().transcript(createdTable, state.getTranscriptionResult());
+            yass.integration.transcription.openai.OpenAiTranscriptionResult transcriptionResult =
+                    applyCorrectedLyricsToTranscript(state.getTranscriptionResult(), correctedLyrics);
+            new yass.alignment.TranscriptNoteRebuildService().transcript(createdTable, transcriptionResult);
             copyWizardSeparationFiles(destinationDir, createdTable, state);
             copyWizardTranscriptCache(destinationDir, state);
             createdTable.storeFile(songTextFile.getAbsolutePath());
@@ -3066,6 +3069,55 @@ public class YassActions implements DropTargetListener {
             LOGGER.log(Level.SEVERE, "Failed to apply wizard separation/transcription outputs to " + songFile, ex);
             return false;
         }
+    }
+
+    private yass.integration.transcription.openai.OpenAiTranscriptionResult applyCorrectedLyricsToTranscript(
+            yass.integration.transcription.openai.OpenAiTranscriptionResult original, String correctedLyrics) {
+        if (StringUtils.isBlank(correctedLyrics) || original.getSegments().isEmpty()) {
+            return original;
+        }
+        // Collect all words from segments in order
+        List<yass.integration.transcription.openai.OpenAiTranscriptWord> allWords = new ArrayList<>();
+        for (yass.integration.transcription.openai.OpenAiTranscriptSegment segment : original.getSegments()) {
+            allWords.addAll(segment.getWords());
+        }
+        // Split corrected lyrics into words (split on any whitespace/newline)
+        String[] correctedWords = correctedLyrics.trim().split("\\s+");
+        if (correctedWords.length != allWords.size()) {
+            LOGGER.info("Corrected lyrics word count (" + correctedWords.length +
+                        ") does not match transcript word count (" + allWords.size() + "). Using original transcript.");
+            return original;
+        }
+        LOGGER.info("Applying " + correctedWords.length + " corrected words to transcript.");
+        // Rebuild segments with corrected word texts, preserving all timestamps
+        int wordIndex = 0;
+        List<yass.integration.transcription.openai.OpenAiTranscriptSegment> newSegments = new ArrayList<>();
+        for (yass.integration.transcription.openai.OpenAiTranscriptSegment segment : original.getSegments()) {
+            List<yass.integration.transcription.openai.OpenAiTranscriptWord> newWords = new ArrayList<>();
+            for (yass.integration.transcription.openai.OpenAiTranscriptWord word : segment.getWords()) {
+                String corrected = correctedWords[wordIndex++];
+                newWords.add(new yass.integration.transcription.openai.OpenAiTranscriptWord(
+                        corrected,
+                        yass.alignment.LyricsAlignmentTokenizer.normalizeText(corrected),
+                        word.getStartMs(),
+                        word.getEndMs()));
+            }
+            String newSegmentText = newWords.stream()
+                    .map(yass.integration.transcription.openai.OpenAiTranscriptWord::getText)
+                    .collect(java.util.stream.Collectors.joining(" "));
+            newSegments.add(new yass.integration.transcription.openai.OpenAiTranscriptSegment(
+                    segment.getStartMs(), segment.getEndMs(), newSegmentText, newWords));
+        }
+        return new yass.integration.transcription.openai.OpenAiTranscriptionResult(
+                original.getSourceAudioFile(),
+                original.getUploadAudioFile(),
+                original.getSourceTag(),
+                correctedLyrics,
+                allWords,
+                newSegments,
+                original.getLyricTokens(),
+                original.isFromCache(),
+                original.getCacheFile());
     }
 
     private void copyWizardSeparationFiles(File destinationDir, YassTable createdTable, WizardTranscriptionState state) throws IOException {
@@ -8205,7 +8257,7 @@ public class YassActions implements DropTargetListener {
                     }
                 }
             }
-            wizardAssetsApplied = applyWizardTranscriptionOutputs(file, wiz.getWizardTranscriptionState());
+            wizardAssetsApplied = applyWizardTranscriptionOutputs(file, wiz.getWizardTranscriptionState(), (String) hash.get("lyrics"));
         }
         refreshLibrary();
         boolean starteditor = hash.get("starteditor").equals("true");
