@@ -18,18 +18,53 @@
 
 package yass.options;
 
-import lombok.Getter;
-import lombok.Setter;
-import yass.*;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.GridLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.ItemEvent;
+import java.awt.event.ItemListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.io.File;
+import java.util.Enumeration;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.StringTokenizer;
+import java.util.Vector;
 
-import javax.swing.*;
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JColorChooser;
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JFileChooser;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JRadioButton;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.SwingConstants;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import java.awt.*;
-import java.awt.event.*;
-import java.io.File;
-import java.util.*;
-import java.util.List;
+
+import lombok.Getter;
+import lombok.Setter;
+import yass.DialogTools;
+import yass.I18;
+import yass.YassActions;
+import yass.YassEnum;
+import yass.YassProperties;
 
 /**
  * Description of the Class
@@ -41,7 +76,7 @@ import java.util.List;
 public class OptionsPanel extends JPanel {
     private static final long serialVersionUID = -5593710558109233649L;
     private static Hashtable<String, String> myprop = null;
-    private static YassProperties prop = null;
+    static YassProperties prop = null;
     private JLabel title = null;
     private JPanel left = null, right = null;
     private JButton resetButton = null;
@@ -531,7 +566,7 @@ public class OptionsPanel extends JPanel {
     public void addChoice(String label, YassEnum[] enumElements, String selectKey) {
         addChoice(label, enumElements, selectKey, labelWidth);
     }
-    
+
     public void addChoice(String label, YassEnum[] enumElements, String select_key, int localLabelWidth) {
         JPanel row = new JPanel();
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
