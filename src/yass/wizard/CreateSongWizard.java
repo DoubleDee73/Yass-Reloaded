@@ -24,8 +24,11 @@ import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
 import yass.*;
+import yass.ffmpeg.FFMPEGLocator;
 import yass.integration.separation.SeparationRequest;
 import yass.integration.separation.SeparationResult;
+import yass.integration.separation.SeparationService;
+import yass.integration.separation.audioseparator.AudioSeparatorSeparationService;
 import yass.integration.separation.mvsep.MvsepSeparationService;
 import yass.integration.transcription.whisperx.WhisperXTranscriptionRequest;
 import yass.integration.transcription.whisperx.WhisperXTranscriptionService;
@@ -476,7 +479,10 @@ public class CreateSongWizard extends Wizard {
         if (StringUtils.isBlank(filename) || !new File(filename).isFile()) {
             return I18.get("create_lyrics_separate_transcribe_requires_audio");
         }
-        if (StringUtils.isBlank(getProperty("mvsep-api-token"))) {
+        boolean mvsepConfigured = StringUtils.isNotBlank(getProperty("mvsep-api-token"));
+        boolean audioSepConfigured = StringUtils.isNotBlank(getProperty("audiosep-python"))
+                && Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty("audiosep-health-ok"), "false"));
+        if (!mvsepConfigured && !audioSepConfigured) {
             return I18.get("create_lyrics_separate_transcribe_requires_mvsep");
         }
         boolean useModule = Boolean.parseBoolean(getProperty("whisperx-use-module"));
@@ -490,6 +496,19 @@ public class CreateSongWizard extends Wizard {
             return I18.get("create_lyrics_separate_transcribe_requires_healthcheck");
         }
         return null;
+    }
+
+    private SeparationService buildSeparationService() {
+        // Prefer audio-separator (local, no API key needed) when configured and healthy.
+        // Fall back to MVSEP when it has an API token.
+        boolean audioSepConfigured = StringUtils.isNotBlank(getProperty("audiosep-python"))
+                && Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty("audiosep-health-ok"), "false"));
+        if (audioSepConfigured) {
+            LOGGER.info("Using audio-separator for wizard vocal separation.");
+            return new AudioSeparatorSeparationService(yassProperties);
+        }
+        LOGGER.info("Using MVSEP for wizard vocal separation.");
+        return new MvsepSeparationService(yassProperties);
     }
 
     public WizardTranscriptionState getWizardTranscriptionState() {
@@ -564,9 +583,15 @@ public class CreateSongWizard extends Wizard {
                 publish(I18.get("create_lyrics_separate_transcribe_progress_convert"));
                 File wavFile = convertWizardSourceToWav(sourceAudio, runDirectory);
 
-                MvsepSeparationService separationService = new MvsepSeparationService(yassProperties);
-                SeparationRequest request = separationService.createRequest(runDirectory, wavFile, runBaseName);
-                publish(I18.get("create_lyrics_separate_transcribe_progress_mvsep"));
+                SeparationService separationService = buildSeparationService();
+                SeparationRequest request;
+                if (separationService instanceof AudioSeparatorSeparationService as) {
+                    request = as.createRequest(runDirectory, wavFile, runBaseName);
+                    publish(I18.get("create_lyrics_separate_transcribe_progress_audiosep"));
+                } else {
+                    request = ((MvsepSeparationService) separationService).createRequest(runDirectory, wavFile, runBaseName);
+                    publish(I18.get("create_lyrics_separate_transcribe_progress_mvsep"));
+                }
                 SeparationResult separationResult = separationService.startSeparation(request, this::publish);
 
                 File vocalsFile = separationResult.getVocalsFile();
@@ -795,7 +820,7 @@ public class CreateSongWizard extends Wizard {
         return new File(tempBaseDir, "wizard-separation");
     }
 
-    private File createWizardRunDirectory() throws java.io.IOException {
+    private File createWizardRunDirectory() throws IOException {
         File wizardBaseDir = getWizardBaseDirectory();
         Files.createDirectories(wizardBaseDir.toPath());
         File runDirectory = new File(wizardBaseDir, "run-" + System.currentTimeMillis());
@@ -803,8 +828,8 @@ public class CreateSongWizard extends Wizard {
         return runDirectory;
     }
 
-    private File convertWizardSourceToWav(File sourceAudio, File runDirectory) throws java.io.IOException {
-        yass.ffmpeg.FFMPEGLocator.initFfmpeg(yassProperties.getProperty("ffmpegPath"));
+    private File convertWizardSourceToWav(File sourceAudio, File runDirectory) throws IOException {
+        FFMPEGLocator.initFfmpeg(yassProperties.getProperty("ffmpegPath"));
         File wavTarget = new File(runDirectory, "source.wav");
         YassPlayer player = new YassPlayer(null, yassProperties);
         File converted = player.generateTemp(sourceAudio.getAbsolutePath(), Timebase.NORMAL, wavTarget.getAbsolutePath());

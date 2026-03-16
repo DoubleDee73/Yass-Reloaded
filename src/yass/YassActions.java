@@ -31,8 +31,23 @@ import yass.analysis.PitchDetector;
 import yass.autocorrect.YassAutoCorrect;
 import yass.extras.UsdbSyncerMetaTagCreator;
 import yass.hyphenator.HyphenatorDictionary;
+import yass.alignment.LyricsAlignmentResult;
+import yass.alignment.LyricsAlignmentService;
+import yass.alignment.LyricsAlignmentTokenizer;
+import yass.alignment.TranscriptNoteRebuildService;
+import yass.alignment.TranscriptRebuildResult;
+import yass.integration.separation.SeparationRequest;
+import yass.integration.separation.SeparationResult;
+import yass.integration.separation.mvsep.MvsepAccountInfo;
+import yass.integration.separation.mvsep.MvsepAlgorithmInfo;
+import yass.integration.separation.mvsep.MvsepSeparationService;
+import yass.integration.separation.mvsep.MvsepStartDialog;
 import yass.integration.transcription.TranscriptionEngine;
+import yass.integration.transcription.openai.OpenAiTranscriptionRequest;
+import yass.integration.transcription.openai.OpenAiTranscriptionResult;
 import yass.integration.transcription.openai.OpenAiTranscriptionService;
+import yass.integration.transcription.openai.OpenAiTranscriptSegment;
+import yass.integration.transcription.openai.OpenAiTranscriptWord;
 import yass.integration.transcription.whisperx.WhisperXTranscriptionRequest;
 import yass.integration.transcription.whisperx.WhisperXTranscriptionService;
 import yass.musicalkey.MusicalKey;
@@ -67,6 +82,7 @@ import java.util.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CancellationException;
+import java.util.stream.Collectors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -153,7 +169,7 @@ public class YassActions implements DropTargetListener {
     private boolean soonStarting = false;
     private boolean separationRunning = false;
     private SeparationJob trackedSeparationJob = null;
-    private SwingWorker<yass.integration.separation.SeparationResult, String> separationWorker = null;
+    private SwingWorker<SeparationResult, String> separationWorker = null;
     private JMenuBar editMenu = null, libMenu = null;
     private int x;
     private int y;
@@ -176,12 +192,12 @@ public class YassActions implements DropTargetListener {
 
     private static final class SeparationJob {
         private final String songKey;
-        private final yass.integration.separation.SeparationRequest request;
+        private final SeparationRequest request;
         private String hash;
         private SeparationJobState state;
 
         private SeparationJob(String songKey,
-                              yass.integration.separation.SeparationRequest request,
+                              SeparationRequest request,
                               String hash,
                               SeparationJobState state) {
             this.songKey = songKey;
@@ -2836,7 +2852,7 @@ public class YassActions implements DropTargetListener {
             boolean useCachedChoice = false;
             boolean hasCache = useWhisperX
                     ? whisperXService.hasCachedTranscription((WhisperXTranscriptionRequest) request)
-                    : openAiService.hasCachedTranscription((yass.integration.transcription.openai.OpenAiTranscriptionRequest) request);
+                    : openAiService.hasCachedTranscription((OpenAiTranscriptionRequest) request);
             if (hasCache) {
                 int decision = JOptionPane.showConfirmDialog(tab,
                                                              useWhisperX ? I18.get("edit_align_transcription_cached_prompt_whisperx")
@@ -2869,25 +2885,25 @@ public class YassActions implements DropTargetListener {
             progressDialog.setSize(560, 170);
             progressDialog.setLocationRelativeTo(getFrame(tab));
 
-            SwingWorker<yass.integration.transcription.openai.OpenAiTranscriptionResult, Void> worker =
+            SwingWorker<OpenAiTranscriptionResult, Void> worker =
                     new SwingWorker<>() {
                         @Override
-                        protected yass.integration.transcription.openai.OpenAiTranscriptionResult doInBackground() throws Exception {
+                        protected OpenAiTranscriptionResult doInBackground() throws Exception {
                             if (useWhisperX) {
                                 return useCachedTranscription
                                         ? whisperXService.loadCachedTranscription((WhisperXTranscriptionRequest) request, table)
                                         : whisperXService.transcribe((WhisperXTranscriptionRequest) request, table);
                             }
                             return useCachedTranscription
-                                    ? openAiService.loadCachedTranscription((yass.integration.transcription.openai.OpenAiTranscriptionRequest) request, table)
-                                    : openAiService.transcribe((yass.integration.transcription.openai.OpenAiTranscriptionRequest) request, table);
+                                    ? openAiService.loadCachedTranscription((OpenAiTranscriptionRequest) request, table)
+                                    : openAiService.transcribe((OpenAiTranscriptionRequest) request, table);
                         }
 
                         @Override
                         protected void done() {
                             progressDialog.dispose();
                             try {
-                                yass.integration.transcription.openai.OpenAiTranscriptionResult result = get();
+                                OpenAiTranscriptionResult result = get();
                                 boolean rebuildFromTranscript = false;
                                 if (useWhisperX && !result.getWords().isEmpty()) {
                                     int overwriteDecision = JOptionPane.showConfirmDialog(tab,
@@ -2903,8 +2919,8 @@ public class YassActions implements DropTargetListener {
 
                                 String summary;
                                 if (rebuildFromTranscript) {
-                                    yass.alignment.TranscriptRebuildResult rebuildResult =
-                                            new yass.alignment.TranscriptNoteRebuildService().transcript(table, result);
+                                    TranscriptRebuildResult rebuildResult =
+                                            new TranscriptNoteRebuildService().transcript(table, result);
                                     summary = (useWhisperX ? whisperXService.buildSummary(result) : openAiService.buildSummary(result))
                                             .replace("</html>", "<br><br>"
                                                     + MessageFormat.format(I18.get("edit_align_transcription_rebuild_summary"),
@@ -2913,8 +2929,8 @@ public class YassActions implements DropTargetListener {
                                                     rebuildResult.getGapMs())
                                                     + "</html>");
                                 } else {
-                                    yass.alignment.LyricsAlignmentService alignmentService = new yass.alignment.LyricsAlignmentService();
-                                    yass.alignment.LyricsAlignmentResult alignmentResult = alignmentService.alignAndApply(table, result);
+                                    LyricsAlignmentService alignmentService = new LyricsAlignmentService();
+                                    LyricsAlignmentResult alignmentResult = alignmentService.alignAndApply(table, result);
                                     summary = (useWhisperX ? whisperXService.buildSummary(result) : openAiService.buildSummary(result))
                                             .replace("</html>", "<br><br>"
                                                     + MessageFormat.format(I18.get("edit_align_transcription_applied_summary"),
@@ -2991,8 +3007,8 @@ public class YassActions implements DropTargetListener {
                 return;
             }
 
-            yass.integration.separation.mvsep.MvsepSeparationService separationService =
-                    new yass.integration.separation.mvsep.MvsepSeparationService(prop);
+            MvsepSeparationService separationService =
+                    new MvsepSeparationService(prop);
             if (trackedSeparationJob != null && trackedSeparationJob.matchesSong(currentSongKey)
                     && trackedSeparationJob.canResume()) {
                 openSeparationStatusDialog(separationService,
@@ -3003,12 +3019,12 @@ public class YassActions implements DropTargetListener {
                 return;
             }
 
-            yass.integration.separation.SeparationRequest defaultRequest = separationService.createRequest(table);
-            yass.integration.separation.mvsep.MvsepAccountInfo accountInfo = fetchMvsepAccountInfo(separationService);
-            Map<Integer, yass.integration.separation.mvsep.MvsepAlgorithmInfo> algorithms = fetchMvsepAlgorithms(separationService);
+            SeparationRequest defaultRequest = separationService.createRequest(table);
+            MvsepAccountInfo accountInfo = fetchMvsepAccountInfo(separationService);
+            Map<Integer, MvsepAlgorithmInfo> algorithms = fetchMvsepAlgorithms(separationService);
             Integer planQueue = fetchMvsepPlanQueue(separationService);
-            yass.integration.separation.SeparationRequest request =
-                    yass.integration.separation.mvsep.MvsepStartDialog.showDialog(getFrame(tab),
+            SeparationRequest request =
+                    MvsepStartDialog.showDialog(getFrame(tab),
                                                                                   defaultRequest,
                                                                                   accountInfo,
                                                                                   algorithms,
@@ -3057,9 +3073,9 @@ public class YassActions implements DropTargetListener {
                 return false;
             }
 
-            yass.integration.transcription.openai.OpenAiTranscriptionResult transcriptionResult =
+            OpenAiTranscriptionResult transcriptionResult =
                     applyCorrectedLyricsToTranscript(state.getTranscriptionResult(), correctedLyrics);
-            new yass.alignment.TranscriptNoteRebuildService().transcript(createdTable, transcriptionResult);
+            new TranscriptNoteRebuildService().transcript(createdTable, transcriptionResult);
             copyWizardSeparationFiles(destinationDir, createdTable, state);
             copyWizardTranscriptCache(destinationDir, state);
             createdTable.storeFile(songTextFile.getAbsolutePath());
@@ -3071,14 +3087,14 @@ public class YassActions implements DropTargetListener {
         }
     }
 
-    private yass.integration.transcription.openai.OpenAiTranscriptionResult applyCorrectedLyricsToTranscript(
-            yass.integration.transcription.openai.OpenAiTranscriptionResult original, String correctedLyrics) {
+    private OpenAiTranscriptionResult applyCorrectedLyricsToTranscript(
+            OpenAiTranscriptionResult original, String correctedLyrics) {
         if (StringUtils.isBlank(correctedLyrics) || original.getSegments().isEmpty()) {
             return original;
         }
         // Collect all words from segments in order
-        List<yass.integration.transcription.openai.OpenAiTranscriptWord> allWords = new ArrayList<>();
-        for (yass.integration.transcription.openai.OpenAiTranscriptSegment segment : original.getSegments()) {
+        List<OpenAiTranscriptWord> allWords = new ArrayList<>();
+        for (OpenAiTranscriptSegment segment : original.getSegments()) {
             allWords.addAll(segment.getWords());
         }
         // Split corrected lyrics into words (split on any whitespace/newline)
@@ -3091,24 +3107,24 @@ public class YassActions implements DropTargetListener {
         LOGGER.info("Applying " + correctedWords.length + " corrected words to transcript.");
         // Rebuild segments with corrected word texts, preserving all timestamps
         int wordIndex = 0;
-        List<yass.integration.transcription.openai.OpenAiTranscriptSegment> newSegments = new ArrayList<>();
-        for (yass.integration.transcription.openai.OpenAiTranscriptSegment segment : original.getSegments()) {
-            List<yass.integration.transcription.openai.OpenAiTranscriptWord> newWords = new ArrayList<>();
-            for (yass.integration.transcription.openai.OpenAiTranscriptWord word : segment.getWords()) {
+        List<OpenAiTranscriptSegment> newSegments = new ArrayList<>();
+        for (OpenAiTranscriptSegment segment : original.getSegments()) {
+            List<OpenAiTranscriptWord> newWords = new ArrayList<>();
+            for (OpenAiTranscriptWord word : segment.getWords()) {
                 String corrected = correctedWords[wordIndex++];
-                newWords.add(new yass.integration.transcription.openai.OpenAiTranscriptWord(
+                newWords.add(new OpenAiTranscriptWord(
                         corrected,
-                        yass.alignment.LyricsAlignmentTokenizer.normalizeText(corrected),
+                        LyricsAlignmentTokenizer.normalizeText(corrected),
                         word.getStartMs(),
                         word.getEndMs()));
             }
             String newSegmentText = newWords.stream()
-                    .map(yass.integration.transcription.openai.OpenAiTranscriptWord::getText)
-                    .collect(java.util.stream.Collectors.joining(" "));
-            newSegments.add(new yass.integration.transcription.openai.OpenAiTranscriptSegment(
+                    .map(OpenAiTranscriptWord::getText)
+                    .collect(Collectors.joining(" "));
+            newSegments.add(new OpenAiTranscriptSegment(
                     segment.getStartMs(), segment.getEndMs(), newSegmentText, newWords));
         }
-        return new yass.integration.transcription.openai.OpenAiTranscriptionResult(
+        return new OpenAiTranscriptionResult(
                 original.getSourceAudioFile(),
                 original.getUploadAudioFile(),
                 original.getSourceTag(),
@@ -3121,7 +3137,7 @@ public class YassActions implements DropTargetListener {
     }
 
     private void copyWizardSeparationFiles(File destinationDir, YassTable createdTable, WizardTranscriptionState state) throws IOException {
-        yass.integration.separation.SeparationResult separationResult = state.getSeparationResult();
+        SeparationResult separationResult = state.getSeparationResult();
         if (separationResult == null) {
             return;
         }
@@ -3144,7 +3160,7 @@ public class YassActions implements DropTargetListener {
     }
 
     private void copyWizardTranscriptCache(File destinationDir, WizardTranscriptionState state) throws IOException {
-        yass.integration.transcription.openai.OpenAiTranscriptionResult transcriptionResult = state.getTranscriptionResult();
+        OpenAiTranscriptionResult transcriptionResult = state.getTranscriptionResult();
         if (transcriptionResult == null || transcriptionResult.getCacheFile() == null || !transcriptionResult.getCacheFile().isFile()) {
             return;
         }
@@ -3184,8 +3200,8 @@ public class YassActions implements DropTargetListener {
         }
     }
 
-    private yass.integration.separation.mvsep.MvsepAccountInfo fetchMvsepAccountInfo(
-            yass.integration.separation.mvsep.MvsepSeparationService separationService) {
+    private MvsepAccountInfo fetchMvsepAccountInfo(
+            MvsepSeparationService separationService) {
         try {
             return separationService.fetchAccountInfo();
         } catch (IOException ignored) {
@@ -3193,8 +3209,8 @@ public class YassActions implements DropTargetListener {
         }
     }
 
-    private Map<Integer, yass.integration.separation.mvsep.MvsepAlgorithmInfo> fetchMvsepAlgorithms(
-            yass.integration.separation.mvsep.MvsepSeparationService separationService) {
+    private Map<Integer, MvsepAlgorithmInfo> fetchMvsepAlgorithms(
+            MvsepSeparationService separationService) {
         try {
             return separationService.fetchAlgorithms();
         } catch (IOException ignored) {
@@ -3202,7 +3218,7 @@ public class YassActions implements DropTargetListener {
         }
     }
 
-    private Integer fetchMvsepPlanQueue(yass.integration.separation.mvsep.MvsepSeparationService separationService) {
+    private Integer fetchMvsepPlanQueue(MvsepSeparationService separationService) {
         try {
             return separationService.fetchPlanQueue();
         } catch (IOException ignored) {
@@ -3210,9 +3226,9 @@ public class YassActions implements DropTargetListener {
         }
     }
 
-    private void openSeparationStatusDialog(yass.integration.separation.mvsep.MvsepSeparationService separationService,
+    private void openSeparationStatusDialog(MvsepSeparationService separationService,
                                             SeparationJob job,
-                                            yass.integration.separation.mvsep.MvsepAccountInfo accountInfo,
+                                            MvsepAccountInfo accountInfo,
                                             Integer planQueue,
                                             boolean resuming) {
         JLabel statusLabel = new JLabel(resuming ? I18.get("edit_audio_separate_resuming") : I18.get("edit_audio_separate_uploading"));
@@ -3275,7 +3291,7 @@ public class YassActions implements DropTargetListener {
         final String[] lastStatus = {statusLabel.getText()};
         separationWorker = new SwingWorker<>() {
             @Override
-            protected yass.integration.separation.SeparationResult doInBackground() throws Exception {
+            protected SeparationResult doInBackground() throws Exception {
                 if (resuming) {
                     return separationService.resumeSeparation(job.request, job.hash, this::publish);
                 }
@@ -3305,7 +3321,7 @@ public class YassActions implements DropTargetListener {
                     return;
                 }
                 try {
-                    yass.integration.separation.SeparationResult result = get();
+                    SeparationResult result = get();
                     if (statusDialog.isDisplayable()) {
                         statusDialog.dispose();
                     }
@@ -3357,7 +3373,7 @@ public class YassActions implements DropTargetListener {
     }
 
     private void appendSeparationInfo(JTextArea statusHistory,
-                                      yass.integration.separation.mvsep.MvsepAccountInfo accountInfo,
+                                      MvsepAccountInfo accountInfo,
                                       Integer planQueue) {
         if (accountInfo != null) {
             statusHistory.append("\n" + accountInfo.getSummary());
@@ -3388,7 +3404,7 @@ public class YassActions implements DropTargetListener {
         }
     }
 
-    private void cancelTrackedSeparation(yass.integration.separation.mvsep.MvsepSeparationService separationService,
+    private void cancelTrackedSeparation(MvsepSeparationService separationService,
                                          JDialog statusDialog,
                                          JTextArea statusHistory,
                                          JButton closeButton,
@@ -6612,7 +6628,7 @@ public class YassActions implements DropTargetListener {
         return changed;
     }
 
-    private String buildSeparationSuccessMessage(yass.integration.separation.SeparationResult result,
+    private String buildSeparationSuccessMessage(SeparationResult result,
                                                  boolean linkedVocals,
                                                  boolean linkedInstrumental,
                                                  File preferredInstrumental) {

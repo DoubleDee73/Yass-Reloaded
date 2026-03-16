@@ -19,24 +19,37 @@
 
 package yass.wizard;
 
-import com.jfposton.ytdlp.YtDlp;
-import com.jfposton.ytdlp.YtDlpCallback;
-import com.jfposton.ytdlp.YtDlpRequest;
-import org.apache.commons.lang3.StringUtils;
-import yass.I18;
-import yass.analysis.BpmDetector;
-import yass.options.YtDlpPanel;
+import static yass.wizard.CreateSongWizard.LOGGER;
 
-import javax.swing.*;
-import javax.swing.text.html.HTMLDocument;
-import java.awt.*;
+import java.awt.BorderLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
 import java.io.Serial;
 import java.net.URL;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import static yass.wizard.CreateSongWizard.LOGGER;
+import javax.swing.ImageIcon;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextField;
+import javax.swing.JTextPane;
+import javax.swing.SwingUtilities;
+import javax.swing.text.html.HTMLDocument;
+
+import org.apache.commons.lang3.StringUtils;
+
+import com.jfposton.ytdlp.YtDlp;
+import com.jfposton.ytdlp.YtDlpCallback;
+import com.jfposton.ytdlp.YtDlpRequest;
+
+import yass.I18;
+import yass.analysis.BpmDetector;
+import yass.options.YtDlpPanel;
 
 public class YouTube extends JPanel {
     /**
@@ -143,14 +156,35 @@ public class YouTube extends JPanel {
         return matches[0];
     }
 
+    private File findBestAudioFileByYouTubeId() {
+        String youTubeId = extractYouTubeId(getYouTubeUrl());
+        if (StringUtils.isBlank(youTubeId)) {
+            return null;
+        }
+        File tempDir = new File(wizard.getProperty("temp-dir"));
+        if (!tempDir.isDirectory()) {
+            return null;
+        }
+        File[] matches = tempDir.listFiles(f -> f.isFile() && f.getName().contains(youTubeId));
+        if (matches == null || matches.length == 0) {
+            return null;
+        }
+        // Prefer files with known audio-only extensions
+        for (File f : matches) {
+            String ext = f.getName().contains(".") ? f.getName().substring(f.getName().lastIndexOf('.') + 1).toLowerCase() : "";
+            if (AUDIO_EXTENSIONS.contains(ext)) {
+                return f;
+            }
+        }
+        return null;
+    }
+
     static String extractYouTubeId(String url) {
         if (StringUtils.isBlank(url)) {
             return null;
         }
         // Handles: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID
-        java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("(?:v=|youtu\\.be/|/shorts/)([A-Za-z0-9_-]{11})")
-                .matcher(url);
+        Matcher m = Pattern.compile("(?:v=|youtu\\.be/|/shorts/)([A-Za-z0-9_-]{11})").matcher(url);
         return m.find() ? m.group(1) : null;
     }
     private void startDownload(DownloadSplashFrame splash) {
@@ -181,7 +215,7 @@ public class YouTube extends JPanel {
         YtDlpRequest request = new YtDlpRequest(getYouTubeUrl().trim());
         request.setDirectory(tempDir.getAbsolutePath());
         request.setOption("output", "%(title)s.%(id)s.v_%(vcodec)s.a_%(acodec)s.%(ext)s");
-        
+
         if (fallbackLevel == 2) {
             LOGGER.info("Using fallback format 'best'");
             request.setOption("format", "best");
@@ -214,17 +248,17 @@ public class YouTube extends JPanel {
         String videoCodec = wizard.getProperty(YtDlpPanel.YTDLP_VIDEO_CODEC);
         String videoResolution = wizard.getProperty(YtDlpPanel.YTDLP_VIDEO_RESOLUTION);
         StringBuilder ytDlpArgs = new StringBuilder("bestvideo");
-        
+
         // Level 0: Use Codec if set
         if (fallbackLevel == 0 && StringUtils.isNotEmpty(videoCodec)) {
             ytDlpArgs.append(videoCodec);
         }
-        
+
         // Level 0 & 1: Use Resolution if set
         if (StringUtils.isNotEmpty(videoResolution)) {
             ytDlpArgs.append(videoResolution);
         }
-        
+
         ytDlpArgs.append(",bestaudio");
         String audioBitrate = wizard.getProperty(YtDlpPanel.YTDLP_AUDIO_BITRATE);
         if (StringUtils.isNotEmpty(audioBitrate)) {
@@ -278,9 +312,22 @@ public class YouTube extends JPanel {
         };
     }
 
+    private static final Set<String> AUDIO_EXTENSIONS =
+            Set.of("opus", "mp3", "aac", "ogg", "flac", "m4a", "wav");
+
     private void handleDownloadSuccess(DownloadSplashFrame splash) {
         LOGGER.info("yt-dlp process finished successfully.");
         renameDownloadedFiles();
+
+        // If filename wasn't set (e.g. yt-dlp skipped ExtractAudio because format already matched),
+        // scan the temp dir and pick the best audio file by YouTube ID.
+        if (StringUtils.isEmpty(wizard.getValue("filename"))) {
+            File audioFile = findBestAudioFileByYouTubeId();
+            if (audioFile != null) {
+                LOGGER.info("Auto-resolved filename from temp dir: " + audioFile.getAbsolutePath());
+                wizard.setValue("filename", audioFile.getAbsolutePath());
+            }
+        }
 
         String autoGenerated = wizard.getValue("subtitles-auto-generated");
         if ("true".equals(autoGenerated)) {
@@ -307,7 +354,8 @@ public class YouTube extends JPanel {
 
         // If ffmpeg was not found for merging but the media files were already downloaded,
         // treat this as a success — the files exist and the merge error is a false failure.
-        if (error != null && error.contains("ffprobe and ffmpeg not found") && findExistingDownloadByYouTubeId() != null) {
+        if (error != null && error.contains("ffprobe and ffmpeg not found")
+                && findExistingDownloadByYouTubeId() != null) {
             LOGGER.warning("ffmpeg not found for merging, but media files already exist. Treating as success.");
             handleDownloadSuccess(splash);
             splash.enableCloseButton();
