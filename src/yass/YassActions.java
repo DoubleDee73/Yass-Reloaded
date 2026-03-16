@@ -7,8 +7,8 @@
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful, 
- * but WITHOUT ANY WARRANTY; without even the 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the
  * implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -1411,7 +1411,7 @@ public class YassActions implements DropTargetListener {
                 prop.store();
 
                 // int ok = JOptionPane.showConfirmDialog(tab, "<html>" +
-                // MessageFormat.format(I18.get("edit_record_msg"), // recordLength), I18.get("edit_record_title"), 
+                // MessageFormat.format(I18.get("edit_record_msg"), // recordLength), I18.get("edit_record_title"),
                 // JOptionPane.OK_CANCEL_OPTION);
 
                 startRecording();
@@ -2902,7 +2902,7 @@ public class YassActions implements DropTargetListener {
                                 String summary;
                                 if (rebuildFromTranscript) {
                                     yass.alignment.TranscriptRebuildResult rebuildResult =
-                                            new yass.alignment.TranscriptNoteRebuildService().Transcript(table, result);
+                                            new yass.alignment.TranscriptNoteRebuildService().transcript(table, result);
                                     summary = (useWhisperX ? whisperXService.buildSummary(result) : openAiService.buildSummary(result))
                                             .replace("</html>", "<br><br>"
                                                     + MessageFormat.format(I18.get("edit_align_transcription_rebuild_summary"),
@@ -2923,16 +2923,20 @@ public class YassActions implements DropTargetListener {
                                                     + "</html>");
                                 }
 
+                                if (sheet != null && rebuildFromTranscript) {
+                                    sheet.init();
+                                }
                                 updateGapBpm();
                                 table.fireTableTableDataChanged();
                                 table.setSaved(false);
-                                if (sheet != null) {
+                                if (sheet != null && !rebuildFromTranscript) {
                                     sheet.repaint();
                                 }
                                 table.repaint();
                                 updateActions();
+                                JLabel summaryLabel = new JLabel(ensureHtmlMessage(summary));
                                 JOptionPane.showMessageDialog(tab,
-                                                              ensureHtmlMessage(summary),
+                                                              summaryLabel,
                                                               I18.get("edit_align_transcription"),
                                                               JOptionPane.INFORMATION_MESSAGE);
                             } catch (Exception ex) {
@@ -3051,7 +3055,7 @@ public class YassActions implements DropTargetListener {
                 return false;
             }
 
-            new yass.alignment.TranscriptNoteRebuildService().Transcript(createdTable, state.getTranscriptionResult());
+            new yass.alignment.TranscriptNoteRebuildService().transcript(createdTable, state.getTranscriptionResult());
             copyWizardSeparationFiles(destinationDir, createdTable, state);
             copyWizardTranscriptCache(destinationDir, state);
             createdTable.storeFile(songTextFile.getAbsolutePath());
@@ -6483,7 +6487,16 @@ public class YassActions implements DropTargetListener {
     }
 
     private TranscriptionEngine getPreferredTranscriptionEngine() {
-        return TranscriptionEngine.fromValue(prop.getProperty("transcription-engine"));
+        TranscriptionEngine configured = TranscriptionEngine.fromValue(prop.getProperty("transcription-engine"));
+        boolean configuredUsable = configured == TranscriptionEngine.OPENAI ? hasOpenAiApiKey() : hasWhisperXConfiguration();
+        if (configuredUsable) {
+            return configured;
+        }
+        // Fall back to whichever engine is actually available
+        if (hasWhisperXConfiguration()) {
+            return TranscriptionEngine.WHISPERX;
+        }
+        return TranscriptionEngine.OPENAI;
     }
 
     public boolean hasWhisperXConfiguration() {
@@ -8845,9 +8858,9 @@ public class YassActions implements DropTargetListener {
         am.put("last", last);
 
         /*
-         * im.put(KeyStroke.getKeyStroke(KeyEvent.VK_L , InputEvent.CTRL_DOWN_MASK), * "lock"); am.put("lock", 
+         * im.put(KeyStroke.getKeyStroke(KeyEvent.VK_L , InputEvent.CTRL_DOWN_MASK), * "lock"); am.put("lock",
          * enableHyphenKeys);
-         * enableHyphenKeys.putValue(AbstractAction.ACCELERATOR_KEY, * KeyStroke.getKeyStroke(KeyEvent.VK_L, 
+         * enableHyphenKeys.putValue(AbstractAction.ACCELERATOR_KEY, * KeyStroke.getKeyStroke(KeyEvent.VK_L,
  * InputEvent.CTRL_DOWN_MASK));
          */
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_G, 0), "golden");

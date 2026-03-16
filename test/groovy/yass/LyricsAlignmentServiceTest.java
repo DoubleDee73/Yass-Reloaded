@@ -85,7 +85,7 @@ class LyricsAlignmentServiceTest {
                 new File("calimero-whisperx-transcript.json"));
 
         yass.alignment.TranscriptRebuildResult rebuildResult =
-                new yass.alignment.TranscriptNoteRebuildService().Transcript(table, result);
+                new yass.alignment.TranscriptNoteRebuildService().transcript(table, result);
 
         assertEquals(8480d, table.getGap(), 0.0001d,
                 "Expected rebuild mode to set GAP from the first WhisperX word.");
@@ -115,7 +115,7 @@ class LyricsAlignmentServiceTest {
                 new File("tovenaar-whisperx-transcript.json"));
 
         yass.alignment.TranscriptRebuildResult rebuildResult =
-                new yass.alignment.TranscriptNoteRebuildService().Transcript(table, result);
+                new yass.alignment.TranscriptNoteRebuildService().transcript(table, result);
 
         assertTrue(rebuildResult.getNoteCount() > 0, "Expected transcript rebuild to create note rows for Tovenaar.");
         assertTrue(hasNoOverlaps(table), "Rebuilt Tovenaar notes should not overlap.");

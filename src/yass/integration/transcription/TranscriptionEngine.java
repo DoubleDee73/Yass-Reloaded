@@ -2,6 +2,7 @@ package yass.integration.transcription;
 
 import yass.YassEnum;
 
+import java.util.Arrays;
 import java.util.List;
 
 public enum TranscriptionEngine implements YassEnum {
@@ -32,7 +33,7 @@ public enum TranscriptionEngine implements YassEnum {
 
     @Override
     public List<YassEnum> listElements() {
-        return List.of(values());
+        return Arrays.asList(values());
     }
 
     @Override

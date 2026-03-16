@@ -1,7 +1,8 @@
-﻿package yass.integration.transcription.openai;
+package yass.integration.transcription.openai;
 
 import yass.YassEnum;
 
+import java.util.Arrays;
 import java.util.List;
 
 public enum OpenAiTranscriptionModel implements YassEnum {
@@ -30,8 +31,8 @@ public enum OpenAiTranscriptionModel implements YassEnum {
     }
 
     @Override
-    public List<yass.YassEnum> listElements() {
-        return List.of(values());
+    public List<YassEnum> listElements() {
+        return Arrays.asList(values());
     }
 
     @Override

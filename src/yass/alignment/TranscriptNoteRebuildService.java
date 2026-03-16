@@ -1,6 +1,12 @@
 package yass.alignment;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.StringJoiner;
+import java.util.logging.Logger;
+
 import org.apache.commons.lang3.StringUtils;
+
 import yass.YassProperties;
 import yass.YassRow;
 import yass.YassTable;
@@ -8,17 +14,12 @@ import yass.integration.transcription.openai.OpenAiTranscriptSegment;
 import yass.integration.transcription.openai.OpenAiTranscriptWord;
 import yass.integration.transcription.openai.OpenAiTranscriptionResult;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.StringJoiner;
-import java.util.logging.Logger;
-
 public class TranscriptNoteRebuildService {
     private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static final int DEFAULT_PITCH = 6;
     private static final int MIN_NOTE_LENGTH = 1;
 
-    public TranscriptRebuildResult Transcript(YassTable table, OpenAiTranscriptionResult transcriptionResult) {
+    public TranscriptRebuildResult transcript(YassTable table, OpenAiTranscriptionResult transcriptionResult) {
         List<OpenAiTranscriptSegment> segments = collectSegments(transcriptionResult);
         if (segments.isEmpty()) {
             throw new IllegalArgumentException("No transcript segments available for rebuild.");
@@ -30,31 +31,14 @@ public class TranscriptNoteRebuildService {
             throw new IllegalStateException("Transcript rebuild produced no note rows.");
         }
 
-        String rebuiltText = buildRebuiltTableText(table, rebuiltRows, gapMs);
-        String currentDir = table.getDir();
-        String currentFilename = table.getFilename();
-        List<Integer> originalHeights = collectOriginalNoteHeights(table);
-
         table.addUndo();
         boolean oldUndo = table.getPreventUndo();
         table.setPreventUndo(true);
-        try {
-            table.removeAllRows();
-            table.setDir(currentDir);
-            table.setFilename(currentFilename);
-            if (!table.setText(rebuiltText)) {
-                throw new IllegalStateException("Failed to rebuild notes from transcript.");
-            }
-        } finally {
-            table.setPreventUndo(oldUndo);
-        }
-        table.setDir(currentDir);
-        table.setFilename(currentFilename);
-        table.setGap(gapMs);
-        applyPitchContour(table, originalHeights);
+        table.removeNotes();
+        table.setPreventUndo(oldUndo);
         pruneEmptyNoteRows(table);
-        normalizeTiming(table);
         table.setSaved(false);
+        logTableNotes(table);
 
         int noteCount = 0;
         int pageBreakCount = 0;
@@ -65,8 +49,11 @@ public class TranscriptNoteRebuildService {
             } else if (parsed.isPageBreak()) {
                 pageBreakCount++;
             }
+            table.addRow(parsed);
         }
-        LOGGER.info("Rebuilt " + noteCount + " notes from transcript with gap " + gapMs + " ms.");
+        table.addRow("E");
+        LOGGER.info("Rebuilt " + noteCount + " notes, " + pageBreakCount + " page breaks from transcript with gap " + gapMs + " ms.");
+//        logRebuiltRows(rebuiltRows);
         return new TranscriptRebuildResult(noteCount, pageBreakCount, gapMs);
     }
 
@@ -139,7 +126,7 @@ public class TranscriptNoteRebuildService {
                                     double bpm,
                                     int gapMs) {
         List<String> rows = new ArrayList<>();
-        boolean uncommonSpacingAfter = properties != null && properties.isUncommonSpacingAfter();
+        boolean spacingAfter = properties != null && properties.isUncommonSpacingAfter();
         Integer previousNoteBeat = null;
         int previousNoteIndex = -1;
         int nextAllowedBeat = 0;
@@ -152,11 +139,15 @@ public class TranscriptNoteRebuildService {
             }
 
             if (!rows.isEmpty()) {
-                int pageBeat = Math.max(nextAllowedBeat, msToBeat(segment.getStartMs(), gapMs, bpm));
+                int firstWordBeat = msToBeat(words.get(0).getStartMs(), gapMs, bpm);
+                // Place page break halfway between previous note end and first word of this segment,
+                // but never at or after the first word beat (note must start there)
+                int midpoint = nextAllowedBeat + Math.max(0, (firstWordBeat - nextAllowedBeat) / 2);
+                int pageBeat = Math.min(midpoint, Math.max(nextAllowedBeat, firstWordBeat - 1));
                 rows.add("-\t" + Math.max(0, pageBeat));
                 previousNoteBeat = null;
                 previousNoteIndex = -1;
-                nextAllowedBeat = Math.max(pageBeat + 1, nextAllowedBeat);
+                nextAllowedBeat = pageBeat + 1;
             }
 
             for (OpenAiTranscriptWord word : words) {
@@ -169,19 +160,20 @@ public class TranscriptNoteRebuildService {
                 }
 
                 int startBeat = Math.max(nextAllowedBeat, msToBeat(word.getStartMs(), gapMs, bpm));
-                int endBeat = msToBeat(word.getEndMs(), gapMs, bpm);
-                int length = Math.max(MIN_NOTE_LENGTH, endBeat - startBeat + 1);
-                String text = applyWordSpacing(cleanedWord, uncommonSpacingAfter);
+                int endBeat = msToBeatFloor(word.getEndMs(), gapMs, bpm);
+                int length = Math.max(MIN_NOTE_LENGTH, endBeat - startBeat);
+                String text = applyWordSpacing(cleanedWord, spacingAfter);
 
-                rows.add(createNoteRow(startBeat, length, text));
-                int currentIndex = rows.size() - 1;
                 if (previousNoteIndex >= 0 && previousNoteBeat != null) {
                     tightenPreviousNote(rows, previousNoteIndex, previousNoteBeat, startBeat);
                 }
 
+                rows.add(createNoteRow(startBeat, length, text));
+                int currentIndex = rows.size() - 1;
+
                 previousNoteBeat = startBeat;
                 previousNoteIndex = currentIndex;
-                nextAllowedBeat = startBeat + 1;
+                nextAllowedBeat = startBeat + length;
             }
         }
 
@@ -229,11 +221,12 @@ public class TranscriptNoteRebuildService {
                 .replace("\n", " ");
     }
 
-    private String applyWordSpacing(String word, boolean uncommonSpacingAfter) {
+    private String applyWordSpacing(String word, boolean spacingAfter) {
         if (StringUtils.isBlank(word)) {
             return word;
         }
-        return uncommonSpacingAfter ? (YassRow.SPACE + word) : (word + YassRow.SPACE);
+        String space = String.valueOf(YassRow.SPACE);
+        return spacingAfter ? (word + space) : (space + word);
     }
 
     private void tightenPreviousNote(List<String> rows, int previousIndex, int previousBeat, int currentBeat) {
@@ -244,9 +237,10 @@ public class TranscriptNoteRebuildService {
         if (!previousRow.isNote()) {
             return;
         }
-        int desiredLength = Math.max(MIN_NOTE_LENGTH, currentBeat - previousBeat - 2);
-        if (previousRow.getLengthInt() > desiredLength) {
-            rows.set(previousIndex, createNoteRow(previousBeat, desiredLength, previousRow.getText()));
+        // Leave at least 1 beat gap between notes; minimum length is 1
+        int maxLength = Math.max(MIN_NOTE_LENGTH, currentBeat - previousBeat - 1);
+        if (previousRow.getLengthInt() > maxLength) {
+            rows.set(previousIndex, createNoteRow(previousBeat, maxLength, previousRow.getText()));
         }
     }
 
@@ -298,12 +292,35 @@ public class TranscriptNoteRebuildService {
         return end;
     }
 
+    private void logTableNotes(YassTable table) {
+        StringBuilder sb = new StringBuilder("Table notes after rebuild:\n");
+        for (int i = 0; i < table.getRowCount(); i++) {
+            YassRow row = table.getRowAt(i);
+            if (row != null && (row.isNote() || row.isPageBreak())) {
+                sb.append("  row[").append(i).append("] ").append(row.toString()).append('\n');
+            }
+        }
+        LOGGER.info(sb.toString());
+    }
+
+    private void logRebuiltRows(List<String> rows) {
+        StringBuilder sb = new StringBuilder("Rebuilt rows:\n");
+        for (String row : rows) {
+            sb.append("  ").append(row).append('\n');
+        }
+        LOGGER.info(sb.toString());
+    }
+
     private int roundToNearestTen(int value) {
         return (int) (Math.round(value / 10.0d) * 10);
     }
 
     private int msToBeat(int ms, int gapMs, double bpm) {
         return (int) Math.max(0, Math.round(YassTable.msToBeatExact(ms, gapMs, bpm)));
+    }
+
+    private int msToBeatFloor(int ms, int gapMs, double bpm) {
+        return (int) Math.max(0, Math.floor(YassTable.msToBeatExact(ms, gapMs, bpm)));
     }
 
     private void pruneEmptyNoteRows(YassTable table) {

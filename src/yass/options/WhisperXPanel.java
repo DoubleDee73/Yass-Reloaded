@@ -105,7 +105,8 @@ public class WhisperXPanel extends OptionsPanel {
             protected WhisperXHealthCheckResult doInBackground() {
                 WhisperXHealthCheckService service = new WhisperXHealthCheckService(getProperty("whisperx-python"),
                                                                                    Boolean.parseBoolean(getProperty("whisperx-use-module")),
-                                                                                   getProperty("whisperx-command"));
+                                                                                   getProperty("whisperx-command"),
+                                                                                   getProperty("ffmpegPath"));
                 return service.runHealthCheck();
             }
 
@@ -169,6 +170,12 @@ public class WhisperXPanel extends OptionsPanel {
             text.append("\nFFmpeg version: ").append(result.getFfmpegVersion());
         }
 
+        if (result.getTorchVersion() != null) {
+            text.append("\nTorch version: ").append(result.getTorchVersion());
+        }
+        if (result.getTorchCudaBuild() != null) {
+            text.append("\nTorch CUDA build: ").append(result.getTorchCudaBuild());
+        }
         text.append("\nGPU: ").append(result.getGpuAvailability());
         text.append("\nRecommended device: ").append(StringUtils.defaultIfBlank(getProperty("whisperx-device"), "auto"));
         text.append("\nRecommended compute type: ").append(StringUtils.defaultIfBlank(getProperty("whisperx-compute-type"), "auto"));

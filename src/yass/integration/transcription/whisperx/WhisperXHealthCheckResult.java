@@ -9,6 +9,8 @@ public class WhisperXHealthCheckResult {
     private final boolean ffmpegAvailable;
     private final String ffmpegVersion;
     private final String gpuAvailability;
+    private final String torchVersion;
+    private final String torchCudaBuild;
     private final String details;
 
     public WhisperXHealthCheckResult(boolean pythonFound,
@@ -19,6 +21,8 @@ public class WhisperXHealthCheckResult {
                                      boolean ffmpegAvailable,
                                      String ffmpegVersion,
                                      String gpuAvailability,
+                                     String torchVersion,
+                                     String torchCudaBuild,
                                      String details) {
         this.pythonFound = pythonFound;
         this.pythonCommand = pythonCommand;
@@ -28,6 +32,8 @@ public class WhisperXHealthCheckResult {
         this.ffmpegAvailable = ffmpegAvailable;
         this.ffmpegVersion = ffmpegVersion;
         this.gpuAvailability = gpuAvailability;
+        this.torchVersion = torchVersion;
+        this.torchCudaBuild = torchCudaBuild;
         this.details = details;
     }
 
@@ -61,6 +67,14 @@ public class WhisperXHealthCheckResult {
 
     public String getGpuAvailability() {
         return gpuAvailability;
+    }
+
+    public String getTorchVersion() {
+        return torchVersion;
+    }
+
+    public String getTorchCudaBuild() {
+        return torchCudaBuild;
     }
 
     public String getDetails() {

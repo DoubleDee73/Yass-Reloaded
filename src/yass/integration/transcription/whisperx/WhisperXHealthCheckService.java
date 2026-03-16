@@ -17,13 +17,22 @@ public class WhisperXHealthCheckService {
     private final String configuredPythonExecutable;
     private final boolean useModuleInvocation;
     private final String configuredWhisperXCommand;
+    private final String configuredFfmpegPath;
 
     public WhisperXHealthCheckService(String configuredPythonExecutable,
                                       boolean useModuleInvocation,
                                       String configuredWhisperXCommand) {
+        this(configuredPythonExecutable, useModuleInvocation, configuredWhisperXCommand, null);
+    }
+
+    public WhisperXHealthCheckService(String configuredPythonExecutable,
+                                      boolean useModuleInvocation,
+                                      String configuredWhisperXCommand,
+                                      String configuredFfmpegPath) {
         this.configuredPythonExecutable = StringUtils.trimToEmpty(configuredPythonExecutable);
         this.useModuleInvocation = useModuleInvocation;
         this.configuredWhisperXCommand = StringUtils.defaultIfBlank(configuredWhisperXCommand, "whisperx").trim();
+        this.configuredFfmpegPath = StringUtils.trimToNull(configuredFfmpegPath);
     }
 
     public String detectPythonExecutable() {
@@ -42,9 +51,11 @@ public class WhisperXHealthCheckService {
                                                  null,
                                                  false,
                                                  null,
-                                                 isCommandAvailable("ffmpeg"),
-                                                 firstLine(runCommand(List.of("ffmpeg", "-version"))),
+                                                 isCommandAvailable(resolveFfmpegExecutable()),
+                                                 firstLine(runCommand(List.of(resolveFfmpegExecutable(), "-version"))),
                                                  "unknown",
+                                                 null,
+                                                 null,
                                                  "Python was not found. Configure a Python executable or install Python first.");
         }
 
@@ -59,7 +70,13 @@ public class WhisperXHealthCheckService {
                                      "-c",
                                      "import importlib.metadata as m; print(m.version('whisperx'))"))
                 : new CommandResult(false, List.of(), "", "", -1, null);
-        CommandResult ffmpeg = runCommand(List.of("ffmpeg", "-version"));
+        CommandResult ffmpeg = runCommand(List.of(resolveFfmpegExecutable(), "-version"));
+        CommandResult torchVersion = runCommand(List.of(pythonExecutable,
+                                                        "-c",
+                                                        "import importlib.util; t = importlib.util.find_spec('torch'); print('N/A' if t is None else __import__('torch').__version__)"));
+        CommandResult torchCuda = runCommand(List.of(pythonExecutable,
+                                                     "-c",
+                                                     "import importlib.util; t = importlib.util.find_spec('torch'); print('N/A' if t is None else (str(__import__('torch').version.cuda) if __import__('torch').version.cuda else 'none (CPU-only build)'))"));
         CommandResult gpu = runCommand(List.of(pythonExecutable,
                                                "-c",
                                                "import importlib.util; spec = importlib.util.find_spec('torch'); "
@@ -84,6 +101,8 @@ public class WhisperXHealthCheckService {
                                              ffmpeg.success,
                                              firstLine(ffmpeg),
                                              gpu.success ? firstLine(gpu) : "unknown",
+                                             torchVersion.success ? firstLine(torchVersion) : null,
+                                             torchCuda.success ? firstLine(torchCuda) : null,
                                              details.toString().trim());
     }
 
@@ -158,6 +177,16 @@ public class WhisperXHealthCheckService {
                 candidates.add(candidate);
             }
         }
+    }
+
+    private String resolveFfmpegExecutable() {
+        if (configuredFfmpegPath != null) {
+            File exe = new File(configuredFfmpegPath, isWindows() ? "ffmpeg.exe" : "ffmpeg");
+            if (exe.isFile()) {
+                return exe.getAbsolutePath();
+            }
+        }
+        return "ffmpeg";
     }
 
     private boolean isCommandAvailable(String command) {

@@ -55,6 +55,7 @@ public class LyricsAlignmentService {
             movedNotes += shiftRowsForwardToAvoidOverlaps(table);
             movedNotes += shortenNoteLengthsToFit(table);
             movedNotes += shiftRowsForwardToAvoidOverlaps(table);
+            repositionPageBreaks(table);
         } finally {
             table.setPreventUndo(oldUndo);
         }
@@ -253,7 +254,7 @@ public class LyricsAlignmentService {
             int span = Math.max(1, endRow - startRow + 1);
             for (int rowIndex = startRow; rowIndex <= endRow; rowIndex++) {
                 YassRow row = table.getRowAt(rowIndex);
-                if (row == null || !row.isNoteOrPageBreak()) {
+                if (row == null || !row.isNote()) {
                     continue;
                 }
                 double progress = (rowIndex - startRow + 1d) / (span + 1d);
@@ -333,6 +334,32 @@ public class LyricsAlignmentService {
             }
         }
         return changed;
+    }
+
+    private void repositionPageBreaks(YassTable table) {
+        for (int rowIndex = 0; rowIndex < table.getRowCount(); rowIndex++) {
+            YassRow row = table.getRowAt(rowIndex);
+            if (row == null || !row.isPageBreak()) {
+                continue;
+            }
+            int prevEnd = findPreviousNoteEndBeat(table, rowIndex);
+            int nextStart = findNextTimingBoundaryBeat(table, rowIndex);
+            if (prevEnd == Integer.MIN_VALUE || nextStart == Integer.MAX_VALUE) {
+                continue;
+            }
+            int gap = nextStart - prevEnd;
+            if (gap < 2) {
+                continue;
+            }
+            int idealBeat = prevEnd + (int) Math.round(gap * 0.6d);
+            idealBeat = Math.max(prevEnd + 1, Math.min(nextStart - 1, idealBeat));
+            if (row.getBeatInt() != idealBeat) {
+                row.setBeat(idealBeat);
+                if (row.hasSecondBeat() && row.getSecondBeatInt() < idealBeat) {
+                    row.setSecondBeat(idealBeat);
+                }
+            }
+        }
     }
 
     private int findPreviousNoteEndBeat(YassTable table, int fromRowIndex) {

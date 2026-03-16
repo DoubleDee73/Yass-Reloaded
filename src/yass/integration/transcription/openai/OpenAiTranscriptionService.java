@@ -433,7 +433,10 @@ public class OpenAiTranscriptionService {
         return StringUtils.defaultString(value)
                           .replace("&", "&amp;")
                           .replace("<", "&lt;")
-                          .replace(">", "&gt;");
+                          .replace(">", "&gt;")
+                          .replace("\r\n", "<br>")
+                          .replace("\n", "<br>")
+                          .replace("\r", "<br>");
     }
 
     private String getString(JsonElement element) {

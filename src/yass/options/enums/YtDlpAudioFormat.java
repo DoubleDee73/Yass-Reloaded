@@ -21,6 +21,7 @@ package yass.options.enums;
 
 import yass.YassEnum;
 
+import java.util.Arrays;
 import java.util.List;
 
 public enum YtDlpAudioFormat implements YassEnum {
@@ -46,7 +47,7 @@ public enum YtDlpAudioFormat implements YassEnum {
 
     @Override
     public List<YassEnum> listElements() {
-        return List.of();
+        return Arrays.asList(values());
     }
 
     @Override

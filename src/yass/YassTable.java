@@ -18,12 +18,103 @@
 
 package yass;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import static yass.UltrastarHeaderTag.ALBUM;
+import static yass.UltrastarHeaderTag.ARTIST;
+import static yass.UltrastarHeaderTag.AUDIO;
+import static yass.UltrastarHeaderTag.BACKGROUND;
+import static yass.UltrastarHeaderTag.CALCMEDLEY;
+import static yass.UltrastarHeaderTag.COMMENT;
+import static yass.UltrastarHeaderTag.COVER;
+import static yass.UltrastarHeaderTag.DUETSINGERP1;
+import static yass.UltrastarHeaderTag.DUETSINGERP2;
+import static yass.UltrastarHeaderTag.EDITION;
+import static yass.UltrastarHeaderTag.GAP;
+import static yass.UltrastarHeaderTag.GENRE;
+import static yass.UltrastarHeaderTag.ID;
+import static yass.UltrastarHeaderTag.INSTRUMENTAL;
+import static yass.UltrastarHeaderTag.LANGUAGE;
+import static yass.UltrastarHeaderTag.LENGTH;
+import static yass.UltrastarHeaderTag.MEDLEYENDBEAT;
+import static yass.UltrastarHeaderTag.MEDLEYSTARTBEAT;
+import static yass.UltrastarHeaderTag.MP3;
+import static yass.UltrastarHeaderTag.P1;
+import static yass.UltrastarHeaderTag.P2;
+import static yass.UltrastarHeaderTag.PREVIEWSTART;
+import static yass.UltrastarHeaderTag.RELATIVE;
+import static yass.UltrastarHeaderTag.TAGS;
+import static yass.UltrastarHeaderTag.TITLE;
+import static yass.UltrastarHeaderTag.VERSION;
+import static yass.UltrastarHeaderTag.VIDEO;
+import static yass.UltrastarHeaderTag.VOCALS;
+import static yass.UltrastarHeaderTag.YEAR;
+
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseMotionAdapter;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.time.Year;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Set;
+import java.util.StringJoiner;
+import java.util.StringTokenizer;
+import java.util.Timer;
+import java.util.Vector;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+
+import javax.swing.AbstractCellEditor;
+import javax.swing.JComboBox;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JTable;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.ListSelectionModel;
+import javax.swing.ToolTipManager;
+import javax.swing.event.TableModelEvent;
+import javax.swing.table.TableCellEditor;
+
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.commons.math3.util.Precision;
 import org.mozilla.universalchardet.Constants;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+
 import unicode.UnicodeReader;
 import yass.autocorrect.YassAutoCorrect;
 import yass.autocorrect.YassAutoCorrectApostrophes;
@@ -32,30 +123,6 @@ import yass.renderer.YassLine;
 import yass.renderer.YassNote;
 import yass.renderer.YassSession;
 import yass.renderer.YassTrack;
-
-import javax.swing.*;
-import javax.swing.event.TableModelEvent;
-import javax.swing.table.TableCellEditor;
-import java.awt.*;
-import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.DataFlavor;
-import java.awt.datatransfer.StringSelection;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.awt.event.MouseMotionAdapter;
-import java.io.*;
-import java.nio.charset.StandardCharsets;
-import java.text.DecimalFormat;
-import java.text.DecimalFormatSymbols;
-import java.time.Year;
-import java.util.*;
-import java.util.List;
-import java.util.Timer;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
-
-import static yass.UltrastarHeaderTag.*;
 
 public class YassTable extends JTable {
     public final static int ZOOM_TIME = 0;
@@ -72,7 +139,7 @@ public class YassTable extends JTable {
     private YassHyphenator hyphenator;
     private YassLanguageUtils languageUtils;
     private YassUtils yassUtils;
-    
+
     private String mp3 = null;
     private String audio = null;
     private String instrumental = null;
@@ -124,7 +191,7 @@ public class YassTable extends JTable {
     public Timer timer;
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
-    
+
     public YassTable() {
         fileUtils = new YassFileUtils();
         getTableHeader().setReorderingAllowed(false);
@@ -248,6 +315,19 @@ public class YassTable extends JTable {
         });
     }
 
+    public void removeNotes() {
+        List<YassRow> commentRows = new ArrayList<>();
+        for (YassRow row : tm.getData()) {
+             if (row.isComment()) {
+                 commentRows.add(row);
+             } else {
+                 break;
+             }
+        }
+        tm.getData().clear();
+        tm.getData().addAll(commentRows);
+    }
+
     public void removeAllRows() {
         tm.getData().clear();
         resetUndo();
@@ -266,6 +346,10 @@ public class YassTable extends JTable {
         duetTrackName = null;
         Arrays.fill(duetSingerNames, null);
         if (actions != null) actions.updateActions();
+    }
+
+    public void addRow(YassRow row) {
+        tm.addRow(row);
     }
 
     public static int getZoomMode() {
@@ -1019,7 +1103,7 @@ public class YassTable extends JTable {
         }
         return r.getHeaderComment();
     }
-    
+
     public boolean setGenre(String s) {
         YassRow r = tm.getCommentRow("GENRE:");
         if (r == null) {
@@ -4099,7 +4183,7 @@ public class YassTable extends JTable {
         }
         getActions().initHyphenatorDictionary(false);
         Locale songLocale = YassUtils.determineLocale(getLanguage());
-        HyphenatorDictionary hyphenatorDictionary = getActions().hyphenatorDictionary; 
+        HyphenatorDictionary hyphenatorDictionary = getActions().hyphenatorDictionary;
         hyphenatorDictionary.changeLanguage(songLocale.getLanguage());
         words.stream()
              .filter(it -> it.contains("•"))
@@ -4182,7 +4266,7 @@ public class YassTable extends JTable {
         tm.fireTableDataChanged();
         getSelectionModel().setSelectionInterval(selectedRowIndex, selectedRowIndex + (selectedRows - 1));
     }
-    
+
     private boolean checkShiftEndingConditions(boolean toLeft) {
         int selectedRows = getSelectedRows().length;
         if (selectedRows < 2) {
@@ -4241,7 +4325,7 @@ public class YassTable extends JTable {
         getSelectionModel().setSelectionInterval(selectedRowIndex, selectedRowIndex + (selectedRows - 1));
     }
 
-    
+
     public void pasteRows() {
         int startRow = getSelectionModel().getMinSelectionIndex();
         if (startRow < 0) {
@@ -4683,10 +4767,10 @@ public class YassTable extends JTable {
         if (lines[0].contains("\t")) {
             return lines;
         }
-        List<String> textLines = yassUtils.splitLyricsToLines(lines, startBeat); 
+        List<String> textLines = yassUtils.splitLyricsToLines(lines, startBeat);
         return textLines.toArray(textLines.toArray(new String[0]));
     }
-    
+
     private boolean endswithPageBreak(String line) {
         YassRow yassRow = new YassRow(line);
         for (YassRow row : tm.getData()) {
@@ -5574,7 +5658,7 @@ public class YassTable extends JTable {
         if (!currentRow.isNote()) {
             return;
         }
-        
+
         String[] textPunctuationPair = splitTextFromPunctuation(currentRow);
         String hyphenated = hyphenator.hyphenateWord(textPunctuationPair[0]);
         int hyphenPos = hyphenated.indexOf("\u00AD");
@@ -6509,7 +6593,7 @@ public class YassTable extends JTable {
             return;
         }
         int start = findGridBeat(row.getBeatInt());
-        
+
         int counter = 0;
         int nextRow = start;
         while (row.isNote()) {
@@ -6522,7 +6606,7 @@ public class YassTable extends JTable {
         }
         tm.fireTableRowsUpdated(start, nextRow);
     }
-    
+
     private int findGridBeat(int currentBeat) {
         int gridBeat = currentBeat;
         int diff = gridBeat % 4;
@@ -6535,7 +6619,7 @@ public class YassTable extends JTable {
         }
         return gridBeat;
     }
-    
+
     public void sortRows() {
         Collections.sort(tm.getData());
     }
@@ -6826,7 +6910,7 @@ public class YassTable extends JTable {
         fireTableTableDataChanged();
         setRowSelectionInterval(selectedRow, selectedRow);
     }
-    
+
     public void toggleTildeStart() {
         int selectedRow = getSelectedRow();
         if (selectedRow < 1) {
@@ -6893,7 +6977,7 @@ public class YassTable extends JTable {
         fireTableTableDataChanged();
         setRowSelectionInterval(selectedRow, selectedRow);
     }
-    
+
     public static class YassTableCellEditor extends AbstractCellEditor implements
             TableCellEditor {
         Dimension d = new Dimension(100, 100);
@@ -7007,7 +7091,7 @@ public class YassTable extends JTable {
     public void fireTableTableDataChanged() {
         tm.fireTableDataChanged();
     }
-    
+
     public void fireTableRowsUpdated(int firstRow, int lastRow) {
         tm.fireTableRowsUpdated(firstRow, lastRow);
     }
@@ -7020,14 +7104,14 @@ public class YassTable extends JTable {
         if (period == 0) {
             LOGGER.fine("Autosave disabled");
             return;
-        } 
+        }
         timer = new Timer();
         int periodMillis = Math.min(period, 600) * 1000;
         LOGGER.info("Autosave initialized with " + Math.min(period, 600) + "s intervals.");
         YassAutoSave autoSave = new YassAutoSave(this);
         timer.scheduleAtFixedRate(autoSave, 30000, periodMillis);
     }
-    
+
     public void removeAutoSave() {
         setAutosaved(true);
         if (sheet == null || timer == null) {

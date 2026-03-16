@@ -2,6 +2,7 @@ package yass.integration.transcription.openai;
 
 import yass.YassEnum;
 
+import java.util.Arrays;
 import java.util.List;
 
 public enum OpenAiTimestampGranularity implements YassEnum {
@@ -31,8 +32,8 @@ public enum OpenAiTimestampGranularity implements YassEnum {
     }
 
     @Override
-    public List<yass.YassEnum> listElements() {
-        return List.of(values());
+    public List<YassEnum> listElements() {
+        return Arrays.asList(values());
     }
 
     @Override

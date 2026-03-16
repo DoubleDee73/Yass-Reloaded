@@ -487,7 +487,12 @@ public class WhisperXTranscriptionService {
         if (value == null) {
             return "";
         }
-        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        return value.replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                    .replace("\r\n", "<br>")
+                    .replace("\n", "<br>")
+                    .replace("\r", "<br>");
     }
 
     private Thread pumpStream(InputStream inputStream, StringBuilder buffer, Consumer<String> progressListener, String prefix) {
