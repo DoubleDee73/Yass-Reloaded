@@ -804,6 +804,7 @@ public class CreateSongWizard extends Wizard {
     }
 
     private File convertWizardSourceToWav(File sourceAudio, File runDirectory) throws java.io.IOException {
+        yass.ffmpeg.FFMPEGLocator.initFfmpeg(yassProperties.getProperty("ffmpegPath"));
         File wavTarget = new File(runDirectory, "source.wav");
         YassPlayer player = new YassPlayer(null, yassProperties);
         File converted = player.generateTemp(sourceAudio.getAbsolutePath(), Timebase.NORMAL, wavTarget.getAbsolutePath());
