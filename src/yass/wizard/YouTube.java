@@ -105,26 +105,53 @@ public class YouTube extends JPanel {
         if (StringUtils.isEmpty(getYouTubeUrl())) {
             return;
         }
-        if (shouldReuseExistingDownload()) {
+        File existing = findExistingDownloadByYouTubeId();
+        if (existing != null) {
             int reuse = JOptionPane.showConfirmDialog(SwingUtilities.getWindowAncestor(this),
                     I18.get("create_youtube_reuse_download_prompt"),
                     I18.get("create_title"),
                     JOptionPane.YES_NO_OPTION,
                     JOptionPane.QUESTION_MESSAGE);
             if (reuse == JOptionPane.YES_OPTION) {
+                wizard.setValue("filename", existing.getAbsolutePath());
                 return;
             }
         }
-        fallbackLevel = 0; // Reset fallback level on new download
+        fallbackLevel = 0;
         startDownload(new DownloadSplashFrame(SwingUtilities.getWindowAncestor(this)));
     }
 
-    private boolean shouldReuseExistingDownload() {
-        String filename = wizard.getValue("filename");
-        if (StringUtils.isBlank(filename)) {
-            return false;
+    private File findExistingDownloadByYouTubeId() {
+        String youTubeId = extractYouTubeId(getYouTubeUrl());
+        if (StringUtils.isBlank(youTubeId)) {
+            return null;
         }
-        return new File(filename).isFile();
+        File tempDir = new File(wizard.getProperty("temp-dir"));
+        if (!tempDir.isDirectory()) {
+            return null;
+        }
+        File[] matches = tempDir.listFiles(f -> f.isFile() && f.getName().contains(youTubeId));
+        if (matches == null || matches.length == 0) {
+            return null;
+        }
+        // Prefer audio file (no video stream) over video file
+        for (File f : matches) {
+            if (f.getName().contains(".v_none.")) {
+                return f;
+            }
+        }
+        return matches[0];
+    }
+
+    static String extractYouTubeId(String url) {
+        if (StringUtils.isBlank(url)) {
+            return null;
+        }
+        // Handles: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?:v=|youtu\\.be/|/shorts/)([A-Za-z0-9_-]{11})")
+                .matcher(url);
+        return m.find() ? m.group(1) : null;
     }
     private void startDownload(DownloadSplashFrame splash) {
         new Thread(() -> {
@@ -153,7 +180,7 @@ public class YouTube extends JPanel {
 
         YtDlpRequest request = new YtDlpRequest(getYouTubeUrl().trim());
         request.setDirectory(tempDir.getAbsolutePath());
-        request.setOption("output", "%(title)s.v_%(vcodec)s.a_%(acodec)s.%(ext)s");
+        request.setOption("output", "%(title)s.%(id)s.v_%(vcodec)s.a_%(acodec)s.%(ext)s");
         
         if (fallbackLevel == 2) {
             LOGGER.info("Using fallback format 'best'");

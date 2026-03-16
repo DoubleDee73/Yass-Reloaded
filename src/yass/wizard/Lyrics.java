@@ -155,11 +155,10 @@ public class Lyrics extends JPanel {
                 e -> {
                         wizard.setValue("language", (String)language.getSelectedItem());
                 });
-        JPanel rightButtons = new JPanel(new GridLayout(1, 3, 5, 0));
+        JPanel rightButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         rightButtons.add(new JLabel(I18.get("options_group1_language")));
         rightButtons.add(language);
-        rightButtons.add(new JLabel(""));
-        buttons.add(rightButtons, BorderLayout.EAST);
+        buttons.add(rightButtons, BorderLayout.WEST);
 
         wizardStatusLabel = new JLabel(" ");
         wizardStatusLabel.setForeground(Color.GRAY);
