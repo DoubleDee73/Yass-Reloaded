@@ -58,6 +58,7 @@ public class Lyrics extends JPanel {
     private JComboBox<String> language = null;
     private JTextField subtitleFileField = null;
     private YassProperties yassProperties;
+    private JLabel wizardStatusLabel = null;
     private Map<Integer, String> subtitles = null;
 
     /**
@@ -139,7 +140,7 @@ public class Lyrics extends JPanel {
         YassUtils.addChangeListener(lyricsArea, e -> determineLanguage());
         lyricsPanel.add(new JScrollPane(lyricsArea), BorderLayout.CENTER);
 
-        JPanel buttons = new JPanel(new GridLayout(1, 3));
+        JPanel buttons = new JPanel(new BorderLayout(8, 0));
         List<String> languages = YassLanguageUtils.getSupportedLanguages();
         languages.add(0, "");
         language = new JComboBox<>(languages.toArray(new String[0]));
@@ -154,11 +155,19 @@ public class Lyrics extends JPanel {
                 e -> {
                         wizard.setValue("language", (String)language.getSelectedItem());
                 });
-        buttons.add(new JLabel(I18.get("options_group1_language")));
-        buttons.add(language);
-        buttons.add(new JLabel(""));
+        JPanel rightButtons = new JPanel(new GridLayout(1, 3, 5, 0));
+        rightButtons.add(new JLabel(I18.get("options_group1_language")));
+        rightButtons.add(language);
+        rightButtons.add(new JLabel(""));
+        buttons.add(rightButtons, BorderLayout.EAST);
 
-        lyricsPanel.add(buttons, BorderLayout.SOUTH);
+        wizardStatusLabel = new JLabel(" ");
+        wizardStatusLabel.setForeground(Color.GRAY);
+        JPanel southPanel = new JPanel(new BorderLayout(0, 4));
+        southPanel.add(buttons, BorderLayout.NORTH);
+        southPanel.add(wizardStatusLabel, BorderLayout.SOUTH);
+
+        lyricsPanel.add(southPanel, BorderLayout.SOUTH);
         content.add("South", lyricsPanel);
         return content;
     }
@@ -171,6 +180,23 @@ public class Lyrics extends JPanel {
         subtitleFileField.setText(path);
     }
 
+
+    public void refreshIntegrationAvailability() {
+        if (wizard instanceof CreateSongWizard createSongWizard) {
+            String reason = createSongWizard.getSeparateAndTranscribeUnavailableReason();
+            boolean enabled = reason == null;
+            createSongWizard.refreshSeparateAndTranscribeButtonState();
+            if (wizardStatusLabel != null && StringUtils.isBlank(wizardStatusLabel.getText().trim())) {
+                wizardStatusLabel.setText(enabled ? I18.get("create_lyrics_separate_transcribe_status_idle") : reason);
+            }
+        }
+    }
+
+    public void setWizardStatusText(String text) {
+        if (wizardStatusLabel != null) {
+            wizardStatusLabel.setText(StringUtils.defaultString(text, " "));
+        }
+    }
     private void determineLanguage() {
         if (language != null && StringUtils.isEmpty((String)language.getSelectedItem()) && 
                 lyricsArea.getDocument().getLength() > 0) {

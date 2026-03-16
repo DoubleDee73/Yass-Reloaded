@@ -31,35 +31,17 @@ import yass.integration.separation.SeparationRequest;
 import yass.integration.separation.SeparationResult;
 import yass.integration.separation.SeparationService;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
-import java.io.DataOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.function.Consumer;
 
 public class MvsepSeparationService implements SeparationService {
     private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
@@ -82,6 +64,23 @@ public class MvsepSeparationService implements SeparationService {
     @Override
     public SeparationRequest createRequest(YassTable table) {
         return createRequest(table, properties.getProperty("mvsep-model"), properties.getProperty("mvsep-output-format"));
+    }
+
+    public SeparationRequest createRequest(File outputDirectory, File audioFile, String songBaseName) {
+        if (outputDirectory == null) {
+            throw new IllegalArgumentException("No song directory was provided for the separation output.");
+        }
+        if (audioFile == null || !audioFile.isFile()) {
+            throw new IllegalArgumentException("The source audio file for MVSEP could not be found.");
+        }
+        if (!isConfigured()) {
+            throw new IllegalStateException("The MVSEP API token is missing.");
+        }
+        String baseName = StringUtils.defaultIfBlank(songBaseName, stripExtension(audioFile.getName()));
+        MvsepModel model = MvsepModel.fromValue(properties.getProperty("mvsep-model"));
+        MvsepOutputFormat outputFormat = MvsepOutputFormat.fromValue(properties.getProperty("mvsep-output-format"));
+        LOGGER.info("MVSEP wizard request prepared for " + baseName + " using model " + model.getValue() + " and format " + outputFormat.getValue());
+        return new SeparationRequest(outputDirectory.getAbsolutePath(), audioFile, model.getValue(), outputFormat.getValue(), baseName);
     }
 
     public SeparationRequest createRequest(YassTable table, String modelValue, String outputFormatValue) {
@@ -240,16 +239,19 @@ public class MvsepSeparationService implements SeparationService {
 
         File songDirectory = new File(request.getSongDirectory());
         String baseName = request.getSongBaseName();
+        File vocalsFile = null;
         File leadFile = null;
         File instrumentalFile = null;
         File instrumentalBackingFile = null;
 
+        if (stems.containsKey("vocals")) {
+            listener.onStatusChanged("Downloading vocals...");
+            vocalsFile = downloadStem(stems.get("vocals").url(), songDirectory, baseName, "Vocals", outputFormat.getExtension());
+        }
+
         if (stems.containsKey("lead")) {
             listener.onStatusChanged("Downloading lead vocals...");
             leadFile = downloadStem(stems.get("lead").url(), songDirectory, baseName, "Lead", outputFormat.getExtension());
-        } else if (stems.containsKey("vocals")) {
-            listener.onStatusChanged("Downloading vocals...");
-            leadFile = downloadStem(stems.get("vocals").url(), songDirectory, baseName, "Vocals", outputFormat.getExtension());
         }
 
         if (stems.containsKey("instrumental")) {
@@ -262,11 +264,11 @@ public class MvsepSeparationService implements SeparationService {
             instrumentalBackingFile = downloadStem(stems.get("instrumental-backing").url(), songDirectory, baseName, "Instrumental + Backing", outputFormat.getExtension());
         }
 
-        if (leadFile == null && instrumentalFile == null && instrumentalBackingFile == null) {
+        if (vocalsFile == null && leadFile == null && instrumentalFile == null && instrumentalBackingFile == null) {
             throw new IOException("MVSEP finished, but no expected stems could be downloaded.");
         }
 
-        return new SeparationResult(leadFile, instrumentalFile, instrumentalBackingFile);
+        return new SeparationResult(vocalsFile, leadFile, instrumentalFile, instrumentalBackingFile);
     }
 
     private int parsePollInterval(String value) {
@@ -275,6 +277,11 @@ public class MvsepSeparationService implements SeparationService {
         } catch (NumberFormatException ex) {
             return 15;
         }
+    }
+
+    private String stripExtension(String name) {
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : name;
     }
 
     private String createRemoteJob(SeparationRequest request, MvsepModel model, MvsepOutputFormat outputFormat) throws IOException {
@@ -442,6 +449,11 @@ public class MvsepSeparationService implements SeparationService {
         LinkedHashMap<String, DownloadDescriptor> stems = new LinkedHashMap<>();
         Set<DownloadDescriptor> used = new HashSet<>();
 
+        DownloadDescriptor vocals = findBestCandidate(candidates, CandidateKind.VOCALS, used);
+        if (vocals != null) {
+            stems.put("vocals", vocals);
+            used.add(vocals);
+        }
         DownloadDescriptor lead = findBestCandidate(candidates, CandidateKind.LEAD, used);
         if (lead != null) {
             stems.put("lead", lead);
@@ -458,12 +470,14 @@ public class MvsepSeparationService implements SeparationService {
             used.add(instrumental);
         }
 
-        if (stems.size() < 3 && candidates.size() >= 3) {
+        if (stems.size() < 4 && candidates.size() >= 3) {
             for (DownloadDescriptor candidate : candidates) {
                 if (used.contains(candidate)) {
                     continue;
                 }
-                if (!stems.containsKey("lead")) {
+                if (!stems.containsKey("vocals")) {
+                    stems.put("vocals", candidate);
+                } else if (!stems.containsKey("lead")) {
                     stems.put("lead", candidate);
                 } else if (!stems.containsKey("instrumental")) {
                     stems.put("instrumental", candidate);

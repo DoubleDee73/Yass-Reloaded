@@ -378,6 +378,10 @@ public class YassUtils {
      */
     public static File getFileWithExtension(String dir, String id, String ext[]) {
         // ext = ext.toLowerCase();
+        if (StringUtils.isBlank(dir)) {
+            LOGGER.fine("getFileWithExtension called without directory.");
+            return null;
+        }
 
         String id2 = null;
         if (id != null) {
@@ -1281,3 +1285,4 @@ public class YassUtils {
         }
     }
 }
+

@@ -18,6 +18,8 @@
 
 package yass;
 
+import org.apache.commons.lang3.StringUtils;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
@@ -581,11 +583,11 @@ public class YassSheetInfo extends JPanel {
 
         // artist/title/year
         x = getWidth()-sideBar; //-selectBar;
-        String t = table.getTitle();
-        String a = table.getArtist();
-        String year = table.getYear();
-        String g = table.getGenre();
-        String fn = table.getFilename();
+        String t = StringUtils.defaultString(table.getTitle());
+        String a = StringUtils.defaultString(table.getArtist());
+        String year = StringUtils.defaultString(table.getYear());
+        String g = StringUtils.defaultString(table.getGenre());
+        String fn = StringUtils.defaultString(table.getFilename());
         int sec = (int) (sheet.getDuration() / 1000.0 + 0.5);
         int min = sec / 60;
         sec = sec - min * 60;
@@ -599,7 +601,7 @@ public class YassSheetInfo extends JPanel {
         s1 += t;
 
         String s2 = year;
-        if (s2.length() > 0 && g.length() > 0) s2 += " · ";
+        if (s2.length() > 0 && g.length() > 0) s2 += " Â· ";
         s2 += g;
         String bpmString;
         if (bpm == (long) bpm) bpmString = String.format("%d", (int) bpm);
@@ -608,10 +610,10 @@ public class YassSheetInfo extends JPanel {
         String gapString = String.format("%.3f", (int) (gap+0.5)/1000.0); // show rounded (resolution < 1ms makes no sense)
 
         if (s2 != null && s2.length() > 0)
-            s2 += " · ";
+            s2 += " Â· ";
         s2 += gapString + "s";
-        s2 += " · " + bpmString + " bpm";
-        s2 += " · " + dString;
+        s2 += " Â· " + bpmString + " bpm";
+        s2 += " Â· " + dString;
 
         String s = fn;
         if (! table.isSaved())

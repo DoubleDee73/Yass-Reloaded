@@ -41,7 +41,7 @@ public final class MvsepStartDialog {
                                              .filter(model -> model.isAllowedFor(accountInfo, algorithms))
                                              .toArray(MvsepModel[]::new);
         if (availableModels.length == 0) {
-            availableModels = new MvsepModel[]{MvsepModel.KARAOKE_LEAD_BACK};
+            availableModels = new MvsepModel[]{MvsepModel.MELBAND_ROFORMER};
         }
 
         JComboBox<MvsepModel> modelBox = new JComboBox<>(availableModels);

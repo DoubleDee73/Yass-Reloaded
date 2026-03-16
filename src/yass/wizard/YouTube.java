@@ -105,10 +105,27 @@ public class YouTube extends JPanel {
         if (StringUtils.isEmpty(getYouTubeUrl())) {
             return;
         }
+        if (shouldReuseExistingDownload()) {
+            int reuse = JOptionPane.showConfirmDialog(SwingUtilities.getWindowAncestor(this),
+                    I18.get("create_youtube_reuse_download_prompt"),
+                    I18.get("create_title"),
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.QUESTION_MESSAGE);
+            if (reuse == JOptionPane.YES_OPTION) {
+                return;
+            }
+        }
         fallbackLevel = 0; // Reset fallback level on new download
         startDownload(new DownloadSplashFrame(SwingUtilities.getWindowAncestor(this)));
     }
 
+    private boolean shouldReuseExistingDownload() {
+        String filename = wizard.getValue("filename");
+        if (StringUtils.isBlank(filename)) {
+            return false;
+        }
+        return new File(filename).isFile();
+    }
     private void startDownload(DownloadSplashFrame splash) {
         new Thread(() -> {
             try {
@@ -375,3 +392,4 @@ public class YouTube extends JPanel {
         }
     }
 }
+

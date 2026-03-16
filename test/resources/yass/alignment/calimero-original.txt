@@ -1,0 +1,208 @@
+#TITLE:Intro (Dutch)
+#ARTIST:Calimero
+#LANGUAGE:Dutch
+#EDITION:Unknown
+#GENRE:TV Theme
+#CREATOR:DoubleDee
+#MP3:Calimero - Intro (Dutch) (Vocals).m4a
+#AUDIO:Calimero - Intro (Dutch).opus
+#INSTRUMENTAL:Calimero - Intro (Dutch) (Instrumental + Backing).m4a
+#VOCALS:Calimero - Intro (Dutch) (Vocals).m4a
+#VIDEO:Calimero - Intro (Dutch).mp4
+#BPM:330
+#GAP:0
+#YEAR:1972
+#COMMENT:v=bRJQu60kcgs
+#VERSION:1.1.0
+: 0 3 6 Kij
+: 4 3 6 ken 
+: 8 3 6 jul
+: 12 3 6 lie 
+: 16 3 6 mee 
+- 20
+: 22 3 6 Naar 
+: 26 3 6 Ca
+: 30 3 6 li
+: 34 3 6 me
+: 38 3 6 ro 
+: 42 3 6 en 
+: 46 3 6 z'n 
+: 50 3 6 vri
+: 54 3 6 end
+: 58 3 6 jes 
+: 62 3 6 op 
+: 66 3 6 Tv 
+- 70
+: 72 3 6 Zit
+: 76 3 6 ten 
+: 80 3 6 jul
+: 84 3 6 lie 
+: 88 3 6 goed 
+- 92
+: 94 3 6 Voor 
+: 98 3 6 klei
+: 102 3 6 ne 
+: 106 3 6 Ca
+: 110 3 6 li
+: 114 3 6 me
+: 118 3 6 ro 
+: 122 3 6 met 
+: 126 3 6 die 
+: 130 3 6 gro
+: 134 3 6 te 
+: 138 3 6 hoed 
+- 142
+: 144 3 6 Hij 
+: 148 3 6 be
+: 152 3 6 leeft 
+: 156 3 6 van
+: 160 3 6 daag 
+: 164 3 6 de 
+: 168 3 6 geks
+: 172 3 6 te 
+: 176 3 6 avon
+: 180 3 6 tu
+: 184 3 6 ren 
+- 188
+: 190 3 6 Kri
+: 194 3 6 jgt 
+: 198 3 6 het 
+: 202 3 6 soms 
+: 206 3 6 be
+: 210 3 6 hoor
+: 214 3 6 li
+: 218 3 6 jk 
+: 222 3 6 te 
+: 226 3 6 ver
+: 230 3 6 du
+: 234 3 6 ren 
+- 238
+: 240 3 6 Ki
+: 244 3 6 jken 
+: 248 3 6 jul
+: 252 3 6 lie 
+: 256 3 6 mee 
+: 260 3 6 naar 
+: 264 3 6 Ca
+: 268 3 6 li
+: 272 3 6 me
+: 276 3 6 ro? 
+- 280
+: 282 3 6 Be
+: 286 3 6 leef 
+: 290 3 6 het 
+: 294 3 6 mee! 
+- 298
+: 300 3 6 Soms 
+: 304 3 6 is 
+: 308 3 6 hij 
+: 312 3 6 wel 
+: 316 3 6 eens 
+: 320 3 6 on
+: 324 3 6 han
+: 328 3 6 dig 
+: 332 3 6 en 
+: 336 3 6 denkt 
+: 340 3 6 niet 
+: 344 3 6 na 
+: 348 3 6 bij 
+: 352 3 6 wat 
+: 356 3 6 hij 
+: 360 3 6 doet 
+- 364
+: 366 3 6 Wees 
+: 370 3 6 niet 
+: 374 3 6 on
+: 378 3 6 ge
+: 382 3 6 rust 
+: 386 3 6 want 
+: 390 3 6 wat 
+: 394 3 6 er 
+: 398 3 6 ook 
+: 402 3 6 ge
+: 406 3 6 be
+: 410 3 6 urt 
+: 414 3 6 het 
+: 418 3 6 komt 
+: 422 3 6 al
+: 426 3 6 tijd 
+: 430 3 6 weer 
+: 434 3 6 goed 
+- 438
+: 440 3 6 Kom 
+: 444 3 6 al
+: 448 3 6 le
+: 452 3 6 maal, 
+: 456 3 6 weer 
+: 460 3 6 een 
+: 464 3 6 ver
+: 468 3 6 haal 
+- 472
+: 474 3 6 Want 
+: 478 3 6 Ca
+: 482 3 6 li
+: 486 3 6 me
+: 490 3 6 ro 
+: 494 3 6 gaat 
+: 498 3 6 op 
+: 502 3 6 pad, 
+: 506 3 6 hol
+: 510 3 6 la
+: 514 3 6 diee 
+- 518
+: 520 3 6 Be
+: 524 3 6 leef 
+: 528 3 6 het 
+: 532 3 6 mee! 
+- 536
+: 538 3 6 Hij 
+: 542 3 6 is 
+: 546 3 6 zo 
+: 550 3 6 hul
+: 554 3 6 pvaar
+: 558 3 6 dig 
+: 562 3 6 lief 
+: 566 3 6 en 
+: 570 3 6 al
+: 574 3 6 tijd 
+: 578 3 6 aar
+: 582 3 6 dig 
+- 586
+: 588 3 6 Ben 
+: 592 3 6 je 
+: 596 3 6 in 
+: 600 3 6 ge
+: 604 3 6 vaar, 
+: 608 3 6 dan 
+: 612 3 6 staat 
+: 616 3 6 ie 
+: 620 3 6 voor 
+: 624 3 6 je 
+: 628 3 6 klaar 
+- 632
+: 634 3 6 Met 
+: 638 3 6 dat 
+: 642 3 6 wit
+: 646 3 6 te 
+: 650 3 6 ei
+: 654 3 6 er
+: 658 3 6 dop
+: 662 3 6 pie 
+- 666
+: 668 3 6 Op 
+: 672 3 6 z'n 
+: 676 3 6 lie
+: 680 3 6 ve 
+: 684 3 6 kop
+: 688 3 6 pie 
+- 692
+: 694 3 6 Ki
+: 698 3 6 jk 
+: 702 3 6 maar 
+: 706 3 6 mee 
+- 710
+: 712 3 6 Be
+: 716 3 6 leef 
+: 720 3 6 het 
+: 724 3 6 mee! 
+E

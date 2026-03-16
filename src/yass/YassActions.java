@@ -31,12 +31,17 @@ import yass.analysis.PitchDetector;
 import yass.autocorrect.YassAutoCorrect;
 import yass.extras.UsdbSyncerMetaTagCreator;
 import yass.hyphenator.HyphenatorDictionary;
+import yass.integration.transcription.TranscriptionEngine;
+import yass.integration.transcription.openai.OpenAiTranscriptionService;
+import yass.integration.transcription.whisperx.WhisperXTranscriptionRequest;
+import yass.integration.transcription.whisperx.WhisperXTranscriptionService;
 import yass.musicalkey.MusicalKey;
 import yass.musicbrainz.MusicBrainz;
 import yass.musicbrainz.MusicBrainzInfo;
 import yass.renderer.YassSession;
 import yass.video.YassVideoDialog;
 import yass.wizard.CreateSongWizard;
+import yass.wizard.WizardTranscriptionState;
 
 import javax.swing.*;
 import javax.swing.event.HyperlinkEvent;
@@ -2775,6 +2780,12 @@ public class YassActions implements DropTargetListener {
             updateActions();
         }
     };
+    private final Action alignNotesWithTranscription = new AbstractAction(I18.get("edit_align_transcription")) {
+        public void actionPerformed(ActionEvent e) {
+            startAlignNotesWithTranscription();
+        }
+    };
+
     private final Action separateAudio = new AbstractAction(I18.get("edit_audio_separate")) {
         {
             ImageIcon icon = getOptionalResizedIcon("mvsep24Icon", 16);
@@ -2787,6 +2798,165 @@ public class YassActions implements DropTargetListener {
             startSeparateAudioForCurrentSong();
         }
     };
+
+    public void startAlignNotesWithTranscription() {
+        try {
+            if (table == null) {
+                JOptionPane.showMessageDialog(tab,
+                                              I18.get("edit_align_transcription_missing_song"),
+                                              I18.get("edit_align_transcription"),
+                                              JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (isCurrentSongDuet()) {
+                JOptionPane.showMessageDialog(tab,
+                                              I18.get("edit_align_transcription_duet_blocked"),
+                                              I18.get("edit_align_transcription"),
+                                              JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            if (!hasAnyTranscriptionEngine()) {
+                JOptionPane.showMessageDialog(tab,
+                                              I18.get("edit_align_transcription_missing_engine"),
+                                              I18.get("edit_align_transcription"),
+                                              JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            final TranscriptionEngine engine = getPreferredTranscriptionEngine();
+            final boolean useWhisperX = engine == TranscriptionEngine.WHISPERX;
+            final OpenAiTranscriptionService openAiService = useWhisperX ? null : new OpenAiTranscriptionService(prop);
+            final WhisperXTranscriptionService whisperXService = useWhisperX ? new WhisperXTranscriptionService(prop) : null;
+            final Object request = useWhisperX
+                    ? whisperXService.createRequest(table, songHeader != null ? songHeader.getSelectedAudio() : UltrastarHeaderTag.AUDIO.toString())
+                    : openAiService.createRequest(table, songHeader != null ? songHeader.getSelectedAudio() : UltrastarHeaderTag.AUDIO.toString());
+
+            boolean useCachedChoice = false;
+            boolean hasCache = useWhisperX
+                    ? whisperXService.hasCachedTranscription((WhisperXTranscriptionRequest) request)
+                    : openAiService.hasCachedTranscription((yass.integration.transcription.openai.OpenAiTranscriptionRequest) request);
+            if (hasCache) {
+                int decision = JOptionPane.showConfirmDialog(tab,
+                                                             useWhisperX ? I18.get("edit_align_transcription_cached_prompt_whisperx")
+                                                                         : I18.get("edit_align_transcription_cached_prompt"),
+                                                             I18.get("edit_align_transcription"),
+                                                             JOptionPane.YES_NO_CANCEL_OPTION,
+                                                             JOptionPane.QUESTION_MESSAGE);
+                if (decision == JOptionPane.CANCEL_OPTION || decision == JOptionPane.CLOSED_OPTION) {
+                    return;
+                }
+                useCachedChoice = decision == JOptionPane.YES_OPTION;
+            }
+            final boolean useCachedTranscription = useCachedChoice;
+
+            JLabel statusLabel = new JLabel(useCachedTranscription
+                    ? I18.get("edit_align_transcription_loading_cached")
+                    : (useWhisperX ? I18.get("edit_align_transcription_progress_whisperx")
+                                   : I18.get("edit_align_transcription_progress")));
+            JProgressBar progress = new JProgressBar();
+            progress.setIndeterminate(true);
+            JPanel panel = new JPanel(new BorderLayout(0, 8));
+            panel.add(new JLabel("<html>" + (useWhisperX ? I18.get("edit_align_transcription_hint_whisperx")
+                                                            : I18.get("edit_align_transcription_hint")) + "</html>"), BorderLayout.NORTH);
+            panel.add(statusLabel, BorderLayout.CENTER);
+            panel.add(progress, BorderLayout.SOUTH);
+
+            JDialog progressDialog = new JDialog(getFrame(tab), I18.get("edit_align_transcription"), true);
+            progressDialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+            progressDialog.getContentPane().add(panel);
+            progressDialog.setSize(560, 170);
+            progressDialog.setLocationRelativeTo(getFrame(tab));
+
+            SwingWorker<yass.integration.transcription.openai.OpenAiTranscriptionResult, Void> worker =
+                    new SwingWorker<>() {
+                        @Override
+                        protected yass.integration.transcription.openai.OpenAiTranscriptionResult doInBackground() throws Exception {
+                            if (useWhisperX) {
+                                return useCachedTranscription
+                                        ? whisperXService.loadCachedTranscription((WhisperXTranscriptionRequest) request, table)
+                                        : whisperXService.transcribe((WhisperXTranscriptionRequest) request, table);
+                            }
+                            return useCachedTranscription
+                                    ? openAiService.loadCachedTranscription((yass.integration.transcription.openai.OpenAiTranscriptionRequest) request, table)
+                                    : openAiService.transcribe((yass.integration.transcription.openai.OpenAiTranscriptionRequest) request, table);
+                        }
+
+                        @Override
+                        protected void done() {
+                            progressDialog.dispose();
+                            try {
+                                yass.integration.transcription.openai.OpenAiTranscriptionResult result = get();
+                                boolean rebuildFromTranscript = false;
+                                if (useWhisperX && !result.getWords().isEmpty()) {
+                                    int overwriteDecision = JOptionPane.showConfirmDialog(tab,
+                                                                                           I18.get("edit_align_transcription_overwrite_prompt"),
+                                                                                           I18.get("edit_align_transcription"),
+                                                                                           JOptionPane.YES_NO_CANCEL_OPTION,
+                                                                                           JOptionPane.QUESTION_MESSAGE);
+                                    if (overwriteDecision == JOptionPane.CANCEL_OPTION || overwriteDecision == JOptionPane.CLOSED_OPTION) {
+                                        return;
+                                    }
+                                    rebuildFromTranscript = overwriteDecision == JOptionPane.YES_OPTION;
+                                }
+
+                                String summary;
+                                if (rebuildFromTranscript) {
+                                    yass.alignment.TranscriptRebuildResult rebuildResult =
+                                            new yass.alignment.TranscriptNoteRebuildService().Transcript(table, result);
+                                    summary = (useWhisperX ? whisperXService.buildSummary(result) : openAiService.buildSummary(result))
+                                            .replace("</html>", "<br><br>"
+                                                    + MessageFormat.format(I18.get("edit_align_transcription_rebuild_summary"),
+                                                    rebuildResult.getNoteCount(),
+                                                    rebuildResult.getPageBreakCount(),
+                                                    rebuildResult.getGapMs())
+                                                    + "</html>");
+                                } else {
+                                    yass.alignment.LyricsAlignmentService alignmentService = new yass.alignment.LyricsAlignmentService();
+                                    yass.alignment.LyricsAlignmentResult alignmentResult = alignmentService.alignAndApply(table, result);
+                                    summary = (useWhisperX ? whisperXService.buildSummary(result) : openAiService.buildSummary(result))
+                                            .replace("</html>", "<br><br>"
+                                                    + MessageFormat.format(I18.get("edit_align_transcription_applied_summary"),
+                                                    alignmentResult.getMatchedRegions(),
+                                                    alignmentResult.getMovedNotes(),
+                                                    String.format(java.util.Locale.US, "%.1f", alignmentResult.getAverageBeatDelta()),
+                                                    alignmentResult.getIgnoredWords())
+                                                    + "</html>");
+                                }
+
+                                updateGapBpm();
+                                table.fireTableTableDataChanged();
+                                table.setSaved(false);
+                                if (sheet != null) {
+                                    sheet.repaint();
+                                }
+                                table.repaint();
+                                updateActions();
+                                JOptionPane.showMessageDialog(tab,
+                                                              ensureHtmlMessage(summary),
+                                                              I18.get("edit_align_transcription"),
+                                                              JOptionPane.INFORMATION_MESSAGE);
+                            } catch (Exception ex) {
+                                Throwable cause = ex instanceof java.util.concurrent.ExecutionException && ex.getCause() != null
+                                        ? ex.getCause()
+                                        : ex;
+                                Logger.getLogger(Logger.GLOBAL_LOGGER_NAME)
+                                        .log(Level.SEVERE, "Transcription alignment failed.", cause);
+                                JOptionPane.showMessageDialog(tab,
+                                                              StringUtils.defaultIfBlank(cause.getMessage(), cause.toString()),
+                                                              I18.get("edit_align_transcription"),
+                                                              JOptionPane.ERROR_MESSAGE);
+                            }
+                        }
+                    };
+            worker.execute();
+            progressDialog.setVisible(true);
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            JOptionPane.showMessageDialog(tab,
+                                          StringUtils.defaultIfBlank(ex.getMessage(), ex.toString()),
+                                          I18.get("edit_align_transcription"),
+                                          JOptionPane.WARNING_MESSAGE);
+        }
+    }
 
     public void startSeparateAudioForCurrentSong() {
         try {
@@ -2859,6 +3029,96 @@ public class YassActions implements DropTargetListener {
         if (openFiles(songFile, false)) {
             SwingUtilities.invokeLater(this::startSeparateAudioForCurrentSong);
         }
+    }
+
+    private boolean applyWizardTranscriptionOutputs(String songFile, WizardTranscriptionState state) {
+        if (StringUtils.isBlank(songFile) || state == null || state.getTranscriptionResult() == null) {
+            return false;
+        }
+        File songTextFile = new File(songFile);
+        File destinationDir = songTextFile.getParentFile();
+        if (destinationDir == null || !destinationDir.isDirectory()) {
+            return false;
+        }
+        try {
+            YassTable createdTable = new YassTable();
+            createdTable.init(prop);
+            createdTable.setDir(destinationDir.getAbsolutePath());
+            createdTable.setFilename(songTextFile.getName());
+            String text = Files.readString(songTextFile.toPath());
+            if (!createdTable.setText(text)) {
+                LOGGER.warning("Could not reload newly created song for wizard transcription output: " + songFile);
+                return false;
+            }
+
+            new yass.alignment.TranscriptNoteRebuildService().Transcript(createdTable, state.getTranscriptionResult());
+            copyWizardSeparationFiles(destinationDir, createdTable, state);
+            copyWizardTranscriptCache(destinationDir, state);
+            createdTable.storeFile(songTextFile.getAbsolutePath());
+            LOGGER.info("Applied wizard separation and transcription outputs to " + songFile);
+            return true;
+        } catch (Exception ex) {
+            LOGGER.log(Level.SEVERE, "Failed to apply wizard separation/transcription outputs to " + songFile, ex);
+            return false;
+        }
+    }
+
+    private void copyWizardSeparationFiles(File destinationDir, YassTable createdTable, WizardTranscriptionState state) throws IOException {
+        yass.integration.separation.SeparationResult separationResult = state.getSeparationResult();
+        if (separationResult == null) {
+            return;
+        }
+        File copiedVocals = copyIfPresent(separationResult.getVocalsFile(), destinationDir);
+        File copiedLead = copyIfPresent(separationResult.getLeadFile(), destinationDir);
+        File copiedInstrumental = copyIfPresent(separationResult.getInstrumentalFile(), destinationDir);
+        File copiedInstrumentalBacking = copyIfPresent(separationResult.getInstrumentalBackingFile(), destinationDir);
+
+        File preferredVocals = copiedVocals != null ? copiedVocals : copiedLead;
+        if (preferredVocals != null) {
+            createdTable.setVocals(preferredVocals.getName());
+        }
+        String preferredInstrumentalSetting = prop.getProperty("mvsep-default-instrumental");
+        File preferredInstrumental = "instrumental-backing".equalsIgnoreCase(StringUtils.defaultIfBlank(preferredInstrumentalSetting, "instrumental"))
+                ? (copiedInstrumentalBacking != null ? copiedInstrumentalBacking : copiedInstrumental)
+                : (copiedInstrumental != null ? copiedInstrumental : copiedInstrumentalBacking);
+        if (preferredInstrumental != null) {
+            createdTable.setInstrumental(preferredInstrumental.getName());
+        }
+    }
+
+    private void copyWizardTranscriptCache(File destinationDir, WizardTranscriptionState state) throws IOException {
+        yass.integration.transcription.openai.OpenAiTranscriptionResult transcriptionResult = state.getTranscriptionResult();
+        if (transcriptionResult == null || transcriptionResult.getCacheFile() == null || !transcriptionResult.getCacheFile().isFile()) {
+            return;
+        }
+        File cacheDir = new File(destinationDir, StringUtils.defaultIfBlank(prop.getProperty("whisperx-cache-folder"), ".yass-cache/whisperx"));
+        Files.createDirectories(cacheDir.toPath());
+        File target = new File(cacheDir, transcriptionResult.getCacheFile().getName());
+        FileUtils.copyFile(transcriptionResult.getCacheFile(), target);
+    }
+
+    private File copyIfPresent(File source, File destinationDir) throws IOException {
+        if (source == null || !source.isFile()) {
+            return null;
+        }
+        File target = new File(destinationDir, source.getName());
+        if (!source.getCanonicalPath().equals(target.getCanonicalPath())) {
+            FileUtils.copyFile(source, target);
+        }
+        return target;
+    }
+
+    private String ensureHtmlMessage(String message) {
+        String value = StringUtils.defaultString(message).trim();
+        if (StringUtils.startsWithIgnoreCase(value, "<html>")) {
+            return value;
+        }
+        return "<html>" + value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\r\n", "<br>")
+                .replace("\n", "<br>")
+                .replace("\r", "<br>") + "</html>";
     }
 
     private void maybeStartSeparationAfterCreateSong() {
@@ -2993,7 +3253,7 @@ public class YassActions implements DropTargetListener {
                         statusDialog.dispose();
                     }
                     trackedSeparationJob = null;
-                    boolean linkedVocals = applySeparatedTrack(result.getLeadFile(), true);
+                    boolean linkedVocals = applySeparatedTrack(result.getVocalsFile(), true);
                     File preferredInstrumental = result.getPreferredInstrumentalFile(
                             prop.getProperty("mvsep-instrumental-default"));
                     boolean linkedInstrumental = applySeparatedTrack(preferredInstrumental, false);
@@ -4516,6 +4776,7 @@ public class YassActions implements DropTargetListener {
         menu.add(autoCorrectTransposed);
         menu.addSeparator();
         menu.add(editHyphenations);
+        menu.add(alignNotesWithTranscription);
         menu.add(separateAudio);
         menu.add(queryMusicBrainz);
         menu.add(suggestGoldenNotes);
@@ -4630,6 +4891,7 @@ public class YassActions implements DropTargetListener {
 //        menu.addSeparator();
         menu.add(createSyncerTags);
         menu.add(editHyphenations);
+        menu.add(alignNotesWithTranscription);
         menu.addSeparator();
         menu.add(showOptions);
         menuBar.add(menu);
@@ -6188,6 +6450,7 @@ public class YassActions implements DropTargetListener {
 
         autoCorrect.setEnabled(isOpened);
         autoCorrectPageBreaks.setEnabled(isOpened);
+        alignNotesWithTranscription.setEnabled(hasAnyTranscriptionEngine() && isOpened && !isCurrentSongDuet());
         separateAudio.setEnabled(hasMvsepApiToken() && isOpened && !separationRunning && canSeparateCurrentSong());
         autoCorrectTransposed.setEnabled(isOpened);
         autoCorrectSpacing.setEnabled(isOpened);
@@ -6215,6 +6478,29 @@ public class YassActions implements DropTargetListener {
         removeVideoGap.setEnabled(isOpened);
         openVideo.setEnabled(isOpened);
     }
+    public boolean hasAnyTranscriptionEngine() {
+        return hasOpenAiApiKey() || hasWhisperXConfiguration();
+    }
+
+    private TranscriptionEngine getPreferredTranscriptionEngine() {
+        return TranscriptionEngine.fromValue(prop.getProperty("transcription-engine"));
+    }
+
+    public boolean hasWhisperXConfiguration() {
+        boolean useModule = Boolean.parseBoolean(prop.getProperty("whisperx-use-module"));
+        if (useModule) {
+            return StringUtils.isNotBlank(prop.getProperty("whisperx-python"));
+        }
+        return StringUtils.isNotBlank(prop.getProperty("whisperx-command"));
+    }
+    public boolean hasOpenAiApiKey() {
+        return StringUtils.isNotBlank(prop.getProperty("openai-api-key"));
+    }
+
+    private boolean isCurrentSongDuet() {
+        return table != null && table.getDuetTrackCount() > 1;
+    }
+
     public boolean hasMvsepApiToken() {
         return StringUtils.isNotBlank(prop.getProperty("mvsep-api-token"));
     }
@@ -7293,6 +7579,7 @@ public class YassActions implements DropTargetListener {
             sheet.update();
             sheet.requestFocus();
             setRelative(true);
+            clampEditorSplitIfNeeded();
             if (!reload) {
                 YassTable.setZoomMode(YassTable.ZOOM_ONE);
                 table.setMultiSize(1);
@@ -7331,6 +7618,21 @@ public class YassActions implements DropTargetListener {
         sheet.init(initMic());
         sheet.repaint();
         table.initAutoSave();
+    }
+
+    private void clampEditorSplitIfNeeded() {
+        if (editorSplit == null || !editorSplit.isShowing()) {
+            return;
+        }
+        int height = editorSplit.getHeight();
+        if (height <= 0) {
+            return;
+        }
+        int dividerLocation = editorSplit.getDividerLocation();
+        int maxReasonableTopHeight = Math.max(190, (int) Math.round(height * 0.35d));
+        if (dividerLocation > maxReasonableTopHeight) {
+            editorSplit.setDividerLocation(Math.max(170, (int) Math.round(height * 0.22d)));
+        }
     }
 
     private File findFile(File parentFile, List<String> qualifiers) {
@@ -7845,6 +8147,7 @@ public class YassActions implements DropTargetListener {
 
         Hashtable<?, ?> hash = wiz.getValues();
         String file = YassUtils.createSong(tab, hash, prop);
+        boolean wizardAssetsApplied = false;
         if (file != null) {
             // This part handles moving the audio and video files to the destination.
             File destinationDir = new File(file).getParentFile();
@@ -7880,6 +8183,7 @@ public class YassActions implements DropTargetListener {
                     }
                 }
             }
+            wizardAssetsApplied = applyWizardTranscriptionOutputs(file, wiz.getWizardTranscriptionState());
         }
         refreshLibrary();
         boolean starteditor = hash.get("starteditor").equals("true");
@@ -7893,7 +8197,9 @@ public class YassActions implements DropTargetListener {
                 if (starteditor) {
                     songList.gotoSong(table);
                     openFiles(file, false);
-                    maybeStartSeparationAfterCreateSong();
+                    if (!wizardAssetsApplied) {
+                        maybeStartSeparationAfterCreateSong();
+                    }
                 }
             }
             return file;
@@ -7901,7 +8207,9 @@ public class YassActions implements DropTargetListener {
             if (file != null && starteditor) {
                 songList.gotoSong(table);
                 openFiles(file, false);
-                maybeStartSeparationAfterCreateSong();
+                if (!wizardAssetsApplied) {
+                    maybeStartSeparationAfterCreateSong();
+                }
                 return file;
             }
         }
@@ -9104,6 +9412,14 @@ public class YassActions implements DropTargetListener {
     }
 
 }
+
+
+
+
+
+
+
+
 
 
 
