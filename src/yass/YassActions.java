@@ -118,6 +118,7 @@ public class YassActions implements DropTargetListener {
     private YassErrors errors = null;
     private YassProperties prop = null;
     private YassAutoCorrect auto = null;
+    private CreateSongWizard activeWizard = null;
     private YassSongList songList = null;
     private YassGroups groups = null;
     private JComboBox<String> groupsBox = null;
@@ -3861,6 +3862,12 @@ public class YassActions implements DropTargetListener {
 
     public YassProperties getProperties() {
         return prop;
+    }
+
+    public void refreshActiveWizardButtonStates() {
+        if (activeWizard != null) {
+            activeWizard.refreshSeparateAndTranscribeButtonState();
+        }
     }
 
     public void closeAllTables() {
@@ -8152,7 +8159,9 @@ public class YassActions implements DropTargetListener {
         wiz.setValue("editions", prop.getProperty("edition-tag"));
         wiz.setValue("hyphenations", prop.getProperty("hyphenations"));
         wiz.setValue("spaces", prop.getProperty("correct-uncommon-spacing", "after"));
+        activeWizard = wiz;
         wiz.show();
+        activeWizard = null;
 
         if (wiz.getReturnCode() != Wizard.FINISH_RETURN_CODE) {
             return null;

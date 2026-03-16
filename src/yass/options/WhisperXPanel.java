@@ -1,12 +1,30 @@
 package yass.options;
 
+import java.awt.BorderLayout;
+import java.awt.Dimension;
+
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.JButton;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.ScrollPaneConstants;
+import javax.swing.SwingConstants;
+import javax.swing.SwingWorker;
+import javax.swing.UIManager;
+
 import org.apache.commons.lang3.StringUtils;
+
 import yass.I18;
 import yass.integration.transcription.TranscriptionEngine;
-import yass.integration.transcription.whisperx.*;
-
-import javax.swing.*;
-import java.awt.*;
+import yass.integration.transcription.whisperx.WhisperXComputeType;
+import yass.integration.transcription.whisperx.WhisperXDevice;
+import yass.integration.transcription.whisperx.WhisperXHealthCheckResult;
+import yass.integration.transcription.whisperx.WhisperXHealthCheckService;
+import yass.integration.transcription.whisperx.WhisperXModel;
 
 public class WhisperXPanel extends OptionsPanel {
 
@@ -116,7 +134,6 @@ public class WhisperXPanel extends OptionsPanel {
                 try {
                     WhisperXHealthCheckResult result = get();
                     String healthOk = Boolean.toString(result.isPythonFound() && result.isWhisperXAvailable() && result.isFfmpegAvailable());
-                    setProperty("whisperx-health-ok", healthOk);
                     prop.setProperty("whisperx-health-ok", healthOk);
                     prop.store();
                     applyRecommendedRuntimeSettings(result);

@@ -172,6 +172,7 @@ public class YassOptions extends JDialog {
                     }
 
                     dispose();
+                    actions.refreshActiveWizardButtonStates();
                 });
 
         setModal(true);
