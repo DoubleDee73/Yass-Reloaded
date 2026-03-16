@@ -115,11 +115,15 @@ public class WhisperXPanel extends OptionsPanel {
                 button.setEnabled(true);
                 try {
                     WhisperXHealthCheckResult result = get();
-                    setProperty("whisperx-health-ok", Boolean.toString(result.isPythonFound() && result.isWhisperXAvailable() && result.isFfmpegAvailable()));
+                    String healthOk = Boolean.toString(result.isPythonFound() && result.isWhisperXAvailable() && result.isFfmpegAvailable());
+                    setProperty("whisperx-health-ok", healthOk);
+                    prop.setProperty("whisperx-health-ok", healthOk);
+                    prop.store();
                     applyRecommendedRuntimeSettings(result);
                     statusArea.setText(formatResult(result));
                 } catch (Exception ex) {
                     setProperty("whisperx-health-ok", "false");
+                    prop.setProperty("whisperx-health-ok", "false");
                     statusArea.setText(I18.get("options_external_tools_whisperx_status_failed") + "\n\n" + ex.getMessage());
                 }
             }

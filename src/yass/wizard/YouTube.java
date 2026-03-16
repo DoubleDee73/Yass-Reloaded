@@ -168,6 +168,11 @@ public class YouTube extends JPanel {
             request.setOption("audio-format", audioFormat);
         }
 
+        String ffmpegPath = wizard.getYassProperties().getProperty("ffmpegPath");
+        if (StringUtils.isNotEmpty(ffmpegPath)) {
+            request.setOption("ffmpeg-location", ffmpegPath);
+        }
+
         request.setOption("write-subs");
         if (wizard.getLyrics() != null && StringUtils.isNotEmpty(wizard.getProperty("language"))) {
             request.setOption("sub-lang", wizard.getProperty("language"));
@@ -263,13 +268,22 @@ public class YouTube extends JPanel {
     private void handleDownloadFailure(int exitCode, String error, DownloadSplashFrame splash) {
         if (fallbackLevel < 2 && error != null && error.contains("Requested format is not available")) {
             fallbackLevel++;
-            String msg = (fallbackLevel == 1) 
-                ? "Requested format not available. Retrying with relaxed codec constraints..." 
+            String msg = (fallbackLevel == 1)
+                ? "Requested format not available. Retrying with relaxed codec constraints..."
                 : "Requested format not available. Retrying with fallback format 'best'...";
-            
+
             LOGGER.warning(msg);
             splash.appendText(msg);
             startDownload(splash);
+            return;
+        }
+
+        // If ffmpeg was not found for merging but the media files were already downloaded,
+        // treat this as a success — the files exist and the merge error is a false failure.
+        if (error != null && error.contains("ffprobe and ffmpeg not found") && shouldReuseExistingDownload()) {
+            LOGGER.warning("ffmpeg not found for merging, but media files already exist. Treating as success.");
+            handleDownloadSuccess(splash);
+            splash.enableCloseButton();
             return;
         }
 
