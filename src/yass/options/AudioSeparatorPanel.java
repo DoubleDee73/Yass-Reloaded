@@ -5,6 +5,7 @@ import yass.I18;
 import yass.integration.separation.audioseparator.AudioSeparatorHealthCheckResult;
 import yass.integration.separation.audioseparator.AudioSeparatorHealthCheckService;
 import yass.integration.separation.audioseparator.AudioSeparatorModel;
+import yass.integration.separation.audioseparator.AudioSeparatorSeparationService;
 
 import javax.swing.*;
 import java.awt.*;
@@ -28,21 +29,21 @@ public class AudioSeparatorPanel extends OptionsPanel {
         setLabelWidth(200);
         prefillDetectedPython();
         addFullWidthComment(I18.get("options_external_tools_audiosep_comment"));
-        addFile(I18.get("options_external_tools_audiosep_python"), "audiosep-python");
-        addChoice(I18.get("options_external_tools_audiosep_model"), AudioSeparatorModel.values(), "audiosep-model");
-        addText(I18.get("options_external_tools_audiosep_model_dir"), "audiosep-model-dir");
-        addText(I18.get("options_external_tools_audiosep_output_format"), "audiosep-output-format");
+        addFile(I18.get("options_external_tools_audiosep_python"), AudioSeparatorSeparationService.PROP_PYTHON);
+        addChoice(I18.get("options_external_tools_audiosep_model"), AudioSeparatorModel.values(), AudioSeparatorSeparationService.PROP_MODEL);
+        addText(I18.get("options_external_tools_audiosep_model_dir"), AudioSeparatorSeparationService.PROP_MODEL_DIR);
+        addText(I18.get("options_external_tools_audiosep_output_format"), AudioSeparatorSeparationService.PROP_OUTPUT_FORMAT);
         addHealthCheckSection();
     }
 
     private void prefillDetectedPython() {
-        if (StringUtils.isNotBlank(getProperty("audiosep-python"))) {
+        if (StringUtils.isNotBlank(getProperty(AudioSeparatorSeparationService.PROP_PYTHON))) {
             return;
         }
         AudioSeparatorHealthCheckService service = new AudioSeparatorHealthCheckService("", getProperty("ffmpegPath"));
         String detected = service.detectPythonExecutable();
         if (StringUtils.isNotBlank(detected)) {
-            setProperty("audiosep-python", detected);
+            setProperty(AudioSeparatorSeparationService.PROP_PYTHON, detected);
         }
     }
 
@@ -91,7 +92,7 @@ public class AudioSeparatorPanel extends OptionsPanel {
             @Override
             protected AudioSeparatorHealthCheckResult doInBackground() {
                 AudioSeparatorHealthCheckService service = new AudioSeparatorHealthCheckService(
-                        getProperty("audiosep-python"), getProperty("ffmpegPath"));
+                        getProperty(AudioSeparatorSeparationService.PROP_PYTHON), getProperty("ffmpegPath"));
                 return service.runHealthCheck();
             }
 
@@ -101,11 +102,11 @@ public class AudioSeparatorPanel extends OptionsPanel {
                 try {
                     AudioSeparatorHealthCheckResult result = get();
                     String healthOk = Boolean.toString(result.isHealthy());
-                    prop.setProperty("audiosep-health-ok", healthOk);
+                    prop.setProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK, healthOk);
                     prop.store();
                     statusArea.setText(formatResult(result));
                 } catch (Exception ex) {
-                    prop.setProperty("audiosep-health-ok", "false");
+                    prop.setProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK, "false");
                     prop.store();
                     statusArea.setText(I18.get("options_external_tools_audiosep_status_failed") + "\n\n" + ex.getMessage());
                 }

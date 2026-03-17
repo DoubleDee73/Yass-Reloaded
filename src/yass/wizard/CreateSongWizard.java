@@ -484,8 +484,8 @@ public class CreateSongWizard extends Wizard {
             return I18.get("create_lyrics_separate_transcribe_requires_audio");
         }
         boolean mvsepConfigured = StringUtils.isNotBlank(getProperty("mvsep-api-token"));
-        boolean audioSepConfigured = StringUtils.isNotBlank(getProperty("audiosep-python"))
-                && Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty("audiosep-health-ok"), "false"));
+        boolean audioSepConfigured = StringUtils.isNotBlank(getProperty(AudioSeparatorSeparationService.PROP_PYTHON))
+                && Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK), "false"));
         if (!mvsepConfigured && !audioSepConfigured) {
             return I18.get("create_lyrics_separate_transcribe_requires_mvsep");
         }
@@ -505,8 +505,8 @@ public class CreateSongWizard extends Wizard {
     private SeparationService buildSeparationService() {
         // Prefer audio-separator (local, no API key needed) when configured and healthy.
         // Fall back to MVSEP when it has an API token.
-        boolean audioSepConfigured = StringUtils.isNotBlank(getProperty("audiosep-python"))
-                && Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty("audiosep-health-ok"), "false"));
+        boolean audioSepConfigured = StringUtils.isNotBlank(getProperty(AudioSeparatorSeparationService.PROP_PYTHON))
+                && Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK), "false"));
         if (audioSepConfigured) {
             LOGGER.info("Using audio-separator for wizard vocal separation.");
             return new AudioSeparatorSeparationService(yassProperties);

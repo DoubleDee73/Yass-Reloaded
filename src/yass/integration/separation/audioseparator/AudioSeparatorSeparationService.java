@@ -14,6 +14,8 @@ import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
+import java.util.Optional;
+
 import org.apache.commons.lang3.StringUtils;
 
 import yass.YassProperties;
@@ -23,10 +25,20 @@ import yass.integration.separation.SeparationRequest;
 import yass.integration.separation.SeparationResult;
 import yass.integration.separation.SeparationService;
 import yass.options.enums.YtDlpAudioFormat;
+import yass.options.YtDlpPanel;
 
 public class AudioSeparatorSeparationService implements SeparationService {
     private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(30);
+
+    static final String PROP_PYTHON       = "audiosep-python";
+    static final String PROP_MODEL        = "audiosep-model";
+    static final String PROP_MODEL_DIR    = "audiosep-model-dir";
+    static final String PROP_OUTPUT_FORMAT = "audiosep-output-format";
+    static final String PROP_HEALTH_OK    = "audiosep-health-ok";
+    private static final String DEFAULT_MODEL         = "vocals_mel_band_roformer.ckpt";
+    private static final String DEFAULT_OUTPUT_FORMAT = "wav";
+    private static final String DEFAULT_TARGET_FORMAT = "mp3";
 
     private final YassProperties properties;
 
@@ -36,8 +48,7 @@ public class AudioSeparatorSeparationService implements SeparationService {
 
     @Override
     public boolean isConfigured() {
-        String python = properties.getProperty("audiosep-python");
-        return StringUtils.isNotBlank(python);
+        return StringUtils.isNotBlank(properties.getProperty(PROP_PYTHON));
     }
 
     @Override
@@ -53,8 +64,8 @@ public class AudioSeparatorSeparationService implements SeparationService {
         if (!audioFile.isFile()) {
             throw new IllegalStateException("The configured #AUDIO file could not be found.");
         }
-        String model = StringUtils.defaultIfBlank(properties.getProperty("audiosep-model"), "vocals_mel_band_roformer.ckpt");
-        String outputFormat = StringUtils.defaultIfBlank(properties.getProperty("audiosep-output-format"), "wav");
+        String model = StringUtils.defaultIfBlank(properties.getProperty(PROP_MODEL), DEFAULT_MODEL);
+        String outputFormat = StringUtils.defaultIfBlank(properties.getProperty(PROP_OUTPUT_FORMAT), DEFAULT_OUTPUT_FORMAT);
         String baseName = buildSongBaseName(table, audioFile);
         return new SeparationRequest(table.getDir(), audioFile, model, outputFormat, baseName);
     }
@@ -69,8 +80,8 @@ public class AudioSeparatorSeparationService implements SeparationService {
         if (!isConfigured()) {
             throw new IllegalStateException("audio-separator is not configured (Python executable missing).");
         }
-        String model = StringUtils.defaultIfBlank(properties.getProperty("audiosep-model"), "vocals_mel_band_roformer.ckpt");
-        String outputFormat = StringUtils.defaultIfBlank(properties.getProperty("audiosep-output-format"), "wav");
+        String model = StringUtils.defaultIfBlank(properties.getProperty(PROP_MODEL), DEFAULT_MODEL);
+        String outputFormat = StringUtils.defaultIfBlank(properties.getProperty(PROP_OUTPUT_FORMAT), DEFAULT_OUTPUT_FORMAT);
         String baseName = StringUtils.defaultIfBlank(songBaseName, stripExtension(audioFile.getName()));
         LOGGER.info("audio-separator wizard request prepared for " + baseName + " using model " + model);
         return new SeparationRequest(outputDirectory.getAbsolutePath(), audioFile, model, outputFormat, baseName);
@@ -125,7 +136,7 @@ public class AudioSeparatorSeparationService implements SeparationService {
     }
 
     private List<String> buildCommand(File audioFile, File outputDir, String model, String outputFormat) {
-        String python = StringUtils.defaultIfBlank(properties.getProperty("audiosep-python"), "python");
+        String python = StringUtils.defaultIfBlank(properties.getProperty(PROP_PYTHON), "python");
         String script = AudioSeparatorHealthCheckService.resolveAudioSeparatorScript(python);
         List<String> cmd = new ArrayList<>();
         cmd.add(script);
@@ -137,7 +148,7 @@ public class AudioSeparatorSeparationService implements SeparationService {
         cmd.add("--output_format");
         cmd.add(outputFormat.toUpperCase(Locale.ROOT));
 
-        String modelDir = properties.getProperty("audiosep-model-dir");
+        String modelDir = properties.getProperty(PROP_MODEL_DIR);
         if (StringUtils.isNotBlank(modelDir)) {
             cmd.add("--model_file_dir");
             cmd.add(modelDir);
@@ -146,12 +157,9 @@ public class AudioSeparatorSeparationService implements SeparationService {
     }
 
     private void prependFfmpegToPath(ProcessBuilder pb) {
-        String ffmpegPath = properties.getProperty("ffmpegPath");
-        if (StringUtils.isBlank(ffmpegPath)) {
-            return;
-        }
-        File ffmpegFile = new File(ffmpegPath);
-        String ffmpegDir = ffmpegFile.isDirectory() ? ffmpegFile.getAbsolutePath() : ffmpegFile.getParent();
+        String ffmpegExe = resolveFfmpegExecutable();
+        File ffmpegFile = new File(ffmpegExe);
+        String ffmpegDir = ffmpegFile.getParent();
         if (StringUtils.isBlank(ffmpegDir)) {
             return;
         }
@@ -206,16 +214,16 @@ public class AudioSeparatorSeparationService implements SeparationService {
     private SeparationResult convertStemsToTargetFormat(SeparationResult result,
                                                          SeparationProgressListener listener) throws IOException {
         String targetExt = resolveTargetExtension();
-        File vocals = convertStem(result.getVocalsFile(), targetExt, listener);
-        File instrumental = convertStem(result.getInstrumentalFile(), targetExt, listener);
-        File instrumentalBacking = convertStem(result.getInstrumentalBackingFile(), targetExt, listener);
+        File vocals = convertStem(result.getVocalsFile(), targetExt, listener).orElse(result.getVocalsFile());
+        File instrumental = convertStem(result.getInstrumentalFile(), targetExt, listener).orElse(result.getInstrumentalFile());
+        File instrumentalBacking = convertStem(result.getInstrumentalBackingFile(), targetExt, listener).orElse(result.getInstrumentalBackingFile());
         // getLeadFile() is the same object as vocalsFile in our usage; pass null to avoid duplicate
         return new SeparationResult(vocals, null, instrumental, instrumentalBacking);
     }
 
-    /** Returns the target extension from ytdlp-audio-format, defaulting to "mp3". */
+    /** Returns the target extension from ytdlp-audio-format, defaulting to mp3. */
     private String resolveTargetExtension() {
-        String formatValue = properties.getProperty("ytdlp-audio-format");
+        String formatValue = properties.getProperty(YtDlpPanel.YTDLP_AUDIO_FORMAT);
         if (StringUtils.isNotBlank(formatValue)) {
             for (YtDlpAudioFormat fmt : YtDlpAudioFormat.values()) {
                 if (fmt.getValue().equalsIgnoreCase(formatValue)) {
@@ -223,26 +231,20 @@ public class AudioSeparatorSeparationService implements SeparationService {
                 }
             }
         }
-        return "mp3";
+        return DEFAULT_TARGET_FORMAT;
     }
 
     /**
      * Converts a stem file to the target extension using FFmpeg.
-     * If the file is already in the target format, or is null, returns it unchanged.
+     * Returns an empty Optional if the stem is null or already in the target format.
      * Deletes the original WAV after successful conversion.
      */
-    private File convertStem(File stem, String targetExt, SeparationProgressListener listener) throws IOException {
+    private Optional<File> convertStem(File stem, String targetExt, SeparationProgressListener listener) throws IOException {
         if (stem == null) {
-            return null;
+            return Optional.empty();
         }
-        String stemName = stem.getName().toLowerCase(Locale.ROOT);
-        if (stemName.endsWith("." + targetExt)) {
-            return stem;
-        }
-        String ffmpegExe = resolveFfmpegExecutable();
-        if (ffmpegExe == null) {
-            LOGGER.warning("FFmpeg not found — skipping stem conversion for " + stem.getName());
-            return stem;
+        if (stem.getName().toLowerCase(Locale.ROOT).endsWith("." + targetExt)) {
+            return Optional.of(stem);
         }
 
         String baseName = stripExtension(stem.getName());
@@ -282,7 +284,7 @@ public class AudioSeparatorSeparationService implements SeparationService {
         }
 
         Files.deleteIfExists(stem.toPath());
-        return output;
+        return Optional.of(output);
     }
 
     /** Adds format-specific FFmpeg encoding arguments. */
@@ -296,6 +298,7 @@ public class AudioSeparatorSeparationService implements SeparationService {
         }
     }
 
+    /** Resolves the ffmpeg executable path from properties, falling back to bare "ffmpeg" on PATH. */
     private String resolveFfmpegExecutable() {
         String ffmpegPath = properties.getProperty("ffmpegPath");
         if (StringUtils.isBlank(ffmpegPath)) {
