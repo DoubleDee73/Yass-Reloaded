@@ -2636,7 +2636,8 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                 }
 
                 int amplitude = mp3.getWaveFormAtMillis(timeInSeconds * 1000);
-                g2.drawLine(x, (int) (yCenter - amplitude / 2.0), x, (int) (yCenter + amplitude / 2.0));
+                double amplitudeScaled = amplitude * (hSize / 128.0);
+                g2.drawLine(x, (int) (yCenter - amplitudeScaled / 2.0), x, (int) (yCenter + amplitudeScaled / 2.0));
             }
         } else {
             int h = TOP_LINE - 10 + 128;
