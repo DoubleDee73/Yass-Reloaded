@@ -2626,6 +2626,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             }
 
             int pitchTranspose = getWaveformPitchTranspose(pitchDataList);
+            mp3.setPitchWaveformTranspose(pitchTranspose);
             int pitchDataIndex = 0;
             for (int x = clip.x; x < clip.x + clip.width; x++) {
                 double timeInSeconds = fromTimelineExact(x) / 1000.0;

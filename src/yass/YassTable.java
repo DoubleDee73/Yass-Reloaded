@@ -4167,74 +4167,57 @@ public class YassTable extends JTable {
         boolean spacingAfter = prop.isUncommonSpacingAfter();
         List<String> words = new ArrayList<>();
         StringJoiner word = new StringJoiner("•");
-        StringBuilder trimmedText;
-        int selectedRowCount = getSelectedRows().length;
-        for (int i = 0; i < selectedRowCount; i++) {
-            int selectedRow = getSelectedRows()[i];
-            YassRow currentRow = getRowAt(selectedRow);
+
+        int[] selectedRows = getSelectedRows();
+        for (int i = 0; i < selectedRows.length; i++) {
+            YassRow currentRow = getRowAt(selectedRows[i]);
             if (!currentRow.isNote()) {
                 continue;
             }
-            int tempIndex = i;
-            trimmedText = new StringBuilder(
-                    currentRow.getTrimmedText().replace("~", "").replaceAll("[.,!?:;]", ""));
-            YassRow nextRow;
-            boolean checkNextRow = false;
-            if (tempIndex + 1 < selectedRowCount) {
-                nextRow = getRowAt(selectedRow + 1);
-                checkNextRow = nextRow.getText().startsWith("~");
+            // Strip tildes (extension markers) and punctuation — they are not part of the word spelling
+            String syllable = currentRow.getTrimmedText().replace("~", "").replaceAll("[.,!?:;]", "");
+
+            // Detect word boundary: space before this syllable (spacingBefore) or
+            // space after previous syllable (spacingAfter mode) signals a new word
+            boolean wordStart = spacingAfter
+                    ? (i == 0 || getRowAt(selectedRows[i - 1]).endsWithSpace())
+                    : currentRow.startsWithSpace();
+            boolean wordEnd = spacingAfter
+                    ? currentRow.endsWithSpace()
+                    : (i == selectedRows.length - 1 || getRowAt(selectedRows[i + 1]).startsWithSpace());
+
+            if (wordStart && word.length() > 0) {
+                words.add(word.toString());
+                word = new StringJoiner("•");
             }
-            if (checkNextRow) {
-                for (int j = 1; (j + tempIndex) < selectedRowCount; j++) {
-                    nextRow = getRowAt(selectedRow + j);
-                    if (nextRow.getText().equals("~")) {
-                        continue;
-                    }
-                    if (spacingAfter && nextRow.endsWithSpace() || !spacingAfter && !nextRow.startsWithSpace()) {
-                        trimmedText.append(
-                                nextRow.getTrimmedText().replace("~", "").replaceAll("\\p{Punct}&&[^']", ""));
-                        currentRow = nextRow;
-                        i++;
-                    } else {
-                        break;
-                    }
-                }
+            if (StringUtils.isNotEmpty(syllable)) {
+                word.add(syllable);
             }
-            if (spacingAfter) {
-                if (StringUtils.isNotEmpty(trimmedText)) {
-                    word.add(trimmedText);
-                }
-                if (currentRow.endsWithSpace()) {
-                    words.add(word.toString());
-                    word = new StringJoiner("•");
-                }
-            } else {
-                if (currentRow.startsWithSpace() && word.length() > 0) {
-                    words.add(word.toString());
-                    word = new StringJoiner("•");
-                }
-                if (StringUtils.isNotEmpty(trimmedText)) {
-                    word.add(trimmedText);
-                }
+            if (wordEnd && word.length() > 0) {
+                words.add(word.toString());
+                word = new StringJoiner("•");
             }
         }
         if (word.length() > 0) {
             words.add(word.toString());
         }
-        if (words.isEmpty()) {
+        // Remove duplicates while preserving order, keep only entries with at least 2 syllables
+        List<String> uniqueWords = words.stream()
+                                        .distinct()
+                                        .filter(it -> it.contains("•"))
+                                        .collect(java.util.stream.Collectors.toList());
+        if (uniqueWords.isEmpty()) {
             return;
         }
         getActions().initHyphenatorDictionary(false);
         Locale songLocale = YassUtils.determineLocale(getLanguage());
         HyphenatorDictionary hyphenatorDictionary = getActions().hyphenatorDictionary;
         hyphenatorDictionary.changeLanguage(songLocale.getLanguage());
-        words.stream()
-             .filter(it -> it.contains("•"))
-             .forEach(hyphenatorDictionary::addWordToDictionary);
+        uniqueWords.forEach(hyphenatorDictionary::addWordToDictionary);
         hyphenatorDictionary.reinitWords();
         hyphenatorDictionary.setSaveAndClose(true);
         hyphenatorDictionary.setVisible(true);
-        hyphenatorDictionary.selectWord(words.get(0));
+        hyphenatorDictionary.selectWord(uniqueWords.get(0));
         hyphenatorDictionary.focusTxtWord();
     }
     /**
@@ -4251,6 +4234,21 @@ public class YassTable extends JTable {
         if (rows == null || rows.isEmpty() || pitchData == null || pitchData.isEmpty()) {
             return;
         }
+
+        // Build occupied-beat set from all rows in the table (beat..beat+length-1 inclusive)
+        Set<Integer> occupiedBeats = new HashSet<>();
+        int n = getRowCount();
+        for (int i = 0; i < n; i++) {
+            YassRow r = getRowAt(i);
+            if (r != null && r.isNote()) {
+                int start = r.getBeatInt();
+                int end   = start + r.getLengthInt() - 1;
+                for (int b = start; b <= end; b++) {
+                    occupiedBeats.add(b);
+                }
+            }
+        }
+
         boolean changed = false;
         for (YassRow row : rows) {
             if (!row.isNote()) {
@@ -4280,6 +4278,106 @@ public class YassTable extends JTable {
             if (prevalentPitch != row.getHeightInt()) {
                 row.setHeight(prevalentPitch);
                 changed = true;
+            }
+
+            // Temporarily free this note's own beats so it can expand into adjacent free beats
+            int curBeat   = row.getBeatInt();
+            int curLength = row.getLengthInt();
+            for (int b = curBeat; b < curBeat + curLength; b++) {
+                occupiedBeats.remove(b);
+            }
+
+            // Count voiced frames per beat across the note
+            int[] framesPerBeat = new int[curLength];
+            for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+                double frameMs = pd.time() * 1000.0;
+                for (int i = 0; i < curLength; i++) {
+                    if (frameMs >= beatToMs(curBeat + i) && frameMs < beatToMs(curBeat + i + 1)) {
+                        framesPerBeat[i]++;
+                        break;
+                    }
+                }
+            }
+            int totalFrames = 0;
+            for (int f : framesPerBeat) totalFrames += f;
+            // Minimum frames for a beat to count as active singing: 25% of average density
+            double avgFramesPerBeat = curLength > 0 ? (double) totalFrames / curLength : 1.0;
+            double minFramesThreshold = Math.max(1, avgFramesPerBeat * 0.25);
+
+            // Trim silent beats from the end (never shorten below 1 beat)
+            while (curLength > 1 && framesPerBeat[curLength - 1] < minFramesThreshold) {
+                curLength--;
+                changed = true;
+            }
+
+            // Trim silent beats from the start (never shorten below 1 beat)
+            int trimmedFromStart = 0;
+            while (curLength > 1 && framesPerBeat[trimmedFromStart] < minFramesThreshold) {
+                trimmedFromStart++;
+                curBeat++;
+                curLength--;
+                changed = true;
+            }
+
+            // Recompute density baseline from the trimmed (active) beats for expansion checks
+            int activeFrames = 0;
+            for (int i = trimmedFromStart; i < trimmedFromStart + curLength; i++) {
+                if (i < framesPerBeat.length) activeFrames += framesPerBeat[i];
+            }
+            double activeAvgPerBeat = curLength > 0 ? (double) activeFrames / curLength : 1.0;
+            double expandMinFrames  = Math.max(1, activeAvgPerBeat * 0.25);
+
+            // Extend right: expand into free beats where >= 50% of frames match prevalent pitch,
+            // and the beat is not adjacent to the next occupied beat (keep 1-beat gap).
+            int endBeat = curBeat + curLength;
+            while (!occupiedBeats.contains(endBeat) && !occupiedBeats.contains(endBeat + 1)) {
+                double beatStartMs = beatToMs(endBeat);
+                double beatEndMs   = beatToMs(endBeat + 1);
+                int matching = 0, total = 0;
+                for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+                    double frameMs = pd.time() * 1000.0;
+                    if (frameMs >= beatStartMs && frameMs < beatEndMs) {
+                        total++;
+                        if (pd.pitch() == prevalentPitch) matching++;
+                    }
+                }
+                if (total < expandMinFrames || matching < total * 0.5) {
+                    break;
+                }
+                curLength++;
+                endBeat++;
+                changed = true;
+            }
+
+            // Extend left: expand into free beats where >= 50% of frames match prevalent pitch,
+            // and the beat is not adjacent to the previous occupied beat (keep 1-beat gap).
+            while (curBeat > 0 && !occupiedBeats.contains(curBeat - 1) && !occupiedBeats.contains(curBeat - 2)) {
+                double beatStartMs = beatToMs(curBeat - 1);
+                double beatEndMs   = beatToMs(curBeat);
+                int matching = 0, total = 0;
+                for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+                    double frameMs = pd.time() * 1000.0;
+                    if (frameMs >= beatStartMs && frameMs < beatEndMs) {
+                        total++;
+                        if (pd.pitch() == prevalentPitch) matching++;
+                    }
+                }
+                if (total < expandMinFrames || matching < total * 0.5) {
+                    break;
+                }
+                curBeat--;
+                curLength++;
+                changed = true;
+            }
+
+            if (curBeat != row.getBeatInt() || curLength != row.getLengthInt()) {
+                row.setBeat(curBeat);
+                row.setLength(curLength);
+            }
+
+            // Re-occupy the updated beat range for subsequent rows in selection
+            for (int b = curBeat; b < curBeat + curLength; b++) {
+                occupiedBeats.add(b);
             }
         }
         if (changed) {
@@ -5077,6 +5175,144 @@ public class YassTable extends JTable {
             f = (words - 1) / (double) words;
         }
         split(f, false);
+    }
+
+    /**
+     * Pitch-guided split: if the selected note spans multiple distinct pitches in the detected
+     * pitch data, splits at the first beat where the pitch has changed and stayed changed for
+     * more than 2 consecutive beats. Falls back to {@link #splitRows()} if the note is
+     * uniform in pitch or no split point is found.
+     *
+     * @param pitchData the Viterbi-smoothed pitch frames (already transposed for display)
+     */
+    public void splitRowsByPitch(List<yass.analysis.PitchDetector.PitchData> pitchData) {
+        int row = getSelectionModel().getMinSelectionIndex();
+        if (row < 0) {
+            return;
+        }
+        YassRow r = getRowAt(row);
+        if (!r.isNote()) {
+            return;
+        }
+        int length = r.getLengthInt();
+        if (length < 4) {
+            // Too short to find a 2-beat sustained pitch change; use standard split
+            splitRows();
+            return;
+        }
+
+        // Count frames per beat and compute average density across the note
+        int startBeat = r.getBeatInt();
+        int[] framesPerBeat = new int[length];
+        for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+            double frameMs = pd.time() * 1000.0;
+            for (int i = 0; i < length; i++) {
+                if (frameMs >= beatToMs(startBeat + i) && frameMs < beatToMs(startBeat + i + 1)) {
+                    framesPerBeat[i]++;
+                    break;
+                }
+            }
+        }
+        int totalFrames = 0;
+        for (int f : framesPerBeat) totalFrames += f;
+        // A beat needs at least 25% of the note's average frame density to be trusted.
+        // Below this it is silence / reverb noise — treated as "no pitch data".
+        double minFrames = Math.max(1, (double) totalFrames / length * 0.25);
+
+        // Find the prevalent pitch per beat, ignoring beats below the density threshold
+        int[] beatPitch = new int[length];
+        for (int i = 0; i < length; i++) {
+            if (framesPerBeat[i] < minFrames) {
+                beatPitch[i] = Integer.MIN_VALUE; // too sparse — not trustworthy
+                continue;
+            }
+            double beatStartMs = beatToMs(startBeat + i);
+            double beatEndMs   = beatToMs(startBeat + i + 1);
+            Map<Integer, Integer> histogram = new HashMap<>();
+            for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+                double frameMs = pd.time() * 1000.0;
+                if (frameMs >= beatStartMs && frameMs < beatEndMs) {
+                    histogram.merge(pd.pitch(), 1, Integer::sum);
+                }
+            }
+            beatPitch[i] = histogram.entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey)
+                    .orElse(Integer.MIN_VALUE);
+        }
+
+        // Dominant pitch = most common beat pitch across the whole note (sparse beats excluded)
+        Map<Integer, Integer> overallHistogram = new HashMap<>();
+        for (int p : beatPitch) {
+            if (p != Integer.MIN_VALUE) {
+                overallHistogram.merge(p, 1, Integer::sum);
+            }
+        }
+        if (overallHistogram.size() <= 1) {
+            // Note is uniform in pitch (or all beats are sparse) — use standard split
+            splitRows();
+            return;
+        }
+        int dominantPitch = overallHistogram.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(Integer.MIN_VALUE);
+
+        // Find the first beat where a different pitch has been sustained for >= 3 consecutive
+        // beats with sufficient frame density. A sparse beat in the middle resets the run.
+        int splitBeat = -1;
+        int runLength = 0;
+        int runPitch  = Integer.MIN_VALUE;
+        for (int i = 1; i < length; i++) { // start at 1: keep at least 1 beat in first part
+            int p = beatPitch[i];
+            if (p == Integer.MIN_VALUE) {
+                // Sparse beat: reset run — don't let noise glue two segments together
+                runLength = 0;
+                runPitch  = Integer.MIN_VALUE;
+                continue;
+            }
+            if (p != dominantPitch) {
+                if (p == runPitch) {
+                    runLength++;
+                } else {
+                    runPitch  = p;
+                    runLength = 1;
+                }
+                if (runLength >= 3) {
+                    // The run started at beat (i - runLength + 1); split just before it
+                    splitBeat = i - runLength + 1;
+                    break;
+                }
+            } else {
+                runLength = 0;
+                runPitch  = Integer.MIN_VALUE;
+            }
+        }
+
+        if (splitBeat <= 0 || splitBeat >= length) {
+            // No sustained pitch change found — use standard split
+            splitRows();
+            return;
+        }
+
+        // We need: first note ends at (startBeat + splitBeat - 2) inclusive,
+        // one free beat at (startBeat + splitBeat - 1), second note starts at (startBeat + splitBeat).
+        // That means first note length = splitBeat - 1.
+        // If splitBeat == 1, the first part would be 0 beats — not viable, fall back.
+        if (splitBeat < 2 || length - splitBeat < 1) {
+            splitRows();
+            return;
+        }
+
+        // Compute the fraction such that w1 = round(length * percent) = splitBeat - 1,
+        // and temporarily disable the touchingSyllables deduction in split() by passing
+        // splitBeat-1 directly as the target length via percent.
+        // split() does: w1 = round(w * percent); w2 = w - w1
+        // We want w1 = splitBeat - 1, so percent = (splitBeat - 1) / length.
+        // split() will then set length to w1 (or w1-1 if touchingSyllables is on).
+        // To prevent double-deduction when touchingSyllables is on, we add 1 to compensate:
+        int targetW1 = auto.isTouchingSyllables() ? splitBeat : splitBeat - 1;
+        split((double) targetW1 / length, false);
     }
 
     /**

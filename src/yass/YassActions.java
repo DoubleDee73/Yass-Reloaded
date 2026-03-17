@@ -169,6 +169,7 @@ import yass.integration.transcription.openai.OpenAiTranscriptionService;
 import yass.integration.transcription.whisperx.WhisperXTranscriptionRequest;
 import yass.integration.transcription.whisperx.WhisperXTranscriptionService;
 import yass.musicalkey.MusicalKey;
+import yass.musicalkey.MusicalKeyEnum;
 import yass.musicbrainz.MusicBrainz;
 import yass.musicbrainz.MusicBrainzInfo;
 import yass.renderer.YassSession;
@@ -475,7 +476,18 @@ public class YassActions implements DropTargetListener {
             for (int rowIndex : selectedRows) {
                 rows.add(table.getRowAt(rowIndex));
             }
-            table.alignToMelody(rows, mp3.getPitchDataList());
+            int transpose = mp3.getPitchWaveformTranspose();
+            List<yass.analysis.PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
+            if (transpose != 0) {
+                pitchData = pitchData.stream()
+                        .map(pd -> new yass.analysis.PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName()))
+                        .collect(java.util.stream.Collectors.toList());
+            }
+            table.alignToMelody(rows, pitchData);
+            // Restore selection lost due to fireTableDataChanged
+            for (int rowIndex : selectedRows) {
+                table.addRowSelectionInterval(rowIndex, rowIndex);
+            }
             sheet.repaint();
         }
     };
@@ -1696,7 +1708,24 @@ public class YassActions implements DropTargetListener {
                     || isFilterEditing() || isFocusInSongHeader()) {
                 return;
             }
-            table.splitRows();
+            SongHeader header = sheet.getSongHeader();
+            boolean isVocalTrack = header != null
+                    && UltrastarHeaderTag.VOCALS.toString().equals(header.getSelectedAudio());
+            boolean hasPitchData = mp3 != null
+                    && mp3.getPitchDataList() != null
+                    && !mp3.getPitchDataList().isEmpty();
+            if (isVocalTrack && hasPitchData) {
+                int transpose = mp3.getPitchWaveformTranspose();
+                List<yass.analysis.PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
+                if (transpose != 0) {
+                    pitchData = pitchData.stream()
+                            .map(pd -> new yass.analysis.PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName()))
+                            .collect(java.util.stream.Collectors.toList());
+                }
+                table.splitRowsByPitch(pitchData);
+            } else {
+                table.splitRows();
+            }
         }
     };
     private final Action rollLeft = new AbstractAction(I18.get("edit_roll_left")) {

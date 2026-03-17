@@ -133,6 +133,7 @@ public class YassPlayer {
     private final BlockingQueue<Pair<byte[], Runnable>> sharedLineQueue = new LinkedBlockingQueue<>();
 
     private List<PitchData> pitchDataList;
+    private int pitchWaveformTranspose = 0;
     
     public void initNoteMap() {
         lastNote = null;
