@@ -197,7 +197,7 @@ public class AudioSeparatorSeparationService implements SeparationService {
 
         if (vocalsFile == null) {
             throw new IOException("audio-separator finished but no vocals stem could be identified in " + outputDir.getAbsolutePath()
-                    + ". Files found: " + List.of(files).stream().map(File::getName).toList());
+                    + ". Files found: " + Arrays.stream(files).map(File::getName).toList());
         }
 
         return new SeparationResult(vocalsFile, null, instrumentalFile, null);
@@ -270,7 +270,8 @@ public class AudioSeparatorSeparationService implements SeparationService {
         try {
             done = proc.waitFor(5, TimeUnit.MINUTES);
         } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+            Thread.currentThread().interrupt();
+            throw new IOException("FFmpeg conversion interrupted for " + stem.getName(), e);
         }
         if (!done) {
             proc.destroyForcibly();
