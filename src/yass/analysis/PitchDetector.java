@@ -77,7 +77,8 @@ public class PitchDetector {
             if (exitCode == 0) {
                 LOGGER.info("Aubio pitch detection found " + rawPitchData.size() + " raw pitched frames.");
                 // Wende Kontur-Korrektur und eine lokale Mehrheitsbildung an.
-                finalPitchData = stabilizePitchContour(correctOctaveErrorsWithFixedSegmentation(rawPitchData));
+                finalPitchData = transposeToVocalRange(
+                        stabilizePitchContour(correctOctaveErrorsWithFixedSegmentation(rawPitchData)));
                 LOGGER.info("Applied pitch contour correction and stabilization. Resulting " + finalPitchData.size() + " pitched frames.");
                 return finalPitchData;
             } else {
@@ -196,6 +197,56 @@ public class PitchDetector {
         // unwahrscheinlich)
         correctedData.sort(Comparator.comparing(PitchData::time));
         return correctedData;
+    }
+
+    /**
+     * Transposes the entire pitch list by a whole number of octaves so that the median pitch
+     * falls within the vocal target range C4–E6 (semitones 0–28 relative to C4).
+     * The shift is applied uniformly to all frames (no per-note adjustment).
+     */
+    private static List<PitchData> transposeToVocalRange(List<PitchData> pitchData) {
+        if (pitchData == null || pitchData.isEmpty()) {
+            return pitchData;
+        }
+
+        // C4 = 0, E6 = 28 (semitones relative to C4)
+        final int VOCAL_LOW  = 0;   // C4
+        final int VOCAL_HIGH = 28;  // E6
+        final int VOCAL_MID  = (VOCAL_LOW + VOCAL_HIGH) / 2; // 14 ~ D5
+
+        // Compute median pitch
+        List<Integer> sorted = pitchData.stream()
+                .map(PitchData::pitch)
+                .sorted()
+                .toList();
+        int median = sorted.get(sorted.size() / 2);
+
+        // Find the octave shift (multiple of 12) that brings the median closest to the target midpoint
+        int shift = 0;
+        int bestDistance = Math.abs(median - VOCAL_MID);
+        for (int candidate = -48; candidate <= 48; candidate += 12) {
+            int distance = Math.abs(median + candidate - VOCAL_MID);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                shift = candidate;
+            }
+        }
+
+        if (shift == 0) {
+            return pitchData;
+        }
+
+        LOGGER.info(String.format("Transposing detected pitches by %+d semitones (median %d -> %d) to fit C4-E6 range.",
+                shift, median, median + shift));
+
+        final int finalShift = shift;
+        return pitchData.stream()
+                .map(pd -> {
+                    int newPitch = pd.pitch() + finalShift;
+                    double newFreq = C4_FREQ * Math.pow(2.0, newPitch / 12.0);
+                    return new PitchData(pd.time(), newPitch, freqToNoteName(newFreq));
+                })
+                .toList();
     }
 
     private static List<PitchData> stabilizePitchContour(List<PitchData> pitchData) {

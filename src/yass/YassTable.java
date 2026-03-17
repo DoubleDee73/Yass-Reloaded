@@ -75,6 +75,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.text.Normalizer;
 import java.time.Year;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -4194,6 +4195,12 @@ public class YassTable extends JTable {
         hyphenatorDictionary.selectWord(words.get(0));
         hyphenatorDictionary.focusTxtWord();
     }
+    private static boolean isVowel(char c) {
+        String normalized = Normalizer.normalize(String.valueOf(c), java.text.Normalizer.Form.NFD);
+        char base = normalized.charAt(0);
+        return "aeiouAEIOU".indexOf(base) >= 0;
+    }
+
     public void shiftEnding() {
         if (!checkShiftEndingConditions(false)) {
             return;
@@ -4204,7 +4211,10 @@ public class YassTable extends JTable {
         YassRow firstNote = getRowAt(selectedRowIndex);
         String oldLast = lastNote.getTrimmedText();
         int tilde = oldLast.indexOf("~");
-        String newLast = "~" + StringUtils.right(firstNote.getTrimmedText(), 1) + oldLast.substring(tilde + 1);
+        String movedChar = StringUtils.right(firstNote.getTrimmedText(), 1);
+        String suffix = oldLast.substring(tilde + 1);
+        String newLastBody = movedChar + suffix;
+        String newLast = isVowel(newLastBody.charAt(0)) ? "~" + newLastBody : newLastBody;
         String newFirst = StringUtils.left(firstNote.getTrimmedText(), firstNote.getTrimmedText().length() - 1);
         lastNote.setText(newLast + (lastNote.endsWithSpace() ? YassRow.SPACE : ""));
         firstNote.setText(newFirst);
@@ -4260,7 +4270,8 @@ public class YassTable extends JTable {
             }
         }
         String newFirst = firstNote.getTrimmedText() + characterToMove;
-        lastNote.setText("~" + newLast + (lastNote.endsWithSpace() ? YassRow.SPACE : ""));
+        String newLastPrefixed = (!newLast.isEmpty() && isVowel(newLast.charAt(0))) ? "~" + newLast : newLast;
+        lastNote.setText(newLastPrefixed + (lastNote.endsWithSpace() ? YassRow.SPACE : ""));
         firstNote.setText(newFirst);
         trimMiddleTildes();
         tm.fireTableDataChanged();
