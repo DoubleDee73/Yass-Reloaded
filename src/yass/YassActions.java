@@ -974,7 +974,7 @@ public class YassActions implements DropTargetListener {
                     throw new RuntimeException(ex);
                 }
                 if (audioTag == UltrastarHeaderTag.VOCALS && prop.getBooleanProperty("debug-waveform")) {
-                    mp3.setPitchDataList(PitchDetector.detectPitch(mp3.getTempFile(), prop));
+                    mp3.setPitchDataList(PitchDetector.detectPitch(mp3.getTempFile(), prop, mp3.getKey()));
                 }
                 activeTable.setSaved(false);
                 updateActions();
@@ -7989,6 +7989,7 @@ public class YassActions implements DropTargetListener {
         sheet.setDuration(mp3.getDuration() / 1000.0);
         sheet.setActiveTable(table);
         table.loadUsdbSyncerMetaFile(table.getDir());
+        syncMusicalKeyToComment();
 
         sheet.getSongHeader().initSongHeader(table);
 
@@ -8065,6 +8066,32 @@ public class YassActions implements DropTargetListener {
         sheet.init(initMic());
         sheet.repaint();
         table.initAutoSave();
+    }
+
+    /**
+     * When a song is opened in the editor, read the musical key from the audio file tag
+     * and store it in the #COMMENT tag if not already present there.
+     * Also caches the key in the player so it is available for pitch detection tie-breaking.
+     */
+    private void syncMusicalKeyToComment() {
+        if (table == null) {
+            return;
+        }
+        // Prefer what is already in #COMMENT (user may have edited it)
+        String commentKey = table.getKeyFromComment();
+        if (commentKey != null) {
+            MusicalKeyEnum fromComment = yass.musicalkey.MusicalKeyEnum.findKey(commentKey);
+            if (fromComment != yass.musicalkey.MusicalKeyEnum.UNDEFINED) {
+                mp3.setKey(fromComment);
+                return;
+            }
+        }
+        // Fall back to the audio file tag
+        yass.musicalkey.MusicalKeyEnum audioKey = mp3.findKey();
+        if (audioKey != yass.musicalkey.MusicalKeyEnum.UNDEFINED) {
+            mp3.setKey(audioKey);
+            table.setKeyInComment(audioKey.getRelevantKey());
+        }
     }
 
     private void clampEditorSplitIfNeeded() {

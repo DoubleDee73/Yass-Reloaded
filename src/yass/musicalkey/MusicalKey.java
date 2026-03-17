@@ -94,7 +94,11 @@ public class MusicalKey extends JDialog {
     }
 
     private void onOK() {
-        actions.getMP3().saveKey((MusicalKeyEnum) cboKey.getSelectedItem());
+        MusicalKeyEnum selected = (MusicalKeyEnum) cboKey.getSelectedItem();
+        actions.getMP3().saveKey(selected);
+        if (selected != null && selected != MusicalKeyEnum.UNDEFINED) {
+            actions.getTable().setKeyInComment(selected.getRelevantKey());
+        }
         actions.getTable().fireTableTableDataChanged();
         dispose();
     }

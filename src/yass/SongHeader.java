@@ -599,7 +599,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
                                                   .equalsIgnoreCase(UltrastarHeaderTag.VOCALS.toString()) &&
                 prop.getBooleanProperty("debug-waveform") && player.getTempFile() != null) {
             player.setPitchDataList(
-                    PitchDetector.detectPitch(player.getTempFile(), prop));
+                    PitchDetector.detectPitch(player.getTempFile(), prop, player.getKey()));
             actions.getSheet().repaint();
         } else {
             player.setPitchDataList(Collections.emptyList());

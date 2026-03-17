@@ -1539,6 +1539,10 @@ public class YassPlayer {
         return key == null ? MusicalKeyEnum.UNDEFINED : key;
     }
 
+    public void setKey(MusicalKeyEnum musicalKeyEnum) {
+        this.key = musicalKeyEnum;
+    }
+
     public void saveKey(MusicalKeyEnum musicalKeyEnum) {
         if (musicalKeyEnum == null || musicalKeyEnum == MusicalKeyEnum.UNDEFINED || musicalKeyEnum == getKey()) {
             this.key = MusicalKeyEnum.UNDEFINED;

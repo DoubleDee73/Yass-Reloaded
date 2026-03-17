@@ -20,6 +20,7 @@
 package yass.analysis;
 
 import yass.YassProperties;
+import yass.musicalkey.MusicalKeyEnum;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -35,8 +36,13 @@ public class PitchDetector {
     private static final double A4_FREQ = 440.0;
     private static final double C4_FREQ = A4_FREQ * Math.pow(2.0, -9.0 / 12.0); // approx 261.626 Hz
 
+    public static List<PitchData> detectPitch(File tempWavFile, YassProperties properties) {
+        return detectPitch(tempWavFile, properties, MusicalKeyEnum.UNDEFINED);
+    }
+
     public static List<PitchData> detectPitch(File tempWavFile,
-                                              YassProperties properties) {
+                                              YassProperties properties,
+                                              MusicalKeyEnum musicalKey) {
         List<PitchData> rawPitchData = new ArrayList<>();
         List<PitchData> finalPitchData;
         try {
@@ -76,7 +82,7 @@ public class PitchDetector {
             int exitCode = process.waitFor();
             if (exitCode == 0) {
                 LOGGER.info("Aubio pitch detection found " + rawPitchData.size() + " raw pitched frames.");
-                finalPitchData = transposeToVocalRange(viterbiSmooth(rawPitchData));
+                finalPitchData = transposeToVocalRange(viterbiSmooth(rawPitchData, musicalKey));
                 LOGGER.info("Viterbi smoothing complete. Resulting " + finalPitchData.size() + " pitched frames.");
                 return finalPitchData;
             } else {
@@ -211,8 +217,11 @@ public class PitchDetector {
      *       {@code GAP_RESET_SECONDS}, so each phrase is decoded independently.</li>
      * </ul>
      * All probabilities are computed in log-space to avoid floating-point underflow.
+     * When a {@code musicalKey} is provided, in-key pitches receive a small log-bonus
+     * in the emission probability, acting as a tie-breaker when aubio detects a pitch
+     * exactly between two semitones.
      */
-    private static List<PitchData> viterbiSmooth(List<PitchData> rawPitchData) {
+    private static List<PitchData> viterbiSmooth(List<PitchData> rawPitchData, MusicalKeyEnum musicalKey) {
         if (rawPitchData == null || rawPitchData.isEmpty()) {
             return Collections.emptyList();
         }
@@ -225,6 +234,8 @@ public class PitchDetector {
         // Emission: log P(observed | state) — Gaussian, σ = 1.5 semitones
         final double SIGMA = 1.5;
         final double LOG_SIGMA_NORM = -Math.log(SIGMA * Math.sqrt(2 * Math.PI));
+        // Small log-bonus for pitches in the musical key — acts as tie-breaker only
+        final double IN_KEY_LOG_BONUS = Math.log(1.05);
 
         // Transition: base decay per semitone distance
         final double TRANSITION_DECAY = 0.5; // log factor per semitone of distance
@@ -275,7 +286,11 @@ public class PitchDetector {
             for (int s = 0; s < N; s++) {
                 int stateMidi = MIDI_LOW + s;
                 double diff = stateMidi - obs0midi;
-                logViterbi[s] = LOG_SIGMA_NORM - (diff * diff) / (2 * SIGMA * SIGMA);
+                double logEmit0 = LOG_SIGMA_NORM - (diff * diff) / (2 * SIGMA * SIGMA);
+                if (musicalKey != null && musicalKey.isInKey(stateMidi)) {
+                    logEmit0 += IN_KEY_LOG_BONUS;
+                }
+                logViterbi[s] = logEmit0;
                 // uniform prior: no adjustment needed (log(1/N) cancels in argmax)
                 bp[0][s] = s;
             }
@@ -288,6 +303,9 @@ public class PitchDetector {
                     int stateMidi = MIDI_LOW + to;
                     double diff = stateMidi - obsMidi;
                     double logEmit = LOG_SIGMA_NORM - (diff * diff) / (2 * SIGMA * SIGMA);
+                    if (musicalKey != null && musicalKey.isInKey(stateMidi)) {
+                        logEmit += IN_KEY_LOG_BONUS;
+                    }
                     double best = Double.NEGATIVE_INFINITY;
                     int bestFrom = 0;
                     for (int from = 0; from < N; from++) {

@@ -1325,6 +1325,46 @@ public class YassTable extends JTable {
         }
         tm.getData().insertElementAt(r, rowToInsert);
     }
+    /**
+     * Reads the key= segment from #COMMENT (e.g. "v=123,key=Am") and returns the value, or null if absent.
+     */
+    public String getKeyFromComment() {
+        String comment = getCommentTag();
+        if (comment == null) {
+            return null;
+        }
+        for (String part : comment.split(",")) {
+            String trimmed = part.trim();
+            if (trimmed.startsWith("key=")) {
+                return trimmed.substring(4).trim();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Writes or updates the key= segment in #COMMENT.
+     * If no COMMENT tag exists, creates "key=&lt;value&gt;".
+     * If one exists but has no key= segment, appends ",key=&lt;value&gt;".
+     * If one already has a key= segment, replaces it in-place.
+     */
+    public void setKeyInComment(String keyValue) {
+        if (keyValue == null || keyValue.isBlank()) {
+            return;
+        }
+        String existing = getCommentTag();
+        String updated;
+        if (existing == null || existing.isBlank()) {
+            updated = "key=" + keyValue;
+        } else if (existing.contains("key=")) {
+            // replace in-place using regex to handle leading/trailing commas cleanly
+            updated = existing.replaceAll("(?:^|(?<=,))key=[^,]*", "key=" + keyValue);
+        } else {
+            updated = existing + ",key=" + keyValue;
+        }
+        setCommentTag(updated);
+    }
+
     public boolean setCommentTag(String comment) {
         YassRow r = tm.getCommentRow(COMMENT);
         int rowToInsert = 0;
