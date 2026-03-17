@@ -31,11 +31,11 @@ public class AudioSeparatorSeparationService implements SeparationService {
     private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(30);
 
-    static final String PROP_PYTHON       = "audiosep-python";
+    public static final String PROP_PYTHON       = "audiosep-python";
     static final String PROP_MODEL        = "audiosep-model";
     static final String PROP_MODEL_DIR    = "audiosep-model-dir";
     static final String PROP_OUTPUT_FORMAT = "audiosep-output-format";
-    static final String PROP_HEALTH_OK    = "audiosep-health-ok";
+    public static final String PROP_HEALTH_OK    = "audiosep-health-ok";
     private static final String DEFAULT_MODEL         = "vocals_mel_band_roformer.ckpt";
     private static final String DEFAULT_OUTPUT_FORMAT = "wav";
     private static final String DEFAULT_TARGET_FORMAT = "mp3";
@@ -252,7 +252,7 @@ public class AudioSeparatorSeparationService implements SeparationService {
         listener.onStatusChanged("Converting " + stem.getName() + " to " + targetExt + "...");
         LOGGER.info("Converting stem: " + stem.getAbsolutePath() + " -> " + output.getAbsolutePath());
 
-        List<String> cmd = new ArrayList<>(Arrays.asList(ffmpegExe, "-y", "-i", stem.getAbsolutePath()));
+        List<String> cmd = new ArrayList<>(Arrays.asList(resolveFfmpegExecutable(), "-y", "-i", stem.getAbsolutePath()));
         addFormatArgs(cmd, targetExt);
         cmd.add(output.getAbsolutePath());
 
