@@ -32,9 +32,9 @@ public class AudioSeparatorSeparationService implements SeparationService {
     private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(30);
 
     public static final String PROP_PYTHON       = "audiosep-python";
-    static final String PROP_MODEL        = "audiosep-model";
-    static final String PROP_MODEL_DIR    = "audiosep-model-dir";
-    static final String PROP_OUTPUT_FORMAT = "audiosep-output-format";
+    public static final String PROP_MODEL        = "audiosep-model";
+    public static final String PROP_MODEL_DIR    = "audiosep-model-dir";
+    public static final String PROP_OUTPUT_FORMAT = "audiosep-output-format";
     public static final String PROP_HEALTH_OK    = "audiosep-health-ok";
     private static final String DEFAULT_MODEL         = "vocals_mel_band_roformer.ckpt";
     private static final String DEFAULT_OUTPUT_FORMAT = "wav";
