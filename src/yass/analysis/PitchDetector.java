@@ -76,10 +76,8 @@ public class PitchDetector {
             int exitCode = process.waitFor();
             if (exitCode == 0) {
                 LOGGER.info("Aubio pitch detection found " + rawPitchData.size() + " raw pitched frames.");
-                // Wende Kontur-Korrektur und eine lokale Mehrheitsbildung an.
-                finalPitchData = transposeToVocalRange(
-                        stabilizePitchContour(correctOctaveErrorsWithFixedSegmentation(rawPitchData)));
-                LOGGER.info("Applied pitch contour correction and stabilization. Resulting " + finalPitchData.size() + " pitched frames.");
+                finalPitchData = transposeToVocalRange(viterbiSmooth(rawPitchData));
+                LOGGER.info("Viterbi smoothing complete. Resulting " + finalPitchData.size() + " pitched frames.");
                 return finalPitchData;
             } else {
                 // Handle errors by logging them
@@ -197,6 +195,144 @@ public class PitchDetector {
         // unwahrscheinlich)
         correctedData.sort(Comparator.comparing(PitchData::time));
         return correctedData;
+    }
+
+    /**
+     * Smooths raw aubio pitch detections using the Viterbi algorithm on a Hidden Markov Model.
+     * <p>
+     * Hidden states are individual semitones in the range E2–C6 (MIDI 40–84).
+     * Observations are the raw detected pitches. The HMM uses:
+     * <ul>
+     *   <li><b>Emission:</b> Gaussian with σ=1.5 semitones centred on the observed pitch.</li>
+     *   <li><b>Transition:</b> exponential decay by semitone distance, with an additional
+     *       penalty for octave jumps (±12 semitones) to suppress spurious octave errors
+     *       while still allowing genuine leaps when the evidence is sustained.</li>
+     *   <li><b>Gap reset:</b> the forward pass restarts after silence gaps longer than
+     *       {@code GAP_RESET_SECONDS}, so each phrase is decoded independently.</li>
+     * </ul>
+     * All probabilities are computed in log-space to avoid floating-point underflow.
+     */
+    private static List<PitchData> viterbiSmooth(List<PitchData> rawPitchData) {
+        if (rawPitchData == null || rawPitchData.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        final int MIDI_LOW  = 40; // E2
+        final int MIDI_HIGH = 84; // C6
+        final int N = MIDI_HIGH - MIDI_LOW + 1; // 45 states
+        final float GAP_RESET_SECONDS = 0.12f;
+
+        // Emission: log P(observed | state) — Gaussian, σ = 1.5 semitones
+        final double SIGMA = 1.5;
+        final double LOG_SIGMA_NORM = -Math.log(SIGMA * Math.sqrt(2 * Math.PI));
+
+        // Transition: base decay per semitone distance
+        final double TRANSITION_DECAY = 0.5; // log factor per semitone of distance
+        // Extra log-penalty for octave jumps to suppress harmonic errors
+        final double OCTAVE_JUMP_LOG_PENALTY = Math.log(0.05);
+
+        int T = rawPitchData.size();
+        double[] logViterbi = new double[N];
+        int[][] backpointer = new int[T][N];
+
+        // Precompute log-transition matrix: logTrans[from][to]
+        // Stored as a flat array for cache efficiency
+        double[] logTrans = new double[N * N];
+        for (int from = 0; from < N; from++) {
+            double rowSum = 0;
+            double[] raw = new double[N];
+            for (int to = 0; to < N; to++) {
+                int dist = Math.abs(from - to);
+                double logP = -TRANSITION_DECAY * dist;
+                if (dist == 12) {
+                    logP += OCTAVE_JUMP_LOG_PENALTY;
+                }
+                raw[to] = Math.exp(logP);
+                rowSum += raw[to];
+            }
+            for (int to = 0; to < N; to++) {
+                logTrans[from * N + to] = Math.log(raw[to] / rowSum);
+            }
+        }
+
+        List<PitchData> result = new ArrayList<>(T);
+
+        // Process the sequence in contiguous phrases separated by silence gaps
+        int phraseStart = 0;
+        while (phraseStart < T) {
+            // Find the end of this phrase (next gap or end of data)
+            int phraseEnd = phraseStart + 1;
+            while (phraseEnd < T &&
+                    rawPitchData.get(phraseEnd).time() - rawPitchData.get(phraseEnd - 1).time() <= GAP_RESET_SECONDS) {
+                phraseEnd++;
+            }
+
+            int phraseLen = phraseEnd - phraseStart;
+            int[][] bp = new int[phraseLen][N];
+
+            // --- Initialisation: uniform prior, apply emission for first frame ---
+            int obs0midi = rawPitchData.get(phraseStart).pitch() + 60;
+            for (int s = 0; s < N; s++) {
+                int stateMidi = MIDI_LOW + s;
+                double diff = stateMidi - obs0midi;
+                logViterbi[s] = LOG_SIGMA_NORM - (diff * diff) / (2 * SIGMA * SIGMA);
+                // uniform prior: no adjustment needed (log(1/N) cancels in argmax)
+                bp[0][s] = s;
+            }
+
+            // --- Recursion ---
+            double[] newLogViterbi = new double[N];
+            for (int t = 1; t < phraseLen; t++) {
+                int obsMidi = rawPitchData.get(phraseStart + t).pitch() + 60;
+                for (int to = 0; to < N; to++) {
+                    int stateMidi = MIDI_LOW + to;
+                    double diff = stateMidi - obsMidi;
+                    double logEmit = LOG_SIGMA_NORM - (diff * diff) / (2 * SIGMA * SIGMA);
+                    double best = Double.NEGATIVE_INFINITY;
+                    int bestFrom = 0;
+                    for (int from = 0; from < N; from++) {
+                        double score = logViterbi[from] + logTrans[from * N + to];
+                        if (score > best) {
+                            best = score;
+                            bestFrom = from;
+                        }
+                    }
+                    newLogViterbi[to] = best + logEmit;
+                    bp[t][to] = bestFrom;
+                }
+                System.arraycopy(newLogViterbi, 0, logViterbi, 0, N);
+            }
+
+            // --- Backtrack ---
+            int[] stateSeq = new int[phraseLen];
+            double bestFinal = Double.NEGATIVE_INFINITY;
+            for (int s = 0; s < N; s++) {
+                if (logViterbi[s] > bestFinal) {
+                    bestFinal = logViterbi[s];
+                    stateSeq[phraseLen - 1] = s;
+                }
+            }
+            for (int t = phraseLen - 2; t >= 0; t--) {
+                stateSeq[t] = bp[t + 1][stateSeq[t + 1]];
+            }
+
+            // --- Emit smoothed PitchData for this phrase ---
+            for (int t = 0; t < phraseLen; t++) {
+                int smoothedMidi = MIDI_LOW + stateSeq[t];
+                int smoothedPitch = smoothedMidi - 60;
+                PitchData original = rawPitchData.get(phraseStart + t);
+                if (smoothedPitch == original.pitch()) {
+                    result.add(original);
+                } else {
+                    double smoothedFreq = C4_FREQ * Math.pow(2.0, smoothedPitch / 12.0);
+                    result.add(new PitchData(original.time(), smoothedPitch, freqToNoteName(smoothedFreq)));
+                }
+            }
+
+            phraseStart = phraseEnd;
+        }
+
+        return result;
     }
 
     /**
