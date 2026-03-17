@@ -243,6 +243,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
     private final Rectangle2D.Double select = new Rectangle2D.Double(0, 0, 0, 0);
     private double selectX, selectY;
     private double wSize = 30, hSize = -1;
+    private double uiScale = 1.0;
     private int dragOffsetX = 0, dragOffsetY = 0, slideX = 0;
     private double dragOffsetXRatio = 0;
     private boolean pan = false, isPlaying = false, isTemporaryStop = false;
@@ -306,6 +307,13 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         initKeyListener();
         initMouseListener();
         initMouseMotionListener();
+    }
+
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        AffineTransform tx = getGraphicsConfiguration().getDefaultTransform();
+        uiScale = tx.getScaleX();
     }
 
     /**
@@ -2636,7 +2644,8 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                 }
 
                 int amplitude = mp3.getWaveFormAtMillis(timeInSeconds * 1000);
-                g2.drawLine(x, (int) (yCenter - amplitude / 2.0), x, (int) (yCenter + amplitude / 2.0));
+                double amplitudeScaled = amplitude * uiScale;
+                g2.drawLine(x, (int) (yCenter - amplitudeScaled / 2.0), x, (int) (yCenter + amplitudeScaled / 2.0));
             }
         } else {
             int h = TOP_LINE - 10 + 128;
