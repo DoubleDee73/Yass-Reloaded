@@ -8,18 +8,18 @@ import java.io.File;
 public class WizardTranscriptionState {
     private final File runDirectory;
     private final File sourceAudioFile;
-    private final File sourceWavFile;
+    private final File sourceConvertedFile;
     private final SeparationResult separationResult;
     private final OpenAiTranscriptionResult transcriptionResult;
 
     public WizardTranscriptionState(File runDirectory,
                                     File sourceAudioFile,
-                                    File sourceWavFile,
+                                    File sourceConvertedFile,
                                     SeparationResult separationResult,
                                     OpenAiTranscriptionResult transcriptionResult) {
         this.runDirectory = runDirectory;
         this.sourceAudioFile = sourceAudioFile;
-        this.sourceWavFile = sourceWavFile;
+        this.sourceConvertedFile = sourceConvertedFile;
         this.separationResult = separationResult;
         this.transcriptionResult = transcriptionResult;
     }
@@ -32,8 +32,8 @@ public class WizardTranscriptionState {
         return sourceAudioFile;
     }
 
-    public File getSourceWavFile() {
-        return sourceWavFile;
+    public File getSourceConvertedFile() {
+        return sourceConvertedFile;
     }
 
     public SeparationResult getSeparationResult() {

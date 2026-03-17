@@ -45,6 +45,10 @@ public enum YtDlpAudioFormat implements YassEnum {
         return value;
     }
 
+    public String getExtension() {
+        return extension;
+    }
+
     @Override
     public List<YassEnum> listElements() {
         return Arrays.asList(values());

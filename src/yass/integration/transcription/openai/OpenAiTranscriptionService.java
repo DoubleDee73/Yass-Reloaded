@@ -95,9 +95,8 @@ public class OpenAiTranscriptionService {
                                               uploadAudioFile,
                                               sourceTag,
                                               properties.getProperty("openai-model"),
-                                              StringUtils.trimToEmpty(properties.getProperty("openai-language")),
-                                              StringUtils.trimToEmpty(properties.getProperty("openai-prompt")),
-                                              properties.getProperty("openai-timestamp-granularity"),
+                                              resolveIsoLanguage(table.getLanguage()),
+                                              "word",
                                               baseName);
     }
 
@@ -129,9 +128,6 @@ public class OpenAiTranscriptionService {
             writeFormField(output, boundary, "timestamp_granularities[]", request.getTimestampGranularity());
             if (StringUtils.isNotBlank(request.getLanguage())) {
                 writeFormField(output, boundary, "language", request.getLanguage());
-            }
-            if (StringUtils.isNotBlank(request.getPrompt())) {
-                writeFormField(output, boundary, "prompt", request.getPrompt());
             }
             writeFileField(output, boundary, "file", request.getUploadAudioFile());
             output.writeBytes("--" + boundary + "--\r\n");
@@ -200,7 +196,19 @@ public class OpenAiTranscriptionService {
     }
 
     private File getCacheFile(OpenAiTranscriptionRequest request) {
-        return new File(request.getSourceAudioFile().getParentFile(), request.getSongBaseName() + ".openai-transcript.json");
+        String configured = StringUtils.defaultIfBlank(properties.getProperty("whisperx-cache-folder"), ".yass-cache");
+        File cacheDir = new File(configured).isAbsolute()
+                ? new File(configured)
+                : new File(request.getSourceAudioFile().getParentFile(), configured);
+        String cacheName = ("#VOCALS".equals(request.getSourceTag()) ? "vocals" : "audio") + "-transcript.openai.json";
+        try { java.nio.file.Files.createDirectories(cacheDir.toPath()); } catch (Exception ignored) {}
+        return new File(cacheDir, cacheName);
+    }
+
+    private String resolveIsoLanguage(String displayLanguage) {
+        if (StringUtils.isBlank(displayLanguage)) return null;
+        Locale locale = YassUtils.determineLocale(displayLanguage);
+        return locale != null ? locale.getLanguage() : null;
     }
 
     private File resolveUploadAudioFile(File sourceAudioFile) {

@@ -147,9 +147,16 @@ public class YouTube extends JPanel {
         if (matches == null || matches.length == 0) {
             return null;
         }
-        // Prefer audio file (no video stream) over video file
+        // Prefer audio-only stream file (pre-extraction intermediate)
         for (File f : matches) {
             if (f.getName().contains(".v_none.")) {
+                return f;
+            }
+        }
+        // Prefer files with known audio-only extensions (e.g. opus, mp3 after extraction)
+        for (File f : matches) {
+            String ext = f.getName().contains(".") ? f.getName().substring(f.getName().lastIndexOf('.') + 1).toLowerCase() : "";
+            if (AUDIO_EXTENSIONS.contains(ext)) {
                 return f;
             }
         }

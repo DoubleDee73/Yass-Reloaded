@@ -247,6 +247,10 @@ public class Lyrics extends JPanel {
         lyricsArea.setText(s);
     }
 
+    public void setSubtitles(Map<Integer, String> subtitles) {
+        this.subtitles = subtitles;
+    }
+
 
     /**
      * Gets the table attribute of the Lyrics object

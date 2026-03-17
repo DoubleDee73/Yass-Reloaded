@@ -38,6 +38,7 @@ import yass.alignment.TranscriptNoteRebuildService;
 import yass.alignment.TranscriptRebuildResult;
 import yass.integration.separation.SeparationRequest;
 import yass.integration.separation.SeparationResult;
+import yass.integration.separation.audioseparator.AudioSeparatorSeparationService;
 import yass.integration.separation.mvsep.MvsepAccountInfo;
 import yass.integration.separation.mvsep.MvsepAlgorithmInfo;
 import yass.integration.separation.mvsep.MvsepSeparationService;
@@ -2817,6 +2818,141 @@ public class YassActions implements DropTargetListener {
         }
     };
 
+    private final Action separateAudioLocal = new AbstractAction(I18.get("edit_audio_separate_local")) {
+        public void actionPerformed(ActionEvent e) {
+            startLocalSeparateAudioForCurrentSong();
+        }
+    };
+
+    public void startLocalSeparateAudioForCurrentSong() {
+        if (table == null) {
+            JOptionPane.showMessageDialog(tab,
+                                          I18.get("edit_audio_separate_missing_song"),
+                                          I18.get("edit_audio_separate_local"),
+                                          JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        try {
+            AudioSeparatorSeparationService separationService = new AudioSeparatorSeparationService(prop);
+            if (!separationService.isConfigured()) {
+                JOptionPane.showMessageDialog(tab,
+                                              I18.get("edit_audio_separate_local_missing_config"),
+                                              I18.get("edit_audio_separate_local"),
+                                              JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            SeparationRequest request = separationService.createRequest(table);
+            openLocalSeparationStatusDialog(separationService, request);
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            JOptionPane.showMessageDialog(tab,
+                                          ex.getMessage(),
+                                          I18.get("edit_audio_separate_local"),
+                                          JOptionPane.WARNING_MESSAGE);
+        }
+    }
+
+    private void openLocalSeparationStatusDialog(AudioSeparatorSeparationService separationService,
+                                                  SeparationRequest request) {
+        JLabel statusLabel = new JLabel(I18.get("edit_audio_separate_local_running"));
+        JTextArea statusHistory = new JTextArea(14, 68);
+        statusHistory.setEditable(false);
+        statusHistory.setLineWrap(true);
+        statusHistory.setWrapStyleWord(true);
+        statusHistory.setText(statusLabel.getText());
+
+        JLabel hintLabel = new JLabel("<html>" + I18.get("edit_audio_separate_local_hint") + "</html>");
+        hintLabel.setVerticalAlignment(SwingConstants.TOP);
+
+        JProgressBar statusBar = new JProgressBar();
+        statusBar.setIndeterminate(true);
+
+        JButton cancelButton = new JButton(I18.get("edit_audio_separate_cancel"));
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttonPanel.add(cancelButton);
+
+        JPanel bottomPanel = new JPanel(new BorderLayout(0, 8));
+        bottomPanel.add(statusBar, BorderLayout.NORTH);
+        bottomPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        JPanel panel = new JPanel(new BorderLayout(0, 12));
+        panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        panel.add(hintLabel, BorderLayout.NORTH);
+        panel.add(new JScrollPane(statusHistory), BorderLayout.CENTER);
+        panel.add(bottomPanel, BorderLayout.SOUTH);
+
+        JDialog statusDialog = new JDialog(getFrame(tab), I18.get("edit_audio_separate_local"), false);
+        statusDialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        statusDialog.setContentPane(panel);
+        statusDialog.pack();
+        statusDialog.setMinimumSize(new Dimension(700, 360));
+        statusDialog.setLocationRelativeTo(tab);
+
+        separationRunning = true;
+        updateActions();
+
+        final String[] lastStatus = {statusLabel.getText()};
+        SwingWorker<SeparationResult, String> worker = new SwingWorker<>() {
+            @Override
+            protected SeparationResult doInBackground() throws Exception {
+                return separationService.startSeparation(request, status -> publish(status));
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                if (chunks.isEmpty()) return;
+                String status = chunks.get(chunks.size() - 1);
+                statusLabel.setText(status);
+                if (!status.equals(lastStatus[0])) {
+                    statusHistory.append("\n" + status);
+                    lastStatus[0] = status;
+                }
+                statusHistory.setCaretPosition(statusHistory.getDocument().getLength());
+            }
+
+            @Override
+            protected void done() {
+                separationRunning = false;
+                updateActions();
+                statusDialog.dispose();
+                if (isCancelled()) return;
+                try {
+                    SeparationResult result = get();
+                    boolean linkedVocals = applySeparatedTrack(result.getVocalsFile(), true);
+                    File preferredInstrumental = result.getPreferredInstrumentalFile(
+                            prop.getProperty("mvsep-instrumental-default"));
+                    boolean linkedInstrumental = applySeparatedTrack(preferredInstrumental, false);
+                    JOptionPane.showMessageDialog(tab,
+                                                  buildSeparationSuccessMessage(result, linkedVocals, linkedInstrumental, preferredInstrumental),
+                                                  I18.get("edit_audio_separate_local"),
+                                                  JOptionPane.INFORMATION_MESSAGE);
+                } catch (CancellationException ignored) {
+                } catch (Exception ex) {
+                    Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+                    JOptionPane.showMessageDialog(tab,
+                                                  StringUtils.defaultIfBlank(cause.getMessage(), cause.toString()),
+                                                  I18.get("edit_audio_separate_local"),
+                                                  JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+
+        cancelButton.addActionListener(e -> {
+            cancelButton.setEnabled(false);
+            worker.cancel(true);
+        });
+        statusDialog.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                worker.cancel(true);
+                statusDialog.dispose();
+            }
+        });
+
+        worker.execute();
+        statusDialog.setVisible(true);
+    }
+
     public void startAlignNotesWithTranscription() {
         try {
             if (table == null) {
@@ -2905,7 +3041,7 @@ public class YassActions implements DropTargetListener {
                             try {
                                 OpenAiTranscriptionResult result = get();
                                 boolean rebuildFromTranscript = false;
-                                if (useWhisperX && !result.getWords().isEmpty()) {
+                                if (!result.getWords().isEmpty()) {
                                     int overwriteDecision = JOptionPane.showConfirmDialog(tab,
                                                                                            I18.get("edit_align_transcription_overwrite_prompt"),
                                                                                            I18.get("edit_align_transcription"),
@@ -3092,48 +3228,137 @@ public class YassActions implements DropTargetListener {
         if (StringUtils.isBlank(correctedLyrics) || original.getSegments().isEmpty()) {
             return original;
         }
-        // Collect all words from segments in order
-        List<OpenAiTranscriptWord> allWords = new ArrayList<>();
-        for (OpenAiTranscriptSegment segment : original.getSegments()) {
-            allWords.addAll(segment.getWords());
-        }
-        // Split corrected lyrics into words (split on any whitespace/newline)
-        String[] correctedWords = correctedLyrics.trim().split("\\s+");
-        if (correctedWords.length != allWords.size()) {
-            LOGGER.info("Corrected lyrics word count (" + correctedWords.length +
-                        ") does not match transcript word count (" + allWords.size() + "). Using original transcript.");
+
+        // Split corrected lyrics into lines — one line per segment
+        String[] correctedLines = correctedLyrics.split("\\r?\\n", -1);
+        List<OpenAiTranscriptSegment> originalSegments = original.getSegments();
+
+        // Pair corrected lines with segments by index; if counts differ, use original
+        if (correctedLines.length != originalSegments.size()) {
+            LOGGER.info("Corrected line count (" + correctedLines.length + ") does not match segment count (" +
+                        originalSegments.size() + "). Using original transcript.");
             return original;
         }
-        LOGGER.info("Applying " + correctedWords.length + " corrected words to transcript.");
-        // Rebuild segments with corrected word texts, preserving all timestamps
-        int wordIndex = 0;
+
         List<OpenAiTranscriptSegment> newSegments = new ArrayList<>();
-        for (OpenAiTranscriptSegment segment : original.getSegments()) {
-            List<OpenAiTranscriptWord> newWords = new ArrayList<>();
-            for (OpenAiTranscriptWord word : segment.getWords()) {
-                String corrected = correctedWords[wordIndex++];
-                newWords.add(new OpenAiTranscriptWord(
-                        corrected,
-                        LyricsAlignmentTokenizer.normalizeText(corrected),
-                        word.getStartMs(),
-                        word.getEndMs()));
+        List<OpenAiTranscriptWord> allRemappedWords = new ArrayList<>();
+
+        for (int lineIdx = 0; lineIdx < originalSegments.size(); lineIdx++) {
+            OpenAiTranscriptSegment segment = originalSegments.get(lineIdx);
+            List<OpenAiTranscriptWord> segWords = segment.getWords();
+            String correctedLine = correctedLines[lineIdx].trim();
+
+            // If the line is blank or has no transcript words, keep segment as-is
+            if (StringUtils.isBlank(correctedLine) || segWords.isEmpty()) {
+                newSegments.add(segment);
+                allRemappedWords.addAll(segWords);
+                continue;
             }
-            String newSegmentText = newWords.stream()
-                    .map(OpenAiTranscriptWord::getText)
-                    .collect(Collectors.joining(" "));
-            newSegments.add(new OpenAiTranscriptSegment(
-                    segment.getStartMs(), segment.getEndMs(), newSegmentText, newWords));
+
+            String[] lineWords = correctedLine.split("\\s+");
+            List<OpenAiTranscriptWord> remappedLineWords;
+
+            if (lineWords.length == segWords.size()) {
+                remappedLineWords = remapExact(lineWords, segWords);
+            } else if (lineWords.length < segWords.size()) {
+                LOGGER.info("Line " + lineIdx + ": joining " + segWords.size() + " transcript words into " + lineWords.length);
+                remappedLineWords = remapByJoining(lineWords, segWords);
+            } else {
+                LOGGER.info("Line " + lineIdx + ": splitting " + segWords.size() + " transcript words into " + lineWords.length);
+                remappedLineWords = remapBySplitting(lineWords, segWords);
+            }
+
+            if (remappedLineWords == null) {
+                // Split span too short — keep this segment's original words unchanged
+                LOGGER.info("Line " + lineIdx + ": cannot remap, keeping original segment words.");
+                newSegments.add(segment);
+                allRemappedWords.addAll(segWords);
+            } else {
+                String newText = remappedLineWords.stream()
+                        .map(OpenAiTranscriptWord::getText).collect(Collectors.joining(" "));
+                newSegments.add(new OpenAiTranscriptSegment(
+                        segment.getStartMs(), segment.getEndMs(), newText, remappedLineWords));
+                allRemappedWords.addAll(remappedLineWords);
+            }
         }
+
         return new OpenAiTranscriptionResult(
                 original.getSourceAudioFile(),
                 original.getUploadAudioFile(),
                 original.getSourceTag(),
                 correctedLyrics,
-                allWords,
+                allRemappedWords,
                 newSegments,
                 original.getLyricTokens(),
                 original.isFromCache(),
                 original.getCacheFile());
+    }
+
+    /** 1:1 remap — corrected word count equals transcript word count for this line. */
+    private List<OpenAiTranscriptWord> remapExact(String[] correctedWords, List<OpenAiTranscriptWord> segWords) {
+        List<OpenAiTranscriptWord> result = new ArrayList<>(segWords.size());
+        for (int i = 0; i < segWords.size(); i++) {
+            OpenAiTranscriptWord src = segWords.get(i);
+            String corrected = correctedWords[i];
+            result.add(new OpenAiTranscriptWord(corrected, LyricsAlignmentTokenizer.normalizeText(corrected),
+                    src.getStartMs(), src.getEndMs()));
+        }
+        return result;
+    }
+
+    /**
+     * N:1 join — fewer corrected words than transcript words on this line.
+     * Distributes transcript words into corrected-word groups proportionally,
+     * using the first group word's startMs and last group word's endMs.
+     */
+    private List<OpenAiTranscriptWord> remapByJoining(String[] correctedWords, List<OpenAiTranscriptWord> segWords) {
+        int n = segWords.size();
+        int m = correctedWords.length;
+        List<OpenAiTranscriptWord> result = new ArrayList<>(m);
+        for (int corrIdx = 0; corrIdx < m; corrIdx++) {
+            int start = (int) Math.round((double) corrIdx * n / m);
+            int end   = (int) Math.round((double) (corrIdx + 1) * n / m);
+            if (start >= end) end = start + 1;
+            if (end > n) end = n;
+            if (start >= n) return null;
+            int startMs = segWords.get(start).getStartMs();
+            int endMs   = segWords.get(end - 1).getEndMs();
+            String corrected = correctedWords[corrIdx];
+            result.add(new OpenAiTranscriptWord(corrected, LyricsAlignmentTokenizer.normalizeText(corrected),
+                    startMs, endMs));
+        }
+        return result;
+    }
+
+    /**
+     * 1:N split — more corrected words than transcript words on this line.
+     * Each transcript word's time span is divided evenly among the corrected words mapped to it.
+     * Returns null if any span is too short to split (less than 1ms per corrected word).
+     */
+    private List<OpenAiTranscriptWord> remapBySplitting(String[] correctedWords, List<OpenAiTranscriptWord> segWords) {
+        int n = segWords.size();
+        int m = correctedWords.length;
+        List<OpenAiTranscriptWord> result = new ArrayList<>(m);
+        for (int corrIdx = 0; corrIdx < m; corrIdx++) {
+            int transcriptIdx = (int) Math.floor((double) corrIdx * n / m);
+            if (transcriptIdx >= n) transcriptIdx = n - 1;
+            int firstCorr = (int) Math.floor((double) transcriptIdx * m / n);
+            int lastCorr  = (int) Math.floor((double) (transcriptIdx + 1) * m / n) - 1;
+            int splitCount = lastCorr - firstCorr + 1;
+            OpenAiTranscriptWord src = segWords.get(transcriptIdx);
+            int span = src.getEndMs() - src.getStartMs();
+            if (splitCount > 1 && span < splitCount) {
+                LOGGER.info("Cannot split '" + src.getText() + "' (span " + span + "ms) into " + splitCount + " words.");
+                return null;
+            }
+            int offsetInSlot = corrIdx - firstCorr;
+            int slotStartMs = src.getStartMs() + (int) Math.round((double) span * offsetInSlot / splitCount);
+            int slotEndMs   = src.getStartMs() + (int) Math.round((double) span * (offsetInSlot + 1) / splitCount);
+            String corrected = correctedWords[corrIdx];
+            result.add(new OpenAiTranscriptWord(corrected, LyricsAlignmentTokenizer.normalizeText(corrected),
+                    slotStartMs, slotEndMs));
+        }
+        return result;
     }
 
     private void copyWizardSeparationFiles(File destinationDir, YassTable createdTable, WizardTranscriptionState state) throws IOException {
@@ -3141,10 +3366,15 @@ public class YassActions implements DropTargetListener {
         if (separationResult == null) {
             return;
         }
-        File copiedVocals = copyIfPresent(separationResult.getVocalsFile(), destinationDir);
-        File copiedLead = copyIfPresent(separationResult.getLeadFile(), destinationDir);
-        File copiedInstrumental = copyIfPresent(separationResult.getInstrumentalFile(), destinationDir);
-        File copiedInstrumentalBacking = copyIfPresent(separationResult.getInstrumentalBackingFile(), destinationDir);
+        String songBase = buildSongBaseName(createdTable);
+        File copiedVocals = copyIfPresent(separationResult.getVocalsFile(), destinationDir,
+                songBase + " (Vocals)" + extensionOf(separationResult.getVocalsFile()));
+        File copiedLead = copyIfPresent(separationResult.getLeadFile(), destinationDir,
+                songBase + " (Vocals)" + extensionOf(separationResult.getLeadFile()));
+        File copiedInstrumental = copyIfPresent(separationResult.getInstrumentalFile(), destinationDir,
+                songBase + " (Instrumental)" + extensionOf(separationResult.getInstrumentalFile()));
+        File copiedInstrumentalBacking = copyIfPresent(separationResult.getInstrumentalBackingFile(), destinationDir,
+                songBase + " (Instrumental)" + extensionOf(separationResult.getInstrumentalBackingFile()));
 
         File preferredVocals = copiedVocals != null ? copiedVocals : copiedLead;
         if (preferredVocals != null) {
@@ -3159,22 +3389,38 @@ public class YassActions implements DropTargetListener {
         }
     }
 
+    private String buildSongBaseName(YassTable table) {
+        String artist = StringUtils.trimToEmpty(table.getArtist()).replaceAll("[\\\\/:*?\"<>|]", "_");
+        String title = StringUtils.trimToEmpty(table.getTitle()).replaceAll("[\\\\/:*?\"<>|]", "_");
+        if (StringUtils.isNotBlank(artist) && StringUtils.isNotBlank(title)) {
+            return artist + " - " + title;
+        }
+        return StringUtils.defaultIfBlank(artist, StringUtils.defaultIfBlank(title, "Unknown"));
+    }
+
+    private String extensionOf(File file) {
+        if (file == null) return "";
+        String name = file.getName();
+        int dot = name.lastIndexOf('.');
+        return dot >= 0 ? name.substring(dot) : "";
+    }
+
     private void copyWizardTranscriptCache(File destinationDir, WizardTranscriptionState state) throws IOException {
         OpenAiTranscriptionResult transcriptionResult = state.getTranscriptionResult();
         if (transcriptionResult == null || transcriptionResult.getCacheFile() == null || !transcriptionResult.getCacheFile().isFile()) {
             return;
         }
-        File cacheDir = new File(destinationDir, StringUtils.defaultIfBlank(prop.getProperty("whisperx-cache-folder"), ".yass-cache/whisperx"));
+        File cacheDir = new File(destinationDir, StringUtils.defaultIfBlank(prop.getProperty("whisperx-cache-folder"), ".yass-cache"));
         Files.createDirectories(cacheDir.toPath());
         File target = new File(cacheDir, transcriptionResult.getCacheFile().getName());
         FileUtils.copyFile(transcriptionResult.getCacheFile(), target);
     }
 
-    private File copyIfPresent(File source, File destinationDir) throws IOException {
+    private File copyIfPresent(File source, File destinationDir, String targetName) throws IOException {
         if (source == null || !source.isFile()) {
             return null;
         }
-        File target = new File(destinationDir, source.getName());
+        File target = new File(destinationDir, targetName);
         if (!source.getCanonicalPath().equals(target.getCanonicalPath())) {
             FileUtils.copyFile(source, target);
         }
@@ -4634,6 +4880,7 @@ public class YassActions implements DropTargetListener {
         icons.put("mvsep16Icon", new ImageIcon(getClass().getResource("/yass/resources/img/mvsep_icon.png")));
         icons.put("mvsep24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/mvsep_icon.png")));
         icons.put("mvsepBannerIcon", new ImageIcon(getClass().getResource("/yass/resources/img/mvsep_banner.png")));
+        icons.put("audiosep24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/audiosep_icon.png")));
         enableLyrics.putValue(AbstractAction.SMALL_ICON, getIcon("lyrics16Icon"));
         showPlaylistMenu.putValue(AbstractAction.SMALL_ICON, getIcon("playlist16Icon"));
         showSongInfo.putValue(AbstractAction.SMALL_ICON, getIcon("info16Icon"));
@@ -4645,6 +4892,10 @@ public class YassActions implements DropTargetListener {
         ImageIcon separateAudioIcon = getOptionalResizedIcon("mvsep24Icon", 16);
         if (separateAudioIcon != null) {
             separateAudio.putValue(AbstractAction.SMALL_ICON, separateAudioIcon);
+        }
+        ImageIcon separateAudioLocalIcon = getOptionalResizedIcon("audiosep24Icon", 16);
+        if (separateAudioLocalIcon != null) {
+            separateAudioLocal.putValue(AbstractAction.SMALL_ICON, separateAudioLocalIcon);
         }
         alignToGrid.putValue(AbstractAction.SMALL_ICON, getIcon("quantize16Icon"));
         openVideo.putValue(AbstractAction.SMALL_ICON, getIcon("movie16Icon"));
@@ -4857,6 +5108,7 @@ public class YassActions implements DropTargetListener {
         menu.add(editHyphenations);
         menu.add(alignNotesWithTranscription);
         menu.add(separateAudio);
+        menu.add(separateAudioLocal);
         menu.add(queryMusicBrainz);
         menu.add(suggestGoldenNotes);
         menu.add(showOptions);
@@ -6531,6 +6783,7 @@ public class YassActions implements DropTargetListener {
         autoCorrectPageBreaks.setEnabled(isOpened);
         alignNotesWithTranscription.setEnabled(hasAnyTranscriptionEngine() && isOpened && !isCurrentSongDuet());
         separateAudio.setEnabled(hasMvsepApiToken() && isOpened && !separationRunning && canSeparateCurrentSong());
+        separateAudioLocal.setEnabled(new AudioSeparatorSeparationService(prop).isConfigured() && isOpened && !separationRunning);
         autoCorrectTransposed.setEnabled(isOpened);
         autoCorrectSpacing.setEnabled(isOpened);
 

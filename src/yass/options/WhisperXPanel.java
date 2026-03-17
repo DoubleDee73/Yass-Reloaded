@@ -20,6 +20,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import yass.I18;
 import yass.integration.transcription.TranscriptionEngine;
+import yass.integration.transcription.openai.OpenAiTranscriptionModel;
 import yass.integration.transcription.whisperx.WhisperXComputeType;
 import yass.integration.transcription.whisperx.WhisperXDevice;
 import yass.integration.transcription.whisperx.WhisperXHealthCheckResult;
@@ -45,8 +46,12 @@ public class WhisperXPanel extends OptionsPanel {
     public void addRows() {
         setLabelWidth(180);
         prefillDetectedPython();
-        addFullWidthComment(I18.get("options_external_tools_whisperx_comment"));
+        addFullWidthComment(I18.get("options_external_tools_transcription_comment"));
         addChoice(I18.get("options_external_tools_transcription_engine"), TranscriptionEngine.values(), "transcription-engine");
+        addFullWidthComment(I18.get("options_external_tools_openai_comment"));
+        addText(I18.get("options_external_tools_openai_api_key"), "openai-api-key");
+        addChoice(I18.get("options_external_tools_openai_model"), OpenAiTranscriptionModel.values(), "openai-model");
+        addFullWidthComment(I18.get("options_external_tools_whisperx_comment"));
         addFullWidthComment(I18.get("options_external_tools_whisperx_mode_explainer"));
         addFile(I18.get("options_external_tools_whisperx_python"), "whisperx-python");
         addBoolean(I18.get("options_external_tools_whisperx_use_module"),
@@ -55,8 +60,6 @@ public class WhisperXPanel extends OptionsPanel {
         addText(I18.get("options_external_tools_whisperx_command"), "whisperx-command");
         addFullWidthComment(I18.get("options_external_tools_whisperx_command_hint"));
         addChoice(I18.get("options_external_tools_whisperx_model"), WhisperXModel.values(), "whisperx-model");
-        addText(I18.get("options_external_tools_whisperx_language"), "whisperx-language");
-        addFullWidthComment(I18.get("options_external_tools_whisperx_language_hint"));
         addChoice(I18.get("options_external_tools_whisperx_device"), WhisperXDevice.values(), "whisperx-device");
         addChoice(I18.get("options_external_tools_whisperx_compute_type"),
                   WhisperXComputeType.values(),

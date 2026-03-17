@@ -30,6 +30,7 @@ import yass.integration.separation.SeparationResult;
 import yass.integration.separation.SeparationService;
 import yass.integration.separation.audioseparator.AudioSeparatorSeparationService;
 import yass.integration.separation.mvsep.MvsepSeparationService;
+import yass.integration.transcription.openai.OpenAiTranscriptionResult;
 import yass.integration.transcription.whisperx.WhisperXTranscriptionRequest;
 import yass.integration.transcription.whisperx.WhisperXTranscriptionService;
 import yass.musicbrainz.MusicBrainz;
@@ -45,7 +46,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -563,36 +567,71 @@ public class CreateSongWizard extends Wizard {
         centerPanel.add(statusLabel, BorderLayout.NORTH);
         centerPanel.add(statusScrollPane, BorderLayout.CENTER);
 
+        JButton cancelButton = new JButton(I18.get("create_lyrics_separate_transcribe_cancel"));
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttonPanel.add(cancelButton);
+
         JPanel panel = new JPanel(new BorderLayout(0, 10));
         panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         panel.add(hintLabel, BorderLayout.NORTH);
         panel.add(centerPanel, BorderLayout.CENTER);
-        panel.add(progressBar, BorderLayout.SOUTH);
+        JPanel southPanel = new JPanel(new BorderLayout(0, 4));
+        southPanel.add(progressBar, BorderLayout.NORTH);
+        southPanel.add(buttonPanel, BorderLayout.SOUTH);
+        panel.add(southPanel, BorderLayout.SOUTH);
 
         JDialog progressDialog = new JDialog(getDialog(), I18.get("create_lyrics_separate_transcribe"), true);
         progressDialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         progressDialog.getContentPane().add(panel);
-        progressDialog.setSize(760, 360);
+        progressDialog.setSize(760, 400);
         progressDialog.setLocationRelativeTo(getDialog());
 
         SwingWorker<WizardTranscriptionState, String> worker = new SwingWorker<>() {
             @Override
             protected WizardTranscriptionState doInBackground() throws Exception {
-                File runDirectory = createWizardRunDirectory();
                 String runBaseName = buildWizardRunBaseName(sourceAudio);
-                publish(I18.get("create_lyrics_separate_transcribe_progress_convert"));
-                File wavFile = convertWizardSourceToWav(sourceAudio, runDirectory);
 
-                SeparationService separationService = buildSeparationService();
-                SeparationRequest request;
-                if (separationService instanceof AudioSeparatorSeparationService as) {
-                    request = as.createRequest(runDirectory, wavFile, runBaseName);
-                    publish(I18.get("create_lyrics_separate_transcribe_progress_audiosep"));
+                // Check if separation was already done in a previous run — reuse stems if found.
+                WizardTranscriptionState existingState = loadPersistedWizardTranscriptionState(sourceAudio);
+                File runDirectory;
+                File wavFile;
+                SeparationResult separationResult;
+                boolean separationReused = existingState != null
+                        && existingState.getSeparationResult() != null
+                        && existingState.getSeparationResult().getVocalsFile() != null
+                        && existingState.getSeparationResult().getVocalsFile().isFile();
+
+                if (separationReused) {
+                    LOGGER.info("Reusing existing separation from " + existingState.getRunDirectory().getAbsolutePath());
+                    publish("Reusing existing vocal separation...");
+                    runDirectory = existingState.getRunDirectory();
+                    wavFile = existingState.getSourceConvertedFile();
+                    separationResult = existingState.getSeparationResult();
+                    // If a cached transcription already exists too, return it immediately.
+                    if (existingState.getTranscriptionResult() != null) {
+                        return existingState;
+                    }
                 } else {
-                    request = ((MvsepSeparationService) separationService).createRequest(runDirectory, wavFile, runBaseName);
-                    publish(I18.get("create_lyrics_separate_transcribe_progress_mvsep"));
+                    runDirectory = createWizardRunDirectory();
+                    publish(I18.get("create_lyrics_separate_transcribe_progress_convert"));
+                    wavFile = convertWizardSourceToWav(sourceAudio, runDirectory, runBaseName);
+
+                    SeparationService separationService = buildSeparationService();
+                    SeparationRequest request;
+                    if (separationService instanceof AudioSeparatorSeparationService as) {
+                        request = as.createRequest(runDirectory, wavFile, runBaseName);
+                        publish(I18.get("create_lyrics_separate_transcribe_progress_audiosep"));
+                    } else {
+                        request = ((MvsepSeparationService) separationService).createRequest(runDirectory, wavFile, runBaseName);
+                        publish(I18.get("create_lyrics_separate_transcribe_progress_mvsep"));
+                    }
+                    separationResult = separationService.startSeparation(request, this::publish);
+                    // Write metadata right after separation so the run directory is identifiable
+                    // even if transcription is cancelled or fails later.
+                    WizardTranscriptionState partialState = new WizardTranscriptionState(runDirectory, sourceAudio, wavFile, separationResult, null);
+                    persistWizardRunMetadata(partialState, runBaseName);
                 }
-                SeparationResult separationResult = separationService.startSeparation(request, this::publish);
 
                 File vocalsFile = separationResult.getVocalsFile();
                 if (vocalsFile == null || !vocalsFile.isFile()) {
@@ -600,7 +639,7 @@ public class CreateSongWizard extends Wizard {
                 }
 
                 WhisperXTranscriptionService whisperXService = new WhisperXTranscriptionService(yassProperties);
-                File cacheDir = new File(runDirectory, StringUtils.defaultIfBlank(getProperty("whisperx-cache-folder"), ".yass-cache/whisperx"));
+                File cacheDir = new File(runDirectory, StringUtils.defaultIfBlank(getProperty("whisperx-cache-folder"), ".yass-cache"));
                 WhisperXTranscriptionRequest transcriptionRequest = whisperXService.createRequest(vocalsFile,
                                                                                                   "#VOCALS",
                                                                                                   cacheDir,
@@ -640,16 +679,15 @@ public class CreateSongWizard extends Wizard {
                 progressDialog.dispose();
                 try {
                     wizardTranscriptionState = get();
-                    setValue("lyrics", wizardTranscriptionState.getTranscriptionResult().getTranscriptText());
-                    if (lyrics != null) {
-                        lyrics.setText(wizardTranscriptionState.getTranscriptionResult().getTranscriptText());
-                        lyrics.setWizardStatusText(I18.get("create_lyrics_separate_transcribe_status_ready"));
-                        lyrics.refreshIntegrationAvailability();
-                    }
+                    applyWizardTranscriptionState(wizardTranscriptionState);
                     JOptionPane.showMessageDialog(getDialog(),
                                                   I18.get("create_lyrics_separate_transcribe_done"),
                                                   I18.get("create_lyrics_separate_transcribe"),
                                                   JOptionPane.INFORMATION_MESSAGE);
+                } catch (CancellationException ex) {
+                    if (lyrics != null) {
+                        lyrics.refreshIntegrationAvailability();
+                    }
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                 } catch (ExecutionException ex) {
@@ -663,6 +701,10 @@ public class CreateSongWizard extends Wizard {
                 }
             }
         };
+        cancelButton.addActionListener(e -> {
+            cancelButton.setEnabled(false);
+            worker.cancel(true);
+        });
         worker.execute();
         progressDialog.setVisible(true);
     }
@@ -679,6 +721,11 @@ public class CreateSongWizard extends Wizard {
         WizardTranscriptionState persistedState = loadPersistedWizardTranscriptionState(sourceAudio);
         if (persistedState != null) {
             wizardTranscriptionState = persistedState;
+            // Only offer reuse if transcription is complete — separation-only states are
+            // handled transparently by the worker (it skips re-separation automatically).
+            if (persistedState.getTranscriptionResult() == null) {
+                return null;
+            }
         }
         return persistedState;
     }
@@ -687,9 +734,19 @@ public class CreateSongWizard extends Wizard {
         if (state == null || state.getTranscriptionResult() == null) {
             return;
         }
-        setValue("lyrics", state.getTranscriptionResult().getTranscriptText());
+        OpenAiTranscriptionResult result = state.getTranscriptionResult();
+        setValue("lyrics", result.getTranscriptText());
         if (lyrics != null) {
-            lyrics.setText(state.getTranscriptionResult().getTranscriptText());
+            // Build a subtitles map (ms → line text) from segments so that getTable()
+            // can derive a correct #GAP and beat positions instead of defaulting to 0.
+            if (!result.getSegments().isEmpty()) {
+                Map<Integer, String> subtitles = new LinkedHashMap<>();
+                for (var segment : result.getSegments()) {
+                    subtitles.put(segment.getStartMs(), segment.getText().trim());
+                }
+                lyrics.setSubtitles(subtitles);
+            }
+            lyrics.setText(result.getTranscriptText());
             lyrics.setWizardStatusText(I18.get("create_lyrics_separate_transcribe_status_ready"));
             lyrics.refreshIntegrationAvailability();
         }
@@ -699,15 +756,33 @@ public class CreateSongWizard extends Wizard {
             return null;
         }
         File wizardBaseDir = getWizardBaseDirectory();
-        File[] runDirectories = wizardBaseDir.listFiles(File::isDirectory);
+        String expectedBaseName = buildWizardRunBaseName(sourceAudio);
+        String currentYouTubeId = YouTube.extractYouTubeId(getValue("youtube"));
+
+        // Fast path: check the named directory directly (YouTube ID or base name)
+        String expectedDirName = buildWizardRunDirectoryName();
+        File namedDir = new File(wizardBaseDir, expectedDirName);
+        if (namedDir.isDirectory()) {
+            try {
+                WizardTranscriptionState state = tryLoadWizardRunState(namedDir, sourceAudio, expectedBaseName, currentYouTubeId);
+                if (state != null) {
+                    LOGGER.info("Reusing persisted wizard separation/transcription from " + namedDir.getAbsolutePath());
+                    return state;
+                }
+            } catch (Exception ex) {
+                LOGGER.log(Level.FINE, "Named wizard run directory not usable: " + namedDir.getAbsolutePath(), ex);
+            }
+        }
+
+        // Fallback: scan all subdirectories (covers legacy run-* dirs and other cases)
+        File[] runDirectories = wizardBaseDir.listFiles(f -> f.isDirectory() && !f.equals(namedDir));
         if (runDirectories == null || runDirectories.length == 0) {
             return null;
         }
         Arrays.sort(runDirectories, Comparator.comparingLong(File::lastModified).reversed());
-        String expectedBaseName = buildWizardRunBaseName(sourceAudio);
         for (File runDirectory : runDirectories) {
             try {
-                WizardTranscriptionState state = tryLoadWizardRunState(runDirectory, sourceAudio, expectedBaseName);
+                WizardTranscriptionState state = tryLoadWizardRunState(runDirectory, sourceAudio, expectedBaseName, currentYouTubeId);
                 if (state != null) {
                     LOGGER.info("Reusing persisted wizard separation/transcription from " + runDirectory.getAbsolutePath());
                     return state;
@@ -719,22 +794,37 @@ public class CreateSongWizard extends Wizard {
         return null;
     }
 
-    private WizardTranscriptionState tryLoadWizardRunState(File runDirectory, File sourceAudio, String expectedBaseName) throws IOException {
+    private WizardTranscriptionState tryLoadWizardRunState(File runDirectory, File sourceAudio, String expectedBaseName, String currentYouTubeId) throws IOException {
         Properties metadata = loadWizardRunMetadata(runDirectory);
         String metadataSource = StringUtils.trimToEmpty(metadata.getProperty("sourceAudioPath"));
         String metadataBaseName = StringUtils.trimToEmpty(metadata.getProperty("songBaseName"));
+        String metadataYouTubeId = StringUtils.trimToEmpty(metadata.getProperty("youTubeId"));
         boolean metadataMatches = StringUtils.isNotBlank(metadataSource) && sourceAudio.getAbsolutePath().equalsIgnoreCase(metadataSource);
         boolean baseNameMatches = StringUtils.isNotBlank(metadataBaseName) && metadataBaseName.equalsIgnoreCase(expectedBaseName);
+        boolean youTubeIdMatches = StringUtils.isNotBlank(currentYouTubeId) && currentYouTubeId.equalsIgnoreCase(metadataYouTubeId);
 
         File vocalsFile = findRunStem(runDirectory, "(Vocals)", "(Lead)");
         if (vocalsFile == null || !vocalsFile.isFile()) {
             return null;
         }
-        if (!metadataMatches && !baseNameMatches && !vocalsFile.getName().toLowerCase().startsWith(expectedBaseName.toLowerCase())) {
+        // The YouTube ID stored in metadata is the most reliable identifier for wizard runs.
+        boolean stemNamedAfterBaseName = vocalsFile.getName().toLowerCase().startsWith(expectedBaseName.toLowerCase());
+        if (!metadataMatches && !youTubeIdMatches && !baseNameMatches && !stemNamedAfterBaseName) {
             return null;
         }
 
-        File cacheDir = new File(runDirectory, StringUtils.defaultIfBlank(getProperty("whisperx-cache-folder"), ".yass-cache/whisperx"));
+        SeparationResult separationResult = new SeparationResult(
+                findRunStem(runDirectory, "(Vocals)"),
+                findRunStem(runDirectory, "(Lead)"),
+                findRunStem(runDirectory, "(Instrumental)", "(Karaoke)", "(No Vocals)"),
+                findRunStem(runDirectory, "(Instrumental + Backing)")
+        );
+        File[] sourceFiles = runDirectory.listFiles((dir, name) -> !name.contains("(") && !name.equals("wizard-run.properties"));
+        File sourceFile = (sourceFiles != null && sourceFiles.length > 0) ? sourceFiles[0] : null;
+
+        // Try to load a cached transcription if one exists — but a separation-only state
+        // (null transcription) is still valid and allows skipping re-separation.
+        File cacheDir = new File(runDirectory, StringUtils.defaultIfBlank(getProperty("whisperx-cache-folder"), ".yass-cache"));
         File cacheFile = new File(cacheDir, "vocals-transcript.json");
         if (!cacheFile.isFile()) {
             File[] transcriptCandidates = cacheDir.listFiles((dir, name) -> name.toLowerCase().endsWith("-transcript.json") || name.toLowerCase().endsWith(".json"));
@@ -744,7 +834,7 @@ public class CreateSongWizard extends Wizard {
             }
         }
         if (!cacheFile.isFile()) {
-            return null;
+            return new WizardTranscriptionState(runDirectory, sourceAudio, sourceFile, separationResult, null);
         }
 
         WhisperXTranscriptionService whisperXService = new WhisperXTranscriptionService(yassProperties);
@@ -752,17 +842,9 @@ public class CreateSongWizard extends Wizard {
                 StringUtils.defaultIfBlank(metadataBaseName, expectedBaseName));
         YassTable tempTable = new YassTable();
         tempTable.init(yassProperties);
-
-        SeparationResult separationResult = new SeparationResult(
-                findRunStem(runDirectory, "(Vocals)"),
-                findRunStem(runDirectory, "(Lead)"),
-                findRunStem(runDirectory, "(Instrumental)"),
-                findRunStem(runDirectory, "(Instrumental + Backing)")
-        );
-        File sourceWav = new File(runDirectory, "source.wav");
         return new WizardTranscriptionState(runDirectory,
                 sourceAudio,
-                sourceWav.isFile() ? sourceWav : null,
+                sourceFile,
                 separationResult,
                 whisperXService.loadCachedTranscription(request, tempTable));
     }
@@ -789,6 +871,10 @@ public class CreateSongWizard extends Wizard {
         Properties metadata = new Properties();
         metadata.setProperty("sourceAudioPath", StringUtils.defaultString(state.getSourceAudioFile() != null ? state.getSourceAudioFile().getAbsolutePath() : ""));
         metadata.setProperty("songBaseName", StringUtils.defaultString(songBaseName));
+        String youTubeId = YouTube.extractYouTubeId(getValue("youtube"));
+        if (StringUtils.isNotBlank(youTubeId)) {
+            metadata.setProperty("youTubeId", youTubeId);
+        }
         File metadataFile = new File(runDirectory, "wizard-run.properties");
         try (OutputStream output = Files.newOutputStream(metadataFile.toPath())) {
             metadata.store(output, "Wizard separation/transcription metadata");
@@ -823,14 +909,35 @@ public class CreateSongWizard extends Wizard {
     private File createWizardRunDirectory() throws IOException {
         File wizardBaseDir = getWizardBaseDirectory();
         Files.createDirectories(wizardBaseDir.toPath());
-        File runDirectory = new File(wizardBaseDir, "run-" + System.currentTimeMillis());
+        String dirName = buildWizardRunDirectoryName();
+        File runDirectory = new File(wizardBaseDir, dirName);
         Files.createDirectories(runDirectory.toPath());
         return runDirectory;
     }
 
-    private File convertWizardSourceToWav(File sourceAudio, File runDirectory) throws IOException {
+    private String buildWizardRunDirectoryName() {
+        String youTubeId = YouTube.extractYouTubeId(getValue("youtube"));
+        if (StringUtils.isNotBlank(youTubeId)) {
+            return youTubeId;
+        }
+        String artist = StringUtils.trimToEmpty(getValue("artist"));
+        String title = StringUtils.trimToEmpty(getValue("title"));
+        if (StringUtils.isNotBlank(artist) && StringUtils.isNotBlank(title)) {
+            return (artist + " - " + title).replaceAll("[\\\\/:*?\"<>|]", "_");
+        }
+        String filename = StringUtils.trimToEmpty(getValue("filename"));
+        if (StringUtils.isNotBlank(filename)) {
+            String base = new File(filename).getName();
+            int dot = base.lastIndexOf('.');
+            return (dot > 0 ? base.substring(0, dot) : base).replaceAll("[\\\\/:*?\"<>|]", "_");
+        }
+        return "run-" + System.currentTimeMillis();
+    }
+
+    private File convertWizardSourceToWav(File sourceAudio, File runDirectory, String baseName) throws IOException {
         FFMPEGLocator.initFfmpeg(yassProperties.getProperty("ffmpegPath"));
-        File wavTarget = new File(runDirectory, "source.wav");
+        String safeName = baseName.replaceAll("[\\\\/:*?\"<>|]", "_");
+        File wavTarget = new File(runDirectory, safeName + ".wav");
         YassPlayer player = new YassPlayer(null, yassProperties);
         File converted = player.generateTemp(sourceAudio.getAbsolutePath(), Timebase.NORMAL, wavTarget.getAbsolutePath());
         if (converted == null || !converted.isFile()) {

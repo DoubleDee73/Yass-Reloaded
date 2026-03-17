@@ -3,6 +3,7 @@ package yass.integration.separation.audioseparator;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -50,8 +51,10 @@ public class AudioSeparatorHealthCheckService {
         boolean pythonFound = pyVersion.success;
         String pythonVersion = pyVersion.success ? pyVersion.output.trim() : null;
 
-        // Check audio-separator via python -m audio_separator --version
-        CommandResult asVersion = run(List.of(pythonCmd, "-m", "audio_separator", "--version"));
+        // Check audio-separator via its console script (audio-separator --version).
+        // The package does not support `python -m audio_separator` in recent versions.
+        String scriptCmd = resolveAudioSeparatorScript(pythonCmd);
+        CommandResult asVersion = run(List.of(scriptCmd, "--version"));
         boolean asAvailable = asVersion.success && !asVersion.output.isBlank();
         String asVersionStr = asAvailable ? asVersion.output.trim() : null;
 
@@ -61,6 +64,7 @@ public class AudioSeparatorHealthCheckService {
         StringBuilder details = new StringBuilder();
         details.append("Python: ").append(pythonCmd).append("\n");
         if (pythonVersion != null) details.append("Version: ").append(pythonVersion).append("\n");
+        details.append("audio-separator script: ").append(scriptCmd).append("\n");
         details.append("audio-separator: ").append(asAvailable ? "found" : "not found").append("\n");
         if (asVersionStr != null) details.append("audio-separator version: ").append(asVersionStr).append("\n");
         if (!asAvailable && !asVersion.output.isBlank()) {
@@ -80,6 +84,34 @@ public class AudioSeparatorHealthCheckService {
                 details.toString());
     }
 
+    /**
+     * Resolves the audio-separator console script path from the Python executable.
+     * pip installs it at Scripts/audio-separator.exe (Windows) or bin/audio-separator (Unix)
+     * next to the Python executable. Falls back to "audio-separator" on PATH.
+     */
+    public static String resolveAudioSeparatorScript(String pythonExecutable) {
+        if (StringUtils.isNotBlank(pythonExecutable)) {
+            File pyFile = new File(pythonExecutable);
+            if (pyFile.isFile()) {
+                File scriptsDir = new File(pyFile.getParentFile(), "Scripts"); // Windows venv/system
+                File scriptWin = new File(scriptsDir, "audio-separator.exe");
+                if (scriptWin.isFile()) {
+                    return scriptWin.getAbsolutePath();
+                }
+                File scriptWinNoExt = new File(scriptsDir, "audio-separator");
+                if (scriptWinNoExt.isFile()) {
+                    return scriptWinNoExt.getAbsolutePath();
+                }
+                File binDir = new File(pyFile.getParentFile(), "bin"); // Unix venv
+                File scriptUnix = new File(binDir, "audio-separator");
+                if (scriptUnix.isFile()) {
+                    return scriptUnix.getAbsolutePath();
+                }
+            }
+        }
+        return "audio-separator"; // fall back to PATH
+    }
+
     private boolean checkFfmpeg() {
         return run(List.of(resolveFfmpegExecutable(), "-version")).success;
     }
@@ -92,12 +124,20 @@ public class AudioSeparatorHealthCheckService {
 
     private String resolveFfmpegExecutable() {
         if (configuredFfmpegPath != null) {
-            java.io.File ffmpegDir = new java.io.File(configuredFfmpegPath);
-            java.io.File ffmpegExe = ffmpegDir.isDirectory()
-                    ? new java.io.File(ffmpegDir, "ffmpeg")
-                    : ffmpegDir;
-            if (ffmpegExe.isFile()) {
-                return ffmpegExe.getAbsolutePath();
+            File configured = new File(configuredFfmpegPath);
+            // ffmpegPath may point to the executable directly or to its parent directory
+            File dir = configured.isDirectory() ? configured : configured.getParentFile();
+            if (dir != null) {
+                for (String name : List.of("ffmpeg.exe", "ffmpeg")) {
+                    File candidate = new File(dir, name);
+                    if (candidate.isFile()) {
+                        return candidate.getAbsolutePath();
+                    }
+                }
+            }
+            // ffmpegPath points directly to the executable
+            if (configured.isFile()) {
+                return configured.getAbsolutePath();
             }
         }
         return "ffmpeg";

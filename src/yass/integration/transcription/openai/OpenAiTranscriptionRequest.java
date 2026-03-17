@@ -8,7 +8,6 @@ public class OpenAiTranscriptionRequest {
     private final String sourceTag;
     private final String model;
     private final String language;
-    private final String prompt;
     private final String timestampGranularity;
     private final String songBaseName;
 
@@ -17,7 +16,6 @@ public class OpenAiTranscriptionRequest {
                                       String sourceTag,
                                       String model,
                                       String language,
-                                      String prompt,
                                       String timestampGranularity,
                                       String songBaseName) {
         this.sourceAudioFile = sourceAudioFile;
@@ -25,7 +23,6 @@ public class OpenAiTranscriptionRequest {
         this.sourceTag = sourceTag;
         this.model = model;
         this.language = language;
-        this.prompt = prompt;
         this.timestampGranularity = timestampGranularity;
         this.songBaseName = songBaseName;
     }
@@ -48,10 +45,6 @@ public class OpenAiTranscriptionRequest {
 
     public String getLanguage() {
         return language;
-    }
-
-    public String getPrompt() {
-        return prompt;
     }
 
     public String getTimestampGranularity() {

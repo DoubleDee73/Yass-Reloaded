@@ -115,8 +115,7 @@ public class YassOptions extends JDialog {
         addPanel(externalTools, I18.get("options_locations"), new LocationsPanel());
         addPanel(externalTools, I18.get("options_external_tools_mvsep"), new MvsepPanel());
         addPanel(externalTools, I18.get("options_external_tools_audiosep"), new AudioSeparatorPanel());
-        addPanel(externalTools, I18.get("options_external_tools_openai"), new OpenAiPanel());
-        addPanel(externalTools, I18.get("options_external_tools_whisperx"), new WhisperXPanel());
+        addPanel(externalTools, I18.get("options_external_tools_transcription"), new WhisperXPanel());
         addPanel(advanced, I18.get("options_advanced_audio"), new AudioPanel());
         addPanel(advanced, I18.get("options_advanced_debug"), new DebugPanel());
 

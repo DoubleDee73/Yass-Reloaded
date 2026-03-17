@@ -95,7 +95,8 @@ public class WhisperXTranscriptionService {
         File cacheFile = new File(cacheDir, cacheName);
         LOGGER.info("WhisperX transcription request prepared for " + baseName + " using " + sourceTag
                 + " (upload: " + uploadAudioFile.getName() + ")");
-        return new WhisperXTranscriptionRequest(sourceAudioFile, uploadAudioFile, sourceTag, baseName, cacheDir, cacheFile);
+        String language = resolveIsoLanguage(table.getLanguage());
+        return new WhisperXTranscriptionRequest(sourceAudioFile, uploadAudioFile, sourceTag, baseName, cacheDir, cacheFile, language);
     }
 
     public WhisperXTranscriptionRequest createRequest(File sourceAudioFile, String sourceTag, File cacheDir, String songBaseName) {
@@ -112,12 +113,18 @@ public class WhisperXTranscriptionService {
         File cacheFile = new File(effectiveCacheDir, cacheName);
         LOGGER.info("WhisperX wizard request prepared for " + baseName + " using " + sourceTag
                 + " (upload: " + uploadAudioFile.getName() + ")");
-        return new WhisperXTranscriptionRequest(sourceAudioFile, uploadAudioFile, sourceTag, baseName, effectiveCacheDir, cacheFile);
+        return new WhisperXTranscriptionRequest(sourceAudioFile, uploadAudioFile, sourceTag, baseName, effectiveCacheDir, cacheFile, null);
     }
 
     private String stripExtension(String value) {
         int dot = value.lastIndexOf('.');
         return dot > 0 ? value.substring(0, dot) : value;
+    }
+
+    private String resolveIsoLanguage(String displayLanguage) {
+        if (StringUtils.isBlank(displayLanguage)) return null;
+        Locale locale = YassUtils.determineLocale(displayLanguage);
+        return locale != null ? locale.getLanguage() : null;
     }
 
     public boolean hasCachedTranscription(WhisperXTranscriptionRequest request) {
@@ -174,6 +181,7 @@ public class WhisperXTranscriptionService {
         ProcessBuilder builder = new ProcessBuilder(command);
         builder.directory(workingDirectory);
         builder.redirectErrorStream(false);
+        prependFfmpegToPath(builder);
         StringBuilder stdout = new StringBuilder();
         StringBuilder stderr = new StringBuilder();
         try {
@@ -221,6 +229,19 @@ public class WhisperXTranscriptionService {
         }
         command.add(option);
         command.add(value);
+    }
+
+    private void prependFfmpegToPath(ProcessBuilder pb) {
+        String ffmpegPath = properties.getProperty("ffmpegPath");
+        if (StringUtils.isBlank(ffmpegPath)) {
+            return;
+        }
+        File ffmpegFile = new File(ffmpegPath);
+        String ffmpegDir = ffmpegFile.isDirectory() ? ffmpegFile.getAbsolutePath() : ffmpegFile.getParent();
+        if (StringUtils.isBlank(ffmpegDir)) {
+            return;
+        }
+        pb.environment().merge("PATH", ffmpegDir, (existing, added) -> added + File.pathSeparator + existing);
     }
 
     private static class ProcessOutput {
@@ -395,7 +416,7 @@ public class WhisperXTranscriptionService {
         command.add("--output_format");
         command.add("json");
 
-        String language = StringUtils.trimToEmpty(properties.getProperty("whisperx-language"));
+        String language = StringUtils.trimToEmpty(request.getLanguage());
         if (StringUtils.isNotBlank(language)) {
             command.add("--language");
             command.add(language);
@@ -437,7 +458,7 @@ public class WhisperXTranscriptionService {
     }
 
     private File resolveCacheDir(File songDir) {
-        String configured = StringUtils.defaultIfBlank(properties.getProperty("whisperx-cache-folder"), ".yass-cache/whisperx");
+        String configured = StringUtils.defaultIfBlank(properties.getProperty("whisperx-cache-folder"), ".yass-cache");
         File configuredFile = new File(configured);
         if (configuredFile.isAbsolute()) {
             return configuredFile;

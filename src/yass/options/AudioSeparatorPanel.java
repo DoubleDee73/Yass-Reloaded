@@ -4,6 +4,7 @@ import org.apache.commons.lang3.StringUtils;
 import yass.I18;
 import yass.integration.separation.audioseparator.AudioSeparatorHealthCheckResult;
 import yass.integration.separation.audioseparator.AudioSeparatorHealthCheckService;
+import yass.integration.separation.audioseparator.AudioSeparatorModel;
 
 import javax.swing.*;
 import java.awt.*;
@@ -28,8 +29,7 @@ public class AudioSeparatorPanel extends OptionsPanel {
         prefillDetectedPython();
         addFullWidthComment(I18.get("options_external_tools_audiosep_comment"));
         addFile(I18.get("options_external_tools_audiosep_python"), "audiosep-python");
-        addText(I18.get("options_external_tools_audiosep_model"), "audiosep-model");
-        addFullWidthComment(I18.get("options_external_tools_audiosep_model_hint"));
+        addChoice(I18.get("options_external_tools_audiosep_model"), AudioSeparatorModel.values(), "audiosep-model");
         addText(I18.get("options_external_tools_audiosep_model_dir"), "audiosep-model-dir");
         addText(I18.get("options_external_tools_audiosep_output_format"), "audiosep-output-format");
         addHealthCheckSection();
