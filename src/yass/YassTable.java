@@ -86,6 +86,8 @@ import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Locale;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.StringJoiner;
@@ -4195,6 +4197,56 @@ public class YassTable extends JTable {
         hyphenatorDictionary.selectWord(words.get(0));
         hyphenatorDictionary.focusTxtWord();
     }
+    /**
+     * Assigns the prevalent detected pitch to each note in the given list.
+     * For each note, all pitch frames whose timestamp falls within the note's
+     * beat range (start inclusive, start+length exclusive) are collected and
+     * the most frequently occurring semitone value is used as the new height.
+     * Notes for which no pitch frames are found are left unchanged.
+     *
+     * @param rows      the notes to align (only rows where {@link YassRow#isNote()} is true are processed)
+     * @param pitchData the Viterbi-smoothed pitch frames from {@link yass.analysis.PitchDetector}
+     */
+    public void alignToMelody(List<YassRow> rows, List<yass.analysis.PitchDetector.PitchData> pitchData) {
+        if (rows == null || rows.isEmpty() || pitchData == null || pitchData.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (YassRow row : rows) {
+            if (!row.isNote()) {
+                continue;
+            }
+            double noteStartMs = beatToMs(row.getBeatInt());
+            double noteEndMs   = beatToMs(row.getBeatInt() + row.getLengthInt());
+
+            // Collect all pitch frames within this note's time window
+            Map<Integer, Integer> histogram = new HashMap<>();
+            for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+                double frameMs = pd.time() * 1000.0;
+                if (frameMs >= noteStartMs && frameMs < noteEndMs) {
+                    histogram.merge(pd.pitch(), 1, Integer::sum);
+                }
+            }
+            if (histogram.isEmpty()) {
+                continue;
+            }
+
+            // Pick the most frequent semitone
+            int prevalentPitch = histogram.entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey)
+                    .orElse(row.getHeightInt());
+
+            if (prevalentPitch != row.getHeightInt()) {
+                row.setHeight(prevalentPitch);
+                changed = true;
+            }
+        }
+        if (changed) {
+            tm.fireTableDataChanged();
+        }
+    }
+
     private static boolean isVowel(char c) {
         String normalized = Normalizer.normalize(String.valueOf(c), java.text.Normalizer.Form.NFD);
         char base = normalized.charAt(0);

@@ -465,6 +465,20 @@ public class YassActions implements DropTargetListener {
             table.shiftEndingLeft();
         }
     };
+    private final Action alignToMelody = new AbstractAction(I18.get("edit_align_to_melody")) {
+        public void actionPerformed(ActionEvent e) {
+            int[] selectedRows = table.getSelectedRows();
+            if (selectedRows == null || selectedRows.length == 0) {
+                return;
+            }
+            List<YassRow> rows = new ArrayList<>();
+            for (int rowIndex : selectedRows) {
+                rows.add(table.getRowAt(rowIndex));
+            }
+            table.alignToMelody(rows, mp3.getPitchDataList());
+            sheet.repaint();
+        }
+    };
     private final Action findLyrics = new AbstractAction(I18.get("edit_lyrics_find")) {
         public void actionPerformed(ActionEvent e) {
             lyrics.find();
@@ -5178,6 +5192,7 @@ public class YassActions implements DropTargetListener {
         menu.add(addHyphenatedWord);
         menu.add(shiftEnding);
         menu.add(shiftEndingLeft);
+        menu.add(alignToMelody);
         menu.add(findLyrics);
 
         menu = new JMenu(I18.get("edit_extras"));
@@ -6871,6 +6886,8 @@ public class YassActions implements DropTargetListener {
         autoCorrect.setEnabled(isOpened);
         autoCorrectPageBreaks.setEnabled(isOpened);
         alignNotesWithTranscription.setEnabled(hasAnyTranscriptionEngine() && isOpened && !isCurrentSongDuet());
+        boolean hasPitchData = mp3 != null && mp3.getPitchDataList() != null && !mp3.getPitchDataList().isEmpty();
+        alignToMelody.setEnabled(hasPitchData && isOpened);
         separateAudio.setEnabled(hasMvsepApiToken() && isOpened && !separationRunning && canSeparateCurrentSong());
         separateAudioLocal.setEnabled(new AudioSeparatorSeparationService(prop).isConfigured() && isOpened && !separationRunning);
         autoCorrectTransposed.setEnabled(isOpened);
@@ -8847,6 +8864,11 @@ public class YassActions implements DropTargetListener {
         am.put("shiftEndingLeft", shiftEndingLeft);
         shiftEndingLeft.putValue(AbstractAction.ACCELERATOR_KEY,
                                  KeyStroke.getKeyStroke(KeyEvent.VK_W, InputEvent.SHIFT_DOWN_MASK));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_M, 0), "alignToMelody");
+        am.put("alignToMelody", alignToMelody);
+        alignToMelody.putValue(AbstractAction.ACCELERATOR_KEY,
+                               KeyStroke.getKeyStroke(KeyEvent.VK_M, 0));
 
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK), "selectAllSongs");
         am.put("selectAllSongs", selectAllSongs);
