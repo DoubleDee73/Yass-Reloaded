@@ -78,6 +78,7 @@ import java.text.MessageFormat;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.CancellationException;
+import java.util.stream.Collectors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -395,7 +396,7 @@ public class YassActions implements DropTargetListener {
             if (transpose != 0) {
                 pitchData = pitchData.stream()
                         .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName(), pd.rawFrequency()))
-                        .collect(java.util.stream.Collectors.toList());
+                        .collect(Collectors.toList());
             }
             table.alignToMelody(rows, pitchData);
             // Restore selection lost due to fireTableDataChanged
@@ -1658,7 +1659,7 @@ public class YassActions implements DropTargetListener {
                 if (transpose != 0) {
                     pitchData = pitchData.stream()
                             .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName(), pd.rawFrequency()))
-                            .collect(java.util.stream.Collectors.toList());
+                            .collect(Collectors.toList());
                 }
                 table.splitRowsByPitch(pitchData);
             } else {
@@ -3881,7 +3882,7 @@ public class YassActions implements DropTargetListener {
                             if (transpose != 0) {
                                 alignData = alignData.stream()
                                         .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName(), pd.rawFrequency()))
-                                        .collect(java.util.stream.Collectors.toList());
+                                        .collect(Collectors.toList());
                             }
                             table.alignToMelody(rows, alignData);
                             LOGGER.info("Recording finish: after alignToMelody selectedRows=" + selectedRows.length);
@@ -8265,7 +8266,7 @@ public class YassActions implements DropTargetListener {
         String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
         normalized = normalized.replaceAll("[\t\u000B\f]+", " ");
         normalized = normalized.replaceAll("(?m)[ \t]+$", "");
-        java.util.List<String> lines = new ArrayList<>();
+        List<String> lines = new ArrayList<>();
         for (String rawLine : normalized.split("\n", -1)) {
             String line = StringUtils.trimToEmpty(rawLine);
             if (YassUtils.isSongPartLine(line)) {

@@ -37,6 +37,7 @@ import java.awt.image.BufferedImage;
 import java.awt.image.VolatileImage;
 import java.io.Serial;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Vector;
@@ -277,7 +278,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
     private boolean versionTextPainted = true;
     private final Vector<Long> tmpNotes = new Vector<>(1024);
     private List<Integer> tmpPitches = new ArrayList<>();
-    private List<PitchDetector.PitchData> recordingOverlayPitchData = java.util.Collections.emptyList();
+    private List<PitchDetector.PitchData> recordingOverlayPitchData = Collections.emptyList();
     private final Dimension dim = new Dimension(1000, 200);
     private Graphics2D pgb = null;
     private int ppos = 0;
