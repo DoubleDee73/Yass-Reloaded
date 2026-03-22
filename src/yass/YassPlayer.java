@@ -535,6 +535,28 @@ public class YassPlayer {
     }
 
     /**
+     * Reloads audio bytes from an already-converted temp WAV file without clearing pitch data.
+     * Used when switching back to a previously loaded file to restore waveform amplitude display.
+     */
+    public void reloadAudioBytesOnly(File tempWavFile) {
+        if (tempWavFile == null || !tempWavFile.exists()) {
+            return;
+        }
+        try (AudioInputStream in = AudioSystem.getAudioInputStream(tempWavFile)) {
+            AudioFormat baseFormat = in.getFormat();
+            fps = baseFormat.getFrameRate();
+            audioBytesFormat = baseFormat;
+            audioBytesChannels = baseFormat.getChannels();
+            audioBytesSampleRate = baseFormat.getSampleRate();
+            audioBytes = writeByteArray(tempWavFile);
+            duration = (long) (in.getFrameLength() / baseFormat.getFrameRate() * 1000000);
+            openSharedLine(baseFormat);
+        } catch (Exception e) {
+            LOGGER.log(Level.INFO, "reloadAudioBytesOnly failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Initializes YassPlayer with no audio file and determines a theoretical length of the song from the last beat
      * and the BPM.
      *
@@ -1485,7 +1507,10 @@ public class YassPlayer {
         } else {
             durationNs = null;
         }
-        this.key = findKey();
+        MusicalKeyEnum detectedKey = findKey();
+        if (detectedKey != MusicalKeyEnum.UNDEFINED) {
+            this.key = detectedKey;
+        }
         replayGain = determineReplayGain(source);
         File tempFile = new File(filename);
         File parentDir = tempFile.getParentFile();

@@ -2708,6 +2708,13 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             g2.draw(pitchPath);
             g2.setStroke(oldStroke);
             g2.setColor(oldColor);
+
+            if (actions.getProperties().getBooleanProperty("debug-raw-pitches")) {
+                List<PitchDetector.PitchData> rawPitchData = mp3.getRawPitchDataList();
+                if (rawPitchData != null && !rawPitchData.isEmpty()) {
+                    paintRawPitchOverlay(g2, rawPitchData, pitchTranspose, pitchRenderMin);
+                }
+            }
         } else {
             g2.setColor(darkMode ? dkGreen : dkGreenLight);
             int h = TOP_LINE - 10 + 128;
@@ -2721,6 +2728,38 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             paintRecordingPitchOverlay(g2, recordingOverlayPitchData);
         }
         g2.setColor(darkMode ? whiteDarkMode : Color.WHITE);
+    }
+
+    private void paintRawPitchOverlay(Graphics2D g2, List<PitchDetector.PitchData> rawPitchData,
+                                      int pitchTranspose, int pitchRenderMin) {
+        Stroke oldStroke = g2.getStroke();
+        Color oldColor = g2.getColor();
+        g2.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+        int rawIndex = 0;
+        for (int x = clip.x; x < clip.x + clip.width; x++) {
+            double timeInSeconds = fromTimelineExact(x) / 1000.0;
+            while (rawIndex < rawPitchData.size() - 1 &&
+                    rawPitchData.get(rawIndex + 1).time() < timeInSeconds) {
+                rawIndex++;
+            }
+            PitchDetector.PitchData pd = rawPitchData.get(rawIndex);
+            int displayPitch = pd.pitch() + pitchTranspose;
+            double y = dim.height - BOTTOM_BORDER - (displayPitch - pitchRenderMin + (pan ? 2 : 0)) * hSize;
+
+            int amplitude = Math.abs(actions.getMP3().getWaveFormAtMillis(timeInSeconds * 1000));
+            double amplitudeScaled = amplitude * uiScale;
+            if (amplitudeScaled < 1.8) {
+                continue;
+            }
+            int alpha = (int) Math.min(200, Math.round(amplitudeScaled * 8));
+            g2.setColor(new Color(220, 40, 40, alpha));
+            int iy = (int) Math.round(y);
+            g2.drawLine(x, iy - 1, x, iy + 1);
+        }
+
+        g2.setStroke(oldStroke);
+        g2.setColor(oldColor);
     }
 
     private void paintRecordingPitchOverlay(Graphics2D g2, List<PitchDetector.PitchData> pitchDataList) {
@@ -4905,8 +4944,8 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         // --- Paint the primary (current) line ---
         paintLyricLine(g2, i, j, 0, bigFonts[24]);
 
-        // --- In record mode, paint the next line as a preview ---
-        if (recordingNoteIndex != -1) {
+        // --- In record mode, paint the next line as a preview (unless tapping is done) ---
+        if (recordingNoteIndex != -1 && !actions.isRecordingInputFinished()) {
             int nextLineStart = j + 1;
             while (nextLineStart < table.getRowCount() && !table.getRowAt(nextLineStart).isNote()) {
                 nextLineStart++;

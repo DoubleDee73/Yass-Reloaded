@@ -4350,7 +4350,7 @@ public class YassTable extends JTable {
             if (prevalentPitch == null) {
                 continue;
             }
-            prevalentPitch = normalizePitchIntoWindow(prevalentPitch + octaveBias, -12, 12, row.getHeightInt());
+            prevalentPitch = normalizePitchIntoWindow(prevalentPitch + octaveBias, row.getHeightInt());
 
             if (prevalentPitch != row.getHeightInt()) {
                 row.setHeight(prevalentPitch);
@@ -4466,8 +4466,24 @@ public class YassTable extends JTable {
         if (pitches == null || pitches.isEmpty()) {
             return 0;
         }
-        final int windowLow = -12;  // C3
-        final int windowHigh = 12;  // C5
+        // Use the median of existing note heights as the centre of the target window,
+        // so the bias moves detected pitches toward the octave the notes are already in.
+        List<Integer> noteHeights = new ArrayList<>();
+        int n = getRowCount();
+        for (int i = 0; i < n; i++) {
+            YassRow r = getRowAt(i);
+            if (r != null && r.isNote()) {
+                noteHeights.add(r.getHeightInt());
+            }
+        }
+        int windowCentre = 0;
+        if (!noteHeights.isEmpty()) {
+            noteHeights.sort(null);
+            windowCentre = noteHeights.get(noteHeights.size() / 2);
+        }
+        int windowLow  = windowCentre - 12;
+        int windowHigh = windowCentre + 12;
+
         int total = pitches.size();
         int bestOffset = 0;
         int bestHits = -1;
@@ -4487,13 +4503,10 @@ public class YassTable extends JTable {
         return bestHits * 4 >= total * 3 ? bestOffset : 0;
     }
 
-    private int normalizePitchIntoWindow(int pitch, int low, int high, int referencePitch) {
+    private int normalizePitchIntoWindow(int pitch, int referencePitch) {
         int bestPitch = pitch;
         int bestDistance = Integer.MAX_VALUE;
         for (int candidate = pitch - 48; candidate <= pitch + 48; candidate += 12) {
-            if (candidate < low || candidate > high) {
-                continue;
-            }
             int distance = Math.abs(candidate - referencePitch);
             if (distance < bestDistance) {
                 bestDistance = distance;

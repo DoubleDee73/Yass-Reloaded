@@ -125,10 +125,7 @@ public class MvsepSeparationService implements SeparationService {
     }
 
     public Map<Integer, MvsepAlgorithmInfo> fetchAlgorithms() throws IOException {
-        JsonObject response = getJson("/app/algorithms", false);
-        LinkedHashMap<Integer, MvsepAlgorithmInfo> algorithms = new LinkedHashMap<>();
-        collectAlgorithms(response, algorithms);
-        return algorithms;
+        return new MvsepAlgorithmCacheService(properties).load();
     }
 
     public Integer fetchPlanQueue() throws IOException {
@@ -753,31 +750,6 @@ public class MvsepSeparationService implements SeparationService {
             return false;
         }
         return url.contains("/storage/processed/") || name.contains("vocals") || name.contains("other") || name.contains("instrumental");
-    }
-
-    private void collectAlgorithms(JsonElement element, Map<Integer, MvsepAlgorithmInfo> algorithms) {
-        if (element == null || element.isJsonNull()) {
-            return;
-        }
-        if (element.isJsonArray()) {
-            for (JsonElement entry : element.getAsJsonArray()) {
-                collectAlgorithms(entry, algorithms);
-            }
-            return;
-        }
-        if (!element.isJsonObject()) {
-            return;
-        }
-        JsonObject object = element.getAsJsonObject();
-        Integer renderId = getInteger(object.get("render_id"));
-        Integer orientation = getInteger(object.get("orientation"));
-        String name = getString(object.get("name"));
-        if (renderId != null && orientation != null && StringUtils.isNotBlank(name)) {
-            algorithms.put(renderId, new MvsepAlgorithmInfo(renderId, name, orientation, Collections.emptyList(), null));
-        }
-        for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
-            collectAlgorithms(entry.getValue(), algorithms);
-        }
     }
 
     private File downloadStem(String url,

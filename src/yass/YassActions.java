@@ -115,7 +115,11 @@ public class YassActions implements DropTargetListener {
     private int recordLength = -1;
     private String recordingPreviousAudioTag = null;
     private String recordingPlaybackSource = null;
-    private java.util.List<yass.analysis.PitchDetector.PitchData> recordingSnapPitchData = java.util.Collections.emptyList();
+    private List<PitchDetector.PitchData> recordingSnapPitchData = Collections.emptyList();
+    private List<PitchDetector.PitchData> recordingSnapRawPitchData = Collections.emptyList();
+    private List<PitchDetector.PitchData> recordingSnapLocallyNormalizedPitchData = Collections.emptyList();
+    private List<PitchDetector.PitchData> recordingSnapViterbiPitchData = Collections.emptyList();
+    private List<PitchDetector.PitchData> recordingSnapTransposedPitchData = Collections.emptyList();
     private static final long RECORDING_REACTION_OFFSET_MS = 60L;
     private static final long RECORDING_FADE_TAIL_US = 5_000_000L;
     private Timebase playTimebase = Timebase.NORMAL;
@@ -386,11 +390,11 @@ public class YassActions implements DropTargetListener {
             for (int rowIndex : selectedRows) {
                 rows.add(table.getRowAt(rowIndex));
             }
+            List<PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
             int transpose = mp3.getPitchWaveformTranspose();
-            List<yass.analysis.PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
             if (transpose != 0) {
                 pitchData = pitchData.stream()
-                        .map(pd -> new yass.analysis.PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName(), pd.rawFrequency()))
+                        .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName(), pd.rawFrequency()))
                         .collect(java.util.stream.Collectors.toList());
             }
             table.alignToMelody(rows, pitchData);
@@ -1412,7 +1416,8 @@ public class YassActions implements DropTargetListener {
                 return;
             }
             int j = table.getSelectionModel().getMaxSelectionIndex();
-            if (i == j && table.getRowCount() > i && table.getRowCount() > 2) {
+            boolean singleNoteSelected = (i == j);
+            if (singleNoteSelected && table.getRowCount() > i && table.getRowCount() > 2) {
                 j = table.getRowCount() - 2;
             }
             int firstNoteToRecord = i;
@@ -1424,7 +1429,9 @@ public class YassActions implements DropTargetListener {
             tempSelection = new ImmutablePair<>(i, j);
               Click[] clicks = table.getSelection(i, j, inout, null, false);
               inout[0] = Math.max(0, inout[0] - 3000000L);
-              inout[1] = -1;
+              if (singleNoteSelected) {
+                  inout[1] = -1;
+              }
               awt.setLastNoteIndex(j);
               if (clicks != null) {
                   recordLength = clicks.length;
@@ -1647,10 +1654,10 @@ public class YassActions implements DropTargetListener {
                     && !mp3.getPitchDataList().isEmpty();
             if (isVocalTrack && hasPitchData) {
                 int transpose = mp3.getPitchWaveformTranspose();
-                List<yass.analysis.PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
+                List<PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
                 if (transpose != 0) {
                     pitchData = pitchData.stream()
-                            .map(pd -> new yass.analysis.PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName(), pd.rawFrequency()))
+                            .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName(), pd.rawFrequency()))
                             .collect(java.util.stream.Collectors.toList());
                 }
                 table.splitRowsByPitch(pitchData);
@@ -3457,7 +3464,7 @@ public class YassActions implements DropTargetListener {
         JProgressBar statusBar = new JProgressBar();
         statusBar.setIndeterminate(true);
 
-        JButton closeButton = new JButton(I18.get("lib_close"));
+        JButton closeButton = new JButton(I18.get("edit_audio_separate_close"));
         JButton cancelButton = new JButton(I18.get("edit_audio_separate_cancel"));
 
         JPanel headerPanel = new JPanel(new BorderLayout(8, 0));
@@ -3843,10 +3850,10 @@ public class YassActions implements DropTargetListener {
                         return;
                     }
                     Pair<Integer, Integer> completedSelection = tempSelection;
-                    List<yass.analysis.PitchDetector.PitchData> postRecordingPitchData =
+                    List<PitchDetector.PitchData> postRecordingPitchData =
                             UltrastarHeaderTag.VOCALS.toString().equals(recordingPreviousAudioTag)
                                     ? getRecordingAlignedPitchData()
-                                    : java.util.Collections.emptyList();
+                                    : Collections.emptyList();
                     LOGGER.info("Recording finish: begin stop pipeline previousTag=" + recordingPreviousAudioTag
                             + " selection=" + completedSelection);
                     stopPlaying();
@@ -3869,7 +3876,14 @@ public class YassActions implements DropTargetListener {
                                     rows.add(row);
                                 }
                             }
-                            table.alignToMelody(rows, postRecordingPitchData);
+                            int transpose = mp3.getPitchWaveformTranspose();
+                            List<PitchDetector.PitchData> alignData = postRecordingPitchData;
+                            if (transpose != 0) {
+                                alignData = alignData.stream()
+                                        .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName(), pd.rawFrequency()))
+                                        .collect(java.util.stream.Collectors.toList());
+                            }
+                            table.alignToMelody(rows, alignData);
                             LOGGER.info("Recording finish: after alignToMelody selectedRows=" + selectedRows.length);
                             for (int rowIndex : selectedRows) {
                                 table.addRowSelectionInterval(rowIndex, rowIndex);
@@ -7555,7 +7569,7 @@ public class YassActions implements DropTargetListener {
     private void prepareRecordingPlaybackSource() {
         recordingPreviousAudioTag = songHeader != null ? songHeader.getSelectedAudio() : null;
         recordingPlaybackSource = null;
-        recordingSnapPitchData = java.util.Collections.emptyList();
+        clearRecordingSnapPitchData();
         LOGGER.info("Recording prepare source previousTag=" + recordingPreviousAudioTag
                 + " audioTagPresent=" + (table != null && StringUtils.isNotBlank(table.getAudio()))
                 + " timebase=" + playTimebase);
@@ -7566,9 +7580,17 @@ public class YassActions implements DropTargetListener {
                 && mp3.getPitchDataList() != null
                 && !mp3.getPitchDataList().isEmpty();
         if (vocalsWithPitches) {
-            recordingSnapPitchData = new java.util.ArrayList<>(mp3.getPitchDataList());
+            recordingSnapPitchData = new ArrayList<>(mp3.getPitchDataList());
+            recordingSnapRawPitchData = mp3.getRawPitchDataList() != null ? new ArrayList<>(mp3.getRawPitchDataList()) : Collections.emptyList();
+            recordingSnapLocallyNormalizedPitchData = mp3.getLocallyNormalizedPitchDataList() != null ? new ArrayList<>(mp3.getLocallyNormalizedPitchDataList()) : Collections.emptyList();
+            recordingSnapViterbiPitchData = mp3.getViterbiPitchDataList() != null ? new ArrayList<>(mp3.getViterbiPitchDataList()) : Collections.emptyList();
+            recordingSnapTransposedPitchData = mp3.getTransposedPitchDataList() != null ? new ArrayList<>(mp3.getTransposedPitchDataList()) : Collections.emptyList();
             sheet.setRecordingOverlayPitchData(recordingSnapPitchData);
         } else {
+            recordingSnapRawPitchData = Collections.emptyList();
+            recordingSnapLocallyNormalizedPitchData = Collections.emptyList();
+            recordingSnapViterbiPitchData = Collections.emptyList();
+            recordingSnapTransposedPitchData = Collections.emptyList();
             sheet.clearRecordingOverlayPitchData();
         }
 
@@ -7593,7 +7615,9 @@ public class YassActions implements DropTargetListener {
         if (StringUtils.isNotBlank(playbackFile)) {
             recordingPlaybackSource = table.getDir() + File.separator + playbackFile;
             LOGGER.info("Recording prepare source forcing player audio to " + recordingPlaybackSource);
-            openMp3(recordingPlaybackSource);
+            if (!recordingPlaybackSource.equals(mp3.getFilename())) {
+                openMp3(recordingPlaybackSource);
+            }
         }
         LOGGER.info("Recording prepare source selectedTagNow="
                 + (songHeader.getSelectedAudio() == null ? "null" : songHeader.getSelectedAudio()));
@@ -7602,8 +7626,34 @@ public class YassActions implements DropTargetListener {
     private void restoreRecordingPlaybackSource() {
         if (songHeader == null) {
             recordingPreviousAudioTag = null;
-            recordingSnapPitchData = java.util.Collections.emptyList();
+            clearRecordingSnapPitchData();
             return;
+        }
+        // Restore vocals filename, audio bytes, and pitch data before setSelectedAudio so that:
+        // 1. The skip-if-loaded guard in setSelectedAudio bypasses openMp3 (no pitch data clearing)
+        // 2. determinePitches() sees non-empty pitchDataList and early-exits
+        // 3. refreshImage() inside setSelectedAudio renders with correct waveform amplitude and pitch lines
+        if (!recordingSnapPitchData.isEmpty() && StringUtils.isNotBlank(recordingPreviousAudioTag)
+                && table != null) {
+            YassRow vocalsRow = table.getCommentRow(recordingPreviousAudioTag + ":");
+            if (vocalsRow != null) {
+                String vocalsPath = table.getDir() + File.separator + vocalsRow.getHeaderComment();
+                mp3.setFilename(vocalsPath);
+                // Reload vocals waveform bytes without clearing pitch data
+                try {
+                    File vocalsTempFile = mp3.generateTemp(vocalsPath);
+                    if (vocalsTempFile != null) {
+                        mp3.reloadAudioBytesOnly(vocalsTempFile);
+                    }
+                } catch (IOException e) {
+                    LOGGER.log(Level.WARNING, "Could not reload vocals audio bytes", e);
+                }
+            }
+            mp3.setPitchDataList(recordingSnapPitchData);
+            mp3.setRawPitchDataList(recordingSnapRawPitchData);
+            mp3.setLocallyNormalizedPitchDataList(recordingSnapLocallyNormalizedPitchData);
+            mp3.setViterbiPitchDataList(recordingSnapViterbiPitchData);
+            mp3.setTransposedPitchDataList(recordingSnapTransposedPitchData);
         }
         if (StringUtils.isNotBlank(recordingPreviousAudioTag)) {
             songHeader.setSelectedAudio(recordingPreviousAudioTag);
@@ -7613,26 +7663,27 @@ public class YassActions implements DropTargetListener {
                 + " restoredPreviousTag=" + recordingPreviousAudioTag);
         recordingPreviousAudioTag = null;
         recordingPlaybackSource = null;
-        recordingSnapPitchData = java.util.Collections.emptyList();
+        clearRecordingSnapPitchData();
         sheet.clearRecordingOverlayPitchData();
+    }
+
+    private void clearRecordingSnapPitchData() {
+        recordingSnapPitchData = Collections.emptyList();
+        recordingSnapRawPitchData = Collections.emptyList();
+        recordingSnapLocallyNormalizedPitchData = Collections.emptyList();
+        recordingSnapViterbiPitchData = Collections.emptyList();
+        recordingSnapTransposedPitchData = Collections.emptyList();
     }
 
     private Integer determineRecordingPitch(KeyEvent keyEvent, int currentNoteIndex) {
         return playNote(keyEvent);
     }
 
-    private List<yass.analysis.PitchDetector.PitchData> getRecordingAlignedPitchData() {
-        if (recordingSnapPitchData == null || recordingSnapPitchData.isEmpty()) {
-            return java.util.Collections.emptyList();
-        }
-        int transpose = mp3.getPitchWaveformTranspose();
-        if (transpose == 0) {
-            return recordingSnapPitchData;
-        }
-        return recordingSnapPitchData.stream()
-                .map(pd -> new yass.analysis.PitchDetector.PitchData(pd.time(), pd.pitch() + transpose,
-                        pd.noteName(), pd.rawFrequency()))
-                .collect(java.util.stream.Collectors.toList());
+    private List<PitchDetector.PitchData> getRecordingAlignedPitchData() {
+        // Return the raw snapped pitch data without applying pitchWaveformTranspose.
+        // pitchWaveformTranspose is a display-only offset; alignToMelody's normalizePitchIntoWindow
+        // already selects the correct octave by comparing against each note's existing height.
+        return recordingSnapPitchData == null ? Collections.emptyList() : recordingSnapPitchData;
     }
 
     private long applyRecordingReactionOffset(long positionMs) {
@@ -7657,7 +7708,8 @@ public class YassActions implements DropTargetListener {
     private void finishRecordingInput() {
         recordingInputFinished = true;
         awt.reset();
-        sheet.setRecordingNoteIndex(-1);
+        // Keep recordingNoteIndex pointing at the last line so the sheet still shows
+        // the tapped lyrics — just suppress the "next line" preview via isRecordingInputFinished().
         sheet.repaint();
     }
 
@@ -8060,7 +8112,7 @@ public class YassActions implements DropTargetListener {
                 selectAudioFile.actionPerformed(null);
             }
             if (prop.getBooleanProperty("debug-waveform") && StringUtils.isNotEmpty(table.getVocals())) {
-                mp3.openMP3(table.getDirMP3());
+                mp3.openMP3(table.getDir() + File.separator + table.getVocals());
             } else {
                 mp3.openMP3(table.getDirMP3());
             }
@@ -8213,7 +8265,7 @@ public class YassActions implements DropTargetListener {
         String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
         normalized = normalized.replaceAll("[\t\u000B\f]+", " ");
         normalized = normalized.replaceAll("(?m)[ \t]+$", "");
-        java.util.List<String> lines = new java.util.ArrayList<>();
+        java.util.List<String> lines = new ArrayList<>();
         for (String rawLine : normalized.split("\n", -1)) {
             String line = StringUtils.trimToEmpty(rawLine);
             if (YassUtils.isSongPartLine(line)) {
@@ -10150,6 +10202,10 @@ public class YassActions implements DropTargetListener {
 
     public boolean isRecording() {
         return recording;
+    }
+
+    public boolean isRecordingInputFinished() {
+        return recordingInputFinished;
     }
 
     public void setRecording(boolean recording) {
