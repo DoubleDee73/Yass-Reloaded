@@ -6,8 +6,10 @@ import java.util.Arrays;
 import java.util.List;
 
 public enum TranscriptionEngine implements YassEnum {
-    OPENAI("openai", "OpenAI"),
-    WHISPERX("whisperx", "WhisperX");
+    ONLINE_FIRST("online_first", "Online first (OpenAI, fall back to WhisperX)"),
+    LOCAL_FIRST("local_first", "Local first (WhisperX, fall back to OpenAI)"),
+    OPENAI("openai", "OpenAI only"),
+    WHISPERX("whisperx", "WhisperX only");
 
     private final String value;
     private final String label;
@@ -23,7 +25,7 @@ public enum TranscriptionEngine implements YassEnum {
                 return engine;
             }
         }
-        return OPENAI;
+        return ONLINE_FIRST;
     }
 
     @Override

@@ -63,7 +63,7 @@ public class MvsepSeparationService implements SeparationService {
 
     @Override
     public SeparationRequest createRequest(YassTable table) {
-        return createRequest(table, properties.getProperty("mvsep-model"), properties.getProperty("mvsep-output-format"));
+        return createRequest(table, properties.getProperty("mvsep-model"), properties.getProperty("mvsep-output-format"), properties.getProperty("mvsep-model-type"));
     }
 
     public SeparationRequest createRequest(File outputDirectory, File audioFile, String songBaseName) {
@@ -84,6 +84,10 @@ public class MvsepSeparationService implements SeparationService {
     }
 
     public SeparationRequest createRequest(YassTable table, String modelValue, String outputFormatValue) {
+        return createRequest(table, modelValue, outputFormatValue, null);
+    }
+
+    public SeparationRequest createRequest(YassTable table, String modelValue, String outputFormatValue, String modelType) {
         if (table == null) {
             throw new IllegalArgumentException("No song is currently open.");
         }
@@ -105,7 +109,7 @@ public class MvsepSeparationService implements SeparationService {
         String songBaseName = buildSongBaseName(table, audioFile);
         LOGGER.info("MVSEP request prepared for " + songBaseName + " using model " + model.getValue() + " and format " + outputFormat.getValue());
         return new SeparationRequest(table.getDir(), audioFile, model.getValue(), outputFormat.getValue(),
-                                     songBaseName);
+                                     songBaseName, modelType);
     }
 
     public MvsepAccountInfo fetchAccountInfo() throws IOException {
@@ -278,7 +282,9 @@ public class MvsepSeparationService implements SeparationService {
              DataOutputStream data = new DataOutputStream(output)) {
             writeFormField(data, boundary, "api_token", properties.getProperty("mvsep-api-token"));
             writeFormField(data, boundary, "sep_type", Integer.toString(model.getSepType()));
-            if (StringUtils.isNotBlank(model.getAddOpt1())) {
+            if (StringUtils.isNotBlank(request.getModelType())) {
+                writeFormField(data, boundary, "model_type", request.getModelType());
+            } else if (StringUtils.isNotBlank(model.getAddOpt1())) {
                 writeFormField(data, boundary, "add_opt1", model.getAddOpt1());
             }
             if (StringUtils.isNotBlank(model.getAddOpt2())) {
@@ -767,7 +773,7 @@ public class MvsepSeparationService implements SeparationService {
         Integer orientation = getInteger(object.get("orientation"));
         String name = getString(object.get("name"));
         if (renderId != null && orientation != null && StringUtils.isNotBlank(name)) {
-            algorithms.put(renderId, new MvsepAlgorithmInfo(renderId, name, orientation));
+            algorithms.put(renderId, new MvsepAlgorithmInfo(renderId, name, orientation, Collections.emptyList(), null));
         }
         for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
             collectAlgorithms(entry.getValue(), algorithms);

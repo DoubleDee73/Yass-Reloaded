@@ -18,6 +18,10 @@
 
 package yass;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 
@@ -26,6 +30,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Files;
@@ -594,41 +601,155 @@ p.putIfAbsent("whisperx-device", "auto");
         return UltrastarHeaderTagVersion.getFormatVersion(getProperty("ultrastar-format-version"));
     }
 
+    private static final String USC_GITHUB_API =
+            "https://api.github.com/repos/UltraStar-Deluxe/UltraStar-Creator/contents/syllabification";
+    private static final String USC_SYLLABIFICATION_SUBDIR = "syllabification";
+
     public void setupHyphenationDictionaries() {
         String hyphenationLanguages = getProperty("hyphenations");
         if (StringUtils.isEmpty(hyphenationLanguages)) {
             LOGGER.info("No hyphenation languages have been setup, skipping this now...");
             return;
         }
-        Set<Path> paths = findPath(List.of("UltraStar-Creator"));
-        if (paths == null || paths.isEmpty()) {
-            LOGGER.info("No valid program paths were found, skipping this now...");
-            return;
+
+        // Try to locate a local UltraStar-Creator installation first
+        Set<Path> uscPaths = findPath(List.of("UltraStar-Creator"));
+        Set<Path> dictionarySearchPaths = new HashSet<>();
+        if (uscPaths != null) {
+            for (Path p : uscPaths) {
+                Path syllabDir = p.resolve(USC_SYLLABIFICATION_SUBDIR);
+                if (Files.isDirectory(syllabDir)) {
+                    dictionarySearchPaths.add(syllabDir);
+                }
+                // USC root may directly contain the .txt files
+                dictionarySearchPaths.add(p);
+            }
         }
+
+        // Always include the download directory as a search path so downloaded files are found
+        Path downloadDir = Path.of(getUserDir(), USC_SYLLABIFICATION_SUBDIR);
+        dictionarySearchPaths.add(downloadDir);
+
         String[] languages = hyphenationLanguages.split("\\|");
         boolean changes = false;
-        boolean found;
+        boolean downloadAttempted = false;
         for (String language : languages) {
-            found = false;
-            String prop = getProperty("hyphenations_" + language);
-            if (StringUtils.isEmpty(prop)) {
-                String displayLanguage = Locale.of(language).getDisplayLanguage(Locale.ENGLISH);
-                for (Path path : paths) {
-                    Path dictionary = Path.of(path.toString(), displayLanguage + ".txt");
-                    if (Files.exists(dictionary)) {
-                        changes = true;
-                        setProperty("hyphenations_" + language, dictionary.toString());
-                        found = true;
-                        continue;
-                    }
+            if (StringUtils.isNotEmpty(getProperty("hyphenations_" + language))) {
+                continue; // already configured
+            }
+            String displayLanguage = Locale.of(language).getDisplayLanguage(Locale.ENGLISH);
+            boolean found = false;
+            for (Path searchPath : dictionarySearchPaths) {
+                Path dictionary = searchPath.resolve(displayLanguage + ".txt");
+                if (Files.exists(dictionary)) {
+                    setProperty("hyphenations_" + language, dictionary.toString());
+                    LOGGER.info("Registered hyphenation dictionary for " + language + ": " + dictionary);
+                    changes = true;
+                    found = true;
+                    break;
                 }
-                if (!found) {
-                    LOGGER.info("Dictionary for " + language + " was not supported, skipping this now...");
+            }
+            if (!found) {
+                // Nothing found locally — download the full set from GitHub (once), then retry
+                if (!downloadAttempted) {
+                    downloadSyllabificationDictionaries(downloadDir);
+                    downloadAttempted = true;
                 }
+                Path dictionary = downloadDir.resolve(displayLanguage + ".txt");
+                if (Files.exists(dictionary)) {
+                    setProperty("hyphenations_" + language, dictionary.toString());
+                    LOGGER.info("Registered hyphenation dictionary for " + language + ": " + dictionary);
+                    changes = true;
+                    found = true;
+                }
+            }
+            if (!found) {
+                LOGGER.info("No hyphenation dictionary found for language: " + language);
             }
         }
         if (changes) {
             store();
+        }
+    }
+
+    private void downloadSyllabificationDictionaries(Path targetDir) {
+        try {
+            Files.createDirectories(targetDir);
+        } catch (IOException ex) {
+            LOGGER.warning("Could not create syllabification download directory: " + targetDir + " — " + ex.getMessage());
+            return;
+        }
+
+        LOGGER.info("Fetching UltraStar-Creator syllabification file list from GitHub...");
+        String listJson;
+        try {
+            listJson = fetchString(USC_GITHUB_API);
+        } catch (IOException ex) {
+            LOGGER.warning("Could not fetch syllabification file list from GitHub: " + ex.getMessage());
+            return;
+        }
+
+        JsonArray entries;
+        try {
+            JsonElement root = JsonParser.parseString(listJson);
+            entries = root.isJsonArray() ? root.getAsJsonArray() : null;
+        } catch (Exception ex) {
+            LOGGER.warning("Could not parse GitHub API response: " + ex.getMessage());
+            return;
+        }
+        if (entries == null) {
+            LOGGER.warning("Unexpected GitHub API response format for syllabification listing.");
+            return;
+        }
+
+        int downloaded = 0;
+        for (JsonElement entry : entries) {
+            if (!entry.isJsonObject()) continue;
+            JsonObject obj = entry.getAsJsonObject();
+            String type = obj.has("type") ? obj.get("type").getAsString() : "";
+            String name = obj.has("name") ? obj.get("name").getAsString() : "";
+
+            // Skip directories (including the "raw" folder) and non-.txt files
+            if (!"file".equals(type) || !name.toLowerCase(Locale.ROOT).endsWith(".txt")) {
+                continue;
+            }
+
+            Path target = targetDir.resolve(name);
+            if (Files.exists(target)) {
+                LOGGER.fine("Syllabification file already present, skipping: " + name);
+                continue;
+            }
+
+            String downloadUrl = obj.has("download_url") ? obj.get("download_url").getAsString() : null;
+            if (StringUtils.isBlank(downloadUrl)) continue;
+
+            try {
+                byte[] content = fetchBytes(downloadUrl);
+                Files.write(target, content);
+                LOGGER.info("Downloaded syllabification dictionary: " + name);
+                downloaded++;
+            } catch (IOException ex) {
+                LOGGER.warning("Failed to download syllabification file " + name + ": " + ex.getMessage());
+            }
+        }
+        LOGGER.info("Syllabification download complete: " + downloaded + " file(s) saved to " + targetDir);
+    }
+
+    private String fetchString(String url) throws IOException {
+        return new String(fetchBytes(url), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private byte[] fetchBytes(String url) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
+        connection.setConnectTimeout(15_000);
+        connection.setReadTimeout(30_000);
+        connection.setRequestProperty("Accept", "application/vnd.github+json");
+        connection.setRequestProperty("User-Agent", "Yass Reloaded");
+        int code = connection.getResponseCode();
+        InputStream stream = code >= 400 ? connection.getErrorStream() : connection.getInputStream();
+        if (stream == null) throw new IOException("Empty response from " + url);
+        try (stream) {
+            return stream.readAllBytes();
         }
     }
     

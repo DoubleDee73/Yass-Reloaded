@@ -1097,7 +1097,7 @@ public class YassPlayer {
             AudioFormat playbackAudioFormat = audioBytesFormat;
             long playbackDurationMicros = getDuration();
             String playbackSource = StringUtils.defaultIfBlank(source, filename);
-            LOGGER.info("PlayThread.playMP3 source=" + playbackSource + " requestedTimebase=" + timebase);
+            LOGGER.fine("PlayThread.playMP3 source=" + playbackSource + " requestedTimebase=" + timebase);
             try {
                 if (timebase == Timebase.NORMAL) {
                     mp3File = playbackSource.equals(filename) ? tempFile : generateTemp(playbackSource, Timebase.NORMAL);
@@ -1105,12 +1105,12 @@ public class YassPlayer {
                     mp3File = generateTemp(playbackSource, timebase);
                 }
                 setPlayrate(timebase == Timebase.NORMAL ? yass.Timebase.NORMAL : timebase);
-                LOGGER.info("PlayThread.playMP3 usingFile=" + mp3File + " effectiveTimebase=" + getPlayrate());
+                LOGGER.fine("PlayThread.playMP3 usingFile=" + mp3File + " effectiveTimebase=" + getPlayrate());
             } catch (IOException e) {
                 mp3File = tempFile;
                 // Couldn't generate the alternate ffmpeg conversion, so fall back to normal speed playback.
                 setPlayrate(yass.Timebase.NORMAL);
-                LOGGER.log(Level.INFO, "PlayThread.playMP3 falling back to normal speed for " + playbackSource, e);
+                LOGGER.log(Level.FINE, "PlayThread.playMP3 falling back to normal speed for " + playbackSource, e);
             }
             if (!mp3File.exists()) {
                 finished = true;

@@ -191,10 +191,16 @@ public class OpenAiTranscriptionService {
                                                JsonObject json,
                                                boolean fromCache,
                                                File cacheFile) {
-        String transcriptText = getString(json.get("text"));
         List<OpenAiTranscriptSegment> segments = extractSegments(json);
-        if (StringUtils.isBlank(transcriptText) && !segments.isEmpty()) {
+        String transcriptText;
+        if (!segments.isEmpty()) {
+            // Use segments for line-structured text: each segment becomes one line
             transcriptText = joinSegmentTexts(segments);
+        } else {
+            transcriptText = getString(json.get("text"));
+            if (StringUtils.isNotBlank(transcriptText)) {
+                transcriptText = insertLineBreaksAtPunctuation(transcriptText);
+            }
         }
         List<OpenAiTranscriptWord> words = extractWords(json);
         List<LyricToken> lyricTokens = LyricsAlignmentTokenizer.buildTokens(table);
@@ -239,23 +245,88 @@ public class OpenAiTranscriptionService {
         return locale != null ? locale.getLanguage() : null;
     }
 
+    private static final long OPENAI_MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB API limit
+
     private File resolveUploadAudioFile(File sourceAudioFile) {
         String lower = sourceAudioFile.getName().toLowerCase(Locale.ROOT);
-        if (!lower.endsWith(".opus")) {
-            return sourceAudioFile;
+
+        if (lower.endsWith(".opus")) {
+            try {
+                File converted = convertToM4aForUpload(sourceAudioFile);
+                LOGGER.info("Converted Opus source to M4A for OpenAI upload: " + converted.getAbsolutePath());
+                return converted;
+            } catch (IOException ex) {
+                LOGGER.log(Level.WARNING, "Failed to convert Opus source to M4A for OpenAI upload.", ex);
+            }
+            throw new IllegalStateException("The selected .opus file could not be converted for upload. Check the FFmpeg configuration under External Tools > Locations.");
         }
 
-        try {
-            YassPlayer player = new YassPlayer(null, properties);
-            File converted = player.generateTemp(sourceAudioFile.getAbsolutePath());
-            if (converted != null && converted.isFile()) {
-                LOGGER.info("Converted Opus source to temporary WAV for OpenAI upload: " + converted.getAbsolutePath());
-                return converted;
-            }
-        } catch (IOException ex) {
-            LOGGER.log(Level.WARNING, "Failed to convert Opus source to temporary WAV for OpenAI upload.", ex);
+        return resolveUploadAudioFileSizeCheck(sourceAudioFile, sourceAudioFile.getName());
+    }
+
+    private File resolveUploadAudioFileSizeCheck(File file, String originalName) {
+        if (file.length() <= OPENAI_MAX_UPLOAD_BYTES) {
+            return file;
         }
-        throw new IllegalStateException("The selected .opus file could not be converted to a temporary WAV. Check the FFmpeg configuration under External Tools > Locations.");
+        LOGGER.warning("Upload file " + file.getName() + " is " + file.length() + " bytes, exceeds OpenAI 25 MB limit. Re-encoding to M4A at 64 kbps.");
+        try {
+            return convertToM4aForUpload(file);
+        } catch (IOException ex) {
+            LOGGER.log(Level.WARNING, "Failed to compress audio for OpenAI upload, will attempt upload anyway.", ex);
+            return file;
+        }
+    }
+
+    private File convertToM4aForUpload(File sourceFile) throws IOException {
+        String originalName = sourceFile.getName();
+        String baseName = originalName.contains(".") ? originalName.substring(0, originalName.lastIndexOf('.')) : originalName;
+        File tempFile = File.createTempFile(baseName + "-openai-upload-", ".m4a");
+        tempFile.deleteOnExit();
+
+        String ffmpeg = resolveFfmpegExecutable();
+        List<String> cmd = List.of(ffmpeg, "-y", "-i", sourceFile.getAbsolutePath(),
+                                   "-c:a", "aac", "-b:a", "64k",
+                                   tempFile.getAbsolutePath());
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        // Drain output to prevent blocking
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            while (br.readLine() != null) { /* drain */ }
+        }
+        try {
+            boolean finished = process.waitFor(5, java.util.concurrent.TimeUnit.MINUTES);
+            if (!finished) {
+                process.destroyForcibly();
+                throw new IOException("FFmpeg compression timed out for " + sourceFile.getName());
+            }
+            if (process.exitValue() != 0) {
+                throw new IOException("FFmpeg compression failed for " + sourceFile.getName());
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("FFmpeg compression interrupted", ex);
+        }
+        LOGGER.info("Converted " + sourceFile.getName() + " (" + sourceFile.length() + " B) -> "
+                    + tempFile.getName() + " (" + tempFile.length() + " B) for OpenAI upload.");
+        return tempFile;
+    }
+
+    private String resolveFfmpegExecutable() {
+        String ffmpegPath = properties.getProperty("ffmpegPath");
+        if (StringUtils.isBlank(ffmpegPath)) {
+            return "ffmpeg";
+        }
+        File f = new File(ffmpegPath);
+        if (f.isDirectory()) {
+            File exe = new File(f, "ffmpeg.exe");
+            if (exe.isFile()) return exe.getAbsolutePath();
+            exe = new File(f, "ffmpeg");
+            if (exe.isFile()) return exe.getAbsolutePath();
+        } else if (f.isFile()) {
+            return f.getAbsolutePath();
+        }
+        return "ffmpeg";
     }
 
     private boolean isDuet(YassTable table) {
@@ -324,6 +395,16 @@ public class OpenAiTranscriptionService {
         return segments;
     }
 
+    /**
+     * Inserts a newline after each sentence-ending punctuation mark (. ? !)
+     * that is followed by a space and an uppercase letter (i.e. a new sentence).
+     * Used as a fallback when the API response contains no segments.
+     */
+    private String insertLineBreaksAtPunctuation(String text) {
+        // Replace ". X", "? X", "! X" (sentence boundary) with ".\nX"
+        return text.replaceAll("([.?!])\\s+(?=[A-ZÀ-Ö])", "$1\n");
+    }
+
     private String joinSegmentTexts(List<OpenAiTranscriptSegment> segments) {
         StringBuilder sb = new StringBuilder();
         for (OpenAiTranscriptSegment segment : segments) {
@@ -341,7 +422,10 @@ public class OpenAiTranscriptionService {
     private List<OpenAiTranscriptWord> extractWords(JsonObject json) {
         List<OpenAiTranscriptWord> words = new ArrayList<>();
         JsonArray wordArray = json.getAsJsonArray("words");
-        if (wordArray == null) {
+        if (wordArray != null) {
+            // top-level words array present — use it directly
+        } else {
+            // Collect words nested inside each segment
             JsonArray segments = json.getAsJsonArray("segments");
             if (segments != null) {
                 for (JsonElement segmentElement : segments) {
@@ -350,14 +434,30 @@ public class OpenAiTranscriptionService {
                     }
                     JsonObject segment = segmentElement.getAsJsonObject();
                     JsonArray nestedWords = segment.getAsJsonArray("words");
-                    if (nestedWords != null) {
-                        wordArray = nestedWords;
-                        break;
+                    if (nestedWords == null) {
+                        continue;
+                    }
+                    for (JsonElement element : nestedWords) {
+                        if (!element.isJsonObject()) {
+                            continue;
+                        }
+                        JsonObject word = element.getAsJsonObject();
+                        String text = getString(word.get("word"));
+                        if (StringUtils.isBlank(text)) {
+                            text = getString(word.get("text"));
+                        }
+                        if (StringUtils.isBlank(text)) {
+                            continue;
+                        }
+                        int startMs = secondsToMillis(word.get("start"));
+                        int endMs = secondsToMillis(word.get("end"));
+                        words.add(new OpenAiTranscriptWord(text,
+                                                           LyricsAlignmentTokenizer.normalizeText(text),
+                                                           startMs,
+                                                           endMs));
                     }
                 }
             }
-        }
-        if (wordArray == null) {
             return words;
         }
         for (JsonElement element : wordArray) {

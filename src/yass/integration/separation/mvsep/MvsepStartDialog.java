@@ -19,12 +19,14 @@
 
 package yass.integration.separation.mvsep;
 
+import org.apache.commons.lang3.StringUtils;
 import yass.I18;
 import yass.integration.separation.SeparationRequest;
 
 import javax.swing.*;
 import java.awt.*;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 public final class MvsepStartDialog {
@@ -47,13 +49,86 @@ public final class MvsepStartDialog {
         JComboBox<MvsepModel> modelBox = new JComboBox<>(availableModels);
         modelBox.setRenderer(new EnumLabelRenderer<>());
         MvsepModel selectedModel = MvsepModel.fromValue(request.getModel());
-        modelBox.setSelectedItem(Arrays.stream(availableModels).anyMatch(model -> model == selectedModel)
-                                         ? selectedModel
-                                         : availableModels[0]);
+        MvsepModel initialModel = Arrays.stream(availableModels).anyMatch(m -> m == selectedModel)
+                ? selectedModel : availableModels[0];
+        modelBox.setSelectedItem(initialModel);
 
         JComboBox<MvsepOutputFormat> formatBox = new JComboBox<>(MvsepOutputFormat.values());
         formatBox.setRenderer(new EnumLabelRenderer<>());
         formatBox.setSelectedItem(MvsepOutputFormat.fromValue(request.getOutputFormat()));
+
+        // Model type combobox — populated dynamically
+        JComboBox<MvsepFieldOption> modelTypeBox = new JComboBox<>();
+        modelTypeBox.setVisible(false);
+        JLabel modelTypeLabel = new JLabel(I18.get("options_external_tools_mvsep_model_type"));
+        modelTypeLabel.setVisible(false);
+        JButton infoButton = new JButton("?");
+        infoButton.setToolTipText(I18.get("options_external_tools_mvsep_model_info"));
+        infoButton.setMargin(new Insets(1, 4, 1, 4));
+
+        // Helper: update model type options when model changes
+        Runnable updateModelType = () -> {
+            MvsepModel model = (MvsepModel) modelBox.getSelectedItem();
+            modelTypeBox.removeAllItems();
+            if (model == null || algorithms == null) {
+                modelTypeLabel.setVisible(false);
+                modelTypeBox.setVisible(false);
+                infoButton.setEnabled(false);
+                return;
+            }
+            MvsepAlgorithmInfo info = algorithms.get(model.getSepType());
+            MvsepAlgorithmField field = info != null ? info.modelTypeField() : null;
+            infoButton.setEnabled(info != null && StringUtils.isNotBlank(info.descriptionHtml()));
+            infoButton.putClientProperty("algorithmInfo", info);
+
+            if (field == null || field.options().isEmpty()) {
+                modelTypeLabel.setVisible(false);
+                modelTypeBox.setVisible(false);
+                return;
+            }
+            List<MvsepFieldOption> options = field.options();
+            for (MvsepFieldOption opt : options) {
+                modelTypeBox.addItem(opt);
+            }
+            // Restore saved model type
+            String savedKey = request.getModelType();
+            MvsepFieldOption toSelect = StringUtils.isNotBlank(savedKey) ? field.findOption(savedKey) : null;
+            if (toSelect == null) {
+                toSelect = field.defaultOption();
+            }
+            if (toSelect != null) {
+                modelTypeBox.setSelectedItem(toSelect);
+            }
+            modelTypeLabel.setVisible(true);
+            modelTypeBox.setVisible(true);
+        };
+
+        updateModelType.run();
+        modelBox.addActionListener(e -> updateModelType.run());
+
+        infoButton.addActionListener(e -> {
+            MvsepAlgorithmInfo info = (MvsepAlgorithmInfo) infoButton.getClientProperty("algorithmInfo");
+            if (info != null && StringUtils.isNotBlank(info.descriptionHtml())) {
+                JEditorPane editorPane = new JEditorPane();
+                editorPane.setEditable(false);
+                editorPane.setOpaque(false);
+                javax.swing.text.html.HTMLEditorKit kit = new javax.swing.text.html.HTMLEditorKit();
+                String uiFont = editorPane.getFont().getFamily();
+                int uiSize = editorPane.getFont().getSize();
+                kit.getStyleSheet().addRule(
+                        "body { font-family: '" + uiFont + "', sans-serif; font-size: " + uiSize + "pt; margin: 4px; }"
+                        + "p { margin-top: 4px; margin-bottom: 4px; }"
+                );
+                editorPane.setEditorKit(kit);
+                editorPane.setText(info.descriptionHtml());
+                JScrollPane scroll = new JScrollPane(editorPane);
+                scroll.setPreferredSize(new Dimension(500, 300));
+                JOptionPane.showMessageDialog(parent,
+                                              scroll,
+                                              ((MvsepModel) modelBox.getSelectedItem()).getLabel(),
+                                              JOptionPane.INFORMATION_MESSAGE);
+            }
+        });
 
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
@@ -63,7 +138,7 @@ public final class MvsepStartDialog {
 
         gbc.gridx = 0;
         gbc.gridy = 0;
-        gbc.gridwidth = 2;
+        gbc.gridwidth = 3;
         JPanel introPanel = new JPanel(new BorderLayout());
         JLabel hintLabel = new JLabel("<html>" + I18.get("edit_audio_separate_hint") + "</html>");
         introPanel.add(hintLabel, BorderLayout.CENTER);
@@ -89,13 +164,28 @@ public final class MvsepStartDialog {
         gbc.weightx = 1.0;
         panel.add(modelBox, gbc);
 
+        gbc.gridx = 2;
+        gbc.weightx = 0;
+        panel.add(infoButton, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(modelTypeLabel, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        gbc.gridwidth = 2;
+        panel.add(modelTypeBox, gbc);
+
         gbc.gridx = 0;
         gbc.gridy++;
         gbc.weightx = 0;
+        gbc.gridwidth = 1;
         panel.add(new JLabel(I18.get("options_external_tools_mvsep_output_format")), gbc);
 
         gbc.gridx = 1;
         gbc.weightx = 1.0;
+        gbc.gridwidth = 2;
         panel.add(formatBox, gbc);
 
         JOptionPane optionPane = new JOptionPane(panel,
@@ -113,8 +203,11 @@ public final class MvsepStartDialog {
 
         MvsepModel model = (MvsepModel) modelBox.getSelectedItem();
         MvsepOutputFormat format = (MvsepOutputFormat) formatBox.getSelectedItem();
+        MvsepFieldOption modelTypeOption = (MvsepFieldOption) modelTypeBox.getSelectedItem();
+        String modelTypeKey = modelTypeOption != null ? modelTypeOption.key() : null;
         return request.withOptions(model == null ? request.getModel() : model.getValue(),
-                                   format == null ? request.getOutputFormat() : format.getValue());
+                                   format == null ? request.getOutputFormat() : format.getValue(),
+                                   modelTypeKey);
     }
 
     private static String buildAccountSummary(MvsepAccountInfo accountInfo, Integer planQueue) {
@@ -139,10 +232,10 @@ public final class MvsepStartDialog {
                                                       boolean isSelected,
                                                       boolean cellHasFocus) {
             super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-            if (value instanceof MvsepModel model) {
-                setText(model.getLabel());
-            } else if (value instanceof MvsepOutputFormat format) {
-                setText(format.getLabel());
+            if (value instanceof MvsepModel m) {
+                setText(m.getLabel());
+            } else if (value instanceof MvsepOutputFormat f) {
+                setText(f.getLabel());
             }
             return this;
         }

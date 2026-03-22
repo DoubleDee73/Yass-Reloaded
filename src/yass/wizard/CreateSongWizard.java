@@ -25,6 +25,7 @@ import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
 import yass.*;
 import yass.ffmpeg.FFMPEGLocator;
+import yass.integration.separation.SeparationPreference;
 import yass.integration.separation.SeparationRequest;
 import yass.integration.separation.SeparationResult;
 import yass.integration.separation.SeparationService;
@@ -533,27 +534,81 @@ public class CreateSongWizard extends Wizard {
 
     private TranscriptionEngine getPreferredTranscriptionEngine() {
         TranscriptionEngine configured = TranscriptionEngine.fromValue(getProperty("transcription-engine"));
-        boolean configuredUsable = configured == TranscriptionEngine.OPENAI ? hasOpenAiApiKey() : hasWhisperXConfiguration();
-        if (configuredUsable) {
-            return configured;
+
+        switch (configured) {
+            case ONLINE_FIRST -> {
+                if (hasOpenAiApiKey() && isOnlineReachable()) {
+                    return TranscriptionEngine.OPENAI;
+                }
+                if (hasWhisperXConfiguration()) {
+                    LOGGER.info("Online transcription unavailable, falling back to WhisperX.");
+                    return TranscriptionEngine.WHISPERX;
+                }
+                return TranscriptionEngine.OPENAI;
+            }
+            case LOCAL_FIRST -> {
+                if (hasWhisperXConfiguration()) {
+                    return TranscriptionEngine.WHISPERX;
+                }
+                LOGGER.info("Local transcription unavailable, falling back to OpenAI.");
+                return TranscriptionEngine.OPENAI;
+            }
+            case OPENAI -> { return TranscriptionEngine.OPENAI; }
+            case WHISPERX -> { return TranscriptionEngine.WHISPERX; }
+            default -> { return TranscriptionEngine.OPENAI; }
         }
-        if (hasWhisperXConfiguration()) {
-            return TranscriptionEngine.WHISPERX;
-        }
-        return TranscriptionEngine.OPENAI;
     }
 
     private SeparationService buildSeparationService() {
-        // Prefer audio-separator (local, no API key needed) when configured and healthy.
-        // Fall back to MVSEP when it has an API token.
         boolean audioSepConfigured = StringUtils.isNotBlank(getProperty(AudioSeparatorSeparationService.PROP_PYTHON))
                 && Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK), "false"));
-        if (audioSepConfigured) {
-            LOGGER.info("Using audio-separator for wizard vocal separation.");
-            return new AudioSeparatorSeparationService(yassProperties);
+        boolean mvsepConfigured = StringUtils.isNotBlank(getProperty("mvsep-api-token"));
+        SeparationPreference preference = SeparationPreference.fromValue(getProperty("separation-preference"));
+
+        switch (preference) {
+            case ONLINE_FIRST -> {
+                if (mvsepConfigured && isOnlineReachable()) {
+                    LOGGER.info("Using MVSEP for wizard vocal separation (online-first).");
+                    return new MvsepSeparationService(yassProperties);
+                }
+                if (audioSepConfigured) {
+                    LOGGER.info("Online separation unavailable, falling back to audio-separator.");
+                    return new AudioSeparatorSeparationService(yassProperties);
+                }
+                return new MvsepSeparationService(yassProperties);
+            }
+            case MVSEP_ONLY -> {
+                LOGGER.info("Using MVSEP for wizard vocal separation (MVSEP only).");
+                return new MvsepSeparationService(yassProperties);
+            }
+            case AUDIO_SEP_ONLY -> {
+                LOGGER.info("Using audio-separator for wizard vocal separation (audio-separator only).");
+                return new AudioSeparatorSeparationService(yassProperties);
+            }
+            default -> {
+                // LOCAL_FIRST: prefer audio-separator, fall back to MVSEP
+                if (audioSepConfigured) {
+                    LOGGER.info("Using audio-separator for wizard vocal separation (local-first).");
+                    return new AudioSeparatorSeparationService(yassProperties);
+                }
+                LOGGER.info("Using MVSEP for wizard vocal separation.");
+                return new MvsepSeparationService(yassProperties);
+            }
         }
-        LOGGER.info("Using MVSEP for wizard vocal separation.");
-        return new MvsepSeparationService(yassProperties);
+    }
+
+    /**
+     * Quick connectivity check: attempts a TCP connection to api.openai.com:443.
+     * Returns true if reachable within 3 seconds, false otherwise.
+     */
+    private boolean isOnlineReachable() {
+        try (java.net.Socket socket = new java.net.Socket()) {
+            socket.connect(new java.net.InetSocketAddress("api.openai.com", 443), 3000);
+            return true;
+        } catch (java.io.IOException ex) {
+            LOGGER.info("Online reachability check failed: " + ex.getMessage());
+            return false;
+        }
     }
 
     public WizardTranscriptionState getWizardTranscriptionState() {
@@ -776,6 +831,30 @@ public class CreateSongWizard extends Wizard {
                 File vocalsFile = separationResult.getVocalsFile();
                 if (vocalsFile == null || !vocalsFile.isFile()) {
                     throw new IllegalStateException(I18.get("create_lyrics_separate_transcribe_missing_vocals"));
+                }
+
+                // Ask the user whether to proceed with transcription before starting the (potentially costly) API call.
+                publish(I18.get("create_lyrics_separate_transcribe_separation_done"));
+                boolean[] proceedWithTranscription = {true};
+                try {
+                    javax.swing.SwingUtilities.invokeAndWait(() -> {
+                        int choice = JOptionPane.showConfirmDialog(
+                                progressDialog,
+                                I18.get("create_lyrics_separate_transcribe_confirm_transcribe"),
+                                I18.get("create_lyrics_separate_transcribe_confirm_transcribe_title"),
+                                JOptionPane.YES_NO_OPTION,
+                                JOptionPane.QUESTION_MESSAGE);
+                        proceedWithTranscription[0] = (choice == JOptionPane.YES_OPTION);
+                    });
+                } catch (java.lang.reflect.InvocationTargetException ex) {
+                    LOGGER.log(Level.WARNING, "Error showing transcription confirmation dialog.", ex);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting for transcription confirmation.", ex);
+                }
+                if (!proceedWithTranscription[0]) {
+                    cancel(false);
+                    return new WizardTranscriptionState(runDirectory, sourceAudio, wavFile, separationResult, null);
                 }
 
                 File cacheDir = new File(runDirectory, StringUtils.defaultIfBlank(getProperty("whisperx-cache-folder"), ".yass-cache"));

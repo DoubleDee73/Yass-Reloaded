@@ -211,8 +211,6 @@ public class YassHyphenator {
         }
 
         // Strip tildes from raw text before lookup: tildes are note-extension markers, not part of the word.
-        // Track whether the last original syllable carried a tilde so we can restore it.
-        boolean lastHadTilde = original.get(original.size() - 1).endsWith("~");
         String word = original.stream()
                 .map(s -> s.replace("~", ""))
                 .collect(Collectors.joining());
@@ -251,10 +249,6 @@ public class YassHyphenator {
         if (shortened) {
             newSyllables[newSyllables.length - 1] = newSyllables[newSyllables.length - 1].replace("ing",
                                                                                                   "in" + apostrophe);
-        }
-        // Restore tilde on last syllable if the original had one
-        if (lastHadTilde) {
-            newSyllables[newSyllables.length - 1] = newSyllables[newSyllables.length - 1] + "~";
         }
         return Arrays.stream(newSyllables).toList();
     }

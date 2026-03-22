@@ -85,6 +85,40 @@ public class AudioSeparatorHealthCheckService {
     }
 
     /**
+     * Lists available models by running {@code audio-separator --list_models}.
+     * Returns model filenames parsed from the tabular output (first column, skipping header/separator rows).
+     * Returns an empty list if audio-separator is not available or the command fails.
+     */
+    public List<String> listModels(String pythonExecutable) {
+        String scriptCmd = resolveAudioSeparatorScript(pythonExecutable);
+        CommandResult result = run(List.of(scriptCmd, "--list_models"));
+        if (!result.success || result.output.isBlank()) {
+            return List.of();
+        }
+        List<String> models = new ArrayList<>();
+        for (String line : result.output.lines().toList()) {
+            // Skip header, separator, and blank lines
+            if (line.isBlank() || line.startsWith("-") || line.startsWith("=")
+                    || line.toLowerCase().contains("model name") || line.toLowerCase().contains("filename")) {
+                continue;
+            }
+            // Each data row starts with the model filename in the first column, separated by | or whitespace
+            String candidate;
+            if (line.contains("|")) {
+                candidate = line.substring(0, line.indexOf('|')).strip();
+            } else {
+                candidate = line.strip().split("\\s{2,}")[0].strip();
+            }
+            // Model filenames end with a known extension
+            if (!candidate.isBlank() && (candidate.endsWith(".ckpt") || candidate.endsWith(".onnx")
+                    || candidate.endsWith(".yaml") || candidate.endsWith(".th") || candidate.endsWith(".pth"))) {
+                models.add(candidate);
+            }
+        }
+        return models;
+    }
+
+    /**
      * Resolves the audio-separator console script path from the Python executable.
      * pip installs it at Scripts/audio-separator.exe (Windows) or bin/audio-separator (Unix)
      * next to the Python executable. Falls back to "audio-separator" on PATH.

@@ -1,6 +1,7 @@
 package yass.options;
 
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Dimension;
 
 import javax.swing.BorderFactory;
@@ -19,7 +20,6 @@ import javax.swing.UIManager;
 import org.apache.commons.lang3.StringUtils;
 
 import yass.I18;
-import yass.integration.transcription.TranscriptionEngine;
 import yass.integration.transcription.openai.OpenAiTranscriptionModel;
 import yass.integration.transcription.whisperx.WhisperXComputeType;
 import yass.integration.transcription.whisperx.WhisperXDevice;
@@ -47,9 +47,8 @@ public class WhisperXPanel extends OptionsPanel {
         setLabelWidth(180);
         prefillDetectedPython();
         addFullWidthComment(I18.get("options_external_tools_transcription_comment"));
-        addChoice(I18.get("options_external_tools_transcription_engine"), TranscriptionEngine.values(), "transcription-engine");
         addFullWidthComment(I18.get("options_external_tools_openai_comment"));
-        addText(I18.get("options_external_tools_openai_api_key"), "openai-api-key");
+        addApiKey(I18.get("options_external_tools_openai_api_key"), "openai-api-key");
         addChoice(I18.get("options_external_tools_openai_model"), OpenAiTranscriptionModel.values(), "openai-model");
         addFullWidthComment(I18.get("options_external_tools_whisperx_comment"));
         addFullWidthComment(I18.get("options_external_tools_whisperx_mode_explainer"));
@@ -93,7 +92,7 @@ public class WhisperXPanel extends OptionsPanel {
         buttonRow.add(Box.createHorizontalGlue());
         getRight().add(buttonRow);
 
-        statusArea = new JTextArea(7, 40);
+        statusArea = new JTextArea(5, 40);
         statusArea.setEditable(false);
         statusArea.setLineWrap(true);
         statusArea.setWrapStyleWord(true);
@@ -105,12 +104,15 @@ public class WhisperXPanel extends OptionsPanel {
         statusRow.setLayout(new BoxLayout(statusRow, BoxLayout.X_AXIS));
         JLabel statusLabel = new JLabel(I18.get("options_external_tools_whisperx_status_label"));
         statusLabel.setVerticalAlignment(SwingConstants.TOP);
-        statusLabel.setPreferredSize(new Dimension(getLabelWidth(), 20));
+        statusLabel.setPreferredSize(new Dimension(getLabelWidth(), 90));
+        statusLabel.setMaximumSize(new Dimension(getLabelWidth(), 90));
+        statusLabel.setAlignmentY(Component.TOP_ALIGNMENT);
         JScrollPane statusScroll = new JScrollPane(statusArea);
         statusScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         statusScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
         statusScroll.setBorder(BorderFactory.createCompoundBorder(UIManager.getBorder("TextField.border"), BorderFactory.createEmptyBorder()));
-        statusScroll.setPreferredSize(new Dimension(460, 120));
+        statusScroll.setPreferredSize(new Dimension(460, 90));
+        statusScroll.setAlignmentY(Component.TOP_ALIGNMENT);
         statusRow.add(statusLabel);
         statusRow.add(statusScroll);
         getRight().add(statusRow);

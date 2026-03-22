@@ -19,8 +19,18 @@
 
 package yass.integration.separation.mvsep;
 
-public record MvsepAlgorithmInfo(int renderId, String name, int orientation) {
+import java.util.List;
+
+public record MvsepAlgorithmInfo(int renderId, String name, int orientation,
+                                 List<MvsepAlgorithmField> fields, String descriptionHtml) {
     public boolean isPremiumOnly() {
         return orientation == 2;
+    }
+
+    public MvsepAlgorithmField modelTypeField() {
+        if (fields == null) {
+            return null;
+        }
+        return fields.stream().filter(f -> "model_type".equals(f.serverKey())).findFirst().orElse(null);
     }
 }
