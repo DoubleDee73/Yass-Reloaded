@@ -23,7 +23,7 @@ public class OpenAiPanel extends OptionsPanel {
     public void addRows() {
         setLabelWidth(180);
         addFullWidthComment(I18.get("options_external_tools_openai_comment"));
-        addText(I18.get("options_external_tools_openai_api_key"), "openai-api-key");
+        addApiKey(I18.get("options_external_tools_openai_api_key"), "openai-api-key");
         addChoice(I18.get("options_external_tools_openai_model"), OpenAiTranscriptionModel.values(), "openai-model");
         addText(I18.get("options_external_tools_openai_language"), "openai-language");
     }

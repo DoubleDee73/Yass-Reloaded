@@ -37,6 +37,7 @@ public class DebugPanel extends OptionsPanel {
         addChoice("Log level", "Severe|Warning|Info|Config|Fine|Finer|Finest", "log-levels", "log-level");
         addBoolean(I18.get("options_debug_memory_title"), "debug-memory", I18.get("options_debug_memory"));
         addBoolean(I18.get("options_debug_accuracy_title"), "debug-waveform", I18.get("options_debug_waveform"));
+        addBoolean(I18.get("options_debug_raw_pitches_title"), "debug-raw-pitches", I18.get("options_debug_raw_pitches"));
         addSeparator(I18.get("options_debug_player"));
         addBoolean(I18.get("options_debug_score_title"), "debug-score", I18.get("options_debug_score"));
     }

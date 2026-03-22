@@ -20,6 +20,7 @@
 package yass.logger;
 
 import yass.YassMain;
+import yass.YassProperties;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -41,6 +42,22 @@ public class YassLogger {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public static void applyFromProperties(YassProperties props) {
+        boolean changed = false;
+        if (props.getProperty("log-levels") == null) {
+            props.setProperty("log-levels", "SEVERE|WARNING|INFO|CONFIG|FINE|FINER|FINEST");
+            changed = true;
+        }
+        if (props.getProperty("log-level") == null) {
+            props.setProperty("log-level", "INFO");
+            changed = true;
+        }
+        if (changed) {
+            props.store();
+        }
+        applyLogLevel(props.getProperty("log-level"));
     }
 
     public static void applyLogLevel(String levelName) {

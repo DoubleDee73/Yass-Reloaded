@@ -112,7 +112,7 @@ public enum MusicalKeyEnum {
     
     public boolean isInKey(int note) {
         if (this == UNDEFINED) {
-            return true;
+            return false;
         }
         if (note < 0) {
             note = note + 120;

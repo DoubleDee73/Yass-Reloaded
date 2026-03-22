@@ -276,7 +276,7 @@ public class YassMain extends JFrame {
 
     public void init() {
         prop = new YassProperties();
-        YassLogger.applyLogLevel(prop.getProperty("log-level"));
+        YassLogger.applyFromProperties(prop);
         initLanguage();
         checkVersion();
         initTempDir();
@@ -887,7 +887,7 @@ public class YassMain extends JFrame {
         songInfo.validate();
 
         songInfo.addComponentListener(new ComponentAdapter() {
-            public void componentResized(ComponentEvent e) {
+            private void layout() {
                 int ww = songInfo.getWidth();
                 int hh = songInfo.getHeight();
 
@@ -909,6 +909,16 @@ public class YassMain extends JFrame {
                 playlistPanel.setBounds(w4, bb, 200, hh - 20);
 
                 actions.updateDetails();
+            }
+
+            @Override
+            public void componentResized(ComponentEvent e) {
+                layout();
+            }
+
+            @Override
+            public void componentShown(ComponentEvent e) {
+                layout();
             }
         });
 

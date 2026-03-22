@@ -52,7 +52,6 @@ public class PitchDetector {
         List<PitchData> rawPitchData = new ArrayList<>();
         List<PitchData> locallyNormalizedPitchData;
         List<PitchData> viterbiPitchData;
-        List<PitchData> transposedPitchData;
         List<PitchData> finalPitchData;
         try {
             String aubioCommand = "aubiopitch";
@@ -93,10 +92,9 @@ public class PitchDetector {
                 LOGGER.info("Aubio pitch detection found " + rawPitchData.size() + " raw pitched frames.");
                 locallyNormalizedPitchData = normalizeRawPitchOctaves(rawPitchData);
                 viterbiPitchData = viterbiSmooth(locallyNormalizedPitchData, musicalKey);
-                transposedPitchData = List.copyOf(viterbiPitchData);
-                finalPitchData = List.copyOf(transposedPitchData);
+                finalPitchData = List.copyOf(viterbiPitchData);
                 LOGGER.info("Viterbi smoothing complete. Resulting " + finalPitchData.size() + " pitched frames.");
-                return new PitchDetectionResult(List.copyOf(rawPitchData), List.copyOf(locallyNormalizedPitchData), List.copyOf(viterbiPitchData), List.copyOf(transposedPitchData), finalPitchData);
+                return new PitchDetectionResult(List.copyOf(rawPitchData), List.copyOf(locallyNormalizedPitchData), List.copyOf(viterbiPitchData), List.copyOf(viterbiPitchData), finalPitchData);
             } else {
                 // Handle errors by logging them
                 LOGGER.severe("aubio pitch process failed with exit code " + exitCode + ". Check logs for details.");
@@ -172,7 +170,7 @@ public class PitchDetector {
             int dominantOctave = octaveHistogram.entrySet().stream()
                                                 .max(Map.Entry.comparingByValue())
                                                 .map(Map.Entry::getKey)
-                                                .orElse(segment.get(0).pitch() + 60 / 12); // Fallback
+                                                .orElse((segment.get(0).pitch() + 60) / 12); // Fallback
 
             // 2. Korrigiere jede Note im Segment basierend auf der dominanten Oktave
             for (PitchData pd : segment) {
@@ -312,7 +310,6 @@ public class PitchDetector {
 
         int T = rawPitchData.size();
         double[] logViterbi = new double[N];
-        int[][] backpointer = new int[T][N];
 
         // Precompute log-transition matrix: logTrans[from][to]
         // Stored as a flat array for cache efficiency
@@ -419,56 +416,6 @@ public class PitchDetector {
         }
 
         return result;
-    }
-
-    /**
-     * Transposes the entire pitch list by a whole number of octaves so that the median pitch
-     * falls within the vocal target range C4–E6 (semitones 0–28 relative to C4).
-     * The shift is applied uniformly to all frames (no per-note adjustment).
-     */
-    private static List<PitchData> transposeToVocalRange(List<PitchData> pitchData) {
-        if (pitchData == null || pitchData.isEmpty()) {
-            return pitchData;
-        }
-
-        // C4 = 0, E6 = 28 (semitones relative to C4)
-        final int VOCAL_LOW  = 0;   // C4
-        final int VOCAL_HIGH = 28;  // E6
-        final int VOCAL_MID  = (VOCAL_LOW + VOCAL_HIGH) / 2; // 14 ~ D5
-
-        // Compute median pitch
-        List<Integer> sorted = pitchData.stream()
-                .map(PitchData::pitch)
-                .sorted()
-                .toList();
-        int median = sorted.get(sorted.size() / 2);
-
-        // Find the octave shift (multiple of 12) that brings the median closest to the target midpoint
-        int shift = 0;
-        int bestDistance = Math.abs(median - VOCAL_MID);
-        for (int candidate = -48; candidate <= 48; candidate += 12) {
-            int distance = Math.abs(median + candidate - VOCAL_MID);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                shift = candidate;
-            }
-        }
-
-        if (shift == 0) {
-            return pitchData;
-        }
-
-        LOGGER.info(String.format("Transposing detected pitches by %+d semitones (median %d -> %d) to fit C4-E6 range.",
-                shift, median, median + shift));
-
-        final int finalShift = shift;
-        return pitchData.stream()
-                .map(pd -> {
-                    int newPitch = pd.pitch() + finalShift;
-                    double newFreq = C4_FREQ * Math.pow(2.0, newPitch / 12.0);
-                    return new PitchData(pd.time(), newPitch, freqToNoteName(newFreq), newFreq);
-                })
-                .toList();
     }
 
     private static List<PitchData> stabilizePitchContour(List<PitchData> pitchData) {

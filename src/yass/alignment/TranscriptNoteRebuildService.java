@@ -37,6 +37,7 @@ public class TranscriptNoteRebuildService {
         table.removeNotes();
         table.setPreventUndo(oldUndo);
         pruneEmptyNoteRows(table);
+        table.setGap(gapMs);
         table.setSaved(false);
         logTableNotes(table);
 
@@ -52,8 +53,8 @@ public class TranscriptNoteRebuildService {
             table.addRow(parsed);
         }
         table.addRow("E");
+        normalizeTiming(table);
         LOGGER.info("Rebuilt " + noteCount + " notes, " + pageBreakCount + " page breaks from transcript with gap " + gapMs + " ms.");
-//        logRebuiltRows(rebuiltRows);
         return new TranscriptRebuildResult(noteCount, pageBreakCount, gapMs);
     }
 
@@ -76,49 +77,6 @@ public class TranscriptNoteRebuildService {
                     transcriptionResult.getWords()));
         }
         return segments;
-    }
-
-    private List<Integer> collectOriginalNoteHeights(YassTable table) {
-        List<Integer> heights = new ArrayList<>();
-        for (int rowIndex = 0; rowIndex < table.getRowCount(); rowIndex++) {
-            YassRow row = table.getRowAt(rowIndex);
-            if (row != null && row.isNote()) {
-                heights.add(row.getHeightInt());
-            }
-        }
-        return heights;
-    }
-
-    private void applyPitchContour(YassTable table, List<Integer> originalHeights) {
-        if (originalHeights == null || originalHeights.isEmpty()) {
-            return;
-        }
-        List<YassRow> rebuiltNotes = new ArrayList<>();
-        for (int rowIndex = 0; rowIndex < table.getRowCount(); rowIndex++) {
-            YassRow row = table.getRowAt(rowIndex);
-            if (row != null && row.isNote()) {
-                rebuiltNotes.add(row);
-            }
-        }
-        if (rebuiltNotes.isEmpty()) {
-            return;
-        }
-        if (originalHeights.size() == 1) {
-            int height = originalHeights.getFirst();
-            for (YassRow row : rebuiltNotes) {
-                row.setHeight(height);
-            }
-            return;
-        }
-        int rebuiltCount = rebuiltNotes.size();
-        int originalCount = originalHeights.size();
-        for (int index = 0; index < rebuiltCount; index++) {
-            int sourceIndex = rebuiltCount == 1
-                    ? originalCount / 2
-                    : (int) Math.round(index * (originalCount - 1d) / (rebuiltCount - 1d));
-            sourceIndex = Math.max(0, Math.min(originalCount - 1, sourceIndex));
-            rebuiltNotes.get(index).setHeight(originalHeights.get(sourceIndex));
-        }
     }
 
     private List<String> createRows(List<OpenAiTranscriptSegment> segments,
@@ -178,27 +136,6 @@ public class TranscriptNoteRebuildService {
         }
 
         return rows;
-    }
-
-    private String buildRebuiltTableText(YassTable table, List<String> rebuiltRows, int gapMs) {
-        String[] lines = table.getPlainText().split("\\R");
-        StringBuilder builder = new StringBuilder();
-        for (String line : lines) {
-            YassRow row = new YassRow(line);
-            if (row.isNote() || row.isPageBreak() || row.isEnd()) {
-                break;
-            }
-            if (row.isGap()) {
-                builder.append("#GAP:").append(gapMs).append('\n');
-            } else {
-                builder.append(line).append('\n');
-            }
-        }
-        for (String rebuiltRow : rebuiltRows) {
-            builder.append(rebuiltRow).append('\n');
-        }
-        builder.append('E').append('\n');
-        return builder.toString();
     }
 
     private String createNoteRow(int beat, int length, String text) {
@@ -299,14 +236,6 @@ public class TranscriptNoteRebuildService {
             if (row != null && (row.isNote() || row.isPageBreak())) {
                 sb.append("  row[").append(i).append("] ").append(row.toString()).append('\n');
             }
-        }
-        LOGGER.info(sb.toString());
-    }
-
-    private void logRebuiltRows(List<String> rows) {
-        StringBuilder sb = new StringBuilder("Rebuilt rows:\n");
-        for (String row : rows) {
-            sb.append("  ").append(row).append('\n');
         }
         LOGGER.info(sb.toString());
     }

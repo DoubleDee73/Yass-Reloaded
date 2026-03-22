@@ -54,7 +54,9 @@ import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
+import javax.swing.UIManager;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
@@ -404,6 +406,36 @@ public class OptionsPanel extends JPanel {
         right.add(DialogTools.createTextfield(label, labelWidth, getProperty(key), new MyDocumentListener(key), key));
     }
 
+    public void addApiKey(String label, String key) {
+        JPanel row = new JPanel();
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+
+        JLabel lab = new JLabel(label);
+        lab.setVerticalAlignment(JLabel.TOP);
+        lab.setHorizontalAlignment(JLabel.LEFT);
+        lab.setPreferredSize(new Dimension(labelWidth, 60));
+        lab.setMaximumSize(new Dimension(labelWidth, 60));
+        lab.setAlignmentY(Component.TOP_ALIGNMENT);
+
+        JTextArea textArea = new JTextArea(getProperty(key), 3, 0);
+        textArea.setName(key);
+        textArea.setLineWrap(true);
+        textArea.setWrapStyleWord(false);
+        textArea.setMinimumSize(new Dimension(150, 60));
+        textArea.getDocument().addDocumentListener(new MyDocumentListener(key));
+
+        JScrollPane scroll = new JScrollPane(textArea);
+        scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
+        scroll.setBorder(UIManager.getBorder("TextField.border"));
+        scroll.setMinimumSize(new Dimension(150, 60));
+        scroll.setAlignmentY(Component.TOP_ALIGNMENT);
+
+        row.add(lab);
+        row.add(scroll);
+        right.add(row);
+    }
+
     /**
      * Adds a feature to the Button attribute of the OptionsPanel object
      *
@@ -544,6 +576,12 @@ public class OptionsPanel extends JPanel {
         //lab.setMaximumSize(new Dimension(200, 20));
 
         String ch = getProperty(choices_key);
+        if (ch == null) {
+            ch = prop.getProperty(choices_key);
+        }
+        if (ch == null) {
+            ch = choices_labels;
+        }
         StringTokenizer st = new StringTokenizer(ch, "|");
         StringTokenizer st2 = new StringTokenizer(choices_labels, "|");
         Vector<String> labels = new Vector<>();
@@ -584,12 +622,14 @@ public class OptionsPanel extends JPanel {
             labels.add(keyVal.getLabel());
         }
         JComboBox<String> choiceBox = new JComboBox<>(labels);
+        choiceBox.setMaximumSize(new Dimension(200, 25));
         String key = getProperty(select_key);
         int i = keys.indexOf(key);
         choiceBox.setSelectedIndex(i);
         choiceBox.addActionListener(new ChoiceListener(keys, select_key));
         row.add(lab);
         row.add(choiceBox);
+        row.add(Box.createHorizontalGlue());
         lab.setAlignmentY(Component.TOP_ALIGNMENT);
         choiceBox.setAlignmentY(Component.TOP_ALIGNMENT);
         right.add(row);

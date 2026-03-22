@@ -243,7 +243,7 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
 
         txt = new JEditorPane();
         add(scroll = new JScrollPane(txt));
-        scroll.setBounds(700, 10, 300, 400);
+        scroll.setBounds(0, 0, 0, 0);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
         txt.setOpaque(false);
