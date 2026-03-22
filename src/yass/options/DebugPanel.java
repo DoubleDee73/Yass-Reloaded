@@ -34,6 +34,7 @@ public class DebugPanel extends OptionsPanel {
      */
     public void addRows() {
         addSeparator(I18.get("options_debug_editor"));
+        addChoice("Log level", "Severe|Warning|Info|Config|Fine|Finer|Finest", "log-levels", "log-level");
         addBoolean(I18.get("options_debug_memory_title"), "debug-memory", I18.get("options_debug_memory"));
         addBoolean(I18.get("options_debug_accuracy_title"), "debug-waveform", I18.get("options_debug_waveform"));
         addSeparator(I18.get("options_debug_player"));

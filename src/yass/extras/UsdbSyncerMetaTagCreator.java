@@ -88,7 +88,27 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
 
     private Map<String, String> prefilledTags = new HashMap<>();
 
-    private static List<String> SYNCER_TAGS = List.of("v", "a", "co", "bg", "preview", "medley", "tags", "p1");
+    private static List<String> SYNCER_TAGS = List.of("v", "a", "co", "bg", "preview", "medley", "tags", "p1", "p2");
+    static final class RestoreState {
+        final String video;
+        final String commentTag;
+
+        RestoreState(String video, String commentTag) {
+            this.video = video;
+            this.commentTag = commentTag;
+        }
+    }
+
+    static final class SaveState {
+        final String video;
+        final String commentTag;
+
+        SaveState(String video, String commentTag) {
+            this.video = video;
+            this.commentTag = commentTag;
+        }
+    }
+
 
     public UsdbSyncerMetaTagCreator(YassActions a) {
         actions = a;
@@ -129,42 +149,63 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     }
 
     private void checkExistingUsdbSyncerTags() {
-        if (StringUtils.isEmpty(song.getVideo())) {
+        String videoLine = StringUtils.trimToEmpty(song.getVideo());
+        String commentTag = StringUtils.trimToEmpty(song.getCommentTag());
+        if (StringUtils.isEmpty(videoLine) && StringUtils.isEmpty(commentTag)) {
             return;
         }
-        String videoLine = song.getVideo();
-        String commentTag = song.getCommentTag();
-        if (SYNCER_TAGS.stream().noneMatch(tag -> videoLine.startsWith(tag + "=")) && 
-                StringUtils.isEmpty(commentTag)) {
+
+        if (StringUtils.isNotEmpty(videoLine) && isSyncerTagLine(videoLine)) {
+            applyCommentPrefills(videoLine);
+        }
+
+        if (StringUtils.isEmpty(commentTag)) {
             return;
         }
-        if (StringUtils.isNotEmpty(commentTag)) {
-            if (commentTag.startsWith("#" + UltrastarHeaderTag.VIDEO.getTagName())) {
-                int ok = JOptionPane.showConfirmDialog(this, I18.get("usdb_syncer_restore_desc"),
-                                                       I18.get("usdb_syncer_restore_title"),
-                                                       JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
-                if (ok == JOptionPane.YES_OPTION) {
-                    String video = song.getCommentTag().substring(UltrastarHeaderTag.VIDEO.getTagName().length() + 1);
-                    String tempComment;
-                    if (video.contains("|")) {
-                        tempComment = video.substring(video.indexOf("|") + 1);
-                        video = video.substring(0, video.indexOf("|"));
-                    } else {
-                        tempComment = "";
-                    }
-                    song.setCommentTag(tempComment);
-                    song.setVideo(video);
-                    song.storeFile(song.getDirFilename());
-                    JOptionPane.showConfirmDialog(this, I18.get("usdb_syncer_restored"),
-                                                  I18.get("usdb_syncer_restore_title"),
-                                                  JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE);
-                } else if (ok == JOptionPane.CANCEL_OPTION) {
-                    dispose();
-                }
-            } else if (commentTag.startsWith("v=")) {
-                prefilledTags.put("v", commentTag.substring(2));
+
+        if (commentTag.startsWith("#" + UltrastarHeaderTag.VIDEO.getTagName())) {
+            int ok = JOptionPane.showConfirmDialog(this, I18.get("usdb_syncer_restore_desc"),
+                                                   I18.get("usdb_syncer_restore_title"),
+                                                   JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+            if (ok == JOptionPane.YES_OPTION) {
+                RestoreState restoredState = buildRestoreState(song.getVideo(), song.getCommentTag());
+                song.setCommentTag(restoredState.commentTag);
+                song.setVideo(restoredState.video);
+                song.storeFile(song.getDirFilename());
+                JOptionPane.showConfirmDialog(this, I18.get("usdb_syncer_restored"),
+                                              I18.get("usdb_syncer_restore_title"),
+                                              JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE);
+            } else if (ok == JOptionPane.CANCEL_OPTION) {
+                dispose();
+                return;
+            }
+            return;
+        }
+
+        applyCommentPrefills(commentTag);
+    }
+
+    private void applyCommentPrefills(String commentTag) {
+        if (StringUtils.isBlank(commentTag)) {
+            return;
+        }
+        for (String part : commentTag.split(",")) {
+            applyPrefillTag(part, false);
+        }
+    }
+
+    private String extractCommentValue(String commentTag, String key) {
+        if (StringUtils.isBlank(commentTag) || StringUtils.isBlank(key)) {
+            return null;
+        }
+        String prefix = key + "=";
+        for (String part : commentTag.split(",")) {
+            String trimmed = StringUtils.trimToEmpty(part);
+            if (trimmed.startsWith(prefix)) {
+                return StringUtils.trimToNull(trimmed.substring(prefix.length()));
             }
         }
+        return null;
     }
 
     private void initPrefilledMap() {
@@ -174,27 +215,50 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         }
         String[] tags = loader.getMetaFile().getMetaTags().split(",");
         for (String tag : tags) {
-            String[] keyValue = tag.split("=");
-            if (keyValue.length != 2) {
-                continue;
-            }
-            String[] values;
-            if (!keyValue[1].startsWith("-")) {
-                values = keyValue[1].split("-");
-            } else {
-                values = new String[0];
-            }
-            if (values.length == 2) {
-                prefilledTags.put(keyValue[0] + "-width", values[0]);
-                prefilledTags.put(keyValue[0] + "-height", values[1]);
-            } else if (values.length == 4) {
-                prefilledTags.put(keyValue[0] + "-left", values[0]);
-                prefilledTags.put(keyValue[0] + "-top", values[1]);
-                prefilledTags.put(keyValue[0] + "-width", values[2]);
-                prefilledTags.put(keyValue[0] + "-height", values[3]);
-            } else {
-                prefilledTags.put(keyValue[0], keyValue[1]);
-            }
+            applyPrefillTag(tag, true);
+        }
+    }
+
+    private void applyPrefillTag(String tag, boolean onlyIfAbsent) {
+        if (StringUtils.isBlank(tag)) {
+            return;
+        }
+        String[] keyValue = tag.split("=", 2);
+        if (keyValue.length != 2) {
+            return;
+        }
+        String key = StringUtils.trimToEmpty(keyValue[0]);
+        String value = StringUtils.trimToEmpty(keyValue[1]);
+        if (StringUtils.isBlank(key) || StringUtils.equalsIgnoreCase(key, "key")) {
+            return;
+        }
+        String[] values = !value.startsWith("-") ? value.split("-") : new String[0];
+        if (values.length == 2) {
+            putPrefilledValue(key + "-width", values[0], onlyIfAbsent);
+            putPrefilledValue(key + "-height", values[1], onlyIfAbsent);
+        } else if (values.length == 4) {
+            putPrefilledValue(key + "-left", values[0], onlyIfAbsent);
+            putPrefilledValue(key + "-top", values[1], onlyIfAbsent);
+            putPrefilledValue(key + "-width", values[2], onlyIfAbsent);
+            putPrefilledValue(key + "-height", values[3], onlyIfAbsent);
+        } else {
+            putPrefilledValue(key, value, onlyIfAbsent);
+        }
+        if ("co-rotation".equalsIgnoreCase(key)) {
+            putPrefilledValue("co-rotate", value, onlyIfAbsent);
+        } else if ("co-rotate".equalsIgnoreCase(key)) {
+            putPrefilledValue("co-rotation", value, onlyIfAbsent);
+        }
+    }
+
+    private void putPrefilledValue(String key, String value, boolean onlyIfAbsent) {
+        if (StringUtils.isBlank(key) || value == null) {
+            return;
+        }
+        if (onlyIfAbsent) {
+            prefilledTags.putIfAbsent(key, value);
+        } else {
+            prefilledTags.put(key, value);
         }
     }
 
@@ -355,17 +419,22 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     }
 
     private String determineImageLink(String url) {
+        String trimmedUrl = StringUtils.trimToEmpty(url);
+        String youTubeThumbnailUrl = resolveYouTubeThumbnailUrl(trimmedUrl);
+        if (youTubeThumbnailUrl != null) {
+            return youTubeThumbnailUrl;
+        }
         String imageUrl;
-        int fanart = url.toLowerCase().indexOf("fanart.tv/fanart/");
+        int fanart = trimmedUrl.toLowerCase().indexOf("fanart.tv/fanart/");
         if (fanart >= 0) {
-            imageUrl = url.substring(fanart + 17);
+            imageUrl = trimmedUrl.substring(fanart + 17);
         } else {
             imageUrl = null;
         }
         if (imageUrl != null) {
             return imageUrl;
         }
-        return url;
+        return trimmedUrl;
     }
 
     private String determineVideoLink(String url) {
@@ -386,6 +455,35 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
 
     private boolean isYouTube(String text) {
         return text.contains("youtube.com/") || text.contains("youtu.be/") || text.startsWith("v=");
+    }
+
+    private String extractYouTubeId(String value) {
+        String trimmed = StringUtils.trimToEmpty(value);
+        if (trimmed.matches("[A-Za-z0-9_-]{11}")) {
+            return trimmed;
+        }
+        if (trimmed.startsWith("v=") && trimmed.length() > 2) {
+            String candidate = trimmed.substring(2);
+            if (candidate.matches("[A-Za-z0-9_-]{11}")) {
+                return candidate;
+            }
+        }
+        if (isYouTube(trimmed.toLowerCase(Locale.ROOT))) {
+            return extractYoutubeVideoIdFromUrl(trimmed);
+        }
+        return null;
+    }
+
+    private String resolveYouTubeThumbnailUrl(String value) {
+        String youTubeId = extractYouTubeId(value);
+        if (StringUtils.isBlank(youTubeId)) {
+            return null;
+        }
+        String thumbnailUrl = "https://i.ytimg.com/vi/" + youTubeId + "/maxresdefault.jpg";
+        if (YassUtils.isUrlReachable(thumbnailUrl)) {
+            return thumbnailUrl;
+        }
+        return null;
     }
 
     private String extractYoutubeVideoIdFromUrl(String url) {
@@ -557,20 +655,30 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         downloadButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                String coUrl = coverUrl.getText();
+                String coUrl = StringUtils.trimToEmpty(coverUrl.getText());
+                if (StringUtils.isNotEmpty(coUrl) && !coUrl.toLowerCase(Locale.ROOT).startsWith("http")) {
+                    String resolvedCoverUrl = resolveYouTubeThumbnailUrl(coUrl);
+                    if (resolvedCoverUrl != null) {
+                        coUrl = resolvedCoverUrl;
+                        coverUrl.setText(coUrl);
+                    }
+                }
                 if (StringUtils.isNotEmpty(coUrl) && !YassUtils.isUrlReachable(coUrl)) {
                     JOptionPane.showMessageDialog(null, I18.get("url_not_reachable"));
                     return;
                 }
-                if (StringUtils.isEmpty(coUrl) && isYouTube(videoUrl.getText().toLowerCase())) {
-                    coUrl = "https://i.ytimg.com/vi/" + extractYoutubeVideoIdFromUrl(videoUrl.getText()) + 
-                            "/maxresdefault.jpg";
-                    if (!YassUtils.isUrlReachable(coUrl)) {
-                        return;
+                if (StringUtils.isEmpty(coUrl)) {
+                    String resolvedVideoThumbnail = resolveYouTubeThumbnailUrl(videoUrl.getText());
+                    if (resolvedVideoThumbnail != null) {
+                        coUrl = resolvedVideoThumbnail;
+                        coverUrl.setText(coUrl);
                     }
-                    coverUrl.setText(coUrl);
                 }
-                if (coUrl.startsWith("https://i.ytimg.com")) {
+                if (StringUtils.isEmpty(coUrl)) {
+                    return;
+                }
+                if (coUrl.startsWith("https://i.ytimg.com") && coverResize.getValue() != null &&
+                        ((Number) coverResize.getValue()).intValue() == 0) {
                     coverCropHeight.setValue(720);
                     coverCropWidth.setValue(720);
                     coverCropLeft.setValue(280);
@@ -909,18 +1017,184 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     }
 
     private void saveSong(String text) {
-        if (StringUtils.isNotEmpty(song.getVideo())) {
-            String tempComment = song.getCommentTag();
-            StringJoiner newComment = new StringJoiner("|");
-            newComment.add("#" + UltrastarHeaderTag.VIDEO.getTagName() + song.getVideo());
-            if (StringUtils.isNotEmpty(tempComment)) {
-                newComment.add(tempComment);
-            }
-            song.setCommentTag(newComment.toString());
-        }
-        song.setVideo(text);
+        SaveState saveState = buildSaveState(song.getVideo(), song.getCommentTag(), text);
+        song.setCommentTag(saveState.commentTag);
+        song.setVideo(saveState.video);
         song.storeFile(song.getDirFilename());
         dispose();
+    }
+
+    static RestoreState buildRestoreState(String currentVideo, String existingComment) {
+        String restoredVideo = extractPreservedVideo(existingComment);
+        String preservedPayload = extractPreservedCommentPayload(existingComment);
+        String mergedPayload = removeTagKeys(mergeTagLines(currentVideo, preservedPayload), Set.of("p1", "p2"));
+        return new RestoreState(StringUtils.trimToEmpty(restoredVideo), StringUtils.trimToEmpty(mergedPayload));
+    }
+
+    static SaveState buildSaveState(String currentVideo, String existingComment, String newSyncerVideo) {
+        String preservedVideo = extractPreservedVideo(existingComment);
+        String preservedCommentPayload = extractPreservedCommentPayload(existingComment);
+
+        if (StringUtils.isNotEmpty(currentVideo) && !isSyncerTagLineStatic(currentVideo) && StringUtils.isEmpty(preservedVideo)) {
+            preservedVideo = currentVideo;
+        }
+
+        String mergedComment = mergeNonSyncerCommentPayloadStatic(preservedCommentPayload);
+        if (StringUtils.isNotEmpty(preservedVideo)) {
+            mergedComment = "#" + UltrastarHeaderTag.VIDEO.getTagName() + preservedVideo
+                    + (StringUtils.isNotEmpty(mergedComment) ? "|" + mergedComment : StringUtils.EMPTY);
+        }
+
+        return new SaveState(StringUtils.trimToEmpty(newSyncerVideo), StringUtils.trimToEmpty(mergedComment));
+    }
+
+    private static String mergeTagLines(String primary, String secondary) {
+        LinkedHashMap<String, String> merged = new LinkedHashMap<>();
+        applyTagMap(merged, secondary, false);
+        applyTagMap(merged, primary, true);
+        return merged.entrySet().stream()
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(Collectors.joining(","));
+    }
+
+    private static String removeTagKeys(String tagLine, Set<String> keysToRemove) {
+        if (StringUtils.isBlank(tagLine)) {
+            return StringUtils.EMPTY;
+        }
+        LinkedHashMap<String, String> merged = new LinkedHashMap<>();
+        applyTagMap(merged, tagLine, true);
+        for (String key : keysToRemove) {
+            merged.remove(key);
+        }
+        return merged.entrySet().stream()
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(Collectors.joining(","));
+    }
+
+    private static void applyTagMap(Map<String, String> target, String tagLine, boolean overwrite) {
+        if (StringUtils.isBlank(tagLine)) {
+            return;
+        }
+        for (String rawPart : tagLine.split(",")) {
+            String part = StringUtils.trimToEmpty(rawPart);
+            if (StringUtils.isEmpty(part)) {
+                continue;
+            }
+            String[] keyValue = part.split("=", 2);
+            if (keyValue.length != 2) {
+                continue;
+            }
+            String key = StringUtils.trimToEmpty(keyValue[0]);
+            String value = StringUtils.trimToEmpty(keyValue[1]);
+            if (StringUtils.isEmpty(key)) {
+                continue;
+            }
+            if (overwrite || !target.containsKey(key)) {
+                target.put(key, value);
+            }
+        }
+    }
+
+    private boolean isSyncerTagLine(String value) {
+        if (StringUtils.isBlank(value)) {
+            return false;
+        }
+        return isSyncerTagLineStatic(value);
+    }
+
+    static boolean isSyncerTagLineStatic(String value) {
+        if (StringUtils.isBlank(value)) {
+            return false;
+        }
+        return SYNCER_TAGS.stream().anyMatch(tag -> value.startsWith(tag + "="));
+    }
+
+    private static boolean isSyncerCommentKey(String key) {
+        if (StringUtils.isBlank(key)) {
+            return false;
+        }
+        return SYNCER_TAGS.stream().anyMatch(tag -> key.equals(tag) || key.startsWith(tag + "-"));
+    }
+
+    static String extractPreservedVideo(String commentTag) {
+        if (StringUtils.isBlank(commentTag) || !commentTag.startsWith("#" + UltrastarHeaderTag.VIDEO.getTagName())) {
+            return null;
+        }
+        String raw = commentTag.substring(UltrastarHeaderTag.VIDEO.getTagName().length() + 1);
+        if (raw.contains("|")) {
+            raw = raw.substring(0, raw.indexOf('|'));
+        } else {
+            int commaBeforeTag = findLegacyVideoPayloadSeparator(raw);
+            if (commaBeforeTag >= 0) {
+                raw = raw.substring(0, commaBeforeTag);
+            }
+        }
+        return StringUtils.trimToNull(raw);
+    }
+
+    static String extractPreservedCommentPayload(String commentTag) {
+        if (StringUtils.isBlank(commentTag)) {
+            return StringUtils.EMPTY;
+        }
+        if (!commentTag.startsWith("#" + UltrastarHeaderTag.VIDEO.getTagName())) {
+            return commentTag;
+        }
+        int separator = commentTag.indexOf('|');
+        if (separator >= 0) {
+            if (separator + 1 >= commentTag.length()) {
+                return StringUtils.EMPTY;
+            }
+            return StringUtils.trimToEmpty(commentTag.substring(separator + 1));
+        }
+        String raw = commentTag.substring(UltrastarHeaderTag.VIDEO.getTagName().length() + 1);
+        int commaBeforeTag = findLegacyVideoPayloadSeparator(raw);
+        if (commaBeforeTag < 0 || commaBeforeTag + 1 >= raw.length()) {
+            return StringUtils.EMPTY;
+        }
+        return StringUtils.trimToEmpty(raw.substring(commaBeforeTag + 1));
+    }
+
+    private static int findLegacyVideoPayloadSeparator(String raw) {
+        if (StringUtils.isBlank(raw)) {
+            return -1;
+        }
+        for (String tag : SYNCER_TAGS) {
+            int idx = raw.indexOf("," + tag + "=");
+            if (idx >= 0) {
+                return idx;
+            }
+        }
+        int keyIdx = raw.indexOf(",key=");
+        if (keyIdx >= 0) {
+            return keyIdx;
+        }
+        return -1;
+    }
+
+    static String mergeNonSyncerCommentPayloadStatic(String commentPayload) {
+        if (StringUtils.isBlank(commentPayload)) {
+            return StringUtils.EMPTY;
+        }
+        List<String> mergedParts = new ArrayList<>();
+        Set<String> seenKeys = new LinkedHashSet<>();
+        for (String rawPart : commentPayload.split(",")) {
+            String part = StringUtils.trimToEmpty(rawPart);
+            if (StringUtils.isEmpty(part)) {
+                continue;
+            }
+            String key = part;
+            int equals = part.indexOf('=');
+            if (equals >= 0) {
+                key = part.substring(0, equals).trim();
+            }
+            if (isSyncerCommentKey(key)) {
+                continue;
+            }
+            if (seenKeys.add(key)) {
+                mergedParts.add(part);
+            }
+        }
+        return String.join(",", mergedParts);
     }
 
     private JSpinner createResizeSpinner(String key) {

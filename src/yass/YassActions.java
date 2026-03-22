@@ -19,136 +19,15 @@
 
 package yass;
 
-import java.awt.AWTEvent;
-import java.awt.AWTKeyStroke;
-import java.awt.BorderLayout;
-import java.awt.BufferCapabilities;
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.Dimension;
-import java.awt.EventQueue;
-import java.awt.FileDialog;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.Frame;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.GraphicsConfiguration;
-import java.awt.GraphicsDevice;
-import java.awt.GraphicsEnvironment;
-import java.awt.GridLayout;
-import java.awt.KeyboardFocusManager;
-import java.awt.Point;
-import java.awt.Rectangle;
-import java.awt.RenderingHints;
-import java.awt.Toolkit;
-import java.awt.Window;
-import java.awt.dnd.DnDConstants;
-import java.awt.dnd.DropTargetDragEvent;
-import java.awt.dnd.DropTargetDropEvent;
-import java.awt.dnd.DropTargetEvent;
-import java.awt.dnd.DropTargetListener;
-import java.awt.event.AWTEventListener;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.awt.event.FocusEvent;
-import java.awt.event.FocusListener;
-import java.awt.event.InputEvent;
-import java.awt.event.ItemEvent;
-import java.awt.event.ItemListener;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.awt.event.MouseMotionAdapter;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
-import java.awt.im.InputContext;
-import java.awt.image.BufferedImage;
-import java.beans.PropertyChangeListener;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.lang.reflect.Method;
-import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.Hashtable;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.StringTokenizer;
-import java.util.Vector;
-import java.util.concurrent.CancellationException;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
-
-import javax.swing.AbstractAction;
-import javax.swing.Action;
-import javax.swing.ActionMap;
-import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.ButtonGroup;
-import javax.swing.ImageIcon;
-import javax.swing.InputMap;
-import javax.swing.JButton;
-import javax.swing.JCheckBox;
-import javax.swing.JCheckBoxMenuItem;
-import javax.swing.JComboBox;
-import javax.swing.JComponent;
-import javax.swing.JDialog;
-import javax.swing.JEditorPane;
-import javax.swing.JFileChooser;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JList;
-import javax.swing.JMenu;
-import javax.swing.JMenuBar;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JProgressBar;
-import javax.swing.JRadioButtonMenuItem;
-import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
-import javax.swing.JTextArea;
-import javax.swing.JTextField;
-import javax.swing.JTextPane;
-import javax.swing.JToggleButton;
-import javax.swing.JToolBar;
-import javax.swing.KeyStroke;
-import javax.swing.ListCellRenderer;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
-import javax.swing.SwingWorker;
-import javax.swing.UIManager;
-import javax.swing.WindowConstants;
-import javax.swing.event.HyperlinkEvent;
-import javax.swing.filechooser.FileNameExtensionFilter;
-import javax.swing.plaf.basic.BasicComboBoxRenderer;
-import javax.swing.text.html.HTMLDocument;
-
+import com.nexes.wizard.Wizard;
+import lombok.Getter;
+import lombok.Setter;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
-
-import com.nexes.wizard.Wizard;
-
-import lombok.Getter;
-import lombok.Setter;
-import yass.alignment.LyricsAlignmentResult;
-import yass.alignment.LyricsAlignmentService;
-import yass.alignment.LyricsAlignmentTokenizer;
-import yass.alignment.TranscriptNoteRebuildService;
-import yass.alignment.TranscriptRebuildResult;
+import yass.alignment.*;
 import yass.analysis.PitchDetector;
 import yass.autocorrect.YassAutoCorrect;
 import yass.extras.UsdbSyncerMetaTagCreator;
@@ -161,8 +40,6 @@ import yass.integration.separation.mvsep.MvsepAlgorithmInfo;
 import yass.integration.separation.mvsep.MvsepSeparationService;
 import yass.integration.separation.mvsep.MvsepStartDialog;
 import yass.integration.transcription.TranscriptionEngine;
-import yass.integration.transcription.openai.OpenAiTranscriptSegment;
-import yass.integration.transcription.openai.OpenAiTranscriptWord;
 import yass.integration.transcription.openai.OpenAiTranscriptionRequest;
 import yass.integration.transcription.openai.OpenAiTranscriptionResult;
 import yass.integration.transcription.openai.OpenAiTranscriptionService;
@@ -174,8 +51,35 @@ import yass.musicbrainz.MusicBrainz;
 import yass.musicbrainz.MusicBrainzInfo;
 import yass.renderer.YassSession;
 import yass.video.YassVideoDialog;
+import yass.wizard.ClipboardLyricsDiffDialog;
 import yass.wizard.CreateSongWizard;
 import yass.wizard.WizardTranscriptionState;
+
+import javax.swing.*;
+import javax.swing.event.HyperlinkEvent;
+import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.plaf.basic.BasicComboBoxRenderer;
+import javax.swing.text.html.HTMLDocument;
+import java.awt.*;
+import java.awt.dnd.*;
+import java.awt.event.*;
+import java.awt.im.InputContext;
+import java.awt.image.BufferedImage;
+import java.beans.PropertyChangeListener;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.lang.reflect.Method;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.text.MessageFormat;
+import java.util.*;
+import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 @Getter
 @Setter
@@ -209,6 +113,11 @@ public class YassActions implements DropTargetListener {
     private JTextPane helpPane = null;
     private int vmark = 0;
     private int recordLength = -1;
+    private String recordingPreviousAudioTag = null;
+    private String recordingPlaybackSource = null;
+    private java.util.List<yass.analysis.PitchDetector.PitchData> recordingSnapPitchData = java.util.Collections.emptyList();
+    private static final long RECORDING_REACTION_OFFSET_MS = 60L;
+    private static final long RECORDING_FADE_TAIL_US = 5_000_000L;
     private Timebase playTimebase = Timebase.NORMAL;
     private long playAllStart = -1;
     private Click[] playAllClicks = null;
@@ -267,6 +176,7 @@ public class YassActions implements DropTargetListener {
     private final TapNoteListener awt = new TapNoteListener();
     private Pair<Integer, Integer> tempSelection;
     private boolean recording = false;
+    private boolean recordingInputFinished = false;
     public static final KeyboardMapping CURRENT_MAPPING = determineMapping();
     private boolean keyPressed = false;
     private int currentEditPage = 0;
@@ -480,7 +390,7 @@ public class YassActions implements DropTargetListener {
             List<yass.analysis.PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
             if (transpose != 0) {
                 pitchData = pitchData.stream()
-                        .map(pd -> new yass.analysis.PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName()))
+                        .map(pd -> new yass.analysis.PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName(), pd.rawFrequency()))
                         .collect(java.util.stream.Collectors.toList());
             }
             table.alignToMelody(rows, pitchData);
@@ -986,7 +896,12 @@ public class YassActions implements DropTargetListener {
                     throw new RuntimeException(ex);
                 }
                 if (audioTag == UltrastarHeaderTag.VOCALS && prop.getBooleanProperty("debug-waveform")) {
-                    mp3.setPitchDataList(PitchDetector.detectPitch(mp3.getTempFile(), prop, mp3.getKey()));
+                    PitchDetector.PitchDetectionResult pitchDetectionResult = PitchDetector.detectPitchWithRaw(mp3.getTempFile(), prop, mp3.getKey());
+                    mp3.setRawPitchDataList(pitchDetectionResult.rawPitchData());
+                    mp3.setLocallyNormalizedPitchDataList(pitchDetectionResult.locallyNormalizedPitchData());
+                    mp3.setViterbiPitchDataList(pitchDetectionResult.viterbiPitchData());
+                    mp3.setTransposedPitchDataList(pitchDetectionResult.transposedPitchData());
+                    mp3.setPitchDataList(pitchDetectionResult.processedPitchData());
                 }
                 activeTable.setSaved(false);
                 updateActions();
@@ -1507,12 +1422,12 @@ public class YassActions implements DropTargetListener {
             sheet.setRecordingNoteIndex(firstNoteToRecord);
 
             tempSelection = new ImmutablePair<>(i, j);
-            Click[] clicks = table.getSelection(i, j, inout, null, false);
-            inout[0] = Math.max(0, inout[0] - 2000000);
-            inout[1] = -1;// inout[1] + 2000000;
-            awt.setLastNoteIndex(j);
-            if (clicks != null) {
-                recordLength = clicks.length;
+              Click[] clicks = table.getSelection(i, j, inout, null, false);
+              inout[0] = Math.max(0, inout[0] - 3000000L);
+              inout[1] = -1;
+              awt.setLastNoteIndex(j);
+              if (clicks != null) {
+                  recordLength = clicks.length;
 
                 String defbase = prop.getProperty("record-timebase");
                 int def = 1;
@@ -1548,11 +1463,26 @@ public class YassActions implements DropTargetListener {
                 // MessageFormat.format(I18.get("edit_record_msg"), // recordLength), I18.get("edit_record_title"),
                 // JOptionPane.OK_CANCEL_OPTION);
 
-                startRecording();
-                mp3.playSelection(inout[0], inout[1], null, timebase);
-            }
-        }
-    };
+                  long selectionEndUs = inout[1];
+                  long playbackOutUs = -1L;
+                  int fadeOutMs = 0;
+                  long songDurationUs = mp3.getDuration();
+                  if (selectionEndUs > 0 && songDurationUs > selectionEndUs) {
+                      long remainingUs = songDurationUs - selectionEndUs;
+                      if (remainingUs > RECORDING_FADE_TAIL_US) {
+                          playbackOutUs = selectionEndUs + RECORDING_FADE_TAIL_US;
+                          fadeOutMs = (int) (RECORDING_FADE_TAIL_US / 1000L);
+                      } else {
+                          playbackOutUs = songDurationUs;
+                      }
+                  }
+
+                  prepareRecordingPlaybackSource();
+                  startRecording();
+                  mp3.playSelection(recordingPlaybackSource, inout[0], playbackOutUs, null, timebase, fadeOutMs);
+              }
+          }
+      };
 
     private final Action setPlayTimebase = new AbstractAction(I18.get("edit_speed")) {
         public void actionPerformed(ActionEvent e) {
@@ -1604,6 +1534,7 @@ public class YassActions implements DropTargetListener {
             }
 
             table.clearSelection();
+            prepareRecordingPlaybackSource();
             startRecording();
             mp3.playAll(null);
         }
@@ -1719,7 +1650,7 @@ public class YassActions implements DropTargetListener {
                 List<yass.analysis.PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
                 if (transpose != 0) {
                     pitchData = pitchData.stream()
-                            .map(pd -> new yass.analysis.PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName()))
+                            .map(pd -> new yass.analysis.PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName(), pd.rawFrequency()))
                             .collect(java.util.stream.Collectors.toList());
                 }
                 table.splitRowsByPitch(pitchData);
@@ -2102,7 +2033,7 @@ public class YassActions implements DropTargetListener {
     private final Action musicalKey = new AbstractAction(I18.get("musical.key.label")) {
         public void actionPerformed(ActionEvent e) {
             interruptPlay();
-            MusicalKey musicalKeyDialog = new MusicalKey(table.getActions());
+            MusicalKey musicalKeyDialog = new MusicalKey(getFrame(tab), table.getActions());
             musicalKeyDialog.setUndecorated(true);
             musicalKeyDialog.pack();
             int x;
@@ -2243,6 +2174,20 @@ public class YassActions implements DropTargetListener {
     private final Action saveDuetAs = new AbstractAction(I18.get("edit_tracks_save_duet")) {
         public void actionPerformed(ActionEvent e) {
             saveDuetAs();
+        }
+    };
+    private final Action createDuet = new AbstractAction(I18.get("edit_tracks_create_duet")) {
+        public void actionPerformed(ActionEvent e) {
+            createDuet();
+        }
+    };
+    private final Action createDuetFromLibrary = new AbstractAction(I18.get("edit_tracks_create_duet")) {
+        public void actionPerformed(ActionEvent e) {
+            Vector<String> fn = songList.getSelectedFiles();
+            if (fn == null || fn.size() != 1) {
+                return;
+            }
+            createDuetForSongFile(fn.firstElement());
         }
     };
     private final Action renameTrack = new AbstractAction(I18.get("edit_tracks_rename")) {
@@ -2519,7 +2464,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action addEndian = new AbstractAction(I18.get("edit_length_right_inc")) {
         public void actionPerformed(ActionEvent e) {
-            table.shiftRightEndian(+1);
+            table.toggleTilde();
         }
     };
 
@@ -3050,10 +2995,13 @@ public class YassActions implements DropTargetListener {
                 if (isCancelled()) return;
                 try {
                     SeparationResult result = get();
-                    boolean linkedVocals = applySeparatedTrack(result.getVocalsFile(), true);
-                    File preferredInstrumental = result.getPreferredInstrumentalFile(
-                            prop.getProperty("mvsep-instrumental-default"));
-                    boolean linkedInstrumental = applySeparatedTrack(preferredInstrumental, false);
+                    SeparationLinkSelection selection = promptSeparationLinkSelection(result);
+                    if (selection == null) {
+                        return;
+                    }
+                    boolean linkedVocals = applySeparatedTrack(selection.vocalsFile(), true, true);
+                    File preferredInstrumental = selection.instrumentalFile();
+                    boolean linkedInstrumental = applySeparatedTrack(preferredInstrumental, false, true);
                     JOptionPane.showMessageDialog(tab,
                                                   buildSeparationSuccessMessage(result, linkedVocals, linkedInstrumental, preferredInstrumental),
                                                   I18.get("edit_audio_separate_local"),
@@ -3187,9 +3135,25 @@ public class YassActions implements DropTargetListener {
 
                                 String summary;
                                 if (rebuildFromTranscript) {
+                                    OpenAiTranscriptionResult rebuildTranscript = result;
+                                    String currentLyrics = normalizeEditorLyrics(table.getPageStructuredLyrics());
+                                    if (StringUtils.isNotBlank(currentLyrics)) {
+                                        TranscriptTruthRewriteService rewriteService = new TranscriptTruthRewriteService();
+                                        OpenAiTranscriptionResult alignedTranscript = rewriteService.alignToReferenceLines(result, currentLyrics);
+                                        ClipboardLyricsDiffDialog dialog = new ClipboardLyricsDiffDialog(getFrame(tab),
+                                                normalizeEditorLyrics(alignedTranscript.getTranscriptText()),
+                                                currentLyrics);
+                                        ClipboardLyricsDiffDialog.Result diffResult = dialog.showDialog();
+                                        if (diffResult == null) {
+                                            return;
+                                        }
+                                        OpenAiTranscriptionResult structuredTranscript = rewriteService.rewrite(result, normalizeEditorLyrics(diffResult.transcriptText()));
+                                        rebuildTranscript = rewriteService.applyLyricsToStructuredTranscript(structuredTranscript,
+                                                normalizeEditorLyrics(diffResult.clipboardText()));
+                                    }
                                     TranscriptRebuildResult rebuildResult =
-                                            new TranscriptNoteRebuildService().transcript(table, result);
-                                    summary = (useWhisperX ? whisperXService.buildSummary(result) : openAiService.buildSummary(result))
+                                            new TranscriptNoteRebuildService().transcript(table, rebuildTranscript);
+                                    summary = (useWhisperX ? whisperXService.buildSummary(rebuildTranscript) : openAiService.buildSummary(rebuildTranscript))
                                             .replace("</html>", "<br><br>"
                                                     + MessageFormat.format(I18.get("edit_align_transcription_rebuild_summary"),
                                                     rebuildResult.getNoteCount(),
@@ -3357,140 +3321,7 @@ public class YassActions implements DropTargetListener {
 
     private OpenAiTranscriptionResult applyCorrectedLyricsToTranscript(
             OpenAiTranscriptionResult original, String correctedLyrics) {
-        if (StringUtils.isBlank(correctedLyrics) || original.getSegments().isEmpty()) {
-            return original;
-        }
-
-        // Split corrected lyrics into lines — one line per segment
-        String[] correctedLines = correctedLyrics.split("\\r?\\n", -1);
-        List<OpenAiTranscriptSegment> originalSegments = original.getSegments();
-
-        // Pair corrected lines with segments by index; if counts differ, use original
-        if (correctedLines.length != originalSegments.size()) {
-            LOGGER.info("Corrected line count (" + correctedLines.length + ") does not match segment count (" +
-                        originalSegments.size() + "). Using original transcript.");
-            return original;
-        }
-
-        List<OpenAiTranscriptSegment> newSegments = new ArrayList<>();
-        List<OpenAiTranscriptWord> allRemappedWords = new ArrayList<>();
-
-        for (int lineIdx = 0; lineIdx < originalSegments.size(); lineIdx++) {
-            OpenAiTranscriptSegment segment = originalSegments.get(lineIdx);
-            List<OpenAiTranscriptWord> segWords = segment.getWords();
-            String correctedLine = correctedLines[lineIdx].trim();
-
-            // If the line is blank or has no transcript words, keep segment as-is
-            if (StringUtils.isBlank(correctedLine) || segWords.isEmpty()) {
-                newSegments.add(segment);
-                allRemappedWords.addAll(segWords);
-                continue;
-            }
-
-            String[] lineWords = correctedLine.split("\\s+");
-            List<OpenAiTranscriptWord> remappedLineWords;
-
-            if (lineWords.length == segWords.size()) {
-                remappedLineWords = remapExact(lineWords, segWords);
-            } else if (lineWords.length < segWords.size()) {
-                LOGGER.info("Line " + lineIdx + ": joining " + segWords.size() + " transcript words into " + lineWords.length);
-                remappedLineWords = remapByJoining(lineWords, segWords);
-            } else {
-                LOGGER.info("Line " + lineIdx + ": splitting " + segWords.size() + " transcript words into " + lineWords.length);
-                remappedLineWords = remapBySplitting(lineWords, segWords);
-            }
-
-            if (remappedLineWords == null) {
-                // Split span too short — keep this segment's original words unchanged
-                LOGGER.info("Line " + lineIdx + ": cannot remap, keeping original segment words.");
-                newSegments.add(segment);
-                allRemappedWords.addAll(segWords);
-            } else {
-                String newText = remappedLineWords.stream()
-                        .map(OpenAiTranscriptWord::getText).collect(Collectors.joining(" "));
-                newSegments.add(new OpenAiTranscriptSegment(
-                        segment.getStartMs(), segment.getEndMs(), newText, remappedLineWords));
-                allRemappedWords.addAll(remappedLineWords);
-            }
-        }
-
-        return new OpenAiTranscriptionResult(
-                original.getSourceAudioFile(),
-                original.getUploadAudioFile(),
-                original.getSourceTag(),
-                correctedLyrics,
-                allRemappedWords,
-                newSegments,
-                original.getLyricTokens(),
-                original.isFromCache(),
-                original.getCacheFile());
-    }
-
-    /** 1:1 remap — corrected word count equals transcript word count for this line. */
-    private List<OpenAiTranscriptWord> remapExact(String[] correctedWords, List<OpenAiTranscriptWord> segWords) {
-        List<OpenAiTranscriptWord> result = new ArrayList<>(segWords.size());
-        for (int i = 0; i < segWords.size(); i++) {
-            OpenAiTranscriptWord src = segWords.get(i);
-            String corrected = correctedWords[i];
-            result.add(new OpenAiTranscriptWord(corrected, LyricsAlignmentTokenizer.normalizeText(corrected),
-                    src.getStartMs(), src.getEndMs()));
-        }
-        return result;
-    }
-
-    /**
-     * N:1 join — fewer corrected words than transcript words on this line.
-     * Distributes transcript words into corrected-word groups proportionally,
-     * using the first group word's startMs and last group word's endMs.
-     */
-    private List<OpenAiTranscriptWord> remapByJoining(String[] correctedWords, List<OpenAiTranscriptWord> segWords) {
-        int n = segWords.size();
-        int m = correctedWords.length;
-        List<OpenAiTranscriptWord> result = new ArrayList<>(m);
-        for (int corrIdx = 0; corrIdx < m; corrIdx++) {
-            int start = (int) Math.round((double) corrIdx * n / m);
-            int end   = (int) Math.round((double) (corrIdx + 1) * n / m);
-            if (start >= end) end = start + 1;
-            if (end > n) end = n;
-            if (start >= n) return null;
-            int startMs = segWords.get(start).getStartMs();
-            int endMs   = segWords.get(end - 1).getEndMs();
-            String corrected = correctedWords[corrIdx];
-            result.add(new OpenAiTranscriptWord(corrected, LyricsAlignmentTokenizer.normalizeText(corrected),
-                    startMs, endMs));
-        }
-        return result;
-    }
-
-    /**
-     * 1:N split — more corrected words than transcript words on this line.
-     * Each transcript word's time span is divided evenly among the corrected words mapped to it.
-     * Returns null if any span is too short to split (less than 1ms per corrected word).
-     */
-    private List<OpenAiTranscriptWord> remapBySplitting(String[] correctedWords, List<OpenAiTranscriptWord> segWords) {
-        int n = segWords.size();
-        int m = correctedWords.length;
-        List<OpenAiTranscriptWord> result = new ArrayList<>(m);
-        for (int corrIdx = 0; corrIdx < m; corrIdx++) {
-            int transcriptIdx = (int) Math.floor((double) corrIdx * n / m);
-            if (transcriptIdx >= n) transcriptIdx = n - 1;
-            int firstCorr = (int) Math.floor((double) transcriptIdx * m / n);
-            int lastCorr  = (int) Math.floor((double) (transcriptIdx + 1) * m / n) - 1;
-            int splitCount = lastCorr - firstCorr + 1;
-            OpenAiTranscriptWord src = segWords.get(transcriptIdx);
-            int span = src.getEndMs() - src.getStartMs();
-            if (splitCount > 1 && span < splitCount) {
-                LOGGER.info("Cannot split '" + src.getText() + "' (span " + span + "ms) into " + splitCount + " words.");
-                return null;
-            }
-            int offsetInSlot = corrIdx - firstCorr;
-            int slotStartMs = src.getStartMs() + (int) Math.round((double) span * offsetInSlot / splitCount);
-            int slotEndMs   = src.getStartMs() + (int) Math.round((double) span * (offsetInSlot + 1) / splitCount);
-            String corrected = correctedWords[corrIdx];
-            result.add(new OpenAiTranscriptWord(corrected, LyricsAlignmentTokenizer.normalizeText(corrected),
-                    slotStartMs, slotEndMs));
-        }
-        return result;
+        return new TranscriptTruthRewriteService().rewrite(original, correctedLyrics);
     }
 
     private void copyWizardSeparationFiles(File destinationDir, YassTable createdTable, WizardTranscriptionState state) throws IOException {
@@ -3704,10 +3535,13 @@ public class YassActions implements DropTargetListener {
                         statusDialog.dispose();
                     }
                     trackedSeparationJob = null;
-                    boolean linkedVocals = applySeparatedTrack(result.getVocalsFile(), true);
-                    File preferredInstrumental = result.getPreferredInstrumentalFile(
-                            prop.getProperty("mvsep-instrumental-default"));
-                    boolean linkedInstrumental = applySeparatedTrack(preferredInstrumental, false);
+                    SeparationLinkSelection selection = promptSeparationLinkSelection(result);
+                    if (selection == null) {
+                        return;
+                    }
+                    boolean linkedVocals = applySeparatedTrack(selection.vocalsFile(), true, true);
+                    File preferredInstrumental = selection.instrumentalFile();
+                    boolean linkedInstrumental = applySeparatedTrack(preferredInstrumental, false, true);
                     JOptionPane.showMessageDialog(tab,
                                                   buildSeparationSuccessMessage(result,
                                                                                linkedVocals,
@@ -4003,14 +3837,47 @@ public class YassActions implements DropTargetListener {
 
             public void playerStopped() {
                 if (currentView == VIEW_EDIT) {
+                    if (!isRecording()) {
+                        stopPlaying();
+                        mp3.stopMIDI();
+                        return;
+                    }
+                    Pair<Integer, Integer> completedSelection = tempSelection;
+                    List<yass.analysis.PitchDetector.PitchData> postRecordingPitchData =
+                            UltrastarHeaderTag.VOCALS.toString().equals(recordingPreviousAudioTag)
+                                    ? getRecordingAlignedPitchData()
+                                    : java.util.Collections.emptyList();
+                    LOGGER.info("Recording finish: begin stop pipeline previousTag=" + recordingPreviousAudioTag
+                            + " selection=" + completedSelection);
                     stopPlaying();
                     stopRecording();
+                    LOGGER.info("Recording finish: after stopRecording selectedTag="
+                            + (songHeader == null ? "null" : songHeader.getSelectedAudio()));
                     mp3.stopMIDI();
                     YassTapNotes.evaluateTaps(table, sheet.getTemporaryNotes(), sheet.getTmpPitches(),
                                               mp3.getPlayrate());
-                    if (tempSelection != null) {
-                        table.setRowSelectionInterval(tempSelection.getLeft(), tempSelection.getRight());
+                    clearRecordingArtifacts();
+                    LOGGER.info("Recording finish: after evaluateTaps rows=" + table.getRowCount());
+                    if (completedSelection != null) {
+                        table.setRowSelectionInterval(completedSelection.getLeft(), completedSelection.getRight());
+                        if (!postRecordingPitchData.isEmpty()) {
+                            int[] selectedRows = table.getSelectedRows();
+                            List<YassRow> rows = new ArrayList<>();
+                            for (int rowIndex : selectedRows) {
+                                YassRow row = table.getRowAt(rowIndex);
+                                if (row != null && row.isNote()) {
+                                    rows.add(row);
+                                }
+                            }
+                            table.alignToMelody(rows, postRecordingPitchData);
+                            LOGGER.info("Recording finish: after alignToMelody selectedRows=" + selectedRows.length);
+                            for (int rowIndex : selectedRows) {
+                                table.addRowSelectionInterval(rowIndex, rowIndex);
+                            }
+                            sheet.repaint();
+                        }
                     }
+                    sheet.repaint();
                 } else if (currentView == VIEW_LIBRARY) {
                     if (!soonStarting) {
                         stopPlaySong();
@@ -5056,6 +4923,7 @@ public class YassActions implements DropTargetListener {
         menu.add(exchangeTracks);
         menu.add(saveTrack);
         menu.add(saveTrackAs);
+        menu.add(createDuet);
         menu.add(saveDuetAs);
         menu.add(mergeTracks);
         menu.add(deleteTrack);
@@ -5104,6 +4972,7 @@ public class YassActions implements DropTargetListener {
         menu.addSeparator();
         menu.add(removeRowsWithLyrics);
         menu.add(alignToGrid);
+        menu.add(createDuet);
         menu.addSeparator();
 
         gapSpinner = new TimeSpinner(I18.get("mpop_gap"), 0, 10000);
@@ -5306,6 +5175,7 @@ public class YassActions implements DropTargetListener {
         menu.add(setMedleyStartEnd);
         menu.add(setCalcMedley);
         menu.add(assignAudioFiles);
+        menu.add(createDuetFromLibrary);
         menu.addSeparator();
         menu2 = new JMenu(I18.get("lib_copy"));
         menu2.add(copyLyricsSongInfo);
@@ -6786,6 +6656,7 @@ public class YassActions implements DropTargetListener {
         closeLibrary.setEnabled(b);
         openSongFolder.setEnabled(b);
         removeSong.setEnabled(b);
+        createDuetFromLibrary.setEnabled(b);
         addToPlayList.setEnabled(b);
         removeFromPlayList.setEnabled(b);
         newEdition.setEnabled(b);
@@ -6840,6 +6711,7 @@ public class YassActions implements DropTargetListener {
         exchangeTracks.setEnabled(isDuetTrack);
         mergeTracks.setEnabled(isMoreThanOne);
         saveTrackAs.setEnabled(isOpened);
+        createDuet.setEnabled(isOpened && canCreateDuetCurrentSong());
         saveDuetAs.setEnabled(isDuetTrack);
         deleteTrack.setEnabled(isOpened);
 
@@ -6990,11 +6862,15 @@ public class YassActions implements DropTargetListener {
     }
 
     private boolean applySeparatedTrack(File downloadedFile, boolean vocals) {
+        return applySeparatedTrack(downloadedFile, vocals, false);
+    }
+
+    private boolean applySeparatedTrack(File downloadedFile, boolean vocals, boolean force) {
         if (downloadedFile == null || table == null) {
             return false;
         }
         String currentValue = vocals ? table.getVocals() : table.getInstrumental();
-        if (StringUtils.isNotBlank(currentValue) && new File(table.getDir(), currentValue).isFile()) {
+        if (!force && StringUtils.isNotBlank(currentValue) && new File(table.getDir(), currentValue).isFile()) {
             return false;
         }
 
@@ -7014,6 +6890,62 @@ public class YassActions implements DropTargetListener {
             updateActions();
         }
         return changed;
+    }
+
+    private SeparationLinkSelection promptSeparationLinkSelection(SeparationResult result) {
+        List<File> options = new ArrayList<>(result.getDownloadedFiles());
+        if (options.isEmpty()) {
+            return new SeparationLinkSelection(null, null);
+        }
+
+        JComboBox<Object> vocalsBox = new JComboBox<>();
+        JComboBox<Object> instrumentalBox = new JComboBox<>();
+        vocalsBox.addItem(SelectionOption.NONE);
+        instrumentalBox.addItem(SelectionOption.NONE);
+        for (File file : options) {
+            vocalsBox.addItem(file);
+            instrumentalBox.addItem(file);
+        }
+        vocalsBox.setRenderer(new SeparationFileCellRenderer());
+        instrumentalBox.setRenderer(new SeparationFileCellRenderer());
+        vocalsBox.setSelectedItem(result.getVocalsFile() != null ? result.getVocalsFile() : SelectionOption.NONE);
+        instrumentalBox.setSelectedItem(result.getPreferredInstrumentalFile(prop.getProperty("mvsep-instrumental-default")) != null
+                ? result.getPreferredInstrumentalFile(prop.getProperty("mvsep-instrumental-default"))
+                : SelectionOption.NONE);
+
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(4, 4, 4, 4);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 0;
+        panel.add(new JLabel(I18.get("edit_audio_separate_assign_hint")), gbc);
+        gbc.gridy++;
+        panel.add(new JLabel("#INSTRUMENTAL"), gbc);
+        gbc.gridy++;
+        panel.add(new JLabel("#VOCALS"), gbc);
+        gbc.gridx = 1;
+        gbc.gridy = 1;
+        gbc.weightx = 1;
+        panel.add(instrumentalBox, gbc);
+        gbc.gridy = 2;
+        panel.add(vocalsBox, gbc);
+
+        int choice = JOptionPane.showConfirmDialog(tab,
+                panel,
+                I18.get("edit_audio_separate_assign_title"),
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE);
+        if (choice != JOptionPane.OK_OPTION) {
+            return null;
+        }
+        return new SeparationLinkSelection(asSelectedFile(vocalsBox.getSelectedItem()), asSelectedFile(instrumentalBox.getSelectedItem()));
+    }
+
+    private File asSelectedFile(Object value) {
+        return value instanceof File ? (File) value : null;
     }
 
     private String buildSeparationSuccessMessage(SeparationResult result,
@@ -7040,6 +6972,26 @@ public class YassActions implements DropTargetListener {
             }
         }
         return message.toString();
+    }
+
+    private record SeparationLinkSelection(File vocalsFile, File instrumentalFile) {
+    }
+
+    private enum SelectionOption {
+        NONE
+    }
+
+    private static class SeparationFileCellRenderer extends DefaultListCellRenderer {
+        @Override
+        public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+            if (value == SelectionOption.NONE) {
+                setText("<" + I18.get("edit_audio_separate_assign_none") + ">");
+            } else if (value instanceof File file) {
+                setText(file.getName());
+            }
+            return this;
+        }
     }
 
     public void openSongFolder() {
@@ -7600,6 +7552,93 @@ public class YassActions implements DropTargetListener {
         mp3.playSelection(pos * 1000, end * 1000, null, playTimebase);
     }
 
+    private void prepareRecordingPlaybackSource() {
+        recordingPreviousAudioTag = songHeader != null ? songHeader.getSelectedAudio() : null;
+        recordingPlaybackSource = null;
+        recordingSnapPitchData = java.util.Collections.emptyList();
+        LOGGER.info("Recording prepare source previousTag=" + recordingPreviousAudioTag
+                + " audioTagPresent=" + (table != null && StringUtils.isNotBlank(table.getAudio()))
+                + " timebase=" + playTimebase);
+        if (songHeader == null || table == null) {
+            return;
+        }
+        boolean vocalsWithPitches = UltrastarHeaderTag.VOCALS.toString().equals(recordingPreviousAudioTag)
+                && mp3.getPitchDataList() != null
+                && !mp3.getPitchDataList().isEmpty();
+        if (vocalsWithPitches) {
+            recordingSnapPitchData = new java.util.ArrayList<>(mp3.getPitchDataList());
+            sheet.setRecordingOverlayPitchData(recordingSnapPitchData);
+        } else {
+            sheet.clearRecordingOverlayPitchData();
+        }
+
+        String playbackTag = recordingPreviousAudioTag;
+        String playbackFile;
+        if (UltrastarHeaderTag.VOCALS.toString().equals(recordingPreviousAudioTag)
+                && StringUtils.isNotBlank(table.getAudio())) {
+            playbackTag = UltrastarHeaderTag.AUDIO.toString();
+            playbackFile = table.getAudio();
+            if (StringUtils.equals(playbackFile, table.getVocals()) && StringUtils.isNotBlank(table.getMP3())) {
+                playbackFile = table.getMP3();
+            }
+        } else {
+            playbackFile = table.getSelectedAudio(playbackTag);
+        }
+        if (StringUtils.isBlank(playbackFile) && StringUtils.isNotBlank(table.getAudio())) {
+            playbackFile = table.getAudio();
+        }
+        if (StringUtils.isBlank(playbackFile)) {
+            playbackFile = table.getMP3();
+        }
+        if (StringUtils.isNotBlank(playbackFile)) {
+            recordingPlaybackSource = table.getDir() + File.separator + playbackFile;
+            LOGGER.info("Recording prepare source forcing player audio to " + recordingPlaybackSource);
+            openMp3(recordingPlaybackSource);
+        }
+        LOGGER.info("Recording prepare source selectedTagNow="
+                + (songHeader.getSelectedAudio() == null ? "null" : songHeader.getSelectedAudio()));
+    }
+
+    private void restoreRecordingPlaybackSource() {
+        if (songHeader == null) {
+            recordingPreviousAudioTag = null;
+            recordingSnapPitchData = java.util.Collections.emptyList();
+            return;
+        }
+        if (StringUtils.isNotBlank(recordingPreviousAudioTag)) {
+            songHeader.setSelectedAudio(recordingPreviousAudioTag);
+        }
+        LOGGER.info("Recording restore source selectedTagNow="
+                + (songHeader.getSelectedAudio() == null ? "null" : songHeader.getSelectedAudio())
+                + " restoredPreviousTag=" + recordingPreviousAudioTag);
+        recordingPreviousAudioTag = null;
+        recordingPlaybackSource = null;
+        recordingSnapPitchData = java.util.Collections.emptyList();
+        sheet.clearRecordingOverlayPitchData();
+    }
+
+    private Integer determineRecordingPitch(KeyEvent keyEvent, int currentNoteIndex) {
+        return playNote(keyEvent);
+    }
+
+    private List<yass.analysis.PitchDetector.PitchData> getRecordingAlignedPitchData() {
+        if (recordingSnapPitchData == null || recordingSnapPitchData.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        int transpose = mp3.getPitchWaveformTranspose();
+        if (transpose == 0) {
+            return recordingSnapPitchData;
+        }
+        return recordingSnapPitchData.stream()
+                .map(pd -> new yass.analysis.PitchDetector.PitchData(pd.time(), pd.pitch() + transpose,
+                        pd.noteName(), pd.rawFrequency()))
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    private long applyRecordingReactionOffset(long positionMs) {
+        return Math.max(0L, positionMs - RECORDING_REACTION_OFFSET_MS);
+    }
+
     private void startRecording() {
         sheet.getTemporaryNotes().clear();
         sheet.clearTempPitches();
@@ -7607,18 +7646,38 @@ public class YassActions implements DropTargetListener {
             sheet.initNoteMapping(0);
         }
         awt.reset();
+        recordingInputFinished = false;
         setRecording(true);
+        sheet.repaint();
         Toolkit.getDefaultToolkit()
                .addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK |
                        AWTEvent.KEY_EVENT_MASK);
     }
 
+    private void finishRecordingInput() {
+        recordingInputFinished = true;
+        awt.reset();
+        sheet.setRecordingNoteIndex(-1);
+        sheet.repaint();
+    }
+
+    private void clearRecordingArtifacts() {
+        sheet.getTemporaryNotes().clear();
+        sheet.clearTempPitches();
+        sheet.setRecordingNoteIndex(-1);
+        sheet.refreshImage();
+        sheet.repaint();
+    }
+
     private void stopRecording() {
         mp3.interruptMP3();
+        recordingInputFinished = false;
         setRecording(false);
         tempSelection = null;
         sheet.setRecordingNoteIndex(-1); // IMPORTANT: Reset recording mode
+        sheet.repaint();
         Toolkit.getDefaultToolkit().removeAWTEventListener(awt);
+        restoreRecordingPlaybackSource();
     }
 
     public void startPlaying() {
@@ -7992,6 +8051,7 @@ public class YassActions implements DropTargetListener {
         if (table == null || table.getArtist() == null || table.getTitle() == null) {
             return;
         }
+        LOGGER.info("openEditor start reload=" + reload + " song=" + table.getArtist() + " - " + table.getTitle());
 
         File file;
         if (table.getDirMP3() != null) {
@@ -8000,8 +8060,7 @@ public class YassActions implements DropTargetListener {
                 selectAudioFile.actionPerformed(null);
             }
             if (prop.getBooleanProperty("debug-waveform") && StringUtils.isNotEmpty(table.getVocals())) {
-                mp3.openMP3(table.getDir() + File.separator + table.getVocals());
-                songHeader.setAudioToVocals();
+                mp3.openMP3(table.getDirMP3());
             } else {
                 mp3.openMP3(table.getDirMP3());
             }
@@ -8021,6 +8080,7 @@ public class YassActions implements DropTargetListener {
         syncMusicalKeyToComment();
 
         sheet.getSongHeader().initSongHeader(table);
+        logEditorLayoutState("after-initSongHeader");
 
         String vd = table.getVideo();
         if (StringUtils.isEmpty(vd)) {
@@ -8054,9 +8114,11 @@ public class YassActions implements DropTargetListener {
         SwingUtilities.invokeLater(() -> {
             // sheet.init();
             sheet.update();
+            logEditorLayoutState("after-sheet.update");
             sheet.requestFocus();
             setRelative(true);
             clampEditorSplitIfNeeded();
+            logEditorLayoutState("after-clampEditorSplitIfNeeded");
             if (!reload) {
                 YassTable.setZoomMode(YassTable.ZOOM_ONE);
                 table.setMultiSize(1);
@@ -8064,10 +8126,12 @@ public class YassActions implements DropTargetListener {
                 table.firstNote();
                 updatePlayerPosition();
                 sheet.repaint();
+                logEditorLayoutState("after-firstNote");
             }
         });
         lyrics.setTable(table);
         lyrics.repaintLineNumbers();
+        logEditorLayoutState("after-lyrics.setTable");
 
         for (YassTable t : openTables) {
             t.getColumnModel().getColumn(0).setPreferredWidth(10);
@@ -8093,8 +8157,27 @@ public class YassActions implements DropTargetListener {
             songList.addOpened(t);
         }
         sheet.init(initMic());
+        logEditorLayoutState("after-sheet.init");
         sheet.repaint();
         table.initAutoSave();
+    }
+
+    private void logEditorLayoutState(String phase) {
+        try {
+            SongHeader header = sheet != null ? sheet.getSongHeader() : null;
+            JTextField bpmField = header != null ? header.getBpmField() : null;
+            LOGGER.info(String.format("Editor layout %s split=%s sheet=%s lyrics=%s header=%s bpmField=%s divider=%d currentView=%d",
+                    phase,
+                    editorSplit == null ? "null" : (editorSplit.getWidth() + "x" + editorSplit.getHeight()),
+                    sheet == null ? "null" : (sheet.getWidth() + "x" + sheet.getHeight()),
+                    lyrics == null ? "null" : (lyrics.getWidth() + "x" + lyrics.getHeight()),
+                    header == null ? "null" : (header.getWidth() + "x" + header.getHeight()),
+                    bpmField == null ? "null" : (bpmField.getWidth() + "x" + bpmField.getHeight()),
+                    editorSplit == null ? -1 : editorSplit.getDividerLocation(),
+                    currentView));
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO, "Could not log editor layout state for phase " + phase, ex);
+        }
     }
 
     /**
@@ -8119,8 +8202,28 @@ public class YassActions implements DropTargetListener {
         yass.musicalkey.MusicalKeyEnum audioKey = mp3.findKey();
         if (audioKey != yass.musicalkey.MusicalKeyEnum.UNDEFINED) {
             mp3.setKey(audioKey);
-            table.setKeyInComment(audioKey.getRelevantKey());
+            table.setKeyInCommentSilently(audioKey.getRelevantKey());
         }
+    }
+
+    private String normalizeEditorLyrics(String text) {
+        if (text == null) {
+            return StringUtils.EMPTY;
+        }
+        String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
+        normalized = normalized.replaceAll("[\t\u000B\f]+", " ");
+        normalized = normalized.replaceAll("(?m)[ \t]+$", "");
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        for (String rawLine : normalized.split("\n", -1)) {
+            String line = StringUtils.trimToEmpty(rawLine);
+            if (YassUtils.isSongPartLine(line)) {
+                continue;
+            }
+            if (StringUtils.isNotBlank(line)) {
+                lines.add(line);
+            }
+        }
+        return String.join("\n", lines);
     }
 
     private void clampEditorSplitIfNeeded() {
@@ -8431,6 +8534,150 @@ public class YassActions implements DropTargetListener {
             }
             openFiles(filename, false);
         }
+    }
+
+    private boolean canCreateDuetCurrentSong() {
+        return table != null && table.getPlayerCount() <= 1 && table.getDuetTrackCount() <= 1 && table.getDuetTrack() < 1;
+    }
+
+    public boolean canCreateDuetForSongFile(String songFilePath) {
+        if (StringUtils.isBlank(songFilePath)) {
+            return false;
+        }
+        YassTable duetSource = new YassTable();
+        duetSource.init(prop);
+        duetSource.removeAllRows();
+        duetSource.loadFile(songFilePath);
+        return duetSource.getPlayerCount() <= 1 && duetSource.getDuetTrackCount() <= 1 && duetSource.getDuetTrack() < 1;
+    }
+
+    private void createDuet() {
+        createDuetForTable(table);
+    }
+
+    public void createDuetForSongFile(String songFilePath) {
+        if (StringUtils.isBlank(songFilePath)) {
+            return;
+        }
+        YassTable duetSource = new YassTable();
+        duetSource.init(prop);
+        duetSource.removeAllRows();
+        duetSource.loadFile(songFilePath);
+        createDuetForTable(duetSource);
+    }
+
+    private void createDuetForTable(YassTable sourceTable) {
+        if (sourceTable == null) {
+            return;
+        }
+        if (!(sourceTable.getPlayerCount() <= 1 && sourceTable.getDuetTrackCount() <= 1 && sourceTable.getDuetTrack() < 1)) {
+            return;
+        }
+
+        JTextField p1Field = new JTextField();
+        JTextField p2Field = new JTextField();
+        JPanel panel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(4, 6, 4, 6);
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        panel.add(new JLabel(I18.get("edit_tracks_create_duet_p1")), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        panel.add(p1Field, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        gbc.weightx = 0;
+        panel.add(new JLabel(I18.get("edit_tracks_create_duet_p2")), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        panel.add(p2Field, gbc);
+
+        int result = JOptionPane.showConfirmDialog(tab,
+                                                   panel,
+                                                   I18.get("edit_tracks_create_duet_title"),
+                                                   JOptionPane.OK_CANCEL_OPTION,
+                                                   JOptionPane.PLAIN_MESSAGE);
+        if (result != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        String singer1 = StringUtils.trimToEmpty(p1Field.getText());
+        String singer2 = StringUtils.trimToEmpty(p2Field.getText());
+
+        YassTable duetTable = new YassTable();
+        duetTable.init(prop);
+        duetTable.loadTable(sourceTable, false);
+
+        Vector<YassRow> sourceData = new Vector<>();
+        for (YassRow row : sourceTable.getModelData()) {
+            sourceData.add(new YassRow(row));
+        }
+
+        Vector<YassRow> targetData = duetTable.getModelData();
+        targetData.clear();
+        int bodyStart = 0;
+        while (bodyStart < sourceData.size() && sourceData.get(bodyStart).isComment()) {
+            targetData.add(new YassRow(sourceData.get(bodyStart)));
+            bodyStart++;
+        }
+
+        if (StringUtils.isNotBlank(singer1)) {
+            targetData.add(new YassRow("#", "P1:", singer1, "", ""));
+        }
+        if (StringUtils.isNotBlank(singer2)) {
+            targetData.add(new YassRow("#", "P2:", singer2, "", ""));
+        }
+
+        targetData.add(new YassRow("P1", "", "", "", ""));
+        appendSoloBodyAsDuetTrack(targetData, sourceData, bodyStart);
+        targetData.add(new YassRow("P2", "", "", "", ""));
+        appendSoloBodyAsDuetTrack(targetData, sourceData, bodyStart);
+        targetData.add(new YassRow("E", "", "", "", ""));
+
+        String duetTitle = StringUtils.defaultString(sourceTable.getTitle());
+        if (!duetTitle.endsWith(" [DUET]")) {
+            duetTitle = duetTitle + " [DUET]";
+        }
+        duetTable.setTitle(duetTitle);
+
+        String duetFilename = buildDuetFilename(sourceTable.getFilename());
+        String duetPath = sourceTable.getDir() + File.separator + duetFilename;
+        if (!duetTable.storeFile(duetPath)) {
+            return;
+        }
+        openFiles(duetPath, false);
+        if (isLibraryLoaded()) {
+            SwingUtilities.invokeLater(this::refreshLibrary);
+        }
+    }
+
+    private void appendSoloBodyAsDuetTrack(Vector<YassRow> targetData, Vector<YassRow> sourceData, int bodyStart) {
+        for (int i = bodyStart; i < sourceData.size(); i++) {
+            YassRow row = sourceData.get(i);
+            if (row.isEnd()) {
+                continue;
+            }
+            if (row.isP()) {
+                continue;
+            }
+            targetData.add(new YassRow(row));
+        }
+    }
+
+    private String buildDuetFilename(String originalFilename) {
+        String safeFilename = StringUtils.defaultIfBlank(originalFilename, "Untitled.txt");
+        if (safeFilename.toLowerCase(Locale.ROOT).endsWith(".txt")) {
+            safeFilename = safeFilename.substring(0, safeFilename.length() - 4);
+        }
+        if (!safeFilename.endsWith(" [DUET]")) {
+            safeFilename += " [DUET]";
+        }
+        return safeFilename + ".txt";
     }
 
     private void renameTrack() {
@@ -9675,19 +9922,25 @@ public class YassActions implements DropTargetListener {
                 }
                 if (k.getKeyCode() == KeyEvent.VK_ESCAPE) {
                     stopRecording();
+                    clearRecordingArtifacts();
+                    k.consume();
+                    return;
+                }
+                if (recordingInputFinished) {
                     k.consume();
                     return;
                 }
                 boolean pressed = k.getID() == KeyEvent.KEY_PRESSED;
                 long currentPosition = (long) (mp3.getPosition() * mp3.getPlayrate().getTimerate());
+                long adjustedPosition = applyRecordingReactionOffset(currentPosition);
                 if (pressed && !lastWasPressed) {
-                    int note = playNote(k);
-                    sheet.getTemporaryNotes().addElement(currentPosition);
+                    int note = determineRecordingPitch(k, currentNoteIndex);
+                    sheet.getTemporaryNotes().addElement(adjustedPosition);
                     sheet.getTmpPitches().add(note);
                 }
                 if (!pressed && lastWasPressed) {
                     mp3.stopNote();
-                    sheet.getTemporaryNotes().addElement(currentPosition);
+                    sheet.getTemporaryNotes().addElement(adjustedPosition);
                     // --- STEP 2 & 3: Advance to the next note and update the sheet ---
                     currentNoteIndex++;
                     // Skip non-note rows like page breaks
@@ -9695,8 +9948,8 @@ public class YassActions implements DropTargetListener {
                         currentNoteIndex++;
                     }
                     if (currentNoteIndex > lastNoteIndex) {
-                        // All notes are done, stop recording
-                        stopRecording();
+                        // All notes are done, keep playback running until the planned fade-out end.
+                        finishRecordingInput();
                     } else {
                         // Tell the sheet to display the next line
                         sheet.setRecordingNoteIndex(currentNoteIndex);
@@ -9715,12 +9968,17 @@ public class YassActions implements DropTargetListener {
                     k.consume();
                     return;
                 }
+                if (recordingInputFinished) {
+                    k.consume();
+                    return;
+                }
                 boolean pressed = k.getID() == MouseEvent.MOUSE_PRESSED;
+                long adjustedPosition = applyRecordingReactionOffset(mp3.getPosition());
                 if (pressed && !lastWasPressed) {
-                    sheet.getTemporaryNotes().addElement(mp3.getPosition());
+                    sheet.getTemporaryNotes().addElement(adjustedPosition);
                 }
                 if (!pressed && lastWasPressed) {
-                    sheet.getTemporaryNotes().addElement(mp3.getPosition());
+                    sheet.getTemporaryNotes().addElement(adjustedPosition);
                     currentNoteIndex++;
                     // Skip non-note rows
                     while (currentNoteIndex <= lastNoteIndex && !table.getRowAt(currentNoteIndex).isNote()) {
@@ -9728,7 +9986,7 @@ public class YassActions implements DropTargetListener {
                     }
 
                     if (currentNoteIndex > lastNoteIndex) {
-                        stopRecording();
+                        finishRecordingInput();
                     } else {
                         sheet.setRecordingNoteIndex(currentNoteIndex);
                     }
@@ -9736,13 +9994,13 @@ public class YassActions implements DropTargetListener {
                 }
                 lastWasPressed = pressed;
                 k.consume();
-            }
-            if (added) {
-                if (sheet.getTemporaryNotes().size() >= 2 * recordLength) {
-                    stopRecording();
-                    sheet.repaint();
-                }
-            }
+              }
+              if (added) {
+                  if (sheet.getTemporaryNotes().size() >= 2 * recordLength) {
+                    finishRecordingInput();
+                      sheet.repaint();
+                  }
+              }
         }
     }
 

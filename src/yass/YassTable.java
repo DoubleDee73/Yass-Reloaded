@@ -209,6 +209,9 @@ public class YassTable extends JTable {
                 e -> {
                     if (sheet != null) {
                         sheet.repaint();
+                        // if (!e.getValueIsAdjusting()) {
+                        //     sheet.logSelectedNotePitchDistribution();
+                        // }
                     }
                 });
         addMouseMotionListener(new MouseMotionAdapter() {
@@ -335,6 +338,7 @@ public class YassTable extends JTable {
         tm.getData().clear();
         resetUndo();
         addUndo();
+        setSaved(true);
         mp3 = dir = txtFilename = null;
         gap = 0;
         bpm = 100;
@@ -1365,6 +1369,51 @@ public class YassTable extends JTable {
         setCommentTag(updated);
     }
 
+    public void setKeyInCommentSilently(String keyValue) {
+        if (keyValue == null || keyValue.isBlank()) {
+            return;
+        }
+        String existing = getCommentTag();
+        String updated;
+        if (existing == null || existing.isBlank()) {
+            updated = "key=" + keyValue;
+        } else if (existing.contains("key=")) {
+            updated = existing.replaceAll("(?:^|(?<=,))key=[^,]*", "key=" + keyValue);
+        } else {
+            updated = existing + ",key=" + keyValue;
+        }
+        if (Objects.equals(existing, updated)) {
+            return;
+        }
+
+        boolean oldPreventUndo = preventUndo;
+        boolean oldSaved = saved;
+        boolean oldAutosaved = autosaved;
+        preventUndo = true;
+        try {
+            setCommentTag(updated);
+            saved = oldSaved;
+            autosaved = oldAutosaved;
+        } finally {
+            preventUndo = oldPreventUndo;
+        }
+    }
+
+    public void removeKeyFromComment() {
+        String existing = getCommentTag();
+        if (existing == null || existing.isBlank()) {
+            return;
+        }
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        for (String part : existing.split(",")) {
+            String trimmed = part.trim();
+            if (!trimmed.startsWith("key=")) {
+                parts.add(trimmed);
+            }
+        }
+        setCommentTag(String.join(",", parts));
+    }
+
     public boolean setCommentTag(String comment) {
         YassRow r = tm.getCommentRow(COMMENT);
         int rowToInsert = 0;
@@ -1860,6 +1909,7 @@ public class YassTable extends JTable {
     public synchronized boolean loadTable(YassTable t, boolean withDuet) {
         if (t == null)
             return false;
+        setSaved(t.isSaved());
         dir = t.dir;
         txtFilename = t.txtFilename;
         isRelative = false;
@@ -1997,6 +2047,7 @@ public class YassTable extends JTable {
         isLoading = true;
         tm.fireTableDataChanged();
         isLoading = false;
+        setSaved(true);
         return success;
     }
 
@@ -4230,10 +4281,51 @@ public class YassTable extends JTable {
      * @param rows      the notes to align (only rows where {@link YassRow#isNote()} is true are processed)
      * @param pitchData the Viterbi-smoothed pitch frames from {@link yass.analysis.PitchDetector}
      */
+    public Integer findAlignedPitchForRow(YassRow row, List<yass.analysis.PitchDetector.PitchData> pitchData) {
+        if (row == null || !row.isNote() || pitchData == null || pitchData.isEmpty()) {
+            return null;
+        }
+        double noteStartMs = beatToMs(row.getBeatInt());
+        double noteEndMs = beatToMs(row.getBeatInt() + row.getLengthInt());
+        Map<Integer, Integer> histogram = new HashMap<>();
+        for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+            double frameMs = pd.time() * 1000.0;
+            if (frameMs >= noteStartMs && frameMs < noteEndMs) {
+                histogram.merge(pd.pitch(), 1, Integer::sum);
+            }
+        }
+        if (histogram.isEmpty()) {
+            return null;
+        }
+        return histogram.entrySet().stream()
+                .max((left, right) -> {
+                    int byCount = Integer.compare(left.getValue(), right.getValue());
+                    if (byCount != 0) {
+                        return byCount;
+                    }
+                    int leftDistance = Math.abs(left.getKey() - row.getHeightInt());
+                    int rightDistance = Math.abs(right.getKey() - row.getHeightInt());
+                    return Integer.compare(rightDistance, leftDistance);
+                })
+                .map(Map.Entry::getKey)
+                .orElse(row.getHeightInt());
+    }
+
     public void alignToMelody(List<YassRow> rows, List<yass.analysis.PitchDetector.PitchData> pitchData) {
         if (rows == null || rows.isEmpty() || pitchData == null || pitchData.isEmpty()) {
             return;
         }
+
+        Map<YassRow, Integer> prevalentPitches = new HashMap<>();
+        for (YassRow row : rows) {
+            if (row != null && row.isNote()) {
+                Integer prevalentPitch = findAlignedPitchForRow(row, pitchData);
+                if (prevalentPitch != null) {
+                    prevalentPitches.put(row, prevalentPitch);
+                }
+            }
+        }
+        int octaveBias = determineSignificantOctaveBias(prevalentPitches.values());
 
         // Build occupied-beat set from all rows in the table (beat..beat+length-1 inclusive)
         Set<Integer> occupiedBeats = new HashSet<>();
@@ -4254,26 +4346,11 @@ public class YassTable extends JTable {
             if (!row.isNote()) {
                 continue;
             }
-            double noteStartMs = beatToMs(row.getBeatInt());
-            double noteEndMs   = beatToMs(row.getBeatInt() + row.getLengthInt());
-
-            // Collect all pitch frames within this note's time window
-            Map<Integer, Integer> histogram = new HashMap<>();
-            for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
-                double frameMs = pd.time() * 1000.0;
-                if (frameMs >= noteStartMs && frameMs < noteEndMs) {
-                    histogram.merge(pd.pitch(), 1, Integer::sum);
-                }
-            }
-            if (histogram.isEmpty()) {
+            Integer prevalentPitch = prevalentPitches.get(row);
+            if (prevalentPitch == null) {
                 continue;
             }
-
-            // Pick the most frequent semitone
-            int prevalentPitch = histogram.entrySet().stream()
-                    .max(Map.Entry.comparingByValue())
-                    .map(Map.Entry::getKey)
-                    .orElse(row.getHeightInt());
+            prevalentPitch = normalizePitchIntoWindow(prevalentPitch + octaveBias, -12, 12, row.getHeightInt());
 
             if (prevalentPitch != row.getHeightInt()) {
                 row.setHeight(prevalentPitch);
@@ -4338,7 +4415,7 @@ public class YassTable extends JTable {
                     double frameMs = pd.time() * 1000.0;
                     if (frameMs >= beatStartMs && frameMs < beatEndMs) {
                         total++;
-                        if (pd.pitch() == prevalentPitch) matching++;
+                        if (matchesAlignedPitch(pd.pitch(), prevalentPitch)) matching++;
                     }
                 }
                 if (total < expandMinFrames || matching < total * 0.5) {
@@ -4359,7 +4436,7 @@ public class YassTable extends JTable {
                     double frameMs = pd.time() * 1000.0;
                     if (frameMs >= beatStartMs && frameMs < beatEndMs) {
                         total++;
-                        if (pd.pitch() == prevalentPitch) matching++;
+                        if (matchesAlignedPitch(pd.pitch(), prevalentPitch)) matching++;
                     }
                 }
                 if (total < expandMinFrames || matching < total * 0.5) {
@@ -4385,6 +4462,51 @@ public class YassTable extends JTable {
         }
     }
 
+    private int determineSignificantOctaveBias(java.util.Collection<Integer> pitches) {
+        if (pitches == null || pitches.isEmpty()) {
+            return 0;
+        }
+        final int windowLow = -12;  // C3
+        final int windowHigh = 12;  // C5
+        int total = pitches.size();
+        int bestOffset = 0;
+        int bestHits = -1;
+        for (int offset = -36; offset <= 36; offset += 12) {
+            int hits = 0;
+            for (Integer pitch : pitches) {
+                int shifted = pitch + offset;
+                if (shifted >= windowLow && shifted <= windowHigh) {
+                    hits++;
+                }
+            }
+            if (hits > bestHits) {
+                bestHits = hits;
+                bestOffset = offset;
+            }
+        }
+        return bestHits * 4 >= total * 3 ? bestOffset : 0;
+    }
+
+    private int normalizePitchIntoWindow(int pitch, int low, int high, int referencePitch) {
+        int bestPitch = pitch;
+        int bestDistance = Integer.MAX_VALUE;
+        for (int candidate = pitch - 48; candidate <= pitch + 48; candidate += 12) {
+            if (candidate < low || candidate > high) {
+                continue;
+            }
+            int distance = Math.abs(candidate - referencePitch);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestPitch = candidate;
+            }
+        }
+        return bestPitch;
+    }
+
+    private boolean matchesAlignedPitch(int framePitch, int alignedPitch) {
+        return Math.floorMod(framePitch - alignedPitch, 12) == 0;
+    }
+
     private static boolean isVowel(char c) {
         String normalized = Normalizer.normalize(String.valueOf(c), java.text.Normalizer.Form.NFD);
         char base = normalized.charAt(0);
@@ -4404,13 +4526,66 @@ public class YassTable extends JTable {
         String movedChar = StringUtils.right(firstNote.getTrimmedText(), 1);
         String suffix = oldLast.substring(tilde + 1);
         String newLastBody = movedChar + suffix;
-        String newLast = isVowel(newLastBody.charAt(0)) ? "~" + newLastBody : newLastBody;
+        String newLast = shouldPrefixShiftTilde(newLastBody) ? "~" + newLastBody : newLastBody;
         String newFirst = StringUtils.left(firstNote.getTrimmedText(), firstNote.getTrimmedText().length() - 1);
         lastNote.setText(newLast + (lastNote.endsWithSpace() ? YassRow.SPACE : ""));
         firstNote.setText(newFirst);
         trimMiddleTildes();
         tm.fireTableDataChanged();
         getSelectionModel().setSelectionInterval(selectedRowIndex, selectedRowIndex + (selectedRows - 1));
+    }
+
+    public void toggleTilde() {
+        int[] rows = getSelectedRows();
+        if (rows == null || rows.length == 0) {
+            return;
+        }
+        for (int rowIndex : rows) {
+            YassRow row = getRowAt(rowIndex);
+            if (row != null && row.isNote()) {
+                row.setText(toggleLeadingTilde(row.getText()));
+            }
+        }
+        tm.fireTableRowsUpdated(getSelectionModel().getMinSelectionIndex(),
+                                getSelectionModel().getMaxSelectionIndex());
+    }
+
+    private String toggleLeadingTilde(String text) {
+        String value = StringUtils.defaultString(text);
+        int prefixLength = 0;
+        while (prefixLength < value.length() && value.charAt(prefixLength) == YassRow.SPACE) {
+            prefixLength++;
+        }
+        String prefix = value.substring(0, prefixLength);
+        String body = value.substring(prefixLength);
+        if (body.startsWith("~")) {
+            body = body.substring(1);
+        } else {
+            body = "~" + body;
+        }
+        return prefix + body;
+    }
+
+    private boolean shouldPrefixShiftTilde(String syllable) {
+        if (StringUtils.isBlank(syllable)) {
+            return false;
+        }
+        String normalized = syllable.stripLeading();
+        if (normalized.startsWith("~")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.isEmpty()) {
+            return false;
+        }
+        if (isVowel(normalized.charAt(0))) {
+            return true;
+        }
+        for (int i = 0; i < normalized.length(); i++) {
+            if (isVowel(normalized.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void trimMiddleTildes() {
@@ -4460,7 +4635,7 @@ public class YassTable extends JTable {
             }
         }
         String newFirst = firstNote.getTrimmedText() + characterToMove;
-        String newLastPrefixed = (!newLast.isEmpty() && isVowel(newLast.charAt(0))) ? "~" + newLast : newLast;
+        String newLastPrefixed = shouldPrefixShiftTilde(newLast) ? "~" + newLast : newLast;
         lastNote.setText(newLastPrefixed + (lastNote.endsWithSpace() ? YassRow.SPACE : ""));
         firstNote.setText(newFirst);
         trimMiddleTildes();
@@ -4610,6 +4785,8 @@ public class YassTable extends JTable {
     public void insertNote() {
         int n = getRowCount();
         int row = getSelectionModel().getMinSelectionIndex();
+        boolean useCursorBeat = row < 0 && sheet != null && sheet.getPlayerPosition() >= 0;
+        int cursorBeat = useCursorBeat ? sheet.timelineToBeat(sheet.getPlayerPosition()) : -1;
         if (row < 0) {
             row = sheet != null ? sheet.nextElement() : 0;
             if (row < 0) {
@@ -4651,6 +4828,9 @@ public class YassTable extends JTable {
         }
 
         int nbreak = row;
+        if (useCursorBeat && getRowAt(row).isPageBreak() && getRowAt(row).getBeatInt() < cursorBeat && nbreak < n - 1) {
+            nbreak++;
+        }
         YassRow nextBreak = getRowAt(nbreak);
         while (!nextBreak.isPageBreak() && nbreak < n - 1) {
             nextBreak = getRowAt(++nbreak);
@@ -4666,6 +4846,9 @@ public class YassTable extends JTable {
         if (prevBreak != null) {
             beat = Math.max(beat, prevBreak.getSecondBeatInt());
         }
+        if (useCursorBeat) {
+            beat = Math.max(beat, cursorBeat);
+        }
 
         int length = 4;
         if (nextNote != null) {
@@ -4674,7 +4857,7 @@ public class YassTable extends JTable {
         if (nextBreak != null) {
             length = Math.min(length, nextBreak.getBeatInt() - beat);
         }
-        if (length == 0) {
+        if (length <= 0) {
             return;
         }
 
@@ -6179,6 +6362,30 @@ public class YassTable extends JTable {
     }
 
     // copied from storeFile
+
+    public String getPageStructuredLyrics() {
+        String normalized = StringUtils.defaultString(getText())
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .replace("~", StringUtils.EMPTY)
+                .replace(String.valueOf(YassRow.HYPHEN), "-");
+
+        StringBuilder lyrics = new StringBuilder();
+        for (String rawLine : normalized.split("\n", -1)) {
+            String line = rawLine
+                    .replaceAll("(?<=\\p{L})-(?=\\p{L})", StringUtils.EMPTY)
+                    .replaceAll("[ \\t]+", " ")
+                    .trim();
+            if (StringUtils.isBlank(line)) {
+                continue;
+            }
+            if (lyrics.length() > 0) {
+                lyrics.append('\n');
+            }
+            lyrics.append(line);
+        }
+        return lyrics.toString();
+    }
 
     /**
      * Gets the plainText attribute of the YassTable object

@@ -65,6 +65,7 @@ import yass.I18;
 import yass.YassActions;
 import yass.YassEnum;
 import yass.YassProperties;
+import yass.logger.YassLogger;
 
 /**
  * Description of the Class
@@ -142,6 +143,7 @@ public class OptionsPanel extends JPanel {
             }
             prop.put(key, val);
         }
+        YassLogger.applyLogLevel(prop.getProperty("log-level"));
         if (resetContextMenu) {
             actions.reloadLibMenu();
         }

@@ -193,6 +193,8 @@ public class YassProperties extends Properties {
 
         p.putIfAbsent("yass-language", "default");
         p.putIfAbsent("yass-languages", "default|en|de|fr|hu|pl|es");
+        p.putIfAbsent("log-levels", "SEVERE|WARNING|INFO|CONFIG|FINE|FINER|FINEST");
+        p.putIfAbsent("log-level", "INFO");
 
         //filetype association
         p.putIfAbsent("song-filetype", ".txt");

@@ -601,7 +601,7 @@ public class YassSheetInfo extends JPanel {
         s1 += t;
 
         String s2 = year;
-        if (s2.length() > 0 && g.length() > 0) s2 += " Â· ";
+        if (s2.length() > 0 && g.length() > 0) s2 += " \u00B7 ";
         s2 += g;
         String bpmString;
         if (bpm == (long) bpm) bpmString = String.format("%d", (int) bpm);
@@ -610,10 +610,10 @@ public class YassSheetInfo extends JPanel {
         String gapString = String.format("%.3f", (int) (gap+0.5)/1000.0); // show rounded (resolution < 1ms makes no sense)
 
         if (s2 != null && s2.length() > 0)
-            s2 += " Â· ";
+            s2 += " \u00B7 ";
         s2 += gapString + "s";
-        s2 += " Â· " + bpmString + " bpm";
-        s2 += " Â· " + dString;
+        s2 += " \u00B7 " + bpmString + " bpm";
+        s2 += " \u00B7 " + dString;
 
         String s = fn;
         if (! table.isSaved())

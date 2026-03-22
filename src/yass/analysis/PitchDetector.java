@@ -37,13 +37,22 @@ public class PitchDetector {
     private static final double C4_FREQ = A4_FREQ * Math.pow(2.0, -9.0 / 12.0); // approx 261.626 Hz
 
     public static List<PitchData> detectPitch(File tempWavFile, YassProperties properties) {
-        return detectPitch(tempWavFile, properties, MusicalKeyEnum.UNDEFINED);
+        return detectPitchWithRaw(tempWavFile, properties, MusicalKeyEnum.UNDEFINED).processedPitchData();
     }
 
     public static List<PitchData> detectPitch(File tempWavFile,
                                               YassProperties properties,
                                               MusicalKeyEnum musicalKey) {
+        return detectPitchWithRaw(tempWavFile, properties, musicalKey).processedPitchData();
+    }
+
+    public static PitchDetectionResult detectPitchWithRaw(File tempWavFile,
+                                                          YassProperties properties,
+                                                          MusicalKeyEnum musicalKey) {
         List<PitchData> rawPitchData = new ArrayList<>();
+        List<PitchData> locallyNormalizedPitchData;
+        List<PitchData> viterbiPitchData;
+        List<PitchData> transposedPitchData;
         List<PitchData> finalPitchData;
         try {
             String aubioCommand = "aubiopitch";
@@ -51,7 +60,7 @@ public class PitchDetector {
             if (aubioPath != null && !aubioPath.isEmpty()) {
                 aubioCommand = new File(aubioPath, aubioCommand).getAbsolutePath();
             } else {
-                return Collections.emptyList();
+                return new PitchDetectionResult(Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
             }
             String[] command = {aubioCommand, "-i", tempWavFile.getAbsolutePath()};
             ProcessBuilder processBuilder = new ProcessBuilder(command);
@@ -71,7 +80,7 @@ public class PitchDetector {
                                 int semitonesFromC4 = frequencyToNote(pitch);
                                 // The default CLI output doesn't include confidence, so we use 1.0 for detected 
                                 // pitches.
-                                rawPitchData.add(new PitchData(time, semitonesFromC4, freqToNoteName(pitch)));
+                                rawPitchData.add(new PitchData(time, semitonesFromC4, freqToNoteName(pitch), pitch));
                             }
                         } catch (NumberFormatException ignored) {
                         }
@@ -82,20 +91,23 @@ public class PitchDetector {
             int exitCode = process.waitFor();
             if (exitCode == 0) {
                 LOGGER.info("Aubio pitch detection found " + rawPitchData.size() + " raw pitched frames.");
-                finalPitchData = transposeToVocalRange(viterbiSmooth(rawPitchData, musicalKey));
+                locallyNormalizedPitchData = normalizeRawPitchOctaves(rawPitchData);
+                viterbiPitchData = viterbiSmooth(locallyNormalizedPitchData, musicalKey);
+                transposedPitchData = List.copyOf(viterbiPitchData);
+                finalPitchData = List.copyOf(transposedPitchData);
                 LOGGER.info("Viterbi smoothing complete. Resulting " + finalPitchData.size() + " pitched frames.");
-                return finalPitchData;
+                return new PitchDetectionResult(List.copyOf(rawPitchData), List.copyOf(locallyNormalizedPitchData), List.copyOf(viterbiPitchData), List.copyOf(transposedPitchData), finalPitchData);
             } else {
                 // Handle errors by logging them
                 LOGGER.severe("aubio pitch process failed with exit code " + exitCode + ". Check logs for details.");
-                return Collections.emptyList();
+                return new PitchDetectionResult(Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
             }
         } catch (IOException | InterruptedException e) {
             LOGGER.log(Level.SEVERE,
                        "Failed to run Aubio for pitch detection. Is 'aubiopitch' in the system PATH, or configured in" +
                                " options?",
                        e);
-            return Collections.emptyList();
+            return new PitchDetectionResult(Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
         }
     }
 
@@ -188,7 +200,7 @@ public class PitchDetector {
                 if (correctedMidiNote != currentMidiNote) {
                     int correctedPitch = correctedMidiNote - 60;
                     double correctedFreq = C4_FREQ * Math.pow(2.0, correctedPitch / 12.0);
-                    correctedData.add(new PitchData(pd.time(), correctedPitch, freqToNoteName(correctedFreq)));
+                    correctedData.add(new PitchData(pd.time(), correctedPitch, freqToNoteName(correctedFreq), correctedFreq));
                     LOGGER.finest(String.format("Corrected octave for note at %.2fs from %d (MIDI %d) to %d (MIDI %d) in segment starting at %.2fms",
                                                 pd.time(), pd.pitch(), currentMidiNote, correctedPitch, correctedMidiNote, segment.get(0).time() * 1000));
                 } else {
@@ -221,6 +233,62 @@ public class PitchDetector {
      * in the emission probability, acting as a tie-breaker when aubio detects a pitch
      * exactly between two semitones.
      */
+    private static List<PitchData> normalizeRawPitchOctaves(List<PitchData> rawPitchData) {
+        if (rawPitchData == null || rawPitchData.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        final float WINDOW_SECONDS = 0.30f;
+        final float GAP_RESET_SECONDS = 0.12f;
+        final int MIN_PITCH = -20; // E2 relative to C4
+        final int MAX_PITCH = 24;  // C6 relative to C4
+        List<PitchData> normalized = new ArrayList<>(rawPitchData.size());
+        int windowStart = 0;
+        int windowEnd = 0;
+
+        for (int i = 0; i < rawPitchData.size(); i++) {
+            PitchData current = rawPitchData.get(i);
+            if (i > 0 && Math.abs(current.time() - rawPitchData.get(i - 1).time()) > GAP_RESET_SECONDS) {
+                windowStart = i;
+                windowEnd = i;
+            }
+
+            float minTime = current.time() - WINDOW_SECONDS / 2.0f;
+            float maxTime = current.time() + WINDOW_SECONDS / 2.0f;
+            while (windowStart < rawPitchData.size() && rawPitchData.get(windowStart).time() < minTime) {
+                windowStart++;
+            }
+            while (windowEnd < rawPitchData.size() && rawPitchData.get(windowEnd).time() <= maxTime) {
+                windowEnd++;
+            }
+
+            List<Integer> localPitches = new ArrayList<>(Math.max(1, windowEnd - windowStart));
+            for (int j = windowStart; j < windowEnd; j++) {
+                localPitches.add(rawPitchData.get(j).pitch());
+            }
+            if (localPitches.isEmpty()) {
+                normalized.add(current);
+                continue;
+            }
+            Collections.sort(localPitches);
+            int localMedian = localPitches.get(localPitches.size() / 2);
+            int normalizedPitch = normalizePitchNearReference(current.pitch(), localMedian);
+            while (normalizedPitch < MIN_PITCH) {
+                normalizedPitch += 12;
+            }
+            while (normalizedPitch > MAX_PITCH) {
+                normalizedPitch -= 12;
+            }
+            if (normalizedPitch == current.pitch()) {
+                normalized.add(current);
+            } else {
+                double normalizedFreq = C4_FREQ * Math.pow(2.0, normalizedPitch / 12.0);
+                normalized.add(new PitchData(current.time(), normalizedPitch, freqToNoteName(normalizedFreq), normalizedFreq));
+            }
+        }
+        return normalized;
+    }
+
     private static List<PitchData> viterbiSmooth(List<PitchData> rawPitchData, MusicalKeyEnum musicalKey) {
         if (rawPitchData == null || rawPitchData.isEmpty()) {
             return Collections.emptyList();
@@ -343,7 +411,7 @@ public class PitchDetector {
                     result.add(original);
                 } else {
                     double smoothedFreq = C4_FREQ * Math.pow(2.0, smoothedPitch / 12.0);
-                    result.add(new PitchData(original.time(), smoothedPitch, freqToNoteName(smoothedFreq)));
+                    result.add(new PitchData(original.time(), smoothedPitch, freqToNoteName(smoothedFreq), smoothedFreq));
                 }
             }
 
@@ -398,7 +466,7 @@ public class PitchDetector {
                 .map(pd -> {
                     int newPitch = pd.pitch() + finalShift;
                     double newFreq = C4_FREQ * Math.pow(2.0, newPitch / 12.0);
-                    return new PitchData(pd.time(), newPitch, freqToNoteName(newFreq));
+                    return new PitchData(pd.time(), newPitch, freqToNoteName(newFreq), newFreq);
                 })
                 .toList();
     }
@@ -444,7 +512,7 @@ public class PitchDetector {
                 stabilizedData.add(current);
             } else {
                 double stabilizedFreq = C4_FREQ * Math.pow(2.0, stablePitch / 12.0);
-                stabilizedData.add(new PitchData(current.time(), stablePitch, freqToNoteName(stabilizedFreq)));
+                stabilizedData.add(new PitchData(current.time(), stablePitch, freqToNoteName(stabilizedFreq), stabilizedFreq));
             }
         }
 
@@ -457,28 +525,44 @@ public class PitchDetector {
             return fallbackPitch;
         }
 
+        int referencePitch = previousStablePitch != null ? previousStablePitch : fallbackPitch;
         int bestPitch = fallbackPitch;
         int bestCount = -1;
+        int bestDistance = Integer.MAX_VALUE;
         for (Map.Entry<Integer, Integer> entry : pitchHistogram.entrySet()) {
-            int candidatePitch = entry.getKey();
+            int candidatePitch = normalizePitchNearReference(entry.getKey(), referencePitch);
             int candidateCount = entry.getValue();
+            int candidateDistance = Math.abs(candidatePitch - referencePitch);
             if (candidateCount > bestCount) {
                 bestPitch = candidatePitch;
                 bestCount = candidateCount;
+                bestDistance = candidateDistance;
                 continue;
             }
             if (candidateCount == bestCount) {
-                if (previousStablePitch != null &&
-                        Math.abs(candidatePitch - previousStablePitch) < Math.abs(bestPitch - previousStablePitch)) {
+                if (candidateDistance < bestDistance) {
                     bestPitch = candidatePitch;
+                    bestDistance = candidateDistance;
                     continue;
                 }
-                if (Math.abs(candidatePitch - fallbackPitch) < Math.abs(bestPitch - fallbackPitch)) {
+                if (candidateDistance == bestDistance &&
+                        Math.abs(candidatePitch - fallbackPitch) < Math.abs(bestPitch - fallbackPitch)) {
                     bestPitch = candidatePitch;
                 }
             }
         }
         return bestPitch;
+    }
+
+    private static int normalizePitchNearReference(int pitch, int referencePitch) {
+        int normalized = pitch;
+        while (normalized - referencePitch > 6) {
+            normalized -= 12;
+        }
+        while (referencePitch - normalized > 6) {
+            normalized += 12;
+        }
+        return normalized;
     }
 
 
@@ -488,7 +572,14 @@ public class PitchDetector {
      * @param time  The timestamp in seconds.
      * @param pitch The detected pitch in semitones relative to C4 (C4 = 0).
      */
-    public record PitchData(float time, int pitch, String noteName) {
+    public record PitchData(float time, int pitch, String noteName, double rawFrequency) {
+    }
+
+    public record PitchDetectionResult(List<PitchData> rawPitchData,
+                                       List<PitchData> locallyNormalizedPitchData,
+                                       List<PitchData> viterbiPitchData,
+                                       List<PitchData> transposedPitchData,
+                                       List<PitchData> processedPitchData) {
     }
 
     /**

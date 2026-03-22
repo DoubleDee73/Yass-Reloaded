@@ -232,43 +232,26 @@ public class MvsepSeparationService implements SeparationService {
         }
 
         LinkedHashMap<String, DownloadDescriptor> stems = extractStemDownloads(result, model);
-        LOGGER.info("MVSEP stem mapping: " + stems);
-        if (stems.isEmpty()) {
-            throw new IOException("MVSEP finished, but no downloadable stems were found in the response.");
-        }
+        LOGGER.info("MVSEP stem mapping: " + formatStemMapping(stems));
 
         File songDirectory = new File(request.getSongDirectory());
         String baseName = request.getSongBaseName();
-        File vocalsFile = null;
-        File leadFile = null;
-        File instrumentalFile = null;
-        File instrumentalBackingFile = null;
+        LinkedHashMap<DownloadDescriptor, File> downloadedFiles = downloadAllCandidates(result, stems, listener, songDirectory, baseName, outputFormat.getExtension());
 
-        if (stems.containsKey("vocals")) {
-            listener.onStatusChanged("Downloading vocals...");
-            vocalsFile = downloadStem(stems.get("vocals").url(), songDirectory, baseName, "Vocals", outputFormat.getExtension());
+        File vocalsFile = resolveDownloadedStem(stems, downloadedFiles, "vocals");
+        File leadFile = resolveDownloadedStem(stems, downloadedFiles, "lead");
+        File instrumentalFile = resolveDownloadedStem(stems, downloadedFiles, "instrumental");
+        File instrumentalBackingFile = resolveDownloadedStem(stems, downloadedFiles, "instrumental-backing");
+
+        if (downloadedFiles.isEmpty()) {
+            throw new IOException("MVSEP finished, but no downloadable stems could be downloaded.");
         }
 
-        if (stems.containsKey("lead")) {
-            listener.onStatusChanged("Downloading lead vocals...");
-            leadFile = downloadStem(stems.get("lead").url(), songDirectory, baseName, "Lead", outputFormat.getExtension());
-        }
-
-        if (stems.containsKey("instrumental")) {
-            listener.onStatusChanged("Downloading instrumental...");
-            instrumentalFile = downloadStem(stems.get("instrumental").url(), songDirectory, baseName, "Instrumental", outputFormat.getExtension());
-        }
-
-        if (stems.containsKey("instrumental-backing")) {
-            listener.onStatusChanged("Downloading instrumental + backing...");
-            instrumentalBackingFile = downloadStem(stems.get("instrumental-backing").url(), songDirectory, baseName, "Instrumental + Backing", outputFormat.getExtension());
-        }
-
-        if (vocalsFile == null && leadFile == null && instrumentalFile == null && instrumentalBackingFile == null) {
-            throw new IOException("MVSEP finished, but no expected stems could be downloaded.");
-        }
-
-        return new SeparationResult(vocalsFile, leadFile, instrumentalFile, instrumentalBackingFile);
+        return new SeparationResult(vocalsFile,
+                leadFile,
+                instrumentalFile,
+                instrumentalBackingFile,
+                new ArrayList<>(downloadedFiles.values()));
     }
 
     private int parsePollInterval(String value) {
@@ -420,15 +403,135 @@ public class MvsepSeparationService implements SeparationService {
         };
     }
 
+    private LinkedHashMap<DownloadDescriptor, File> downloadAllCandidates(JsonObject response,
+                                                                        Map<String, DownloadDescriptor> stems,
+                                                                        SeparationProgressListener listener,
+                                                                        File songDirectory,
+                                                                        String baseName,
+                                                                        String preferredExtension) throws IOException {
+        LinkedHashMap<String, DownloadDescriptor> allDownloads = new LinkedHashMap<>();
+        collectDownloads(response, "$", allDownloads);
+        List<DownloadDescriptor> candidates = new ArrayList<>(new LinkedHashSet<>(allDownloads.values()));
+        candidates.sort(Comparator.comparing(DownloadDescriptor::name, String.CASE_INSENSITIVE_ORDER));
+        LinkedHashMap<DownloadDescriptor, File> downloaded = new LinkedHashMap<>();
+        for (DownloadDescriptor candidate : candidates) {
+            String stemType = resolveStemTypeLabel(stems, candidate);
+            LOGGER.info("MVSEP downloading candidate " + candidate.name() + " as " + stemType + " from " + candidate.url());
+            listener.onStatusChanged("Downloading " + stemType + "...");
+            File file = downloadStem(candidate.url(), songDirectory, baseName, stemType, preferredExtension);
+            downloaded.put(candidate, file);
+        }
+        return downloaded;
+    }
+
+    private File resolveDownloadedStem(Map<String, DownloadDescriptor> stems,
+                                       Map<DownloadDescriptor, File> downloadedFiles,
+                                       String stemKey) {
+        DownloadDescriptor descriptor = stems.get(stemKey);
+        if (descriptor == null) {
+            LOGGER.info("MVSEP skip mapping for " + stemKey + ": no mapped file in response.");
+            return null;
+        }
+        File file = downloadedFiles.get(descriptor);
+        if (file == null) {
+            LOGGER.info("MVSEP skip mapping for " + stemKey + ": mapped descriptor was not downloaded.");
+            return null;
+        }
+        LOGGER.info("MVSEP mapped " + stemKey + " to downloaded file " + file.getName());
+        return file;
+    }
+
+    private String resolveStemTypeLabel(Map<String, DownloadDescriptor> stems, DownloadDescriptor candidate) {
+        if (candidate.equals(stems.get("vocals"))) return "Vocals";
+        if (candidate.equals(stems.get("lead"))) return "Lead";
+        if (candidate.equals(stems.get("instrumental"))) return "Instrumental";
+        if (candidate.equals(stems.get("instrumental-backing"))) return "Instrumental + Backing";
+        String inferred = inferGenericStemType(candidate.name());
+        if (StringUtils.isNotBlank(inferred)) {
+            return inferred;
+        }
+        return sanitizeStemType(candidate.name());
+    }
+
+    private String inferGenericStemType(String value) {
+        String haystack = StringUtils.defaultString(value).toLowerCase(Locale.ROOT);
+        if (containsBackingKeywords(haystack)) {
+            return "Instrumental + Backing";
+        }
+        if (haystack.contains("instrumental") || haystack.contains("karaoke")) {
+            return "Instrumental";
+        }
+        if (haystack.contains("lead")) {
+            return "Lead";
+        }
+        if (haystack.contains("vocals") || haystack.contains("vocal")) {
+            return "Vocals";
+        }
+        if (haystack.contains("other")) {
+            return "Other";
+        }
+        return null;
+    }
+
+    private String sanitizeStemType(String value) {
+        String sanitized = StringUtils.defaultIfBlank(value, "Stem")
+                .replaceAll("[\\/:*?\"<>|]", "_")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return StringUtils.defaultIfBlank(sanitized, "Stem");
+    }
+
+    private File downloadMappedStem(Map<String, DownloadDescriptor> stems,
+                                    String stemKey,
+                                    SeparationProgressListener listener,
+                                    String statusMessage,
+                                    File songDirectory,
+                                    String baseName,
+                                    String stemType,
+                                    String preferredExtension) throws IOException {
+        DownloadDescriptor descriptor = stems.get(stemKey);
+        if (descriptor == null) {
+            LOGGER.info("MVSEP skip download for " + stemKey + ": no mapped file in response.");
+            return null;
+        }
+        LOGGER.info("MVSEP downloading " + stemKey + " from " + descriptor.url() + " (" + descriptor.name() + ")");
+        listener.onStatusChanged(statusMessage);
+        return downloadStem(descriptor.url(), songDirectory, baseName, stemType, preferredExtension);
+    }
+
     private LinkedHashMap<String, DownloadDescriptor> extractStemDownloads(JsonObject response, MvsepModel model) {
         LinkedHashMap<String, DownloadDescriptor> allDownloads = new LinkedHashMap<>();
         collectDownloads(response, "$", allDownloads);
         List<DownloadDescriptor> candidates = new ArrayList<>(new LinkedHashSet<>(allDownloads.values()));
         candidates.sort(Comparator.comparing(DownloadDescriptor::name, String.CASE_INSENSITIVE_ORDER));
+        LOGGER.info("MVSEP response download candidates: " + formatDownloadCandidates(candidates));
         if (LOGGER.isLoggable(Level.FINE)) {
-            LOGGER.fine("MVSEP download candidates: " + candidates);
+            LOGGER.fine("MVSEP raw response: " + response);
         }
         return model.isKaraokeThreeStem() ? extractKaraokeStems(candidates) : extractTwoStemResult(candidates);
+    }
+
+    private String formatDownloadCandidates(List<DownloadDescriptor> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return "[]";
+        }
+        StringJoiner joiner = new StringJoiner(", ", "[", "]");
+        for (DownloadDescriptor candidate : candidates) {
+            joiner.add(candidate.name() + " -> " + candidate.url());
+        }
+        return joiner.toString();
+    }
+
+    private String formatStemMapping(Map<String, DownloadDescriptor> stems) {
+        if (stems == null || stems.isEmpty()) {
+            return "{}";
+        }
+        StringJoiner joiner = new StringJoiner(", ", "{", "}");
+        for (Map.Entry<String, DownloadDescriptor> entry : stems.entrySet()) {
+            DownloadDescriptor descriptor = entry.getValue();
+            joiner.add(entry.getKey() + "=" + descriptor.name() + " -> " + descriptor.url());
+        }
+        return joiner.toString();
     }
 
     private LinkedHashMap<String, DownloadDescriptor> extractTwoStemResult(List<DownloadDescriptor> candidates) {
@@ -545,6 +648,7 @@ public class MvsepSeparationService implements SeparationService {
         if (haystack.contains("instrum-only")) score += 12;
         if (haystack.contains("karaoke")) score += 5;
         if (haystack.contains("music")) score += 2;
+        if (haystack.contains("other")) score += 1;
         if (containsBackingKeywords(haystack)) score -= 8;
         if (haystack.contains("lead")) score -= 4;
         if (haystack.contains("vocals")) score -= 6;
@@ -599,7 +703,12 @@ public class MvsepSeparationService implements SeparationService {
             }
             if (url != null) {
                 String descriptorName = StringUtils.defaultIfBlank(name, path);
-                downloads.putIfAbsent(url, new DownloadDescriptor(url, descriptorName));
+                DownloadDescriptor descriptor = new DownloadDescriptor(url, descriptorName);
+                if (isUsefulDownloadCandidate(descriptor)) {
+                    downloads.putIfAbsent(url, descriptor);
+                } else {
+                    LOGGER.info("MVSEP filtered download candidate: " + descriptor.name() + " -> " + descriptor.url());
+                }
             }
             for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
                 collectDownloads(entry.getValue(), path + "." + entry.getKey(), downloads);
@@ -615,8 +724,29 @@ public class MvsepSeparationService implements SeparationService {
         }
         String value = getString(element);
         if (looksLikeUrl(value)) {
-            downloads.putIfAbsent(value, new DownloadDescriptor(value, path));
+            DownloadDescriptor descriptor = new DownloadDescriptor(value, path);
+            if (isUsefulDownloadCandidate(descriptor)) {
+                downloads.putIfAbsent(value, descriptor);
+            } else {
+                LOGGER.info("MVSEP filtered download candidate: " + descriptor.name() + " -> " + descriptor.url());
+            }
         }
+    }
+
+    private boolean isUsefulDownloadCandidate(DownloadDescriptor descriptor) {
+        String name = StringUtils.defaultString(descriptor.name()).toLowerCase(Locale.ROOT);
+        String url = StringUtils.defaultString(descriptor.url()).toLowerCase(Locale.ROOT);
+        String haystack = name + " " + url;
+        if (url.contains("/storage/temp/")) {
+            return false;
+        }
+        if (name.contains("[mvsep.com]")) {
+            return false;
+        }
+        if (haystack.contains("input_file") || haystack.contains("original") || haystack.contains("source")) {
+            return false;
+        }
+        return url.contains("/storage/processed/") || name.contains("vocals") || name.contains("other") || name.contains("instrumental");
     }
 
     private void collectAlgorithms(JsonElement element, Map<Integer, MvsepAlgorithmInfo> algorithms) {
@@ -750,9 +880,9 @@ public class MvsepSeparationService implements SeparationService {
         if (StringUtils.isBlank(value)) {
             return "";
         }
-        String sanitized = value.replaceAll("[\\\\/:*?\"<>|]", "_")
-                                .replaceAll("\\s+", " ")
-                                .trim();
+        String sanitized = value.replaceAll("[\\/:*?\"<>|]", "_")
+                .replaceAll("\\s+", " ")
+                .trim();
         while (sanitized.endsWith(".")) {
             sanitized = sanitized.substring(0, sanitized.length() - 1).trim();
         }

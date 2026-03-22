@@ -1137,7 +1137,7 @@ public class YassUtils {
      * Liefert true, wenn die Zeile leer ist oder ein Song-Part-Marker wie
      * "chorus", "[chorus]", "(chorus)" oder "[chorus 1]" darstellt.
      */
-    private static boolean isSongPartLine(String line) {
+    public static boolean isSongPartLine(String line) {
         if (line == null) {
             return true; // wie StringUtils.isEmpty -> skip
         }

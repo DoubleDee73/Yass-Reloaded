@@ -276,6 +276,7 @@ public class YassMain extends JFrame {
 
     public void init() {
         prop = new YassProperties();
+        YassLogger.applyLogLevel(prop.getProperty("log-level"));
         initLanguage();
         checkVersion();
         initTempDir();

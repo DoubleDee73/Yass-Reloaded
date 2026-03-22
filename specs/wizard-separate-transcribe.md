@@ -1,4 +1,4 @@
-﻿# Wizard Separation + Transcription
+# Wizard Separation + Transcription
 
 ## Goal
 

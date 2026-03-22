@@ -59,6 +59,7 @@ public class Lyrics extends JPanel {
     private JTextField subtitleFileField = null;
     private YassProperties yassProperties;
     private JLabel wizardStatusLabel = null;
+    private JButton pasteLyricsButton = null;
     private Map<Integer, String> subtitles = null;
 
     /**
@@ -155,10 +156,17 @@ public class Lyrics extends JPanel {
                 e -> {
                         wizard.setValue("language", (String)language.getSelectedItem());
                 });
-        JPanel rightButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        rightButtons.add(new JLabel(I18.get("options_group1_language")));
-        rightButtons.add(language);
-        buttons.add(rightButtons, BorderLayout.WEST);
+        JPanel leftButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        leftButtons.add(new JLabel(I18.get("options_group1_language")));
+        leftButtons.add(language);
+        buttons.add(leftButtons, BorderLayout.WEST);
+
+        JPanel rightButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+        pasteLyricsButton = new JButton(I18.get("create_lyrics_paste"));
+        pasteLyricsButton.setVisible(false);
+        pasteLyricsButton.setToolTipText(I18.get("create_lyrics_paste_tooltip"));
+        rightButtons.add(pasteLyricsButton);
+        buttons.add(rightButtons, BorderLayout.EAST);
 
         wizardStatusLabel = new JLabel(" ");
         wizardStatusLabel.setForeground(Color.GRAY);
@@ -195,6 +203,24 @@ public class Lyrics extends JPanel {
         if (wizardStatusLabel != null) {
             wizardStatusLabel.setText(StringUtils.defaultString(text, " "));
         }
+    }
+
+
+    public void setPasteLyricsAction(Action action) {
+        if (pasteLyricsButton == null) {
+            return;
+        }
+        if (action == null) {
+            pasteLyricsButton.setAction(null);
+            pasteLyricsButton.setText(I18.get("create_lyrics_paste"));
+            pasteLyricsButton.setVisible(false);
+            pasteLyricsButton.setToolTipText(I18.get("create_lyrics_paste_tooltip"));
+            return;
+        }
+        pasteLyricsButton.setAction(action);
+        pasteLyricsButton.setText(I18.get("create_lyrics_paste"));
+        pasteLyricsButton.setToolTipText(I18.get("create_lyrics_paste_tooltip"));
+        pasteLyricsButton.setVisible(true);
     }
     private void determineLanguage() {
         if (language != null && StringUtils.isEmpty((String)language.getSelectedItem()) && 

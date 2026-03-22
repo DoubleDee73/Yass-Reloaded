@@ -1,4 +1,4 @@
-﻿# OpenAI Transcription Alignment
+# OpenAI Transcription Alignment
 
 ## Goal
 

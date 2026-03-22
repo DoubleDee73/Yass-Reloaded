@@ -30,6 +30,7 @@ import java.awt.*;
 import java.awt.event.*;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Line2D;
+import java.awt.geom.Path2D;
 import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
@@ -276,6 +277,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
     private boolean versionTextPainted = true;
     private final Vector<Long> tmpNotes = new Vector<>(1024);
     private List<Integer> tmpPitches = new ArrayList<>();
+    private List<PitchDetector.PitchData> recordingOverlayPitchData = java.util.Collections.emptyList();
     private final Dimension dim = new Dimension(1000, 200);
     private Graphics2D pgb = null;
     private int ppos = 0;
@@ -1310,17 +1312,13 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                 }
 
                 if (e.isControlDown() && e.isAltDown() && c == KeyEvent.CHAR_UNDEFINED) {
-                    hiliteAction = ACTION_CONTROL_ALT;
-                    repaint();
+                    setHiliteAction(ACTION_CONTROL_ALT);
                 } else if (e.isControlDown() && c == KeyEvent.CHAR_UNDEFINED) {
-                    hiliteAction = ACTION_CONTROL;
-                    repaint();
+                    setHiliteAction(ACTION_CONTROL);
                 } else if (e.isAltDown() && c == KeyEvent.CHAR_UNDEFINED) {
-                    hiliteAction = ACTION_ALT;
-                    repaint();
+                    setHiliteAction(ACTION_ALT);
                 } else if (e.isShiftDown() && c == KeyEvent.CHAR_UNDEFINED) {
-                    hiliteAction = ACTION_CONTROL_ALT;
-                    repaint();
+                    setHiliteAction(ACTION_CONTROL_ALT);
                 }
 
                 // 0=next_note, 1=prev_note, 2=page_down, 3=page_up
@@ -1636,17 +1634,13 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                 if (table == null)
                     return;
                 if (!e.isControlDown() && !e.isAltDown() && !e.isShiftDown()) {
-                    hiliteAction = ACTION_NONE;
-                    repaint();
+                    setHiliteAction(ACTION_NONE);
                 } else if (!e.isControlDown() && e.isAltDown()) {
-                    hiliteAction = ACTION_ALT;
-                    repaint();
+                    setHiliteAction(ACTION_ALT);
                 } else if (e.isControlDown() && !e.isAltDown()) {
-                    hiliteAction = ACTION_CONTROL;
-                    repaint();
+                    setHiliteAction(ACTION_CONTROL);
                 } else if (e.isShiftDown()) {
-                    hiliteAction = ACTION_CONTROL_ALT;
-                    repaint();
+                    setHiliteAction(ACTION_CONTROL_ALT);
                 }
 
                 if (!isPlaying) {
@@ -2339,12 +2333,12 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         }
         gb.dispose();
 
-        paintBackBuffer(g2);
+         paintBackBuffer(g2);
 
-        if (!live) {
-            paintMessage(g2);
-        }
-    }
+          if (!live) {
+              paintMessage(g2);
+          }
+      }
 
     /**
      * Gets the backBuffer attribute of the YassSheet object
@@ -2369,6 +2363,15 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
      */
     public void refreshImage() {
         refreshing = true;
+        LOGGER.finest("YassSheet.refreshImage size=" + getWidth() + "x" + getHeight()
+                + " image=" + (image == null ? "null" : image.getWidth() + "x" + image.getHeight())
+                + " clip=" + (clip == null ? "null" : clip.width + "x" + clip.height));
+
+        if (image == null) {
+            refreshing = false;
+            repaint();
+            return;
+        }
 
         Graphics2D db = image.createGraphics();
         db.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -2571,31 +2574,18 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             g2.setColor(darkMode ? whiteDarkMode : Color.WHITE);
             g2.fillRect(clip.x, clip.y, clip.width, clip.height);
 
-            g2.setPaint(bgtex);
-
-            // LYRICS POSITION
-
-            if (lyricsVisible) {
-                g2.fillRect(clip.x, TOP_BORDER, clip.width - lyricsWidth, TOP_LINE - 10 - TOP_BORDER - 1);
-                if (live) {
-                    g2.fillRect(clip.x, dim.height - BOTTOM_BORDER + 16,
-                            clip.width, BOTTOM_BORDER + 16);
-                } else {
-                    g2.fillRect(clip.x + LEFT_BORDER, dim.height
-                            - BOTTOM_BORDER + 16, clip.width - LEFT_BORDER
-                            - RIGHT_BORDER, BOTTOM_BORDER + 16);
-                }
+            // Keep the upper free sheet area plain so beat/time markers and the
+            // cursor sit on the normal sheet background, but render the karaoke
+            // text band at the bottom as a simple solid area instead of the old
+            // checkerboard texture.
+            g2.setColor(darkMode ? whiteDarkMode : Color.WHITE);
+            if (live) {
+                g2.fillRect(clip.x, dim.height - BOTTOM_BORDER + 16,
+                        clip.width, BOTTOM_BORDER + 16);
             } else {
-                g2.fillRect(clip.x, TOP_BORDER, clip.width, TOP_LINE - 10
-                        - TOP_BORDER - 1);
-                if (live) {
-                    g2.fillRect(clip.x, dim.height - BOTTOM_BORDER + 16,
-                            clip.width, BOTTOM_BORDER + 16);
-                } else {
-                    g2.fillRect(clip.x + LEFT_BORDER, dim.height
-                            - BOTTOM_BORDER + 16, clip.width - LEFT_BORDER
-                            - RIGHT_BORDER, BOTTOM_BORDER + 16);
-                }
+                g2.fillRect(clip.x + LEFT_BORDER, dim.height
+                        - BOTTOM_BORDER + 16, clip.width - LEFT_BORDER
+                        - RIGHT_BORDER, BOTTOM_BORDER + 16);
             }
             g2.setColor(darkMode ? whiteDarkMode : Color.WHITE);
         }
@@ -2607,14 +2597,19 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
      * @param g2 Description of the Parameter
      */
     public void paintWaveform(Graphics2D g2) {
-        g2.setColor(darkMode ? dkGreen : dkGreenLight);
         YassPlayer mp3 = actions.getMP3();
         if (mp3.getAudioBytes() == null) {
             return;
         }
         List<PitchDetector.PitchData> pitchDataList = mp3.getPitchDataList();
+        String selectedAudioTag = songHeader != null ? songHeader.getSelectedAudio() : null;
+        boolean vocalsSelected = UltrastarHeaderTag.VOCALS.toString().equals(selectedAudioTag);
+        boolean usePitchWaveform = vocalsSelected
+                && pitchDataList != null
+                && !pitchDataList.isEmpty()
+                && !actions.isRecording();
 
-        if (pitchDataList != null && !pitchDataList.isEmpty()) {
+        if (usePitchWaveform) {
             int pageMin = minHeight;
             if (pan) {
                 int firstVisibleNoteIndex = firstVisibleNote();
@@ -2625,9 +2620,33 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                 }
             }
 
-            int pitchTranspose = getWaveformPitchTranspose(pitchDataList);
+            PagePitchScope pagePitchScope = getVisiblePagePitchScope(pitchDataList);
+            List<PitchDetector.PitchData> visiblePitchData = pagePitchScope.pitchData();
+            if (visiblePitchData.isEmpty()) {
+                visiblePitchData = pitchDataList;
+            }
+
+            int visibleMin = pan ? pageMin : minHeight;
+            int visibleMax = pan ? pageMin + NORM_HEIGHT - 2 : maxHeight;
+            int pitchTranspose = getWaveformPitchTranspose(pagePitchScope, visiblePitchData);
+            int pitchRenderMin = pan ? pageMin : getWaveformPitchRenderMin(visiblePitchData, pitchTranspose, visibleMin, visibleMax);
             mp3.setPitchWaveformTranspose(pitchTranspose);
+
+            Color outerColor = darkMode ? new Color(11, 103, 95, 145) : new Color(11, 103, 95, 125);
+            Color middleColor = darkMode ? new Color(0, 180, 216, 170) : new Color(17, 145, 133, 150);
+            Color innerColor = darkMode ? new Color(144, 224, 239, 190) : new Color(147, 215, 208, 170);
+            Color lineGlowColor = darkMode ? new Color(202, 240, 248, 150) : new Color(147, 215, 208, 140);
+            Color lineCoreColor = darkMode ? new Color(202, 240, 248, 242) : new Color(11, 103, 95, 238);
+
+            Stroke oldStroke = g2.getStroke();
+            Color oldColor = g2.getColor();
+            Path2D.Double pitchPath = new Path2D.Double();
             int pitchDataIndex = 0;
+            boolean pathStarted = false;
+            double smoothedYCenter = Double.NaN;
+            double lineYCenter = Double.NaN;
+            double lineAmplitudeThreshold = 1.8;
+
             for (int x = clip.x; x < clip.x + clip.width; x++) {
                 double timeInSeconds = fromTimelineExact(x) / 1000.0;
                 while (pitchDataIndex < pitchDataList.size() - 1 &&
@@ -2636,19 +2655,61 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                 }
                 PitchDetector.PitchData currentPitch = pitchDataList.get(pitchDataIndex);
                 int displayPitch = currentPitch.pitch() + pitchTranspose;
+                double yCenter = dim.height - BOTTOM_BORDER - (displayPitch - pitchRenderMin + (pan ? 2 : 0)) * hSize;
+                int amplitude = Math.abs(mp3.getWaveFormAtMillis(timeInSeconds * 1000));
+                double amplitudeScaled = amplitude * uiScale;
 
-                double yCenter;
-                if (pan) {
-                    yCenter = dim.height - BOTTOM_BORDER - (displayPitch - pageMin + 2) * hSize;
+                if (Double.isNaN(smoothedYCenter) || Math.abs(smoothedYCenter - yCenter) > hSize * 0.9) {
+                    smoothedYCenter = yCenter;
                 } else {
-                    yCenter = dim.height - BOTTOM_BORDER - (displayPitch - minHeight) * hSize;
+                    smoothedYCenter = smoothedYCenter * 0.45 + yCenter * 0.55;
                 }
 
-                int amplitude = mp3.getWaveFormAtMillis(timeInSeconds * 1000);
-                double amplitudeScaled = amplitude * uiScale;
-                g2.drawLine(x, (int) (yCenter - amplitudeScaled / 2.0), x, (int) (yCenter + amplitudeScaled / 2.0));
+                if (Double.isNaN(lineYCenter)) {
+                    lineYCenter = smoothedYCenter;
+                } else if (Math.abs(lineYCenter - smoothedYCenter) > hSize * 2.6) {
+                    lineYCenter = smoothedYCenter;
+                    pathStarted = false;
+                } else {
+                    lineYCenter = lineYCenter * 0.82 + smoothedYCenter * 0.18;
+                }
+
+                if (isMelodicFrame(pitchDataList, pitchDataIndex, amplitudeScaled, lineAmplitudeThreshold)) {
+                    if (!pathStarted) {
+                        pitchPath.moveTo(x, lineYCenter);
+                        pathStarted = true;
+                    } else {
+                        pitchPath.lineTo(x, lineYCenter);
+                    }
+                } else {
+                    pathStarted = false;
+                }
+
+                int outerTop = (int) Math.round(smoothedYCenter - amplitudeScaled / 2.0);
+                int outerBottom = (int) Math.round(smoothedYCenter + amplitudeScaled / 2.0);
+                int middleTop = (int) Math.round(smoothedYCenter - amplitudeScaled * 0.34);
+                int middleBottom = (int) Math.round(smoothedYCenter + amplitudeScaled * 0.34);
+                int innerTop = (int) Math.round(smoothedYCenter - amplitudeScaled * 0.17);
+                int innerBottom = (int) Math.round(smoothedYCenter + amplitudeScaled * 0.17);
+
+                g2.setColor(outerColor);
+                g2.drawLine(x, outerTop, x, outerBottom);
+                g2.setColor(middleColor);
+                g2.drawLine(x, middleTop, x, middleBottom);
+                g2.setColor(innerColor);
+                g2.drawLine(x, innerTop, x, innerBottom);
             }
+
+            g2.setStroke(new BasicStroke(4.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.setColor(lineGlowColor);
+            g2.draw(pitchPath);
+            g2.setStroke(new BasicStroke(1.9f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.setColor(lineCoreColor);
+            g2.draw(pitchPath);
+            g2.setStroke(oldStroke);
+            g2.setColor(oldColor);
         } else {
+            g2.setColor(darkMode ? dkGreen : dkGreenLight);
             int h = TOP_LINE - 10 + 128;
             int lasty = 0;
             for (int x = clip.x + 1; x < clip.x + clip.width; x++) {
@@ -2657,53 +2718,479 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                 g2.drawLine(x - 1, h - lasty, x, h - y);
                 lasty = y;
             }
+            paintRecordingPitchOverlay(g2, recordingOverlayPitchData);
         }
         g2.setColor(darkMode ? whiteDarkMode : Color.WHITE);
     }
 
-    private int getWaveformPitchTranspose(List<PitchDetector.PitchData> pitchDataList) {
-        if (table == null || pitchDataList == null || pitchDataList.isEmpty()) {
-            return 0;
+    private void paintRecordingPitchOverlay(Graphics2D g2, List<PitchDetector.PitchData> pitchDataList) {
+        if (!actions.isRecording() || pitchDataList == null || pitchDataList.isEmpty()) {
+            return;
+        }
+        final int singableLow = -24; // E2
+        final int singableHigh = 24; // C6
+        int pageMin = minHeight;
+        if (pan) {
+            int firstVisibleNoteIndex = firstVisibleNote();
+            if (firstVisibleNoteIndex != -1 && firstVisibleNoteIndex < rect.size()) {
+                pageMin = rect.elementAt(firstVisibleNoteIndex).getPageMin();
+            } else {
+                pageMin = hhPageMin;
+            }
         }
 
-        int noteMin = Integer.MAX_VALUE;
-        int noteMax = Integer.MIN_VALUE;
-        for (int i = 0; i < table.getRowCount(); i++) {
-            YassRow row = table.getRowAt(i);
-            if (!row.isNote()) {
+        PagePitchScope pagePitchScope = getVisiblePagePitchScope(pitchDataList);
+        List<PitchDetector.PitchData> visiblePitchData = pagePitchScope.pitchData();
+        if (visiblePitchData.isEmpty()) {
+            visiblePitchData = pitchDataList;
+        }
+
+        int visibleMin = pan ? pageMin : minHeight;
+        int visibleMax = pan ? pageMin + NORM_HEIGHT - 2 : maxHeight;
+        int pitchTranspose = getWaveformPitchTranspose(null, visiblePitchData);
+        RecordingPitchScale recordingPitchScale = getRecordingPitchScale(visiblePitchData, pitchTranspose, visibleMin, visibleMax);
+
+        Stroke oldStroke = g2.getStroke();
+        Color oldColor = g2.getColor();
+        int pitchDataIndex = 0;
+        double lineYCenter = Double.NaN;
+        double lineAmplitudeThreshold = 1.8;
+        boolean lastVisible = false;
+        int lastX = -1;
+        double lastY = Double.NaN;
+
+        for (int x = clip.x; x < clip.x + clip.width; x++) {
+            double timeInSeconds = fromTimelineExact(x) / 1000.0;
+            while (pitchDataIndex < pitchDataList.size() - 1
+                    && pitchDataList.get(pitchDataIndex + 1).time() < timeInSeconds) {
+                pitchDataIndex++;
+            }
+            PitchDetector.PitchData currentPitch = pitchDataList.get(pitchDataIndex);
+            int displayPitch = currentPitch.pitch() + pitchTranspose;
+            double yCenter = mapRecordingPitchToY(displayPitch, recordingPitchScale);
+            int amplitude = Math.abs(actions.getMP3().getWaveFormAtMillis(timeInSeconds * 1000));
+            double amplitudeScaled = amplitude * uiScale;
+            boolean outOfSingableRange = displayPitch < singableLow || displayPitch > singableHigh;
+
+            if (Double.isNaN(lineYCenter) || Math.abs(lineYCenter - yCenter) > hSize * 2.6) {
+                lineYCenter = yCenter;
+                lastVisible = false;
+            } else {
+                lineYCenter = lineYCenter * 0.78 + yCenter * 0.22;
+            }
+
+            if (!isMelodicFrame(pitchDataList, pitchDataIndex, amplitudeScaled, lineAmplitudeThreshold)
+                    || (outOfSingableRange && (amplitudeScaled < lineAmplitudeThreshold * 3.2
+                    || !hasRecordingOutOfRangeSupport(pitchDataList, pitchDataIndex, pitchTranspose, singableLow, singableHigh)))) {
+                lastVisible = false;
                 continue;
             }
-            int height = row.getHeightInt();
-            noteMin = Math.min(noteMin, height);
-            noteMax = Math.max(noteMax, height);
+
+            double opacityFactor = Math.max(0.0, Math.min(1.0, (amplitudeScaled - lineAmplitudeThreshold) / 5.0));
+            if (outOfSingableRange) {
+                opacityFactor *= 0.12;
+            }
+            int glowAlpha = (int) Math.round((darkMode ? 140 : 130) * opacityFactor);
+            int coreAlpha = (int) Math.round((darkMode ? 238 : 238) * opacityFactor);
+            if (!lastVisible) {
+                lastVisible = true;
+                lastX = x;
+                lastY = lineYCenter;
+                continue;
+            }
+
+            g2.setStroke(new BasicStroke(4.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.setColor(darkMode
+                    ? new Color(202, 240, 248, Math.max(0, glowAlpha))
+                    : new Color(147, 215, 208, Math.max(0, glowAlpha)));
+            g2.drawLine(lastX, (int) Math.round(lastY), x, (int) Math.round(lineYCenter));
+            g2.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.setColor(darkMode
+                    ? new Color(144, 224, 239, Math.max(0, coreAlpha))
+                    : new Color(11, 103, 95, Math.max(0, coreAlpha)));
+            g2.drawLine(lastX, (int) Math.round(lastY), x, (int) Math.round(lineYCenter));
+            lastX = x;
+            lastY = lineYCenter;
+            lastVisible = true;
         }
-        if (noteMin == Integer.MAX_VALUE) {
+
+        g2.setStroke(oldStroke);
+        g2.setColor(oldColor);
+    }
+
+    private RecordingPitchScale getRecordingPitchScale(List<PitchDetector.PitchData> pitchDataList,
+                                                       int pitchTranspose,
+                                                       int visibleMin,
+                                                       int visibleMax) {
+        final int singableLow = -24; // E2
+        final int singableHigh = 24; // C6
+        java.util.List<Integer> inRangePitches = new java.util.ArrayList<>();
+        for (PitchDetector.PitchData pitchData : pitchDataList) {
+            int shifted = pitchData.pitch() + pitchTranspose;
+            if (shifted >= singableLow && shifted <= singableHigh) {
+                inRangePitches.add(shifted);
+            }
+        }
+        int localMin;
+        int localMax;
+        if (inRangePitches.isEmpty()) {
+            localMin = singableLow;
+            localMax = singableHigh;
+        } else {
+            java.util.Collections.sort(inRangePitches);
+            int lowIndex = (int) Math.floor((inRangePitches.size() - 1) * 0.10);
+            int highIndex = (int) Math.ceil((inRangePitches.size() - 1) * 0.90);
+            localMin = inRangePitches.get(Math.max(0, lowIndex));
+            localMax = inRangePitches.get(Math.min(inRangePitches.size() - 1, highIndex));
+        }
+        if (localMax - localMin < 4) {
+            int midpoint = (localMin + localMax) / 2;
+            localMin = Math.max(singableLow, midpoint - 2);
+            localMax = Math.min(singableHigh, midpoint + 2);
+        }
+        double bottomY = dim.height - BOTTOM_BORDER - (pan ? 2 : 0) * hSize;
+        double topY = dim.height - BOTTOM_BORDER - (visibleMax - visibleMin + (pan ? 2 : 0)) * hSize;
+        return new RecordingPitchScale(singableLow, singableHigh, localMin, localMax, topY, bottomY);
+    }
+
+    private boolean hasRecordingOutOfRangeSupport(List<PitchDetector.PitchData> pitchDataList,
+                                                  int pitchDataIndex,
+                                                  int pitchTranspose,
+                                                  int singableLow,
+                                                  int singableHigh) {
+        if (pitchDataList == null || pitchDataIndex < 0 || pitchDataIndex >= pitchDataList.size()) {
+            return false;
+        }
+        PitchDetector.PitchData centerPitch = pitchDataList.get(pitchDataIndex);
+        int centerPitchClass = Math.max(singableLow, Math.min(singableHigh, centerPitch.pitch() + pitchTranspose));
+        double centerTime = centerPitch.time();
+        int support = 0;
+        int start = Math.max(0, pitchDataIndex - 3);
+        int end = Math.min(pitchDataList.size() - 1, pitchDataIndex + 3);
+        for (int i = start; i <= end; i++) {
+            if (i == pitchDataIndex) {
+                continue;
+            }
+            PitchDetector.PitchData neighbor = pitchDataList.get(i);
+            if (Math.abs(neighbor.time() - centerTime) > 0.18) {
+                continue;
+            }
+            int neighborPitchClass = Math.max(singableLow, Math.min(singableHigh, neighbor.pitch() + pitchTranspose));
+            if (Math.abs(neighborPitchClass - centerPitchClass) <= 2) {
+                support++;
+                if (support >= 2) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private double mapRecordingPitchToY(int displayPitch, RecordingPitchScale scale) {
+        int clampedPitch = Math.max(scale.singableLow(), Math.min(scale.singableHigh(), displayPitch));
+        if (scale.localMax() <= scale.localMin()) {
+            return (scale.topY() + scale.bottomY()) / 2.0;
+        }
+        double ratio = (double) (clampedPitch - scale.localMin()) / (double) (scale.localMax() - scale.localMin());
+        ratio = Math.max(0.0, Math.min(1.0, ratio));
+        return scale.bottomY() - ratio * (scale.bottomY() - scale.topY());
+    }
+
+    public void logSelectedNotePitchDistribution() {
+        if (table == null || actions == null) {
+            return;
+        }
+        int selectedRow = table.getSelectedRow();
+        if (selectedRow < 0 || selectedRow >= table.getRowCount()) {
+            return;
+        }
+        YassRow selectedNote = table.getRowAt(selectedRow);
+        if (selectedNote == null || !selectedNote.isNote()) {
+            return;
+        }
+        YassPlayer mp3 = actions.getMP3();
+        if (mp3 == null || !mp3.hasAudio()) {
+            return;
+        }
+        List<PitchDetector.PitchData> processedPitchData = mp3.getPitchDataList();
+        List<PitchDetector.PitchData> rawPitchData = mp3.getRawPitchDataList();
+        List<PitchDetector.PitchData> locallyNormalizedPitchData = mp3.getLocallyNormalizedPitchDataList();
+        List<PitchDetector.PitchData> viterbiPitchData = mp3.getViterbiPitchDataList();
+        List<PitchDetector.PitchData> transposedPitchData = mp3.getTransposedPitchDataList();
+        if ((processedPitchData == null || processedPitchData.isEmpty())
+                && (rawPitchData == null || rawPitchData.isEmpty())
+                && (locallyNormalizedPitchData == null || locallyNormalizedPitchData.isEmpty())
+                && (viterbiPitchData == null || viterbiPitchData.isEmpty())
+                && (transposedPitchData == null || transposedPitchData.isEmpty())) {
+            return;
+        }
+
+        double startSeconds = table.beatToMs(selectedNote.getBeatInt()) / 1000.0;
+        double endSeconds = table.beatToMs(selectedNote.getBeatInt() + selectedNote.getLengthInt()) / 1000.0;
+        List<PitchDetector.PitchData> noteProcessedPitchData = processedPitchData == null
+                ? java.util.Collections.emptyList()
+                : processedPitchData.stream()
+                .filter(pd -> pd.time() >= startSeconds && pd.time() <= endSeconds)
+                .toList();
+        List<PitchDetector.PitchData> noteRawPitchData = rawPitchData == null
+                ? java.util.Collections.emptyList()
+                : rawPitchData.stream()
+                .filter(pd -> pd.time() >= startSeconds && pd.time() <= endSeconds)
+                .toList();
+        List<PitchDetector.PitchData> noteLocallyNormalizedPitchData = locallyNormalizedPitchData == null
+                ? java.util.Collections.emptyList()
+                : locallyNormalizedPitchData.stream()
+                .filter(pd -> pd.time() >= startSeconds && pd.time() <= endSeconds)
+                .toList();
+        List<PitchDetector.PitchData> noteViterbiPitchData = viterbiPitchData == null
+                ? java.util.Collections.emptyList()
+                : viterbiPitchData.stream()
+                .filter(pd -> pd.time() >= startSeconds && pd.time() <= endSeconds)
+                .toList();
+        List<PitchDetector.PitchData> noteTransposedPitchData = transposedPitchData == null
+                ? java.util.Collections.emptyList()
+                : transposedPitchData.stream()
+                .filter(pd -> pd.time() >= startSeconds && pd.time() <= endSeconds)
+                .toList();
+        if (noteProcessedPitchData.isEmpty() && noteRawPitchData.isEmpty() && noteLocallyNormalizedPitchData.isEmpty() && noteViterbiPitchData.isEmpty() && noteTransposedPitchData.isEmpty()) {
+            LOGGER.info("Selected note row " + selectedRow
+                    + " beat " + selectedNote.getBeatInt()
+                    + " len " + selectedNote.getLengthInt()
+                    + " has no detected pitches.");
+            return;
+        }
+
+        PagePitchScope pagePitchScope = getPitchScopeForRow(selectedRow,
+                processedPitchData == null ? java.util.Collections.emptyList() : processedPitchData);
+        int pitchTranspose = getWaveformPitchTranspose(pagePitchScope,
+                pagePitchScope.pitchData().isEmpty() ? noteProcessedPitchData : pagePitchScope.pitchData());
+
+        String rawDistribution = formatRawPitchDistribution(noteRawPitchData);
+        String locallyNormalizedDistribution = formatPitchDistribution(noteLocallyNormalizedPitchData, 0);
+        String viterbiDistribution = formatPitchDistribution(noteViterbiPitchData, 0);
+        String transposedDistribution = formatPitchDistribution(noteTransposedPitchData, 0);
+        String displayedDistribution = formatPitchDistribution(noteProcessedPitchData, pitchTranspose);
+
+        LOGGER.info("Selected note row " + selectedRow
+                + " beat " + selectedNote.getBeatInt()
+                + " len " + selectedNote.getLengthInt()
+                + " text=\"" + selectedNote.getTrimmedText() + "\""
+                + " rawPitches=[" + rawDistribution + "]"
+                + " afterLocalOctaveNormalization=[" + locallyNormalizedDistribution + "]"
+                + " afterViterbi=[" + viterbiDistribution + "]"
+                + " afterGlobalTranspose=[" + transposedDistribution + "]"
+                + " displayedPitches=[" + displayedDistribution + "]"
+                + " transpose=" + pitchTranspose);
+    }
+
+    private boolean isMelodicFrame(List<PitchDetector.PitchData> pitchDataList,
+                                   int pitchDataIndex,
+                                   double amplitudeScaled,
+                                   double lineAmplitudeThreshold) {
+        if (pitchDataList == null || pitchDataList.isEmpty() || pitchDataIndex < 0 || pitchDataIndex >= pitchDataList.size()) {
+            return false;
+        }
+        if (amplitudeScaled < lineAmplitudeThreshold) {
+            return false;
+        }
+
+        PitchDetector.PitchData current = pitchDataList.get(pitchDataIndex);
+        List<Integer> neighborhood = new ArrayList<>();
+        for (int i = Math.max(0, pitchDataIndex - 3); i <= Math.min(pitchDataList.size() - 1, pitchDataIndex + 3); i++) {
+            PitchDetector.PitchData candidate = pitchDataList.get(i);
+            if (Math.abs(candidate.time() - current.time()) <= 0.18f) {
+                neighborhood.add(candidate.pitch());
+            }
+        }
+        if (neighborhood.size() < 3) {
+            return amplitudeScaled >= lineAmplitudeThreshold * 1.6;
+        }
+        java.util.Collections.sort(neighborhood);
+        int medianPitch = neighborhood.get(neighborhood.size() / 2);
+        return Math.abs(current.pitch() - medianPitch) <= 2;
+    }
+
+    private String formatRawPitchDistribution(List<PitchDetector.PitchData> pitchDataList) {
+        if (pitchDataList == null || pitchDataList.isEmpty()) {
+            return "-";
+        }
+        java.util.Map<String, Integer> pitchHistogram = new java.util.LinkedHashMap<>();
+        for (PitchDetector.PitchData pitchData : pitchDataList) {
+            String label = formatRawPitchLabel(pitchData.rawFrequency(), pitchData.pitch());
+            pitchHistogram.put(label, pitchHistogram.getOrDefault(label, 0) + 1);
+        }
+        int total = pitchDataList.size();
+        return pitchHistogram.entrySet().stream()
+                .sorted((left, right) -> Integer.compare(right.getValue(), left.getValue()))
+                .map(entry -> Math.round(entry.getValue() * 1000.0 / total) / 10.0 + "% " + entry.getKey())
+                .reduce((left, right) -> left + ", " + right)
+                .orElse("-");
+    }
+
+    private String formatRawPitchLabel(double frequency, int fallbackPitch) {
+        if (frequency <= 0) {
+            return formatPitchName(fallbackPitch);
+        }
+        double midi = 69 + 12 * (Math.log(frequency / 440.0) / Math.log(2.0));
+        int nearestMidi = (int) Math.round(midi);
+        int cents = (int) Math.round((midi - nearestMidi) * 100);
+        int roundedCents = 25 * Math.round(cents / 25.0f);
+        int octave = nearestMidi / 12 - 1;
+        String note = getNoteName(normalizeNoteHeight(nearestMidi)) + octave;
+        String centsLabel = roundedCents == 0 ? "" : String.format("(%+dc)", roundedCents);
+        return note + centsLabel;
+    }
+
+    private String formatPitchDistribution(List<PitchDetector.PitchData> pitchDataList, int transpose) {
+        if (pitchDataList == null || pitchDataList.isEmpty()) {
+            return "-";
+        }
+        java.util.Map<String, Integer> pitchHistogram = new java.util.LinkedHashMap<>();
+        for (PitchDetector.PitchData pitchData : pitchDataList) {
+            String noteName = formatPitchName(pitchData.pitch() + transpose);
+            pitchHistogram.put(noteName, pitchHistogram.getOrDefault(noteName, 0) + 1);
+        }
+        int total = pitchDataList.size();
+        return pitchHistogram.entrySet().stream()
+                .sorted((left, right) -> Integer.compare(right.getValue(), left.getValue()))
+                .map(entry -> Math.round(entry.getValue() * 1000.0 / total) / 10.0 + "% " + entry.getKey())
+                .reduce((left, right) -> left + ", " + right)
+                .orElse("-");
+    }
+
+    private String formatPitchName(int pitch) {
+        int midi = pitch + 60;
+        int octave = midi / 12 - 1;
+        return getNoteName(normalizeNoteHeight(midi)) + octave;
+    }
+
+    private PagePitchScope getPitchScopeForRow(int noteRow, List<PitchDetector.PitchData> pitchDataList) {
+        if (table == null || pitchDataList == null || pitchDataList.isEmpty() || noteRow < 0 || noteRow >= table.getRowCount()) {
+            return new PagePitchScope(-1, -1, -1, Integer.MAX_VALUE, Integer.MIN_VALUE, java.util.Collections.emptyList());
+        }
+        int startRow = noteRow;
+        int pageNumber = 1;
+        for (int i = 0; i < noteRow; i++) {
+            if (table.getRowAt(i).isPageBreak()) {
+                pageNumber++;
+            }
+        }
+        while (startRow > 0 && !table.getRowAt(startRow - 1).isPageBreak()) {
+            startRow--;
+        }
+        int endRow = noteRow;
+        while (endRow < table.getRowCount() - 1 && !table.getRowAt(endRow + 1).isPageBreak() && !table.getRowAt(endRow + 1).isEnd()) {
+            endRow++;
+        }
+
+        int startBeat = table.getRowAt(startRow).isNote() ? table.getRowAt(startRow).getBeatInt() : 0;
+        int endBeat = table.getRowAt(endRow).isNote()
+                ? table.getRowAt(endRow).getBeatInt() + table.getRowAt(endRow).getLengthInt()
+                : startBeat + 1;
+        if (endRow + 1 < table.getRowCount() && table.getRowAt(endRow + 1).isPageBreak()) {
+            endBeat = table.getRowAt(endRow + 1).getBeatInt();
+        }
+        double startSeconds = table.beatToMs(startBeat) / 1000.0;
+        double endSeconds = table.beatToMs(endBeat) / 1000.0;
+        List<PitchDetector.PitchData> pagePitchData = pitchDataList.stream()
+                .filter(pd -> pd.time() >= startSeconds && pd.time() <= endSeconds)
+                .toList();
+        int noteMin = Integer.MAX_VALUE;
+        int noteMax = Integer.MIN_VALUE;
+        for (int row = startRow; row <= endRow; row++) {
+            YassRow currentRow = table.getRowAt(row);
+            if (currentRow != null && currentRow.isNote()) {
+                noteMin = Math.min(noteMin, currentRow.getHeightInt());
+                noteMax = Math.max(noteMax, currentRow.getHeightInt());
+            }
+        }
+        return new PagePitchScope(pageNumber, startBeat, endBeat, noteMin, noteMax, pagePitchData);
+    }
+
+    private PagePitchScope getVisiblePagePitchScope(List<PitchDetector.PitchData> pitchDataList) {
+        if (table == null || pitchDataList == null || pitchDataList.isEmpty()) {
+            return new PagePitchScope(-1, -1, -1, Integer.MAX_VALUE, Integer.MIN_VALUE, java.util.Collections.emptyList());
+        }
+        int noteRow = firstVisibleNote();
+        if (noteRow < 0 || noteRow >= table.getRowCount()) {
+            return new PagePitchScope(-1, -1, -1, Integer.MAX_VALUE, Integer.MIN_VALUE, java.util.Collections.emptyList());
+        }
+        return getPitchScopeForRow(noteRow, pitchDataList);
+    }
+
+    private int getWaveformPitchTranspose(PagePitchScope scope, List<PitchDetector.PitchData> pitchDataList) {
+        if (pitchDataList == null || pitchDataList.isEmpty()) {
             return 0;
         }
 
-        int pitchMin = Integer.MAX_VALUE;
-        int pitchMax = Integer.MIN_VALUE;
-        for (PitchDetector.PitchData pitchData : pitchDataList) {
-            pitchMin = Math.min(pitchMin, pitchData.pitch());
-            pitchMax = Math.max(pitchMax, pitchData.pitch());
-        }
+        final int targetLow = -3;  // A3
+        final int targetHigh = 16; // E5
+        final int targetMid = 6;   // A#4/Bb4 midpoint-ish
+
+        int noteMin = scope != null ? scope.noteMin() : Integer.MAX_VALUE;
+        int noteMax = scope != null ? scope.noteMax() : Integer.MIN_VALUE;
 
         int bestOffset = 0;
-        int bestOverlap = Integer.MIN_VALUE;
+        int bestHits = Integer.MIN_VALUE;
         int bestCenterDistance = Integer.MAX_VALUE;
-        int noteCenter = noteMin + noteMax;
+        int bestNoteDistance = Integer.MAX_VALUE;
+        int noteCenter = noteMin == Integer.MAX_VALUE ? targetMid : (noteMin + noteMax) / 2;
         for (int offset = -48; offset <= 48; offset += 12) {
-            int shiftedMin = pitchMin + offset;
-            int shiftedMax = pitchMax + offset;
-            int overlap = Math.min(noteMax, shiftedMax) - Math.max(noteMin, shiftedMin);
-            int centerDistance = Math.abs((shiftedMin + shiftedMax) - noteCenter);
-            if (overlap > bestOverlap || (overlap == bestOverlap && centerDistance < bestCenterDistance)) {
+            int hits = 0;
+            int distanceSum = 0;
+            int noteDistanceSum = 0;
+            for (PitchDetector.PitchData pitchData : pitchDataList) {
+                int shifted = pitchData.pitch() + offset;
+                if (shifted >= targetLow && shifted <= targetHigh) {
+                    hits++;
+                }
+                distanceSum += Math.abs(shifted - targetMid);
+                noteDistanceSum += Math.abs(shifted - noteCenter);
+            }
+            if (hits > bestHits
+                    || (hits == bestHits && distanceSum < bestCenterDistance)
+                    || (hits == bestHits && distanceSum == bestCenterDistance && noteDistanceSum < bestNoteDistance)) {
                 bestOffset = offset;
-                bestOverlap = overlap;
-                bestCenterDistance = centerDistance;
+                bestHits = hits;
+                bestCenterDistance = distanceSum;
+                bestNoteDistance = noteDistanceSum;
             }
         }
         return bestOffset;
+    }
+
+    private int getWaveformPitchRenderMin(List<PitchDetector.PitchData> pitchDataList,
+                                          int pitchTranspose,
+                                          int visibleMin,
+                                          int visibleMax) {
+        final int targetLow = 0;
+        int pitchMin = Integer.MAX_VALUE;
+        int pitchMax = Integer.MIN_VALUE;
+        for (PitchDetector.PitchData pitchData : pitchDataList) {
+            int shifted = pitchData.pitch() + pitchTranspose;
+            pitchMin = Math.min(pitchMin, shifted);
+            pitchMax = Math.max(pitchMax, shifted);
+        }
+        if (pitchMin == Integer.MAX_VALUE) {
+            return visibleMin;
+        }
+        int contentMin = Math.min(targetLow, pitchMin - 2);
+        int contentMax = Math.max(targetLow + 18, pitchMax + 2);
+        int visibleSpan = Math.max(19, visibleMax - visibleMin);
+        int minAllowed = Math.min(visibleMin, visibleMax - visibleSpan);
+        int maxAllowed = Math.max(visibleMin, visibleMax - visibleSpan);
+        int preferredMin = Math.min(contentMin, targetLow);
+        if (contentMax - preferredMin > visibleSpan) {
+            preferredMin = contentMax - visibleSpan;
+        }
+        return Math.max(minAllowed, Math.min(preferredMin, maxAllowed));
+    }
+
+    private record PagePitchScope(int pageNumber, int startBeat, int endBeat, int noteMin, int noteMax, List<PitchDetector.PitchData> pitchData) {
+    }
+
+    private record RecordingPitchScale(int singableLow, int singableHigh, int localMin, int localMax,
+                                       double topY, double bottomY) {
     }
 
     public void paintArrows(Graphics2D g2) {
@@ -3598,7 +4085,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                     if (r.isType(YassRectangle.GAP)) {
                         if (!live) {
                             g2.setColor(col);
-                            g2.drawString("Ã£â‚¬Â", (float)r.x, (float)r.y + 8);
+                            g2.drawString("【", (float)r.x, (float)r.y + 8);
                         }
                         continue;
                     }
@@ -4529,6 +5016,22 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
     public void setRecordingNoteIndex(int index) {
         this.recordingNoteIndex = index;
     }
+
+    public void setRecordingOverlayPitchData(List<PitchDetector.PitchData> pitchData) {
+        this.recordingOverlayPitchData = pitchData == null ? java.util.Collections.emptyList() : new ArrayList<>(pitchData);
+    }
+
+    public void clearRecordingOverlayPitchData() {
+        this.recordingOverlayPitchData = java.util.Collections.emptyList();
+    }
+
+    private void setHiliteAction(int action) {
+        if (hiliteAction != action) {
+            hiliteAction = action;
+            repaint();
+        }
+    }
+
     public Vector<Long> getTemporaryNotes() {
         return tmpNotes;
     }
@@ -4836,6 +5339,10 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
             TOP_LINE = dim.height - BOTTOM_BORDER + 10 - (int) (hSize * (NORM_HEIGHT - 2));
         else
             TOP_LINE = dim.height - BOTTOM_BORDER + 10 - (int) (hSize * (maxHeight - minHeight - 2));
+        LOGGER.fine("YassSheet.updateHeight parent=" + getParent().getWidth() + "x" + getParent().getHeight()
+                + " dim=" + dim.width + "x" + dim.height
+                + " minHeight=" + minHeight + " maxHeight=" + maxHeight
+                + " hSize=" + hSize + " pan=" + pan);
     }
 
     public void update() {
@@ -4907,6 +5414,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
         if (maxBeat   != maxB) { maxBeat   = maxB; changed = true; }
         if (changed)
             fireRangeChanged(minHeight, maxHeight, minBeat, maxBeat);
+        LOGGER.fine("YassSheet.update range minH=" + minHeight + " maxH=" + maxHeight
+                + " minB=" + minBeat + " maxB=" + maxBeat
+                + " outgap=" + outgap + " tableRows=" + (table == null ? -1 : table.getRowCount()));
     }
 
     public void setHNoteEnabled(boolean b) {
@@ -5467,11 +5977,11 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer {
                 return;
             paintText(pgb);
             paintPlayerText(pgb);
-            paintPlayerPosition(pgb, true);
-            if (playerPos < clip.x)
-                paintWait(pgb, (int) fromTimeline(clip.x - playerPos));
-            paintTemporaryNotes();
-            paintRecordedNotes();
+              paintPlayerPosition(pgb, true);
+                if (playerPos < clip.x)
+                    paintWait(pgb, (int) fromTimeline(clip.x - playerPos));
+              paintTemporaryNotes();
+              paintRecordedNotes();
 
             Graphics2D pg2 = (Graphics2D) getGraphics();
             if (!showVideo()) {

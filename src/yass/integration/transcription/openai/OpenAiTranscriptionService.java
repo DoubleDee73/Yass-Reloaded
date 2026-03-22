@@ -100,6 +100,29 @@ public class OpenAiTranscriptionService {
                                               baseName);
     }
 
+
+
+    public OpenAiTranscriptionRequest createRequest(File sourceAudioFile, String sourceTag, String songBaseName) {
+        if (!isConfigured()) {
+            throw new IllegalStateException("The OpenAI API key is missing.");
+        }
+        if (sourceAudioFile == null || !sourceAudioFile.isFile()) {
+            throw new IllegalArgumentException("The configured transcription source file could not be found.");
+        }
+
+        String effectiveSourceTag = StringUtils.defaultIfBlank(sourceTag, "#AUDIO");
+        File uploadAudioFile = resolveUploadAudioFile(sourceAudioFile);
+        String baseName = StringUtils.defaultIfBlank(songBaseName, stripExtension(sourceAudioFile.getName()));
+        LOGGER.info("OpenAI wizard request prepared for " + baseName + " using " + effectiveSourceTag
+                    + " (upload: " + uploadAudioFile.getName() + ")");
+        return new OpenAiTranscriptionRequest(sourceAudioFile,
+                                              uploadAudioFile,
+                                              effectiveSourceTag,
+                                              properties.getProperty("openai-model"),
+                                              null,
+                                              "word",
+                                              baseName);
+    }
     public boolean hasCachedTranscription(OpenAiTranscriptionRequest request) {
         return getCacheFile(request).isFile();
     }
@@ -203,6 +226,11 @@ public class OpenAiTranscriptionService {
         String cacheName = ("#VOCALS".equals(request.getSourceTag()) ? "vocals" : "audio") + "-transcript.openai.json";
         try { java.nio.file.Files.createDirectories(cacheDir.toPath()); } catch (Exception ignored) {}
         return new File(cacheDir, cacheName);
+    }
+
+    private String stripExtension(String value) {
+        int dot = value.lastIndexOf('.');
+        return dot > 0 ? value.substring(0, dot) : value;
     }
 
     private String resolveIsoLanguage(String displayLanguage) {

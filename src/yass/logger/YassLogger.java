@@ -37,8 +37,29 @@ public class YassLogger {
             consoleHandler.setFormatter(new SimpleFormatter());
             staticLogger.addHandler(fileHandler);
             staticLogger.addHandler(consoleHandler);
+            applyLogLevel("INFO");
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public static void applyLogLevel(String levelName) {
+        Level level = parseLevel(levelName);
+        Logger staticLogger = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+        staticLogger.setLevel(level);
+        for (Handler handler : staticLogger.getHandlers()) {
+            handler.setLevel(level);
+        }
+    }
+
+    private static Level parseLevel(String levelName) {
+        if (levelName == null || levelName.isBlank()) {
+            return Level.INFO;
+        }
+        try {
+            return Level.parse(levelName.trim().toUpperCase());
+        } catch (IllegalArgumentException ignored) {
+            return Level.INFO;
         }
     }
 }

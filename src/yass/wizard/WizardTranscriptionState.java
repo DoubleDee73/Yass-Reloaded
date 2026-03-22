@@ -43,4 +43,8 @@ public class WizardTranscriptionState {
     public OpenAiTranscriptionResult getTranscriptionResult() {
         return transcriptionResult;
     }
+
+    public WizardTranscriptionState withTranscriptionResult(OpenAiTranscriptionResult updatedTranscriptionResult) {
+        return new WizardTranscriptionState(runDirectory, sourceAudioFile, sourceConvertedFile, separationResult, updatedTranscriptionResult);
+    }
 }
