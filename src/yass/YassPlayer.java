@@ -695,7 +695,23 @@ public class YassPlayer {
             return;
         }
 
+        String caller = "unknown";
+        StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+        if (stack != null && stack.length > 2) {
+            StackTraceElement frame = stack[2];
+            caller = frame.getClassName() + "#" + frame.getMethodName() + ":" + frame.getLineNumber();
+        }
+        LOGGER.info("YassPlayer.playSelection source=" + source
+                + " inUs=" + in
+                + " outUs=" + out
+                + " timebase=" + timebase
+                + " fadeOutMs=" + fadeOutMs
+                + " caller=" + caller);
+
         interruptMP3();
+        // Keep logical playback position in sync immediately, even before the
+        // new playback thread has started rendering audio.
+        position = in;
 
         player = new PlayThread(source, in, out, clicks, timebase, fadeOutMs);
         player.start();
@@ -709,6 +725,15 @@ public class YassPlayer {
             sharedLineInterrupted = true;
             if (hasPlaybackRenderer) {
                 playbackRenderer.setPlaybackInterrupted(true);
+            }
+        }
+        // Drop any queued audio immediately so a subsequent resume cannot
+        // start with stale chunks from the previous playback position.
+        sharedLineQueue.clear();
+        if (sharedLine != null) {
+            try {
+                sharedLine.flush();
+            } catch (Exception ignored) {
             }
         }
         playThreadMap.clear();

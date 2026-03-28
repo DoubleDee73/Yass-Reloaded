@@ -23,12 +23,16 @@ import java.util.Vector;
 
 public class YassTapNotes {
     public static final double REACTION_TIME = 200;
-    public static void evaluateTaps(YassTable table, Vector<Long> taps, List<Integer> pitches, Timebase timebase) {
-        if (taps == null) return;
+    public static int evaluateTaps(YassTable table, Vector<Long> taps, List<Integer> pitches, Timebase timebase) {
+        return evaluateTaps(table, taps, pitches, timebase, -1);
+    }
+
+    public static int evaluateTaps(YassTable table, Vector<Long> taps, List<Integer> pitches, Timebase timebase, int startRow) {
+        if (taps == null) return 0;
         int n = taps.size();
         if (n < 2) {
             taps.clear();
-            return;
+            return 0;
         }
         if (n % 2 == 1) {
             taps.removeElementAt(n - 1);
@@ -42,7 +46,7 @@ public class YassTapNotes {
         double bpm = table.getBPM();
 
         // get first note that follows selection
-        int t = table.getSelectionModel().getMinSelectionIndex();
+        int t = startRow >= 0 ? startRow : table.getSelectionModel().getMinSelectionIndex();
         if (t < 0) t = 0;
         while (t < tn) {
             YassRow r = table.getRowAt(t);
@@ -52,6 +56,7 @@ public class YassTapNotes {
 
         int k = 0;
         int i = 0;
+        int processedNotes = 0;
         while (k < n && t < tn) {
             YassRow r = table.getRowAt(t++);
             if (r.isNote()) {
@@ -86,6 +91,7 @@ public class YassTapNotes {
                         r.setType("R");
                     }
                 }
+                processedNotes++;
             }
         }
 
@@ -93,5 +99,6 @@ public class YassTapNotes {
         table.addUndo();
         table.repaint();
         taps.clear();
+        return processedNotes;
     }
 }

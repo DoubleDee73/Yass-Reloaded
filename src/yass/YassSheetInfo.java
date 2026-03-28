@@ -28,6 +28,7 @@ import java.awt.event.MouseMotionAdapter;
 import java.awt.geom.Line2D;
 import java.awt.geom.Rectangle2D;
 import java.util.Vector;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -35,6 +36,7 @@ import java.util.Vector;
  * @author Saruta
  */
 public class YassSheetInfo extends JPanel {
+    private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private final YassSheet sheet;
     private final int track;
     private int minHeight;
@@ -69,6 +71,18 @@ public class YassSheetInfo extends JPanel {
 
     private boolean hasErr = false;
 
+    private static final int OVERVIEW_HANDLE_WIDTH = 12;
+    private static final int OVERVIEW_MIN_WINDOW_MS = 1000;
+    private static final int OVERVIEW_EDGE_HIT_SLOP = 6;
+    private static final int OVERVIEW_MIN_EDGE_HIT_SLOP = 2;
+
+    private enum OverviewDragMode { NONE, MOVE, RESIZE_LEFT, RESIZE_RIGHT }
+    private OverviewDragMode overviewDragMode = OverviewDragMode.NONE;
+    private int overviewDragOffsetX = 0;
+    private double overviewDragLeftMs = 0;
+    private double overviewDragRightMs = 0;
+    private int overviewFixedEdgeX = -1;
+
     public YassSheetInfo(YassSheet s, int track) {
         super(true);
         setFocusable(false);
@@ -97,11 +111,17 @@ public class YassSheetInfo extends JPanel {
                     sheet.stopPlaying();
                 if (! isActiveTrack())
                     activateTrack();
+                if (handleOverviewMousePressed(e)) {
+                    hiliteCue = NONE;
+                    repaint();
+                    return;
+                }
                 //if (hiliteCue == SHOW_SELECT) {
                 //    isSelected = !isSelected;
                 //    repaint();
                 //}
-                if (hiliteCue == SHOW_ERRORS)
+                final int trackNameWidth = sheet.getTableCount() > 1 ? 100 : 0;
+                if (isInErrorQuickArea(e.getX(), e.getY(), trackNameWidth) && hiliteCue == SHOW_ERRORS)
                     showErrors();
                 else {
                     SwingUtilities.invokeLater(() -> {
@@ -112,10 +132,19 @@ public class YassSheetInfo extends JPanel {
                     });
                 }
             }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (overviewDragMode != OverviewDragMode.NONE) {
+                    overviewDragMode = OverviewDragMode.NONE;
+                    overviewFixedEdgeX = -1;
+                }
+            }
             @Override
             public void mouseEntered(MouseEvent e) {
             }
             public void mouseExited(MouseEvent e) {
+                setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
                 if (hiliteCue != NONE) {
                     hiliteCue = NONE;
                     repaint();
@@ -125,6 +154,9 @@ public class YassSheetInfo extends JPanel {
         addMouseMotionListener(new MouseMotionAdapter() {
             @Override
             public void mouseDragged(MouseEvent e) {
+                if (handleOverviewMouseDragged(e)) {
+                    return;
+                }
                 if (!(sheet.isPlaying() || sheet.isTemporaryStop()))
                     moveTo(e.getX(), true);
             }
@@ -132,8 +164,16 @@ public class YassSheetInfo extends JPanel {
             public void mouseMoved(MouseEvent e) {
                 if (sheet.isPlaying())
                     return;
+                if (updateOverviewCursor(e)) {
+                    if (hiliteCue == SHOW_ERRORS) {
+                        hiliteCue = NONE;
+                        repaint();
+                    }
+                    return;
+                }
+                setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
                 final int trackNameWidth = sheet.getTableCount() > 1 ? 100 : 0;
-                if (e.getX() > trackNameWidth+30 && e.getX() < trackNameWidth+230 && e.getY() < txtBar && hasErr) {
+                if (isInErrorQuickArea(e.getX(), e.getY(), trackNameWidth) && hasErr) {
                     if (hiliteCue != SHOW_ERRORS) {
                         hiliteCue = SHOW_ERRORS;
                         repaint();
@@ -180,6 +220,276 @@ public class YassSheetInfo extends JPanel {
         }
     }
 
+    private Rectangle getOverviewRect() {
+        int width = Math.max(1, getWidth() - 2 * sideBar - 1);
+        int y = txtBar;
+        int height = Math.max(1, getHeight() - (msgBar + txtBar));
+        return new Rectangle(sideBar, y, width, height);
+    }
+
+    private Rectangle getOverviewThumbRect(Rectangle overviewRect) {
+        if (overviewRect.width <= 1 || rangeBeat <= 0) {
+            return new Rectangle(overviewRect.x, overviewRect.y, 1, overviewRect.height);
+        }
+
+        YassTable master = sheet.getTable(0);
+        if (master == null) {
+            master = sheet.getTable(track);
+        }
+        if (master == null) {
+            return new Rectangle(overviewRect.x, overviewRect.y, 1, overviewRect.height);
+        }
+
+        double minVisBeat = master.msToBeatExact(sheet.getMinVisibleMs());
+        double maxVisBeat = master.msToBeatExact(sheet.getMaxVisibleMs());
+        double leftRatio = (minVisBeat - minBeat) / rangeBeat;
+        double rightRatio = (maxVisBeat - minBeat) / rangeBeat;
+        leftRatio = Math.max(0, Math.min(1, leftRatio));
+        rightRatio = Math.max(leftRatio, Math.min(1, rightRatio));
+
+        int x = overviewRect.x + (int) Math.round(leftRatio * overviewRect.width);
+        int w = (int) Math.round((rightRatio - leftRatio) * overviewRect.width);
+        w = Math.max(OVERVIEW_HANDLE_WIDTH * 2 + 4, Math.min(overviewRect.width, w));
+        if (x + w > overviewRect.x + overviewRect.width) {
+            x = overviewRect.x + overviewRect.width - w;
+        }
+        if (x < overviewRect.x) {
+            x = overviewRect.x;
+        }
+        return new Rectangle(x, overviewRect.y + 1, w, Math.max(8, overviewRect.height - 2));
+    }
+
+    private double overviewXToMs(int x, Rectangle overviewRect) {
+        YassTable master = sheet.getTable(0);
+        if (master == null) {
+            master = sheet.getTable(track);
+        }
+        if (master == null || rangeBeat <= 0) {
+            return 0;
+        }
+        int clampedX = Math.max(overviewRect.x, Math.min(overviewRect.x + overviewRect.width, x));
+        double ratio = (clampedX - overviewRect.x) / (double) Math.max(1, overviewRect.width);
+        double beat = minBeat + ratio * rangeBeat;
+        return 1000d * 60d * beat / (4d * master.getBPM()) + master.getGap();
+    }
+
+    private int overviewMsToX(double ms, Rectangle overviewRect) {
+        YassTable master = sheet.getTable(0);
+        if (master == null) {
+            master = sheet.getTable(track);
+        }
+        if (master == null || rangeBeat <= 0) {
+            return overviewRect.x;
+        }
+        double beat = master.msToBeatExact(ms);
+        double ratio = (beat - minBeat) / rangeBeat;
+        ratio = Math.max(0, Math.min(1, ratio));
+        return overviewRect.x + (int) Math.round(ratio * overviewRect.width);
+    }
+
+    private boolean handleOverviewMousePressed(MouseEvent e) {
+        if (sheet.isPlaying() || sheet.isTemporaryStop()) {
+            return false;
+        }
+        Rectangle overviewRect = getOverviewRect();
+        if (!overviewRect.contains(e.getPoint())) {
+            return false;
+        }
+        Rectangle thumb = getOverviewThumbRect(overviewRect);
+        int x = e.getX();
+
+        overviewDragLeftMs = Math.max(0, sheet.getMinVisibleMs());
+        overviewDragRightMs = Math.max(overviewDragLeftMs + OVERVIEW_MIN_WINDOW_MS, sheet.getMaxVisibleMs());
+
+        int pressEdgeSlop = getOverviewPressEdgeHitSlop(thumb);
+        int leftDistance = Math.abs(x - thumb.x);
+        int rightDistance = Math.abs(x - (thumb.x + thumb.width - 1));
+        boolean nearLeftEdge = Math.abs(x - thumb.x) <= pressEdgeSlop;
+        boolean nearRightEdge = Math.abs(x - (thumb.x + thumb.width - 1)) <= pressEdgeSlop;
+        if (nearLeftEdge) {
+            overviewDragMode = OverviewDragMode.RESIZE_LEFT;
+            overviewFixedEdgeX = thumb.x + thumb.width - 1;
+            logOverviewDrag("pressed-left", e.getX(), overviewRect, thumb, leftDistance, rightDistance, pressEdgeSlop);
+            return true;
+        }
+        if (nearRightEdge) {
+            overviewDragMode = OverviewDragMode.RESIZE_RIGHT;
+            overviewFixedEdgeX = thumb.x;
+            logOverviewDrag("pressed-right", e.getX(), overviewRect, thumb, leftDistance, rightDistance, pressEdgeSlop);
+            return true;
+        }
+        if (thumb.contains(e.getPoint())) {
+            overviewDragMode = OverviewDragMode.MOVE;
+            overviewDragOffsetX = x - thumb.x;
+            overviewFixedEdgeX = -1;
+            logOverviewDrag("pressed-move", e.getX(), overviewRect, thumb, leftDistance, rightDistance, pressEdgeSlop);
+            return true;
+        }
+        if (x < thumb.x || x > thumb.x + thumb.width - 1) {
+            overviewDragMode = OverviewDragMode.NONE;
+            overviewFixedEdgeX = -1;
+            jumpOverviewToPageAtX(x);
+            repaint();
+            return true;
+        }
+        overviewDragMode = OverviewDragMode.NONE;
+        return false;
+    }
+
+    private boolean handleOverviewMouseDragged(MouseEvent e) {
+        if (overviewDragMode == OverviewDragMode.NONE) {
+            return false;
+        }
+        Rectangle overviewRect = getOverviewRect();
+        double duration = Math.max(1, sheet.getDuration());
+        double leftMs = overviewDragLeftMs;
+        double rightMs = overviewDragRightMs;
+        double dragWindowMs = Math.max(OVERVIEW_MIN_WINDOW_MS, rightMs - leftMs);
+
+        if (overviewDragMode == OverviewDragMode.MOVE) {
+            double targetStartMs = overviewXToMs(e.getX() - overviewDragOffsetX, overviewRect);
+            sheet.setVisibleWindowMs(targetStartMs, dragWindowMs);
+            logOverviewDrag("drag-move", e.getX(), overviewRect, getOverviewThumbRect(overviewRect), -1, -1, -1);
+            repaint();
+            return true;
+        }
+        if (overviewDragMode == OverviewDragMode.RESIZE_LEFT) {
+            double fixedRightMs = overviewDragRightMs;
+            int fixedRightX = overviewMsToX(fixedRightMs, overviewRect);
+            int maxLeftX = Math.max(overviewRect.x, fixedRightX - 1);
+            int targetLeftX = Math.max(overviewRect.x, Math.min(maxLeftX, e.getX()));
+            double targetLeftMs = overviewXToMs(targetLeftX, overviewRect);
+            double maxLeftMs = Math.max(0, fixedRightMs - OVERVIEW_MIN_WINDOW_MS);
+            leftMs = Math.min(maxLeftMs, Math.max(0, targetLeftMs));
+            rightMs = fixedRightMs;
+            sheet.setVisibleWindowMs(leftMs, rightMs - leftMs);
+            enforceFixedOverviewEdge(overviewRect, true, overviewFixedEdgeX);
+            logOverviewDrag("drag-left", e.getX(), overviewRect, getOverviewThumbRect(overviewRect), -1, -1, -1);
+            repaint();
+            return true;
+        }
+        if (overviewDragMode == OverviewDragMode.RESIZE_RIGHT) {
+            double fixedLeftMs = overviewDragLeftMs;
+            int fixedLeftX = overviewMsToX(fixedLeftMs, overviewRect);
+            int minRightX = Math.min(overviewRect.x + overviewRect.width, fixedLeftX + 1);
+            int targetRightX = Math.max(minRightX, Math.min(overviewRect.x + overviewRect.width, e.getX()));
+            double targetRightMs = overviewXToMs(targetRightX, overviewRect);
+            double minRightMs = Math.min(duration, fixedLeftMs + OVERVIEW_MIN_WINDOW_MS);
+            rightMs = Math.max(minRightMs, Math.min(duration, targetRightMs));
+            leftMs = fixedLeftMs;
+            sheet.setVisibleWindowMs(leftMs, rightMs - leftMs);
+            enforceFixedOverviewEdge(overviewRect, false, overviewFixedEdgeX);
+            logOverviewDrag("drag-right", e.getX(), overviewRect, getOverviewThumbRect(overviewRect), -1, -1, -1);
+            repaint();
+            return true;
+        }
+        return false;
+    }
+
+    private boolean updateOverviewCursor(MouseEvent e) {
+        Rectangle overviewRect = getOverviewRect();
+        if (!overviewRect.contains(e.getPoint())) {
+            return false;
+        }
+        Rectangle thumb = getOverviewThumbRect(overviewRect);
+        if (!thumb.contains(e.getPoint())) {
+            setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+            return true;
+        }
+        int x = e.getX();
+        int edgeSlop = getOverviewEdgeHitSlop(thumb);
+        boolean nearLeftEdge = Math.abs(x - thumb.x) <= edgeSlop;
+        boolean nearRightEdge = Math.abs(x - (thumb.x + thumb.width - 1)) <= edgeSlop;
+        if (nearLeftEdge) {
+            setCursor(Cursor.getPredefinedCursor(Cursor.W_RESIZE_CURSOR));
+            return true;
+        }
+        if (nearRightEdge) {
+            setCursor(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR));
+            return true;
+        }
+        if (thumb.contains(e.getPoint())) {
+            setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+            return true;
+        }
+        setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+        return true;
+    }
+
+    private int getOverviewEdgeHitSlop(Rectangle thumb) {
+        int adaptive = thumb.width / 8;
+        adaptive = Math.max(OVERVIEW_MIN_EDGE_HIT_SLOP, adaptive);
+        return Math.min(OVERVIEW_EDGE_HIT_SLOP, adaptive);
+    }
+
+    private int getOverviewPressEdgeHitSlop(Rectangle thumb) {
+        int adaptive = thumb.width / 8;
+        adaptive = Math.max(4, adaptive);
+        return Math.min(8, adaptive);
+    }
+
+    private int getOverviewHandleZoneWidth(Rectangle thumb) {
+        int adaptive = thumb.width / 4;
+        adaptive = Math.max(OVERVIEW_HANDLE_WIDTH, adaptive);
+        return Math.min(20, adaptive);
+    }
+
+    private double getCurrentVisibleWindowMs() {
+        double minVisibleMs = Math.max(0, sheet.getMinVisibleMs());
+        double maxVisibleMs = Math.max(minVisibleMs, sheet.getMaxVisibleMs());
+        return Math.max(OVERVIEW_MIN_WINDOW_MS, maxVisibleMs - minVisibleMs);
+    }
+
+    private int getLastNoteRow(YassTable table) {
+        if (table == null) {
+            return -1;
+        }
+        for (int i = table.getRowCount() - 1; i >= 0; i--) {
+            YassRow row = table.getRowAt(i);
+            if (row != null && row.isNote()) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private boolean isInErrorQuickArea(int x, int y, int trackNameWidth) {
+        return x > trackNameWidth + 30 && x < trackNameWidth + 230 && y < txtBar;
+    }
+
+    private void enforceFixedOverviewEdge(Rectangle overviewRect, boolean fixRightEdge, int desiredEdgeX) {
+        if (desiredEdgeX < 0) {
+            return;
+        }
+        double leftMs = sheet.getMinVisibleMs();
+        double rightMs = sheet.getMaxVisibleMs();
+        double windowMs = Math.max(OVERVIEW_MIN_WINDOW_MS, rightMs - leftMs);
+        if (fixRightEdge) {
+            double fixedRightMs = overviewXToMs(desiredEdgeX, overviewRect);
+            sheet.setVisibleWindowMs(fixedRightMs - windowMs, windowMs);
+        } else {
+            double fixedLeftMs = overviewXToMs(desiredEdgeX, overviewRect);
+            sheet.setVisibleWindowMs(fixedLeftMs, windowMs);
+        }
+    }
+
+    private void logOverviewDrag(String event, int mouseX, Rectangle overviewRect, Rectangle thumb,
+                                 int leftDistance, int rightDistance, int edgeSlop) {
+        if (!LOGGER.isLoggable(java.util.logging.Level.FINE)) {
+            return;
+        }
+        LOGGER.fine("[OverviewDrag] " + event
+                + " mode=" + overviewDragMode
+                + " mouseX=" + mouseX
+                + " thumb=" + thumb.x + "+" + thumb.width
+                + " overview=" + overviewRect.x + "+" + overviewRect.width
+                + " leftDist=" + leftDistance
+                + " rightDist=" + rightDistance
+                + " edgeSlop=" + edgeSlop
+                + " visibleMs=" + Math.round(sheet.getMinVisibleMs()) + "-" + Math.round(sheet.getMaxVisibleMs())
+        );
+    }
+
     public void removeListener() {
         sheet.removeYassSheetListener(sheetListener);
     }
@@ -202,6 +512,56 @@ public class YassSheetInfo extends JPanel {
     private boolean isActiveTrack() {
         YassTable table = sheet.getActiveTable();
         return table != null && track == table.getActions().getActiveTrack();
+    }
+
+    private void jumpOverviewToPageAtX(int x) {
+        YassTable table = sheet.getTable(track);
+        if (table == null) {
+            return;
+        }
+        int w = getWidth() - 1;
+        int clampedX = Math.max(sideBar, Math.min(w - sideBar, x));
+        int activeBeat = (int) (minBeat + (rangeBeat * (clampedX - sideBar) / ((double) w - 2 * sideBar)));
+        int row = table.getIndexOfNoteBeforeBeat(activeBeat);
+        if (row < 0) {
+            row = table.getPage(1);
+        }
+        if (row < 0) {
+            return;
+        }
+        if (row + 2 < table.getRowCount() - 1) {
+            YassRow next = table.getRowAt(row + 1);
+            if (next.isPageBreak() && activeBeat > next.getBeatInt()) {
+                row += 2;
+            }
+        }
+
+        double clickedMs = Math.max(0, overviewXToMs(clampedX, getOverviewRect()));
+        int firstPageRow = table.getPage(1);
+        int lastNoteRow = getLastNoteRow(table);
+        double firstNoteMs = firstPageRow >= 0 ? Math.max(0, table.beatToMs(table.getRowAt(firstPageRow).getBeatInt())) : 0;
+        double lastNoteMs = 0;
+        if (lastNoteRow >= 0) {
+            YassRow last = table.getRowAt(lastNoteRow);
+            lastNoteMs = Math.max(0, table.beatToMs(last.getBeatInt() + last.getLengthInt()));
+        }
+        if (clickedMs < firstNoteMs || clickedMs > lastNoteMs) {
+            double durationMs = Math.max(1, sheet.getDuration());
+            double windowMs = Math.min(durationMs, getCurrentVisibleWindowMs());
+            double maxStartMs = Math.max(0, durationMs - windowMs);
+            double targetStartMs = Math.max(0, Math.min(maxStartMs, clickedMs - windowMs / 2.0));
+            sheet.setVisibleWindowMs(targetStartMs, windowMs);
+            if (sheet.isAbsolutePitchViewEnabled()) {
+                sheet.autoCenterAbsolutePitchView();
+            }
+            return;
+        }
+
+        int pageNumber = table.getPageNumber(row);
+        if (pageNumber <= 0) {
+            return;
+        }
+        table.gotoPageNumber(pageNumber);
     }
 
     private void moveTo(int x, boolean exact) {
@@ -249,8 +609,24 @@ public class YassSheetInfo extends JPanel {
     private void setHeightRange(int minH, int maxH, int minB, int maxB) {
         minHeight = minH;
         rangeHeight = maxH - minHeight;
-        minBeat = minB;
-        rangeBeat = maxB - minB;
+        YassTable master = sheet.getTable(0);
+        if (master == null) {
+            master = sheet.getTable(track);
+        }
+        if (master != null) {
+            double songStartBeat = master.msToBeatExact(0);
+            double songEndBeat = master.msToBeatExact(Math.max(1, sheet.getDuration()));
+            if (songEndBeat > songStartBeat) {
+                minBeat = songStartBeat;
+                rangeBeat = songEndBeat - songStartBeat;
+            } else {
+                minBeat = minB;
+                rangeBeat = Math.max(1, maxB - minB);
+            }
+        } else {
+            minBeat = minB;
+            rangeBeat = Math.max(1, maxB - minB);
+        }
         repaint(0);
     }
 

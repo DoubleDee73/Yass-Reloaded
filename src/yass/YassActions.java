@@ -78,6 +78,7 @@ import java.text.MessageFormat;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -123,7 +124,17 @@ public class YassActions implements DropTargetListener {
     private List<PitchDetector.PitchData> recordingSnapTransposedPitchData = Collections.emptyList();
     private static final long RECORDING_REACTION_OFFSET_MS = 60L;
     private static final long RECORDING_FADE_TAIL_US = 5_000_000L;
+    private static final long RECORDING_RESUME_REWIND_MS = 3000L;
     private Timebase playTimebase = Timebase.NORMAL;
+    private Timebase recordingTimebase = Timebase.NORMAL;
+    private long recordingPlaybackOutUs = -1L;
+    private int recordingPlaybackFadeOutMs = 0;
+    private int recordingCurrentNoteIndex = -1;
+    private int recordingLastNoteIndex = -1;
+    private boolean recordingInterruptDialogOpen = false;
+    private boolean recordingPauseForPrompt = false;
+    private boolean recordingIgnoreNextPlayerStopped = false;
+    private boolean recordingFinalizing = false;
     private long playAllStart = -1;
     private Click[] playAllClicks = null;
     private int beforeNextMs = 300;
@@ -146,12 +157,13 @@ public class YassActions implements DropTargetListener {
     private JComboBox<String> groupsBox = null;
     private final Hashtable<String, ImageIcon> icons = new Hashtable<>();
     private JToggleButton mp3Button, midiButton, vmarkButton, detailToggle, songInfoToggle, bgToggle, playlistToggle,
-            snapshotButton, videoButton, videoAudioButton, speedButton;
+            snapshotButton, videoButton, videoAudioButton, speedButton, absolutePitchViewButton;
     private final JCheckBoxMenuItem playlistCBI = null;
     private JCheckBoxMenuItem audioCBI = null;
 
     private JCheckBoxMenuItem playAllVideoCBI = null;
     private JCheckBoxMenuItem alignCBI = null;
+    private JCheckBoxMenuItem absolutePitchViewCBI = null;
     private JCheckBoxMenuItem showCopyCBI = null;
     private JToggleButton filterAll = null;
     private JButton playToggle;
@@ -248,12 +260,16 @@ public class YassActions implements DropTargetListener {
                     return;
                 }
             }
+            int c = k.getKeyCode();
+            // Do not immediately stop playback on the same key press that usually starts/toggles it.
+            // Otherwise playback started by keyboard (e.g. SPACE/P/B/N) can self-cancel right away.
+            if (c == KeyEvent.VK_P || c == KeyEvent.VK_SPACE || c == KeyEvent.VK_B || c == KeyEvent.VK_N) {
+                return;
+            }
             if ((k.isControlDown() || k.isAltDown() || k.isShiftDown()) && k.getKeyCode() == 0) {
                 return;
             }
             stopPlaying();
-
-            int c = k.getKeyCode();
             if (c == KeyEvent.VK_P || c == KeyEvent.VK_ESCAPE || c == KeyEvent.VK_SPACE
                     || c == KeyEvent.VK_B || c == KeyEvent.VK_N) {
                 k.consume();
@@ -1466,6 +1482,7 @@ public class YassActions implements DropTargetListener {
                 }
                 prop.setProperty("record-timebase", String.valueOf(timebase.id));
                 prop.store();
+                recordingTimebase = timebase;
 
                 // int ok = JOptionPane.showConfirmDialog(tab, "<html>" +
                 // MessageFormat.format(I18.get("edit_record_msg"), // recordLength), I18.get("edit_record_title"),
@@ -1484,6 +1501,8 @@ public class YassActions implements DropTargetListener {
                           playbackOutUs = songDurationUs;
                       }
                   }
+                  recordingPlaybackOutUs = playbackOutUs;
+                  recordingPlaybackFadeOutMs = fadeOutMs;
 
                   prepareRecordingPlaybackSource();
                   startRecording();
@@ -2618,9 +2637,14 @@ public class YassActions implements DropTargetListener {
             if (lyrics.isEditable()) {
                 lyrics.finishEditing();
             }
+            Integer viewportYBeforeUndo = sheet != null ? sheet.getViewPosition().y : null;
             table.undoRows();
             checkData(table, false, true);
             updateGapBpm();
+            if (sheet != null && viewportYBeforeUndo != null) {
+                Point afterUndo = sheet.getViewPosition();
+                sheet.setViewPosition(new Point(afterUndo.x, viewportYBeforeUndo));
+            }
         }
     };
     private final Action redo = new AbstractAction(I18.get("edit_redo")) {
@@ -2629,9 +2653,14 @@ public class YassActions implements DropTargetListener {
             if (lyrics.isEditable()) {
                 lyrics.finishEditing();
             }
+            Integer viewportYBeforeRedo = sheet != null ? sheet.getViewPosition().y : null;
             table.redoRows();
             checkData(table, false, true);
             updateGapBpm();
+            if (sheet != null && viewportYBeforeRedo != null) {
+                Point afterRedo = sheet.getViewPosition();
+                sheet.setViewPosition(new Point(afterRedo.x, viewportYBeforeRedo));
+            }
         }
     };
     private final Action openFileFromLibrary = new AbstractAction(I18.get("lib_edit_file")) {
@@ -3790,9 +3819,23 @@ public class YassActions implements DropTargetListener {
         if (midiCBI != null) {
             midiCBI.setState(midiButton.isSelected());
         }
+        if (sheet.isAbsolutePitchViewEnabled()) {
+            LOGGER.info("[AbsolutePitchView] enableMidi selected=" + midiButton.isSelected()
+                    + " paintHeightsBefore=" + sheet.isPaintHeights()
+                    + " zoomMode=" + YassTable.getZoomMode()
+                    + " view=" + sheet.getViewPosition().x + "," + sheet.getViewPosition().y);
+        }
         sheet.setPaintHeights(midiButton.isSelected());
-        table.zoomPage();
+        if (!sheet.isAbsolutePitchViewEnabled()) {
+            table.zoomPage();
+        }
         updatePlayerPosition();
+        if (sheet.isAbsolutePitchViewEnabled()) {
+            LOGGER.info("[AbsolutePitchView] enableMidi:end selected=" + midiButton.isSelected()
+                    + " paintHeightsAfter=" + sheet.isPaintHeights()
+                    + " zoomMode=" + YassTable.getZoomMode()
+                    + " view=" + sheet.getViewPosition().x + "," + sheet.getViewPosition().y);
+        }
         sheet.repaint();
     }
 
@@ -3808,14 +3851,26 @@ public class YassActions implements DropTargetListener {
 
             if (table.getMultiSize() == 1) {
                 state = !state;
-                sheet.enablePan(state);
-
-                sheet.update();
-                sheet.repaint();
+                setRelative(state);
             }
             if (alignCBI != null) {
                 alignCBI.setState(state);
             }
+        }
+    };
+
+    private final Action toggleAbsolutePitchView = new AbstractAction(I18.get("edit_absolute_pitch_view")) {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (lyrics.isEditable() || songList.isEditing()
+                    || isFilterEditing() || isFocusInSongHeader()) {
+                return;
+            }
+            boolean enabled = !sheet.isAbsolutePitchViewEnabled();
+            if (enabled && !sheet.isPanEnabled()) {
+                setRelative(true);
+            }
+            setAbsolutePitchView(enabled, true);
         }
     };
 
@@ -3845,54 +3900,23 @@ public class YassActions implements DropTargetListener {
 
             public void playerStopped() {
                 if (currentView == VIEW_EDIT) {
+                    if (recordingFinalizing) {
+                        return;
+                    }
                     if (!isRecording()) {
                         stopPlaying();
                         mp3.stopMIDI();
                         return;
                     }
-                    Pair<Integer, Integer> completedSelection = tempSelection;
-                    List<PitchDetector.PitchData> postRecordingPitchData =
-                            UltrastarHeaderTag.VOCALS.toString().equals(recordingPreviousAudioTag)
-                                    ? getRecordingAlignedPitchData()
-                                    : Collections.emptyList();
-                    LOGGER.info("Recording finish: begin stop pipeline previousTag=" + recordingPreviousAudioTag
-                            + " selection=" + completedSelection);
-                    stopPlaying();
-                    stopRecording();
-                    LOGGER.info("Recording finish: after stopRecording selectedTag="
-                            + (songHeader == null ? "null" : songHeader.getSelectedAudio()));
-                    mp3.stopMIDI();
-                    YassTapNotes.evaluateTaps(table, sheet.getTemporaryNotes(), sheet.getTmpPitches(),
-                                              mp3.getPlayrate());
-                    clearRecordingArtifacts();
-                    LOGGER.info("Recording finish: after evaluateTaps rows=" + table.getRowCount());
-                    if (completedSelection != null) {
-                        table.setRowSelectionInterval(completedSelection.getLeft(), completedSelection.getRight());
-                        if (!postRecordingPitchData.isEmpty()) {
-                            int[] selectedRows = table.getSelectedRows();
-                            List<YassRow> rows = new ArrayList<>();
-                            for (int rowIndex : selectedRows) {
-                                YassRow row = table.getRowAt(rowIndex);
-                                if (row != null && row.isNote()) {
-                                    rows.add(row);
-                                }
-                            }
-                            int transpose = mp3.getPitchWaveformTranspose();
-                            List<PitchDetector.PitchData> alignData = postRecordingPitchData;
-                            if (transpose != 0) {
-                                alignData = alignData.stream()
-                                        .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName(), pd.rawFrequency()))
-                                        .collect(Collectors.toList());
-                            }
-                            table.alignToMelody(rows, alignData);
-                            LOGGER.info("Recording finish: after alignToMelody selectedRows=" + selectedRows.length);
-                            for (int rowIndex : selectedRows) {
-                                table.addRowSelectionInterval(rowIndex, rowIndex);
-                            }
-                            sheet.repaint();
-                        }
+                    if (recordingIgnoreNextPlayerStopped) {
+                        LOGGER.info("Recording interrupt: ignoring one playerStopped callback");
+                        recordingIgnoreNextPlayerStopped = false;
+                        return;
                     }
-                    sheet.repaint();
+                    if (recordingPauseForPrompt || recordingInterruptDialogOpen) {
+                        return;
+                    }
+                    completeRecordingSession(true, false);
                 } else if (currentView == VIEW_LIBRARY) {
                     if (!soonStarting) {
                         stopPlaySong();
@@ -4525,6 +4549,11 @@ public class YassActions implements DropTargetListener {
 
         String hLanguages = prop.getProperty("note-naming-h").toLowerCase();
         sheet.setHNoteEnabled(hLanguages.contains(I18.getLanguage()));
+        if (prop.getBooleanProperty("absolute-pitch-view")) {
+            setRelative(true);
+        } else {
+            updateAbsolutePitchViewControls(false);
+        }
 
         boolean autoTrim = prop.getProperty("auto-trim").equals("true");
         setAutoTrim(autoTrim);
@@ -4692,6 +4721,7 @@ public class YassActions implements DropTargetListener {
         golden.putValue(AbstractAction.SMALL_ICON, getIcon("golden16Icon"));
         rap.putValue(AbstractAction.SMALL_ICON, getIcon("rap16Icon"));
         rapgolden.putValue(AbstractAction.SMALL_ICON, getIcon("rapgolden16Icon"));
+        suggestGoldenNotes.putValue(AbstractAction.SMALL_ICON, getIcon("golden16Icon"));
         freestyle.putValue(AbstractAction.SMALL_ICON, getIcon("freestyle16Icon"));
         togglePageBreak.putValue(AbstractAction.SMALL_ICON, getIcon("pagebreak16Icon"));
         icons.put("home16Icon",
@@ -4890,6 +4920,9 @@ public class YassActions implements DropTargetListener {
                   new ImageIcon(getClass().getResource("/yass/resources/img/usdb_syncer_icon.png")));
         icons.put("quantize16Icon", new ImageIcon(getClass().getResource("/yass/resources/img/quantize_16.png")));
         icons.put("quantize24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/quantize_24.png")));
+        icons.put("createDuetIcon", new ImageIcon(getClass().getResource("/yass/resources/img/create_duet.png")));
+        icons.put("alignTranscriptIcon", new ImageIcon(getClass().getResource("/yass/resources/img/alignTranscript.png")));
+        icons.put("alignToMelodyIcon", new ImageIcon(getClass().getResource("/yass/resources/img/alignToMelody.png")));
         icons.put("MusicBrainzIcon", new ImageIcon(getClass().getResource("/yass/resources/img/musicbrainz_icon.png")));
         icons.put("mvsep16Icon", new ImageIcon(getClass().getResource("/yass/resources/img/mvsep_icon.png")));
         icons.put("mvsep24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/mvsep_icon.png")));
@@ -4912,6 +4945,18 @@ public class YassActions implements DropTargetListener {
             separateAudioLocal.putValue(AbstractAction.SMALL_ICON, separateAudioLocalIcon);
         }
         alignToGrid.putValue(AbstractAction.SMALL_ICON, getIcon("quantize16Icon"));
+        ImageIcon alignTranscriptActionIcon = getOptionalResizedIcon("alignTranscriptIcon", 16);
+        if (alignTranscriptActionIcon != null) {
+            alignNotesWithTranscription.putValue(AbstractAction.SMALL_ICON, alignTranscriptActionIcon);
+        }
+        ImageIcon alignToMelodyActionIcon = getOptionalResizedIcon("alignToMelodyIcon", 16);
+        if (alignToMelodyActionIcon != null) {
+            alignToMelody.putValue(AbstractAction.SMALL_ICON, alignToMelodyActionIcon);
+        }
+        ImageIcon createDuetActionIcon = getOptionalResizedIcon("createDuetIcon", 16);
+        if (createDuetActionIcon != null) {
+            createDuet.putValue(AbstractAction.SMALL_ICON, createDuetActionIcon);
+        }
         openVideo.putValue(AbstractAction.SMALL_ICON, getIcon("movie16Icon"));
         updateActions();
     }
@@ -4987,6 +5032,7 @@ public class YassActions implements DropTargetListener {
         menu.addSeparator();
         menu.add(removeRowsWithLyrics);
         menu.add(alignToGrid);
+        menu.add(alignToMelody);
         menu.add(createDuet);
         menu.addSeparator();
 
@@ -5046,7 +5092,9 @@ public class YassActions implements DropTargetListener {
         menu.add(allRemainingPages);
         menu.add(viewAll);
         menu.add(alignCBI = new JCheckBoxMenuItem(absolute));
-        alignCBI.setState(true);
+        alignCBI.setState(sheet.isPanEnabled());
+        menu.add(absolutePitchViewCBI = new JCheckBoxMenuItem(toggleAbsolutePitchView));
+        absolutePitchViewCBI.setState(sheet.isAbsolutePitchViewEnabled());
 
         ButtonGroup group = new ButtonGroup();
         showNothingToggle = new JRadioButtonMenuItem(showNothing);
@@ -5503,6 +5551,16 @@ public class YassActions implements DropTargetListener {
         b.setIcon(getIcon("zoomstd24Icon"));
         b.setFocusable(false);
         b.setOpaque(false);
+
+        t.add(absolutePitchViewButton = new JToggleButton());
+        absolutePitchViewButton.setAction(toggleAbsolutePitchView);
+        absolutePitchViewButton.setToolTipText(absolutePitchViewButton.getText());
+        absolutePitchViewButton.setText("");
+        absolutePitchViewButton.setIcon(getIcon("noalign24Icon"));
+        absolutePitchViewButton.setSelectedIcon(getIcon("align24Icon"));
+        absolutePitchViewButton.setSelected(sheet.isAbsolutePitchViewEnabled());
+        absolutePitchViewButton.setFocusable(false);
+        absolutePitchViewButton.setOpaque(false);
 
         t.add(b = new JButton());
         b.setAction(morePages);
@@ -6770,6 +6828,7 @@ public class YassActions implements DropTargetListener {
         removeRows.setEnabled(isOpened);
         removeRowsWithLyrics.setEnabled(isOpened);
         absolute.setEnabled(isOpened);
+        toggleAbsolutePitchView.setEnabled(isOpened);
         showTable.setEnabled(isOpened);
         showBackground.setEnabled(isOpened);
         showVideo.setEnabled(isOpened);
@@ -7723,14 +7782,431 @@ public class YassActions implements DropTargetListener {
     }
 
     private void stopRecording() {
+        setRecording(false);
         mp3.interruptMP3();
         recordingInputFinished = false;
-        setRecording(false);
         tempSelection = null;
+        recordingIgnoreNextPlayerStopped = false;
+        recordingCurrentNoteIndex = -1;
+        recordingLastNoteIndex = -1;
+        recordingPlaybackOutUs = -1L;
+        recordingPlaybackFadeOutMs = 0;
         sheet.setRecordingNoteIndex(-1); // IMPORTANT: Reset recording mode
         sheet.repaint();
         Toolkit.getDefaultToolkit().removeAWTEventListener(awt);
         restoreRecordingPlaybackSource();
+    }
+
+    private boolean shouldPromptInterruptedRecording() {
+        return isRecording()
+                && !recordingInputFinished
+                && recordingCurrentNoteIndex >= 0
+                && recordingLastNoteIndex >= 0
+                && recordingCurrentNoteIndex <= recordingLastNoteIndex;
+    }
+
+    private int getFirstUntappedRecordingRow() {
+        if (table == null || recordingCurrentNoteIndex < 0) {
+            return -1;
+        }
+        int row = recordingCurrentNoteIndex;
+        int max = Math.min(recordingLastNoteIndex, table.getRowCount() - 1);
+        while (row <= max) {
+            YassRow r = table.getRowAt(row);
+            if (r != null && r.isNote()) {
+                return row;
+            }
+            row++;
+        }
+        return -1;
+    }
+
+    private int getNextNoteRow(int afterRow) {
+        if (table == null) {
+            return -1;
+        }
+        int row = Math.max(0, afterRow + 1);
+        while (row < table.getRowCount()) {
+            YassRow r = table.getRowAt(row);
+            if (r != null && r.isNote()) {
+                return row;
+            }
+            row++;
+        }
+        return -1;
+    }
+
+    private int getPreviousNoteRow(int beforeRow) {
+        if (table == null) {
+            return -1;
+        }
+        int row = Math.min(beforeRow - 1, table.getRowCount() - 1);
+        while (row >= 0) {
+            YassRow r = table.getRowAt(row);
+            if (r != null && r.isNote()) {
+                return row;
+            }
+            row--;
+        }
+        return -1;
+    }
+
+    private int getCompletedRecordingTapCount() {
+        if (sheet == null || sheet.getTemporaryNotes() == null) {
+            return 0;
+        }
+        return Math.max(0, sheet.getTemporaryNotes().size() / 2);
+    }
+
+    private long getLastTappedEndUs() {
+        if (sheet == null || sheet.getTemporaryNotes() == null || sheet.getTemporaryNotes().isEmpty()) {
+            return -1L;
+        }
+        int lastIndex = sheet.getTemporaryNotes().size() - 1;
+        Long last = sheet.getTemporaryNotes().get(lastIndex);
+        return last == null ? -1L : last;
+    }
+
+    private int getLastTappedRecordingRow() {
+        if (table == null || tempSelection == null) {
+            return -1;
+        }
+        int tapCount = getCompletedRecordingTapCount();
+        if (tapCount <= 0) {
+            return -1;
+        }
+        int start = Math.max(0, tempSelection.getLeft());
+        int end = Math.min(table.getRowCount() - 1, Math.max(start, tempSelection.getRight()));
+        int noteCounter = 0;
+        for (int rowIndex = start; rowIndex <= end; rowIndex++) {
+            YassRow row = table.getRowAt(rowIndex);
+            if (row == null || !row.isNote()) {
+                continue;
+            }
+            noteCounter++;
+            if (noteCounter == tapCount) {
+                return rowIndex;
+            }
+        }
+        return -1;
+    }
+
+    private void focusRecordingContinuationNote() {
+        int resumeRow = getFirstUntappedRecordingRow();
+        if (resumeRow < 0 || table == null || sheet == null) {
+            return;
+        }
+        table.setRowSelectionInterval(resumeRow, resumeRow);
+        sheet.setRecordingNoteIndex(resumeRow);
+        table.zoomPage();
+    }
+
+    private void updateRecordingCursorView(int noteRow) {
+        // Recording viewport paging is playback-driven in YassSheet.updatePlayback().
+        // Do not trigger any note/tap-driven page jumps here.
+    }
+
+    private void resumeInterruptedRecording() {
+        if (!isRecording()) {
+            return;
+        }
+        int resumeRow = recordingCurrentNoteIndex >= 0 ? recordingCurrentNoteIndex : getFirstUntappedRecordingRow();
+        int lastTappedRow = getPreviousNoteRow(resumeRow);
+        if (resumeRow >= 0) {
+            recordingCurrentNoteIndex = resumeRow;
+            awt.setCurrentNoteIndex(resumeRow);
+            sheet.setRecordingNoteIndex(resumeRow);
+            table.setRowSelectionInterval(resumeRow, resumeRow);
+            table.zoomPage();
+        }
+
+        long resumePositionUs;
+        long lastTappedEndUs = getLastTappedEndUs();
+        if (lastTappedEndUs >= 0) {
+            resumePositionUs = Math.max(0L, lastTappedEndUs - (RECORDING_RESUME_REWIND_MS * 1000L));
+            LOGGER.info("Recording resume: lastTappedRow=" + lastTappedRow
+                    + " lastTappedEndUs=" + lastTappedEndUs
+                    + " nextRow=" + resumeRow
+                    + " currentPlayerUs=" + (long) (mp3.getPosition() * mp3.getPlayrate().getTimerate())
+                    + " resumePositionUs=" + resumePositionUs
+                    + " view=" + sheet.getViewPosition().x + "," + sheet.getViewPosition().y);
+        } else {
+            long currentPositionUs = (long) (mp3.getPosition() * mp3.getPlayrate().getTimerate());
+            resumePositionUs = Math.max(0L, currentPositionUs - (RECORDING_RESUME_REWIND_MS * 1000L));
+            LOGGER.info("Recording resume: no untapped row, fallback currentPositionUs=" + currentPositionUs
+                    + " resumePositionUs=" + resumePositionUs
+                    + " view=" + sheet.getViewPosition().x + "," + sheet.getViewPosition().y);
+        }
+        mp3.stopNote();
+        recordingInputFinished = false;
+        awt.reset();
+        sheet.repaint();
+        final long resumeStartUs = resumePositionUs;
+        mp3.setPosition(resumeStartUs);
+        LOGGER.info("Recording resume: playSelection source=" + recordingPlaybackSource
+                + " startUs=" + resumeStartUs
+                + " outUs=" + recordingPlaybackOutUs
+                + " timebase=" + recordingTimebase);
+        mp3.playSelection(recordingPlaybackSource, resumeStartUs, recordingPlaybackOutUs, null,
+                recordingTimebase, recordingPlaybackFadeOutMs);
+    }
+
+    private void clampUntappedNotesAfterLastTap(Pair<Integer, Integer> selection, int processedNoteCount, int minGapBeats) {
+        if (selection == null || processedNoteCount <= 0 || table == null) {
+            return;
+        }
+        int start = Math.max(0, selection.getLeft());
+        int end = Math.min(table.getRowCount() - 1, Math.max(start, selection.getRight()));
+        int noteCount = 0;
+        int lastTappedRow = -1;
+        for (int rowIndex = start; rowIndex <= end; rowIndex++) {
+            YassRow row = table.getRowAt(rowIndex);
+            if (row != null && row.isNote()) {
+                noteCount++;
+                if (noteCount == processedNoteCount) {
+                    lastTappedRow = rowIndex;
+                    break;
+                }
+            }
+        }
+        if (lastTappedRow < 0) {
+            return;
+        }
+
+        YassRow lastTapped = table.getRowAt(lastTappedRow);
+        int previousEndBeat = lastTapped.getBeatInt() + lastTapped.getLengthInt();
+        for (int rowIndex = lastTappedRow + 1; rowIndex <= end; rowIndex++) {
+            YassRow row = table.getRowAt(rowIndex);
+            if (row == null || !row.isNote()) {
+                continue;
+            }
+            int minBeat = previousEndBeat + minGapBeats;
+            if (row.getBeatInt() < minBeat) {
+                row.setBeat(minBeat);
+            }
+            previousEndBeat = row.getBeatInt() + row.getLengthInt();
+        }
+    }
+
+    private void completeRecordingSession(boolean keepRecordingInput, boolean interruptedByUser) {
+        if (recordingFinalizing) {
+            return;
+        }
+        recordingFinalizing = true;
+        try {
+        Pair<Integer, Integer> completedSelection = tempSelection;
+        List<PitchDetector.PitchData> postRecordingPitchData =
+                UltrastarHeaderTag.VOCALS.toString().equals(recordingPreviousAudioTag)
+                        ? getRecordingAlignedPitchData()
+                        : Collections.emptyList();
+        stopPlaying();
+        stopRecording();
+        mp3.stopMIDI();
+
+        int processedTapNotes = 0;
+        if (keepRecordingInput) {
+            int tapStartRow = completedSelection != null ? completedSelection.getLeft() : -1;
+            processedTapNotes = YassTapNotes.evaluateTaps(table, sheet.getTemporaryNotes(), sheet.getTmpPitches(), mp3.getPlayrate(), tapStartRow);
+            LOGGER.info("Recording finalize: keep=" + keepRecordingInput
+                    + " interrupted=" + interruptedByUser
+                    + " tapStartRow=" + tapStartRow
+                    + " processedTapNotes=" + processedTapNotes);
+            if (interruptedByUser) {
+                clampUntappedNotesAfterLastTap(completedSelection, processedTapNotes, 3);
+            }
+            if (completedSelection != null) {
+                table.setRowSelectionInterval(completedSelection.getLeft(), completedSelection.getRight());
+                if (!postRecordingPitchData.isEmpty()) {
+                    int selectionStart = Math.max(0, completedSelection.getLeft());
+                    int selectionEnd = Math.min(table.getRowCount() - 1, Math.max(selectionStart, completedSelection.getRight()));
+                    List<YassRow> rows = new ArrayList<>();
+                    List<Integer> alignedRowIndices = new ArrayList<>();
+                    int tappedCounter = 0;
+                    for (int rowIndex = selectionStart; rowIndex <= selectionEnd; rowIndex++) {
+                        YassRow row = table.getRowAt(rowIndex);
+                        if (row == null || !row.isNote()) {
+                            continue;
+                        }
+                        if (interruptedByUser) {
+                            if (tappedCounter >= processedTapNotes) {
+                                break;
+                            }
+                            tappedCounter++;
+                        }
+                        rows.add(row);
+                        alignedRowIndices.add(rowIndex);
+                    }
+                    if (!rows.isEmpty()) {
+                        int transpose = mp3.getPitchWaveformTranspose();
+                        List<PitchDetector.PitchData> alignData = postRecordingPitchData;
+                        if (transpose != 0) {
+                            alignData = alignData.stream()
+                                    .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose, pd.noteName(), pd.rawFrequency()))
+                                    .collect(Collectors.toList());
+                        }
+                        table.alignToMelody(rows, alignData);
+                        for (Integer rowIndex : alignedRowIndices) {
+                            table.addRowSelectionInterval(rowIndex, rowIndex);
+                        }
+                    }
+                }
+            }
+        }
+
+        clearRecordingArtifacts();
+        sheet.repaint();
+        } finally {
+            recordingFinalizing = false;
+        }
+    }
+
+    private void handleRecordingInterruptRequest() {
+        if (recordingInterruptDialogOpen) {
+            return;
+        }
+        if (!shouldPromptInterruptedRecording()) {
+            completeRecordingSession(false, false);
+            return;
+        }
+
+        recordingInterruptDialogOpen = true;
+        recordingPauseForPrompt = true;
+        recordingIgnoreNextPlayerStopped = true;
+        mp3.stopNote();
+        mp3.interruptMP3();
+        Toolkit.getDefaultToolkit().removeAWTEventListener(awt);
+        focusRecordingContinuationNote();
+        LOGGER.fine("Recording interrupt: dialog open currentIndex=" + recordingCurrentNoteIndex
+                + " lastIndex=" + recordingLastNoteIndex
+                + " selection=" + tempSelection
+                + " view=" + sheet.getViewPosition().x + "," + sheet.getViewPosition().y);
+
+        int choice = showRecordingInterruptDialog();
+        recordingPauseForPrompt = false;
+        recordingInterruptDialogOpen = false;
+        if (choice == 0) {
+            completeRecordingSession(true, true);
+        } else if (choice == 1) {
+            completeRecordingSession(false, false);
+        } else if (choice == 2) {
+            // Guard against late playerStopped events from the interrupted run
+            // while we are starting continuation playback.
+            recordingIgnoreNextPlayerStopped = true;
+            resumeInterruptedRecording();
+            SwingUtilities.invokeLater(() -> Toolkit.getDefaultToolkit()
+                    .addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK |
+                            AWTEvent.KEY_EVENT_MASK));
+        } else {
+            recordingIgnoreNextPlayerStopped = false;
+            Toolkit.getDefaultToolkit()
+                    .addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK |
+                            AWTEvent.KEY_EVENT_MASK);
+        }
+        if (false) {
+
+        Object[] options = {"Ja", "Nein", "Weiter"};
+        int legacyChoice = JOptionPane.showOptionDialog(
+                tab,
+                "<html>Du hast die Aufnahme unterbrochen.<br>Möchtest Du alles bis hier behalten?</html>",
+                I18.get("edit_record_title"),
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                options,
+                options[2]
+        );
+        recordingPauseForPrompt = false;
+        recordingInterruptDialogOpen = false;
+        if (legacyChoice == 0) {
+            completeRecordingSession(true, true);
+        } else if (legacyChoice == 1) {
+            completeRecordingSession(false, false);
+        } else if (legacyChoice == 2) {
+            // Guard against late playerStopped events from the interrupted run
+            // while we are starting continuation playback.
+            recordingIgnoreNextPlayerStopped = true;
+            resumeInterruptedRecording();
+            SwingUtilities.invokeLater(() -> Toolkit.getDefaultToolkit()
+                    .addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK |
+                            AWTEvent.KEY_EVENT_MASK));
+        } else {
+            recordingIgnoreNextPlayerStopped = false;
+            Toolkit.getDefaultToolkit()
+                    .addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK |
+                            AWTEvent.KEY_EVENT_MASK);
+        }
+        }
+    }
+
+    private int showRecordingInterruptDialog() {
+        Window owner = tab != null ? SwingUtilities.getWindowAncestor(tab) : null;
+        JDialog dialog = owner instanceof Frame
+                ? new JDialog((Frame) owner, I18.get("edit_record_title"), true)
+                : new JDialog((Dialog) null, I18.get("edit_record_title"), true);
+        dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+
+        JPanel content = new JPanel(new BorderLayout(10, 10));
+        content.setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
+        JLabel message = new JLabel("<html>Du hast die Aufnahme unterbrochen.<br>Möchtest Du alles bis hier behalten?</html>");
+        content.add(message, BorderLayout.CENTER);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JButton yesButton = new JButton("Ja");
+        JButton noButton = new JButton("Nein");
+        JButton continueButton = new JButton("Weiter");
+        buttons.add(yesButton);
+        buttons.add(noButton);
+        buttons.add(continueButton);
+        content.add(buttons, BorderLayout.SOUTH);
+
+        AtomicInteger result = new AtomicInteger(-1);
+        yesButton.addActionListener(e -> {
+            result.set(0);
+            dialog.dispose();
+        });
+        noButton.addActionListener(e -> {
+            result.set(1);
+            dialog.dispose();
+        });
+        continueButton.addActionListener(e -> {
+            result.set(2);
+            dialog.dispose();
+        });
+
+        mapEnterToFocusedButton(yesButton);
+        mapEnterToFocusedButton(noButton);
+        mapEnterToFocusedButton(continueButton);
+
+        dialog.getRootPane().registerKeyboardAction(
+                e -> {
+                    result.set(-1);
+                    dialog.dispose();
+                },
+                KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+                JComponent.WHEN_IN_FOCUSED_WINDOW
+        );
+
+        dialog.setContentPane(content);
+        dialog.pack();
+        dialog.setLocationRelativeTo(tab);
+        SwingUtilities.invokeLater(continueButton::requestFocusInWindow);
+        dialog.setVisible(true);
+        return result.get();
+    }
+
+    private void mapEnterToFocusedButton(AbstractButton button) {
+        InputMap inputMap = button.getInputMap(JComponent.WHEN_FOCUSED);
+        if (inputMap == null) {
+            return;
+        }
+        Object pressed = inputMap.get(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0, false));
+        Object released = inputMap.get(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0, true));
+        if (pressed != null) {
+            inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0, false), pressed);
+        }
+        if (released != null) {
+            inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0, true), released);
+        }
     }
 
     public void startPlaying() {
@@ -7741,6 +8217,14 @@ public class YassActions implements DropTargetListener {
     public void stopPlaying() {
         Toolkit.getDefaultToolkit().removeAWTEventListener(playbackStopListener);
         mp3.interruptMP3();
+    }
+
+    public void zoomPagesIn() {
+        lessPages.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "wheel-zoom-in"));
+    }
+
+    public void zoomPagesOut() {
+        morePages.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "wheel-zoom-out"));
     }
 
     private void playPageOrFrozen(int mode, boolean frozen) {
@@ -7923,8 +8407,38 @@ public class YassActions implements DropTargetListener {
         return !sheet.isPanEnabled();
     }
 
+    private void updateAbsolutePitchViewControls(boolean enabled) {
+        if (absolutePitchViewCBI != null) {
+            absolutePitchViewCBI.setState(enabled);
+        }
+        if (absolutePitchViewButton != null) {
+            absolutePitchViewButton.setSelected(enabled);
+        }
+    }
+
+    private void setAbsolutePitchView(boolean enabled, boolean persist) {
+        if (!enabled) {
+            sheet.setAbsolutePitchViewEnabled(false);
+        } else {
+            sheet.enablePan(true);
+            sheet.setAbsolutePitchViewEnabled(true);
+        }
+        updateAbsolutePitchViewControls(enabled);
+        if (persist && prop != null) {
+            prop.setProperty("absolute-pitch-view", Boolean.toString(enabled));
+            prop.store();
+        }
+        sheet.update();
+        sheet.repaint();
+    }
+
     public void setRelative(boolean onoff) {
         sheet.enablePan(onoff);
+        if (!onoff) {
+            setAbsolutePitchView(false, true);
+        } else if (prop != null) {
+            setAbsolutePitchView(prop.getBooleanProperty("absolute-pitch-view"), false);
+        }
         if (alignCBI != null) {
             alignCBI.setState(onoff);
         }
@@ -9421,33 +9935,45 @@ public class YassActions implements DropTargetListener {
         selectNextBeat.putValue(AbstractAction.ACCELERATOR_KEY,
                                 KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK));
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK), "onePage");
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0), "prevPage");
+        prevPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0), "nextPage");
+        nextPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK), "lessPages");
+        am.put("lessPages", lessPages);
+        lessPages.putValue(AbstractAction.ACCELERATOR_KEY,
+                           KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK), "morePages");
+        am.put("morePages", morePages);
+        morePages.putValue(AbstractAction.ACCELERATOR_KEY,
+                           KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK));
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+               "onePage");
         am.put("onePage", onePage);
-        onePage.putValue(AbstractAction.ACCELERATOR_KEY,
-                         KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK));
         onePage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP,
                                                                                 InputEvent.CTRL_DOWN_MASK |
                                                                                         InputEvent.SHIFT_DOWN_MASK));
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0), "lessPages");
-        am.put("lessPages", lessPages);
-        lessPages.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0), "morePages");
-        am.put("morePages", morePages);
-        morePages.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK), "allRemainingPages");
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+               "allRemainingPages");
         am.put("allRemainingPages", allRemainingPages);
         allRemainingPages.putValue(AbstractAction.ACCELERATOR_KEY,
-                                   KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK));
+                                   KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
+                                                         InputEvent.CTRL_DOWN_MASK |
+                                                                 InputEvent.SHIFT_DOWN_MASK));
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
+                                      InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
                "viewAll");
         am.put("viewAll", viewAll);
         viewAll.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
                                                                                 InputEvent.CTRL_DOWN_MASK |
-                                                                                        InputEvent.SHIFT_DOWN_MASK));
+                                                                                        InputEvent.SHIFT_DOWN_MASK |
+                                                                                        InputEvent.ALT_DOWN_MASK));
 
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK), "pasteRows");
         am.put("pasteRows", pasteRows);
@@ -9957,13 +10483,23 @@ public class YassActions implements DropTargetListener {
             this.lastNoteIndex = index;
             // Initialize the starting note index
             this.currentNoteIndex = table.getSelectionModel().getMinSelectionIndex();
+            YassActions.this.recordingLastNoteIndex = this.lastNoteIndex;
+            YassActions.this.recordingCurrentNoteIndex = this.currentNoteIndex;
         }
 
         public void reset() {
             lastWasPressed = false;
         }
 
+        public void setCurrentNoteIndex(int index) {
+            this.currentNoteIndex = index;
+            YassActions.this.recordingCurrentNoteIndex = index;
+        }
+
         public void eventDispatched(AWTEvent e) {
+            if (recordingInterruptDialogOpen) {
+                return;
+            }
             boolean added = false;
             if (e instanceof KeyEvent) {
                 KeyEvent k = (KeyEvent) e;
@@ -9974,8 +10510,7 @@ public class YassActions implements DropTargetListener {
                     return;
                 }
                 if (k.getKeyCode() == KeyEvent.VK_ESCAPE) {
-                    stopRecording();
-                    clearRecordingArtifacts();
+                    handleRecordingInterruptRequest();
                     k.consume();
                     return;
                 }
@@ -10000,12 +10535,14 @@ public class YassActions implements DropTargetListener {
                     while (currentNoteIndex <= lastNoteIndex && !table.getRowAt(currentNoteIndex).isNote()) {
                         currentNoteIndex++;
                     }
+                    YassActions.this.recordingCurrentNoteIndex = currentNoteIndex;
                     if (currentNoteIndex > lastNoteIndex) {
                         // All notes are done, keep playback running until the planned fade-out end.
                         finishRecordingInput();
                     } else {
-                        // Tell the sheet to display the next line
+                        // Tell the sheet to display and focus the next line.
                         sheet.setRecordingNoteIndex(currentNoteIndex);
+                        updateRecordingCursorView(currentNoteIndex);
                     }
                     added = true;
                 }
@@ -10037,11 +10574,13 @@ public class YassActions implements DropTargetListener {
                     while (currentNoteIndex <= lastNoteIndex && !table.getRowAt(currentNoteIndex).isNote()) {
                         currentNoteIndex++;
                     }
+                    YassActions.this.recordingCurrentNoteIndex = currentNoteIndex;
 
                     if (currentNoteIndex > lastNoteIndex) {
                         finishRecordingInput();
                     } else {
                         sheet.setRecordingNoteIndex(currentNoteIndex);
+                        updateRecordingCursorView(currentNoteIndex);
                     }
                     added = true;
                 }

@@ -355,6 +355,7 @@ public class YassProperties extends Properties {
         p.putIfAbsent("show-note-length", "true");
         p.putIfAbsent("show-note-beat", "false");
         p.putIfAbsent("show-note-scale", "false");
+        p.putIfAbsent("absolute-pitch-view", "false");
         p.putIfAbsent("auto-trim", "false");
         p.putIfAbsent("playback-buttons", "true");
         p.putIfAbsent("record-timebase", "2");

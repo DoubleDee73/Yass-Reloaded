@@ -208,6 +208,9 @@ public class YassTable extends JTable {
         getSelectionModel().addListSelectionListener(
                 e -> {
                     if (sheet != null) {
+                        if (!e.getValueIsAdjusting()) {
+                            sheet.resetAbsolutePitchShiftTracking();
+                        }
                         sheet.repaint();
                         // if (!e.getValueIsAdjusting()) {
                         //     sheet.logSelectedNotePitchDistribution();
@@ -2761,11 +2764,11 @@ public class YassTable extends JTable {
                 int maxx = sheet.beatToTimeline(maxb);
                 int w = sheet.getClipBounds().width;
                 if (maxx > sheet.getViewPosition().x + w) {
-                    sheet.setViewPosition(new Point(maxx - w, 0));
+                    sheet.setViewPosition(new Point(maxx - w, sheet.getViewPosition().y));
                 }
             }
         }
-        if (zoomMode == ZOOM_ONE) {
+        if (zoomMode == ZOOM_ONE && (sheet == null || !sheet.isAbsolutePitchViewEnabled())) {
             zoomPage();
         }
         updatePlayerPosition();
@@ -2810,7 +2813,7 @@ public class YassTable extends JTable {
                 sheet.setLeftX(minx);
             }
         }
-        if (zoomMode == ZOOM_ONE) {
+        if (zoomMode == ZOOM_ONE && (sheet == null || !sheet.isAbsolutePitchViewEnabled())) {
             zoomPage();
         }
         updatePlayerPosition();
@@ -2886,7 +2889,7 @@ public class YassTable extends JTable {
                 int maxx = sheet.beatToTimeline(maxb);
                 int w = sheet.getClipBounds().width;
                 if (maxx > sheet.getViewPosition().x + w) {
-                    sheet.setViewPosition(new Point(maxx - w, 0));
+                    sheet.setViewPosition(new Point(maxx - w, sheet.getViewPosition().y));
                 }
             }
         }
@@ -3032,6 +3035,7 @@ public class YassTable extends JTable {
         if (sheet != null) {
             sheet.init();
             sheet.update();
+            sheet.trackAbsolutePitchShiftForSelection(rows, h);
             // sheet.repaint();
         }
         preventLyricsUpdate(true);
@@ -3092,7 +3096,7 @@ public class YassTable extends JTable {
                     sheet.setLeftX(minx);
                 }
             }
-            if (zoomMode == ZOOM_ONE) {
+            if (zoomMode == ZOOM_ONE && (sheet == null || !sheet.isAbsolutePitchViewEnabled())) {
                 zoomPage();
             }
             updatePlayerPosition();
@@ -3166,7 +3170,7 @@ public class YassTable extends JTable {
                 sheet.setLeftX(minx);
             }
         }
-        if (zoomMode == ZOOM_ONE) {
+        if (zoomMode == ZOOM_ONE && (sheet == null || !sheet.isAbsolutePitchViewEnabled())) {
             zoomPage();
         }
         updatePlayerPosition();
@@ -3223,10 +3227,10 @@ public class YassTable extends JTable {
                 int maxx = sheet.beatToTimeline(maxb);
                 int w = sheet.getClipBounds().width;
                 if (maxx > sheet.getViewPosition().x + w) {
-                    sheet.setViewPosition(new Point(maxx - w, 0));
+                    sheet.setViewPosition(new Point(maxx - w, sheet.getViewPosition().y));
                 }
             }
-            if (zoomMode == ZOOM_ONE) {
+            if (zoomMode == ZOOM_ONE && (sheet == null || !sheet.isAbsolutePitchViewEnabled())) {
                 zoomPage();
             }
             updatePlayerPosition();
@@ -3265,10 +3269,10 @@ public class YassTable extends JTable {
             int maxx = sheet.beatToTimeline(maxb);
             int w = sheet.getClipBounds().width;
             if (maxx > sheet.getViewPosition().x + w) {
-                sheet.setViewPosition(new Point(maxx - w, 0));
+                sheet.setViewPosition(new Point(maxx - w, sheet.getViewPosition().y));
             }
         }
-        if (zoomMode == ZOOM_ONE) {
+        if (zoomMode == ZOOM_ONE && (sheet == null || !sheet.isAbsolutePitchViewEnabled())) {
             zoomPage();
         }
 
@@ -3463,6 +3467,13 @@ public class YassTable extends JTable {
         if (sheet == null) {
             return;
         }
+        boolean absolutePitchView = sheet.isAbsolutePitchViewEnabled();
+        int preservedAbsoluteViewY = absolutePitchView ? sheet.getViewPosition().y : 0;
+        if (absolutePitchView) {
+            LOGGER.info("[AbsolutePitchView] YassTable.zoomPage start zoomMode=" + zoomMode
+                    + " selection=" + getSelectionModel().getMinSelectionIndex() + "-" + getSelectionModel().getMaxSelectionIndex()
+                    + " playerPos=" + sheet.getPlayerPosition());
+        }
         double pos = sheet.fromTimeline(sheet.getPlayerPosition());
 
         int i = getSelectionModel().getMinSelectionIndex();
@@ -3532,7 +3543,69 @@ public class YassTable extends JTable {
         if (zoomMode == ZOOM_TIME) {
             sheet.scrollRectToVisible(ij[0], ij[1]);
         }
+        if (absolutePitchView) {
+            int[] centeringRows = resolveRowsForAbsoluteCentering(ij[0], ij[1]);
+            if (centeringRows != null) {
+                sheet.autoCenterAbsolutePitchView(centeringRows[0], centeringRows[1]);
+            } else {
+                // Keep previous vertical context when no note row is available in target span.
+                Point currentView = sheet.getViewPosition();
+                sheet.setViewPosition(new Point(currentView.x, preservedAbsoluteViewY));
+            }
+        }
+        if (absolutePitchView) {
+            LOGGER.info("[AbsolutePitchView] YassTable.zoomPage end zoomMode=" + zoomMode
+                    + " selection=" + getSelectionModel().getMinSelectionIndex() + "-" + getSelectionModel().getMaxSelectionIndex()
+                    + " playerPos=" + sheet.getPlayerPosition()
+                    + " view=" + sheet.getViewPosition().x + "," + sheet.getViewPosition().y);
+        }
         sheet.repaint();
+    }
+
+    private int[] resolveRowsForAbsoluteCentering(int startRow, int endRow) {
+        if (sheet == null || !sheet.isAbsolutePitchViewEnabled()) {
+            return null;
+        }
+        int rowCount = getRowCount();
+        if (rowCount <= 0) {
+            return null;
+        }
+        int safeStart = Math.max(0, Math.min(startRow, rowCount - 1));
+        int safeEnd = Math.max(safeStart, Math.min(endRow, rowCount - 1));
+
+        int firstNote = -1;
+        int lastNote = -1;
+        for (int row = safeStart; row <= safeEnd; row++) {
+            YassRow current = getRowAt(row);
+            if (current != null && current.isNote()) {
+                if (firstNote < 0) {
+                    firstNote = row;
+                }
+                lastNote = row;
+            }
+        }
+        if (firstNote >= 0) {
+            return new int[]{firstNote, lastNote};
+        }
+
+        int anchor = safeStart;
+        for (int delta = 1; delta < rowCount; delta++) {
+            int right = anchor + delta;
+            if (right < rowCount) {
+                YassRow row = getRowAt(right);
+                if (row != null && row.isNote()) {
+                    return new int[]{right, right};
+                }
+            }
+            int left = anchor - delta;
+            if (left >= 0) {
+                YassRow row = getRowAt(left);
+                if (row != null && row.isNote()) {
+                    return new int[]{left, left};
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -4113,8 +4186,12 @@ public class YassTable extends JTable {
         scrollRectToVisible(rr);
 
         updatePlayerPosition();
-        if (sheet != null && !sheet.isVisible(row)) {
-            zoomPage();
+        if (sheet != null) {
+            // In one-page mode, Up/Down page navigation must always switch to the
+            // selected page, even if a few notes are already visible at the edge.
+            if (zoomMode == ZOOM_ONE || !sheet.isVisible(row)) {
+                zoomPage();
+            }
         }
     }
 
@@ -4325,7 +4402,8 @@ public class YassTable extends JTable {
                 }
             }
         }
-        int octaveBias = determineSignificantOctaveBias(prevalentPitches.values());
+        boolean absolutePitchView = sheet != null && sheet.isAbsolutePitchViewEnabled();
+        int octaveBias = absolutePitchView ? 0 : determineSignificantOctaveBias(prevalentPitches.values());
 
         // Build occupied-beat set from all rows in the table (beat..beat+length-1 inclusive)
         Set<Integer> occupiedBeats = new HashSet<>();
@@ -4350,10 +4428,22 @@ public class YassTable extends JTable {
             if (prevalentPitch == null) {
                 continue;
             }
-            prevalentPitch = normalizePitchIntoWindow(prevalentPitch + octaveBias, row.getHeightInt());
+            int alignedPitch = prevalentPitch + octaveBias;
+            if (absolutePitchView) {
+                // Absolute mode should still snap to the nearest pitch-line octave
+                // around the current note, but avoid large accidental shifts.
+                int snappedPitch = normalizePitchIntoWindow(alignedPitch, row.getHeightInt());
+                if (Math.abs(snappedPitch - row.getHeightInt()) <= 10) {
+                    alignedPitch = snappedPitch;
+                } else {
+                    alignedPitch = row.getHeightInt();
+                }
+            } else {
+                alignedPitch = normalizePitchIntoWindow(alignedPitch, row.getHeightInt());
+            }
 
-            if (prevalentPitch != row.getHeightInt()) {
-                row.setHeight(prevalentPitch);
+            if (alignedPitch != row.getHeightInt()) {
+                row.setHeight(alignedPitch);
                 changed = true;
             }
 
@@ -4415,7 +4505,7 @@ public class YassTable extends JTable {
                     double frameMs = pd.time() * 1000.0;
                     if (frameMs >= beatStartMs && frameMs < beatEndMs) {
                         total++;
-                        if (matchesAlignedPitch(pd.pitch(), prevalentPitch)) matching++;
+                        if (matchesAlignedPitch(pd.pitch(), alignedPitch)) matching++;
                     }
                 }
                 if (total < expandMinFrames || matching < total * 0.5) {
@@ -4436,7 +4526,7 @@ public class YassTable extends JTable {
                     double frameMs = pd.time() * 1000.0;
                     if (frameMs >= beatStartMs && frameMs < beatEndMs) {
                         total++;
-                        if (matchesAlignedPitch(pd.pitch(), prevalentPitch)) matching++;
+                        if (matchesAlignedPitch(pd.pitch(), alignedPitch)) matching++;
                     }
                 }
                 if (total < expandMinFrames || matching < total * 0.5) {

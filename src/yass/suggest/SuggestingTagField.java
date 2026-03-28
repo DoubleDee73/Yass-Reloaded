@@ -63,6 +63,7 @@ public class SuggestingTagField extends JPanel {
         setBackground(Color.WHITE);
         this.tagFontColor = tagFontColor;
         this.tagBackgroundColor = tagBackgroundColor;
+        suggestionPopup.setLightWeightPopupEnabled(true);
         tagsPanel.setOpaque(false);
         inputField.setBorder(null);
         inputField.setOpaque(false);
@@ -74,6 +75,7 @@ public class SuggestingTagField extends JPanel {
 
         setupInputFieldListeners();
         setupFocusHandling();
+        setupPopupLifecycleHandling();
     }
 
     private void setupInputFieldListeners() {
@@ -158,7 +160,7 @@ public class SuggestingTagField extends JPanel {
                         break;
                     case KeyEvent.VK_ESCAPE:
                         if (suggestionPopup.isVisible()) {
-                            suggestionPopup.setVisible(false);
+                            hideSuggestions();
                             e.consume();
                         }
                         break;
@@ -219,6 +221,7 @@ public class SuggestingTagField extends JPanel {
                 if (focusStaysInside) {
                     return;
                 }
+                hideSuggestions();
 
                 if (originalPreferredSize != null) {
                     SuggestingTagField.this.setPreferredSize(originalPreferredSize);
@@ -231,6 +234,28 @@ public class SuggestingTagField extends JPanel {
         });        this.addComponentListener(new ComponentAdapter() {
             public void componentResized(ComponentEvent evt) {
                 updateInputFieldSize();
+            }
+        });
+    }
+
+    private void setupPopupLifecycleHandling() {
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentMoved(ComponentEvent e) {
+                hideSuggestions();
+            }
+
+            @Override
+            public void componentResized(ComponentEvent e) {
+                hideSuggestions();
+            }
+        });
+
+        addHierarchyListener(e -> {
+            if ((e.getChangeFlags() & (HierarchyEvent.SHOWING_CHANGED | HierarchyEvent.DISPLAYABILITY_CHANGED)) != 0) {
+                if (!isShowing() || !isDisplayable()) {
+                    hideSuggestions();
+                }
             }
         });
     }
@@ -278,14 +303,14 @@ public class SuggestingTagField extends JPanel {
         if (!text.isEmpty()) {
             addTag(text);
             inputField.setText("");
-            suggestionPopup.setVisible(false);
+            hideSuggestions();
         }
     }
 
     private void updateSuggestions() {
         String text = inputField.getText().trim();
         if (text.isEmpty()) {
-            suggestionPopup.setVisible(false);
+            hideSuggestions();
             return;
         }
 
@@ -293,7 +318,7 @@ public class SuggestingTagField extends JPanel {
         suggestionPopup.removeAll();
 
         if (suggestions.isEmpty()) {
-            suggestionPopup.setVisible(false);
+            hideSuggestions();
             return;
         }
 
@@ -302,7 +327,7 @@ public class SuggestingTagField extends JPanel {
             item.addActionListener(e -> {
                 addTag(suggestion);
                 inputField.setText("");
-                suggestionPopup.setVisible(false);
+                hideSuggestions();
             });
             suggestionPopup.add(item);
         }
@@ -367,6 +392,7 @@ public class SuggestingTagField extends JPanel {
         // Remember focus
         boolean hadFocus = inputField.hasFocus();
 
+        hideSuggestions();
         tagsPanel.removeAll();
         for (String tag : tags) {
             if (tagFontColor == null || tagBackgroundColor == null) {
@@ -405,5 +431,12 @@ public class SuggestingTagField extends JPanel {
 
     public List<String> getTags() {
         return new ArrayList<>(tags);
+    }
+
+    public void hideSuggestions() {
+        MenuSelectionManager.defaultManager().clearSelectedPath();
+        if (suggestionPopup.isVisible()) {
+            suggestionPopup.setVisible(false);
+        }
     }
 }

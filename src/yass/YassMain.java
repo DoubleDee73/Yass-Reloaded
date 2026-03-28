@@ -554,10 +554,25 @@ public class YassMain extends JFrame {
             if (notches == 0) {
                 return;
             }
+            if (e.isControlDown() && !e.isAltDown()) {
+                int steps = Math.abs(notches);
+                for (int i = 0; i < steps; i++) {
+                    if (notches < 0) {
+                        actions.zoomPagesIn();
+                    } else {
+                        actions.zoomPagesOut();
+                    }
+                }
+                return;
+            }
             actions.getTable().gotoPage(notches < 0 ? -1 : 1);
         });
+        YassVerticalPitchScrollbar verticalPitchScrollbar = new YassVerticalPitchScrollbar(sheet);
+        JPanel sheetViewportPanel = new JPanel(new BorderLayout());
+        sheetViewportPanel.add(sheetPane, BorderLayout.CENTER);
+        sheetViewportPanel.add(verticalPitchScrollbar, BorderLayout.EAST);
 
-        verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, horizontalSplit, sheetPane);
+        verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, horizontalSplit, sheetViewportPanel);
         verticalSplit.setResizeWeight(0.1);
         actions.setEditorSplit(verticalSplit);
         contentPanel.add(verticalSplit, BorderLayout.CENTER);
@@ -565,6 +580,7 @@ public class YassMain extends JFrame {
         mainPanel.add(contentPanel, BorderLayout.CENTER);
 
         YassSheetInfo sheetInfo = new YassSheetInfo(sheet, 0);
+
         sheetInfoPanel = new JPanel(new GridLayout(1, 1));
         sheetInfoPanel.add(sheetInfo);
         mainPanel.add(sheetInfoPanel, BorderLayout.SOUTH);
@@ -623,7 +639,7 @@ public class YassMain extends JFrame {
                                                                      YassSheet.HI_GRAY_2, 3));
 
         sheetPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        sheetPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        sheetPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
         sheetPane.getViewport().setScrollMode(JViewport.SIMPLE_SCROLL_MODE);
         sheetPane.setBorder(null);
         sheetPane.getActionMap().clear();

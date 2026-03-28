@@ -382,6 +382,9 @@ public class SongHeader extends JPanel implements YassSheetListener {
         yearField.setText(table.getYear());
         genreField.setText(table.getGenre());
         tagField.setText(table.getTags());
+        languageField.hideSuggestions();
+        genreField.hideSuggestions();
+        tagField.hideSuggestions();
         setInternalUpdate(false);
         LOGGER.info("SongHeader.initSongHeader audio=" + audio + " bpm=" + table.getBPM()
                 + " headerSize=" + getWidth() + "x" + getHeight()
