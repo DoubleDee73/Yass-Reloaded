@@ -6,7 +6,7 @@ title: Yass Reloaded Documentation
 
 Yass Reloaded is an editor for UltraStar songs with a strong focus on practical song creation, note editing, recording, and library maintenance.
 
-This documentation is the structured companion to the project wiki. It is intended to make the most important workflows easier to find and maintain.
+This site is the structured companion to the project wiki. It is meant to make the most important workflows easier to find, easier to keep up to date, and easier to discover for new users.
 
 ## Start Here
 
@@ -15,6 +15,66 @@ This documentation is the structured companion to the project wiki. It is intend
 - [Song Editor Overview](editor/overview.md)
 - [Recording and Tapping](recording/tapping.md)
 - [External Tools](tools/overview.md)
+- [Keyboard Shortcuts](editor/keyboard-shortcuts.md)
+
+## Typical Workflows
+
+### Create or Open a Song
+
+Start here if you want to get productive quickly:
+
+- set up your library and FFmpeg
+- open an existing song or create a new one
+- check your audio assignments
+- jump into the editor
+
+See:
+
+- [Installation](installation.md)
+- [Quick Start](quick-start.md)
+
+### Edit Notes and Lyrics
+
+Use the editor to:
+
+- move, resize, split, and delete notes
+- edit lyrics and page breaks
+- switch between relative and absolute pitch view
+- navigate pages and tracks efficiently
+
+See:
+
+- [Song Editor Overview](editor/overview.md)
+- [Absolute Pitch View](editor/absolute-pitch-view.md)
+- [Keyboard Shortcuts](editor/keyboard-shortcuts.md)
+
+### Tap or Reconstruct Timing
+
+When you already have lyrics but need better timing, use the recording workflow:
+
+- select a starting note or range
+- record taps against playback
+- continue or finalize the result
+- refine with manual editing or melody alignment
+
+See:
+
+- [Recording and Tapping](recording/tapping.md)
+
+### Use External Services
+
+Yass Reloaded can integrate with:
+
+- FFmpeg
+- WhisperX
+- OpenAI transcription
+- MVSEP
+- audio-separator
+- fanart.tv
+
+See:
+
+- [External Tools Overview](tools/overview.md)
 
 ## Main Areas
 
@@ -26,6 +86,8 @@ This documentation is the structured companion to the project wiki. It is intend
 ### Song Editing
 
 - [Song Editor Overview](editor/overview.md)
+- [Absolute Pitch View](editor/absolute-pitch-view.md)
+- [Keyboard Shortcuts](editor/keyboard-shortcuts.md)
 - [Recording and Tapping](recording/tapping.md)
 
 ### Tools and Integrations
@@ -43,7 +105,7 @@ This documentation is the structured companion to the project wiki. It is intend
 - [GitHub Wiki](https://github.com/DoubleDee73/Yass-Reloaded/wiki)
 - [Releases](https://github.com/DoubleDee73/Yass-Reloaded/releases)
 
-## Scope of This Documentation
+## What This Documentation Covers
 
 The long-term plan is to cover:
 
@@ -54,3 +116,5 @@ The long-term plan is to cover:
 - alignment features
 - external tools like FFmpeg, WhisperX, MVSEP, audio-separator, and fanart.tv
 - reference material for tags, shortcuts, and troubleshooting
+
+The older in-application help pages remain valuable as a compact reference. This site is intended to grow into the better structured, easier searchable version of that material.

@@ -54,3 +54,11 @@ Check:
 - whether the intended note range was selected
 - whether playback reached the end naturally or was interrupted
 - whether post-alignment changed the visible octave
+
+## The GitHub Pages documentation looks outdated
+
+Check:
+
+- whether the latest changes were pushed to the release branch
+- whether the `Publish Documentation` GitHub Actions workflow succeeded
+- whether GitHub Pages is configured to use `GitHub Actions`

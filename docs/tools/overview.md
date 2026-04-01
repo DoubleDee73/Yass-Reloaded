@@ -47,6 +47,7 @@ Used for:
 Used for:
 
 - cover lookup workflows from the library
+- fetching alternate cover candidates for a song folder
 
 ## Configuration
 
@@ -67,6 +68,21 @@ Several tool integrations provide health checks to verify:
 - FFmpeg presence
 - WhisperX runtime suitability
 
+## Recommended Mindset
+
+Not every workflow needs every tool:
+
+- use FFmpeg as the baseline
+- add WhisperX for local transcription and timing support
+- use OpenAI for cloud transcription workflows
+- use MVSEP or audio-separator when you need stems
+- use fanart.tv for library polish and media management
+
 ## Goal of This Section
 
 This section will gradually expand into dedicated setup guides for each supported integration.
+
+## Related Pages
+
+- [Installation](../installation.md)
+- [Troubleshooting](../reference/troubleshooting.md)

@@ -6,6 +6,10 @@ title: Installation
 
 Yass Reloaded runs on Windows, macOS, and Linux.
 
+## Recommended Approach
+
+For most users, the easiest option is to use the packaged release from the GitHub releases page instead of launching the JAR manually.
+
 ## Windows
 
 The recommended option is the Windows installer from the [Releases](https://github.com/DoubleDee73/Yass-Reloaded/releases) page.
@@ -57,6 +61,14 @@ If Yass Reloaded cannot find FFmpeg, check:
 - `External Tools -> Locations`
 - your `user.xml` in `~/.yass`
 
+FFmpeg is especially important for:
+
+- audio conversion
+- waveform generation
+- transcription preparation
+- stem separation workflows
+- broad format support for imported media
+
 ## First Setup
 
 After the first start, configure:
@@ -68,3 +80,9 @@ After the first start, configure:
 The basic directory setup can be found in:
 
 - `Settings -> Library -> Setup`
+
+## Useful Follow-Up Pages
+
+- [Quick Start](quick-start.md)
+- [External Tools](tools/overview.md)
+- [Troubleshooting](reference/troubleshooting.md)
