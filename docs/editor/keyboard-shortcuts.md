@@ -100,7 +100,7 @@ This page collects the most useful shortcuts from the editor and the older built
 
 ## Virtual Piano
 
-During tap recording, Yass can use the top keyboard rows as a virtual piano. The exact layout depends on the active keyboard mapping:
+During tap recording, Yass Reloaded can use the top keyboard rows as a virtual piano. The exact layout depends on the active keyboard mapping:
 
 - `QWERTY`
 - `QWERTZ`
@@ -115,3 +115,4 @@ You can review and configure keyboard-related behavior in:
 - Some shortcuts behave slightly differently depending on focus, selection, and active panel.
 - Mouse gestures and wheel actions also play an important role in the editor, especially in the sheet.
 - The absolute pitch workflow adds several navigation behaviors that go beyond the older classic help pages.
+- This page is based on the current Yass Reloaded keybindings, not just the legacy Yass help text.

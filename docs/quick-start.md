@@ -20,6 +20,8 @@ If you use the wizard, it can also help with:
 - transcription
 - opening the result directly in the editor
 
+For existing collections, you can also start from the library and jump into the editor only when a song needs attention.
+
 ## 2. Check Audio Assignment
 
 Make sure the relevant files are assigned correctly:
@@ -77,6 +79,7 @@ See also:
 
 - [Recording and Tapping](recording/tapping.md)
 - [Keyboard Shortcuts](editor/keyboard-shortcuts.md)
+- [Library Overview](library/overview.md)
 
 ## 6. Save
 

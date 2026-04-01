@@ -55,6 +55,14 @@ Check:
 - whether playback reached the end naturally or was interrupted
 - whether post-alignment changed the visible octave
 
+## Some notes are outside the visible area
+
+Check:
+
+- whether you are in one-page view with a narrow visible pitch range
+- whether absolute pitch view would be more useful for this task
+- whether switching to a multi-page or differently zoomed view reveals the missing notes
+
 ## The GitHub Pages documentation looks outdated
 
 Check:

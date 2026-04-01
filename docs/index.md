@@ -86,6 +86,7 @@ See:
 ### Song Editing
 
 - [Song Editor Overview](editor/overview.md)
+- [Note and Lyrics Editing](editor/note-editing.md)
 - [Absolute Pitch View](editor/absolute-pitch-view.md)
 - [Keyboard Shortcuts](editor/keyboard-shortcuts.md)
 - [Recording and Tapping](recording/tapping.md)
@@ -104,6 +105,7 @@ See:
 - [GitHub Repository](https://github.com/DoubleDee73/Yass-Reloaded)
 - [GitHub Wiki](https://github.com/DoubleDee73/Yass-Reloaded/wiki)
 - [Releases](https://github.com/DoubleDee73/Yass-Reloaded/releases)
+- [Original Yass Website](https://yass-along.com/)
 
 ## What This Documentation Covers
 
@@ -118,3 +120,5 @@ The long-term plan is to cover:
 - reference material for tags, shortcuts, and troubleshooting
 
 The older in-application help pages remain valuable as a compact reference. This site is intended to grow into the better structured, easier searchable version of that material.
+
+Because Yass Reloaded is a fork of the original Yass project, this documentation consistently refers to the current fork as **Yass Reloaded** to avoid ambiguity.

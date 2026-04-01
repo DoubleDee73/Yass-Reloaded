@@ -20,7 +20,7 @@ Recording and tapping are especially useful when:
 1. Select the note or note range you want to record
 2. Start the recording / tapping mode
 3. Tap note start and release for note end
-4. Let Yass place the tapped notes
+4. Let Yass Reloaded place the tapped notes
 5. Refine with editing tools or Align to Melody
 
 ## During Recording
@@ -35,7 +35,7 @@ The recording UI can show:
 
 ## Typical Outcomes
 
-After tapping, Yass can:
+After tapping, Yass Reloaded can:
 
 - keep the recorded result
 - continue from the first remaining untapped note
@@ -69,5 +69,6 @@ Recording and tapping are usually followed by note refinement:
 ## Related Pages
 
 - [Song Editor Overview](../editor/overview.md)
+- [Note and Lyrics Editing](../editor/note-editing.md)
 - [Absolute Pitch View](../editor/absolute-pitch-view.md)
 - [Keyboard Shortcuts](../editor/keyboard-shortcuts.md)

@@ -66,6 +66,7 @@ The editor provides:
 - align notes to melody
 - jump to a precise cursor time
 - move all following notes to a new timestamp
+- reuse or compare repeating melodic patterns
 
 ## Important Modes
 
@@ -110,6 +111,7 @@ Some of the most used editing shortcuts are:
 ## Related Pages
 
 - [Quick Start](../quick-start.md)
+- [Note and Lyrics Editing](note-editing.md)
 - [Absolute Pitch View](absolute-pitch-view.md)
 - [Keyboard Shortcuts](keyboard-shortcuts.md)
 - [Recording and Tapping](../recording/tapping.md)

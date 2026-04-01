@@ -41,6 +41,20 @@ Yes. The wiki is still useful, especially for older notes and gradually evolving
 
 Yes. Yass Reloaded builds on the original Yass project and extends it with modern Java, improved workflows, and active maintenance.
 
+## Why does this documentation keep saying "Yass Reloaded" instead of just "Yass"?
+
+To avoid confusion. Some older tutorials, screenshots, and help texts still refer to the original Yass project, but this documentation is specifically about Yass Reloaded unless stated otherwise.
+
+## Which older Yass topics are still relevant for Yass Reloaded?
+
+A number of classic concepts still carry over well:
+
+- library maintenance and error-driven editing
+- page trimming and phrase layout
+- note, lyrics, and page-break editing basics
+- copied melody and repeating phrase workflows
+- keyboard-driven editing and virtual piano usage
+
 ## Does it support UltraStar Deluxe songs?
 
 Yes. Yass Reloaded is designed for UltraStar-style song files and typical UltraStar Deluxe workflows.
