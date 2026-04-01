@@ -1,0 +1,264 @@
+---
+---
+
+@import "jekyll-theme-leap-day";
+
+:root {
+  --bg-top: #f4f8ff;
+  --bg-bottom: #eef2f7;
+  --card: rgba(255, 255, 255, 0.92);
+  --border: rgba(38, 55, 77, 0.12);
+  --text: #233448;
+  --muted: #5f7188;
+  --accent: #2c7be5;
+  --accent-2: #1f5fb4;
+  --shadow: 0 18px 45px rgba(24, 39, 75, 0.08);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(44, 123, 229, 0.12), transparent 28%),
+    linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+}
+
+.page-shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+}
+
+.site-header {
+  margin-bottom: 24px;
+  padding: 24px 28px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(244,248,255,0.96));
+  box-shadow: var(--shadow);
+}
+
+.brand-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(44, 123, 229, 0.18);
+}
+
+.brand-title,
+.brand-subtitle {
+  display: block;
+}
+
+.brand-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.brand-subtitle,
+.hero-kicker,
+.site-footer {
+  color: var(--muted);
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.header-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid rgba(44, 123, 229, 0.14);
+  border-radius: 999px;
+  background: rgba(44, 123, 229, 0.06);
+  color: var(--accent-2);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.header-link:hover,
+.header-link:focus-visible {
+  background: rgba(44, 123, 229, 0.12);
+  text-decoration: none;
+}
+
+.hero {
+  margin-top: 22px;
+}
+
+.hero-kicker {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0 0 8px;
+  font-size: clamp(2rem, 3vw, 2.8rem);
+  line-height: 1.05;
+}
+
+.hero-page {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent-2);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.hero p {
+  max-width: 760px;
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.content-shell {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 22px;
+}
+
+.sidebar,
+.content-card {
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.sidebar {
+  position: sticky;
+  top: 18px;
+  align-self: start;
+  padding: 22px 20px;
+  backdrop-filter: blur(10px);
+}
+
+.nav-section + .nav-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(38, 55, 77, 0.08);
+}
+
+.nav-section h2 {
+  margin: 0 0 10px;
+  font-size: 0.92rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.nav-section ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-section li + li {
+  margin-top: 4px;
+}
+
+.nav-section a {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 12px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.nav-section a:hover,
+.nav-section a:focus-visible {
+  background: rgba(44, 123, 229, 0.08);
+  text-decoration: none;
+}
+
+.nav-section a.is-current {
+  background: rgba(44, 123, 229, 0.12);
+  color: var(--accent-2);
+  font-weight: 700;
+}
+
+.content-card {
+  padding: 28px 34px;
+}
+
+.content-card h1:first-child {
+  margin-top: 0;
+}
+
+.content-card h2,
+.content-card h3 {
+  scroll-margin-top: 24px;
+}
+
+.content-card a {
+  color: var(--accent-2);
+}
+
+.content-card code {
+  padding: 0.16em 0.38em;
+  border-radius: 6px;
+  background: rgba(44, 123, 229, 0.08);
+}
+
+.content-card pre code {
+  background: transparent;
+}
+
+.site-footer {
+  margin-top: 20px;
+  padding: 0 8px;
+  font-size: 0.95rem;
+}
+
+@media (max-width: 980px) {
+  .content-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-shell {
+    padding: 16px 12px 28px;
+  }
+
+  .site-header,
+  .content-card,
+  .sidebar {
+    padding: 20px 18px;
+    border-radius: 20px;
+  }
+
+  .brand-row {
+    flex-direction: column;
+  }
+}

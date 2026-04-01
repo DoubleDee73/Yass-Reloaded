@@ -1,0 +1,19 @@
+<nav class="site-nav" aria-label="Documentation navigation">
+  {% for section in site.data.navigation.sections %}
+    <section class="nav-section">
+      <h2>{{ section.title }}</h2>
+      <ul>
+        {% for link in section.links %}
+          {% assign target = site.baseurl | append: link.url %}
+          {% assign is_current = false %}
+          {% if page.url == link.url %}
+            {% assign is_current = true %}
+          {% endif %}
+          <li>
+            <a href="{{ target }}" class="{% if is_current %}is-current{% endif %}">{{ link.title }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endfor %}
+</nav>

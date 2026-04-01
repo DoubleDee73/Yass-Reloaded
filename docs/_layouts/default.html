@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% if page.title %}{{ page.title }} | {{ site.title }}{% else %}{{ site.title }}{% endif %}</title>
+    <meta name="description" content="{% if page.excerpt %}{{ page.excerpt | strip_html | strip_newlines | truncate: 160 }}{% else %}{{ site.description }}{% endif %}">
+    <meta name="theme-color" content="#2c7be5">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="{{ site.title }}">
+    <meta property="og:title" content="{% if page.title %}{{ page.title }} | {{ site.title }}{% else %}{{ site.title }}{% endif %}">
+    <meta property="og:description" content="{% if page.excerpt %}{{ page.excerpt | strip_html | strip_newlines | truncate: 160 }}{% else %}{{ site.description }}{% endif %}">
+    <meta property="og:url" content="{{ site.url }}{{ site.baseurl }}{{ page.url }}">
+    <meta property="og:image" content="{{ site.url }}{{ site.baseurl }}/assets/images/favicon.png">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{% if page.title %}{{ page.title }} | {{ site.title }}{% else %}{{ site.title }}{% endif %}">
+    <meta name="twitter:description" content="{% if page.excerpt %}{{ page.excerpt | strip_html | strip_newlines | truncate: 160 }}{% else %}{{ site.description }}{% endif %}">
+    <link rel="icon" type="image/png" href="{{ site.baseurl }}/assets/images/favicon.png">
+    <link rel="apple-touch-icon" href="{{ site.baseurl }}/assets/images/favicon.png">
+    <link rel="preconnect" href="https://github.com">
+    <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <div class="brand-row">
+          <a class="brand" href="{{ '/' | relative_url }}">
+            <img src="{{ '/assets/images/favicon.png' | relative_url }}" alt="Yass Reloaded icon" class="brand-icon">
+            <div>
+              <span class="brand-title">Yass Reloaded</span>
+              <span class="brand-subtitle">Documentation</span>
+            </div>
+          </a>
+          <div class="header-actions">
+            <a class="header-link" href="{{ site.repository_url }}">GitHub</a>
+            <a class="header-link" href="{{ site.wiki_url }}">Wiki</a>
+            <a class="header-link" href="{{ site.releases_url }}">Releases</a>
+          </div>
+        </div>
+        <div class="hero">
+          <p class="hero-kicker">UltraStar Song Editor</p>
+          <h1>{{ site.title }}</h1>
+          {% if page.title and page.title != site.title %}
+            <p class="hero-page">{{ page.title }}</p>
+          {% endif %}
+          <p>{{ site.description }}</p>
+        </div>
+      </header>
+
+      <div class="content-shell">
+        <aside class="sidebar">
+          {% include navigation.html %}
+        </aside>
+
+        <main class="content-card">
+          {{ content }}
+        </main>
+      </div>
+
+      <footer class="site-footer">
+        <p>
+          Yass Reloaded documentation for the Yass Reloaded fork.
+          <a href="{{ site.repository_url }}">Source on GitHub</a>
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>
