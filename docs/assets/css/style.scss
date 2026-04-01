@@ -20,6 +20,7 @@ html {
 body {
   margin: 0;
   color: var(--text);
+  font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   background:
     radial-gradient(circle at top left, rgba(44, 123, 229, 0.12), transparent 28%),
     linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
@@ -212,6 +213,16 @@ body {
 .content-card h2,
 .content-card h3 {
   scroll-margin-top: 24px;
+}
+
+.content-card h1,
+.content-card h2,
+.content-card h3,
+.content-card h4,
+.brand-title,
+.hero h1 {
+  font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: -0.02em;
 }
 
 .content-card a {
