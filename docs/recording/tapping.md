@@ -4,11 +4,11 @@ title: Recording and Tapping
 
 # Recording and Tapping
 
-Yass Reloaded supports timing notes by tapping along with playback.
+Yass Reloaded supports **note-tapping recording**, meaning you record note timing by tapping along with playback. This does **not** mean microphone or audio recording.
 
 ## When to Use It
 
-Recording and tapping are especially useful when:
+Note-tapping recording is especially useful when:
 
 - lyrics already exist but note timing is weak
 - you want to re-time a phrase quickly by ear
@@ -18,14 +18,14 @@ Recording and tapping are especially useful when:
 ## Basic Workflow
 
 1. Select the note or note range you want to record
-2. Start the recording / tapping mode
+2. Start the note-tapping recording mode
 3. Tap note start and release for note end
 4. Let Yass Reloaded place the tapped notes
 5. Refine with editing tools or Align to Melody
 
 ## During Recording
 
-The recording UI can show:
+The note-tapping recording UI can show:
 
 - a fixed rolling time window
 - a dedicated tap cursor
@@ -43,7 +43,7 @@ After tapping, Yass Reloaded can:
 
 ## Alignment After Tapping
 
-Recording and tapping are usually followed by note refinement:
+Note-tapping recording is usually followed by note refinement:
 
 - manual editing
 - align to melody
@@ -54,6 +54,7 @@ Recording and tapping are usually followed by note refinement:
 - the visible behavior can differ between relative and absolute pitch view
 - external pitch overlays depend on the selected track and available pitch analysis
 - at the end of a song, the final tapped notes should still be committed even if playback stops naturally
+- if this documentation says "recording" in this section, it always means note-tapping recording
 
 ## Useful Shortcuts
 

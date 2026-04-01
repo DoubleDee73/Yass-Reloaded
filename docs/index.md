@@ -12,10 +12,12 @@ This site is the structured companion to the project wiki. It is meant to make t
 
 - [Installation](installation.md)
 - [Quick Start](quick-start.md)
+- [Settings Overview](settings/overview.md)
 - [Song Editor Overview](editor/overview.md)
 - [Recording and Tapping](recording/tapping.md)
 - [External Tools](tools/overview.md)
 - [Keyboard Shortcuts](editor/keyboard-shortcuts.md)
+- [Wizard Overview](wizard/overview.md)
 
 ## Typical Workflows
 
@@ -25,13 +27,13 @@ Start here if you want to get productive quickly:
 
 - set up your library and FFmpeg
 - open an existing song or create a new one
-- check your audio assignments
 - jump into the editor
 
 See:
 
 - [Installation](installation.md)
 - [Quick Start](quick-start.md)
+- [Settings Overview](settings/overview.md)
 
 ### Edit Notes and Lyrics
 
@@ -75,6 +77,7 @@ Yass Reloaded can integrate with:
 See:
 
 - [External Tools Overview](tools/overview.md)
+- [Wizard Overview](wizard/overview.md)
 
 ## Main Areas
 
@@ -82,6 +85,7 @@ See:
 
 - [Installation](installation.md)
 - [Quick Start](quick-start.md)
+- [Settings Overview](settings/overview.md)
 
 ### Song Editing
 
@@ -94,6 +98,7 @@ See:
 ### Tools and Integrations
 
 - [External Tools Overview](tools/overview.md)
+- [Wizard Overview](wizard/overview.md)
 
 ### Reference
 

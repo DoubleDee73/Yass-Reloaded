@@ -22,16 +22,16 @@ If you use the wizard, it can also help with:
 
 For existing collections, you can also start from the library and jump into the editor only when a song needs attention.
 
-## 2. Check Audio Assignment
+## 2. Confirm the Song Basics
 
-Make sure the relevant files are assigned correctly:
+Make sure the song has the practical basics it needs:
 
-- `#AUDIO`
-- `#VOCALS`
-- `#INSTRUMENTAL`
-- optional video or cover assets
+- a usable main audio file
+- sensible metadata
+- lyrics or a plan for how to create them
+- a workflow for timing the notes
 
-For pitch-based editing and note alignment, the selected or available `#VOCALS` track matters a lot.
+Track assignments like `#VOCALS` and `#INSTRUMENTAL` can be very helpful later, but they are not the first thing most users need to worry about.
 
 ## 3. Edit Notes and Lyrics
 
@@ -65,12 +65,12 @@ Common shortcuts:
 
 ## 5. Record or Tap Notes
 
-For note timing workflows, use recording / tapping mode.
+For note timing workflows, use the note-tapping recording mode.
 
 Typical flow:
 
 1. select the note or range
-2. start recording
+2. start note-tapping recording
 3. tap along with the music
 4. confirm the result
 5. refine with manual editing or Align to Melody

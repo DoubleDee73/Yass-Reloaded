@@ -27,6 +27,35 @@ Frequently used shortcuts:
 | Delete note | `Delete` |
 | Add note | `Ctrl-Enter` or `Shift-Enter` |
 
+## Copy and Paste Workflows
+
+Copy and paste are central to fast editing in Yass Reloaded, especially for repeated melodies and repeated rhythmic structures.
+
+Useful shortcuts:
+
+| Action | Shortcut |
+| --- | --- |
+| Copy rows | `Ctrl-C` |
+| Cut / remove and copy | `Ctrl-X` |
+| Paste rows | `Ctrl-V` |
+| Paste notes | `Ctrl-Shift-V` |
+| Paste note heights | `Ctrl-Shift-Alt-V` |
+| Show copied melody helper | `V` |
+| Toggle copied melody behavior | `C` |
+
+Typical use cases:
+
+- repeat a chorus phrase quickly
+- reuse the rhythm of a previous phrase
+- reuse pitch only
+- reuse timing only and then refine the lyric mapping
+
+The exact best choice depends on what should stay the same:
+
+- use row copy/paste when the whole phrase structure repeats
+- use pitch- or note-oriented paste variants when only part of the musical information should be reused
+- use the copied-melody helper as a visual aid when you want to align a later phrase against an earlier one instead of pasting blindly
+
 ## Lyrics Editing
 
 Lyrics editing is closely tied to note editing:
@@ -46,6 +75,8 @@ Useful shortcuts:
 | Mark as Golden Rap / Rap / Plain | `Shift-G` / `Shift-F` |
 | Add trailing space | `Ctrl-Alt-Space` |
 | Remove trailing space | `Ctrl-Alt-Backspace` |
+
+In practice, lyrics editing is often interleaved with note editing rather than done in a completely separate pass.
 
 ## Page Breaks
 
@@ -80,11 +111,13 @@ Even with auto-trimming, manual cleanup is still often the final step for natura
 
 Repeated melodic structures are common in songs. The classic copied-melody helper is still useful when a phrase repeats with similar note movement.
 
-In the older help this was exposed as a toggleable “Copied Melody” aid. In Yass Reloaded, the broader idea still matters:
+In the older help this was exposed as a toggleable "Copied Melody" aid. In Yass Reloaded, the broader idea still matters:
 
 - reuse repeating note shapes where appropriate
 - compare later phrases against earlier melodic material
 - combine copy/paste with melody alignment for faster cleanup
+
+This is one of the places where older Yass workflows still transfer very well into Yass Reloaded.
 
 ## Related Pages
 

@@ -59,6 +59,10 @@ The fanart.tv API key is configured in:
 
 - `Settings -> Library -> Setup`
 
+The wizard defaults for choosing local vs online engines are configured in:
+
+- `Settings -> Wizard`
+
 ## Health Checks
 
 Several tool integrations provide health checks to verify:
@@ -85,4 +89,6 @@ This section will gradually expand into dedicated setup guides for each supporte
 ## Related Pages
 
 - [Installation](../installation.md)
+- [Settings Overview](../settings/overview.md)
+- [Wizard Overview](../wizard/overview.md)
 - [Troubleshooting](../reference/troubleshooting.md)
