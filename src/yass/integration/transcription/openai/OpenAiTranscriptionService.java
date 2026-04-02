@@ -12,8 +12,10 @@ import yass.alignment.LyricsAlignmentTokenizer;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -347,7 +349,16 @@ public class OpenAiTranscriptionService {
         int status = connection.getResponseCode();
         InputStream stream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream();
         String responseBody = readStream(stream);
-        JsonObject json = JsonParser.parseString(responseBody).getAsJsonObject();
+        JsonObject json = null;
+        try {
+            json = JsonParser.parseString(responseBody).getAsJsonObject();
+        } catch (Exception parseException) {
+            String bodyPreview = StringUtils.abbreviate(StringUtils.defaultString(responseBody), 240);
+            if (status < 200 || status >= 300) {
+                throw new IOException("OpenAI transcription failed with HTTP " + status + ": " + bodyPreview, parseException);
+            }
+            throw new IOException("OpenAI transcription returned invalid JSON: " + bodyPreview, parseException);
+        }
         if (status < 200 || status >= 300) {
             throw new IOException(extractErrorMessage(json, status));
         }
@@ -402,7 +413,7 @@ public class OpenAiTranscriptionService {
      */
     private String insertLineBreaksAtPunctuation(String text) {
         // Replace ". X", "? X", "! X" (sentence boundary) with ".\nX"
-        return text.replaceAll("([.?!])\\s+(?=[A-ZÀ-Ö])", "$1\n");
+        return text.replaceAll("([.?!])\\s+(?=[A-Z])", "$1\n");
     }
 
     private String joinSegmentTexts(List<OpenAiTranscriptSegment> segments) {
@@ -423,7 +434,7 @@ public class OpenAiTranscriptionService {
         List<OpenAiTranscriptWord> words = new ArrayList<>();
         JsonArray wordArray = json.getAsJsonArray("words");
         if (wordArray != null) {
-            // top-level words array present — use it directly
+            // top-level words array present - use it directly
         } else {
             // Collect words nested inside each segment
             JsonArray segments = json.getAsJsonArray("segments");
@@ -525,13 +536,34 @@ public class OpenAiTranscriptionService {
 
     private void writeFileField(DataOutputStream output, String boundary, String fieldName, File file) throws IOException {
         output.writeBytes("--" + boundary + "\r\n");
+        String safeFilename = sanitizeMultipartFilename(file.getName());
+        String encodedFilename = URLEncoder.encode(file.getName(), StandardCharsets.UTF_8)
+                                           .replace("+", "%20");
         output.writeBytes("Content-Disposition: form-data; name=\"" + fieldName + "\"; filename=\""
-                          + file.getName() + "\"\r\n");
+                          + safeFilename + "\"; filename*=UTF-8''" + encodedFilename + "\r\n");
         output.writeBytes("Content-Type: " + guessContentType(file) + "\r\n\r\n");
         try (InputStream input = Files.newInputStream(file.toPath())) {
             input.transferTo(output);
         }
         output.writeBytes("\r\n");
+    }
+
+    private String sanitizeMultipartFilename(String originalFilename) {
+        if (StringUtils.isBlank(originalFilename)) {
+            return "upload.bin";
+        }
+        String normalized = Normalizer.normalize(originalFilename, Normalizer.Form.NFKD);
+        StringBuilder safe = new StringBuilder(normalized.length());
+        for (int i = 0; i < normalized.length(); i++) {
+            char ch = normalized.charAt(i);
+            if (ch >= 32 && ch <= 126 && ch != '"' && ch != '\\' && ch != '\r' && ch != '\n') {
+                safe.append(ch);
+            } else {
+                safe.append('_');
+            }
+        }
+        String result = safe.toString().trim();
+        return StringUtils.isBlank(result) ? "upload.bin" : result;
     }
 
     private String guessContentType(File file) {
@@ -586,3 +618,4 @@ public class OpenAiTranscriptionService {
         }
     }
 }
+

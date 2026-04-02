@@ -18,114 +18,47 @@
 
 package yass;
 
-import static yass.UltrastarHeaderTag.ALBUM;
-import static yass.UltrastarHeaderTag.ARTIST;
-import static yass.UltrastarHeaderTag.AUDIO;
-import static yass.UltrastarHeaderTag.BACKGROUND;
-import static yass.UltrastarHeaderTag.CALCMEDLEY;
-import static yass.UltrastarHeaderTag.COMMENT;
-import static yass.UltrastarHeaderTag.COVER;
-import static yass.UltrastarHeaderTag.DUETSINGERP1;
-import static yass.UltrastarHeaderTag.DUETSINGERP2;
-import static yass.UltrastarHeaderTag.EDITION;
-import static yass.UltrastarHeaderTag.GAP;
-import static yass.UltrastarHeaderTag.GENRE;
-import static yass.UltrastarHeaderTag.ID;
-import static yass.UltrastarHeaderTag.INSTRUMENTAL;
-import static yass.UltrastarHeaderTag.LANGUAGE;
-import static yass.UltrastarHeaderTag.LENGTH;
-import static yass.UltrastarHeaderTag.MEDLEYENDBEAT;
-import static yass.UltrastarHeaderTag.MEDLEYSTARTBEAT;
-import static yass.UltrastarHeaderTag.MP3;
-import static yass.UltrastarHeaderTag.P1;
-import static yass.UltrastarHeaderTag.P2;
-import static yass.UltrastarHeaderTag.PREVIEWSTART;
-import static yass.UltrastarHeaderTag.RELATIVE;
-import static yass.UltrastarHeaderTag.TAGS;
-import static yass.UltrastarHeaderTag.TITLE;
-import static yass.UltrastarHeaderTag.VERSION;
-import static yass.UltrastarHeaderTag.VIDEO;
-import static yass.UltrastarHeaderTag.VOCALS;
-import static yass.UltrastarHeaderTag.YEAR;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.math.NumberUtils;
+import org.apache.commons.math3.util.Precision;
+import org.mozilla.universalchardet.Constants;
+import unicode.UnicodeReader;
+import yass.analysis.PitchDetector;
+import yass.autocorrect.YassAutoCorrect;
+import yass.autocorrect.YassAutoCorrectApostrophes;
+import yass.hyphenator.HyphenatorDictionary;
+import yass.musicalkey.MusicalKeyEnum;
+import yass.renderer.YassLine;
+import yass.renderer.YassNote;
+import yass.renderer.YassSession;
+import yass.renderer.YassTrack;
 
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.Dimension;
-import java.awt.Point;
-import java.awt.Rectangle;
-import java.awt.Toolkit;
+import javax.swing.*;
+import javax.swing.event.TableModelEvent;
+import javax.swing.table.TableCellEditor;
+import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
-import java.io.StringReader;
-import java.io.StringWriter;
-import java.io.Writer;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.Normalizer;
 import java.time.Year;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Enumeration;
-import java.util.HashSet;
-import java.util.Hashtable;
+import java.util.*;
 import java.util.List;
-import java.util.Locale;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.StringJoiner;
-import java.util.StringTokenizer;
 import java.util.Timer;
-import java.util.Vector;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
-import javax.swing.AbstractCellEditor;
-import javax.swing.JComboBox;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JTable;
-import javax.swing.JTextArea;
-import javax.swing.JTextField;
-import javax.swing.ListSelectionModel;
-import javax.swing.ToolTipManager;
-import javax.swing.event.TableModelEvent;
-import javax.swing.table.TableCellEditor;
-
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.math.NumberUtils;
-import org.apache.commons.math3.util.Precision;
-import org.mozilla.universalchardet.Constants;
-
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-
-import unicode.UnicodeReader;
-import yass.autocorrect.YassAutoCorrect;
-import yass.autocorrect.YassAutoCorrectApostrophes;
-import yass.hyphenator.HyphenatorDictionary;
-import yass.renderer.YassLine;
-import yass.renderer.YassNote;
-import yass.renderer.YassSession;
-import yass.renderer.YassTrack;
+import static yass.UltrastarHeaderTag.*;
 
 public class YassTable extends JTable {
     public final static int ZOOM_TIME = 0;
@@ -194,6 +127,7 @@ public class YassTable extends JTable {
     public Timer timer;
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+    private static final int ALIGN_TO_MELODY_RENDER_SHIFT_SEMITONES = 0;
 
     public YassTable() {
         fileUtils = new YassFileUtils();
@@ -453,6 +387,10 @@ public class YassTable extends JTable {
         sheet = s;
     }
 
+    public YassSheet getSheet() {
+        return sheet;
+    }
+
     public void init(YassProperties p) {
         prop = p;
     }
@@ -651,7 +589,7 @@ public class YassTable extends JTable {
     public void setStart(double b) {
         start = b;
 
-        String s = (b == (int) b) ? Integer.toString((int) b) : Double.toString(start);
+        String s = formatTenthsSecondValue(start);
         YassRow r = tm.getCommentRow("START:");
         if (r == null && start > 0) {
             r = new YassRow("#", "START:", s, "", "");
@@ -692,7 +630,7 @@ public class YassTable extends JTable {
     public void setEnd(double b) {
         end = b;
 
-        String s = Double.toString(end);
+        String s = formatTenthsSecondValue(end);
         YassRow r = tm.getCommentRow("END:");
         if (r == null && end >= 0) {
             r = new YassRow("#", "END:", s, "", "");
@@ -724,6 +662,15 @@ public class YassTable extends JTable {
         if (d > 0) {
             setEnd(d);
         }
+    }
+
+    private String formatTenthsSecondValue(double value) {
+        double rounded = Math.round(value * 10.0d) / 10.0d;
+        if (Math.abs(rounded - Math.rint(rounded)) < 0.000001d) {
+            return Integer.toString((int) Math.round(rounded));
+        }
+        DecimalFormat decimalFormat = new DecimalFormat("0.0", DecimalFormatSymbols.getInstance(Locale.US));
+        return decimalFormat.format(rounded);
     }
 
     public double getVideoGap() {
@@ -3469,8 +3416,17 @@ public class YassTable extends JTable {
         }
         boolean absolutePitchView = sheet.isAbsolutePitchViewEnabled();
         int preservedAbsoluteViewY = absolutePitchView ? sheet.getViewPosition().y : 0;
+        boolean onePageDebug = zoomMode == ZOOM_ONE;
+        if (onePageDebug) {
+            Point v = sheet.getViewPosition();
+            LOGGER.finest("[OnePageDebug] zoomPage:start selection=" + getSelectionModel().getMinSelectionIndex()
+                    + "-" + getSelectionModel().getMaxSelectionIndex()
+                    + " absMode=" + absolutePitchView
+                    + " viewBefore=" + v.x + "," + v.y
+                    + " playerPos=" + sheet.getPlayerPosition());
+        }
         if (absolutePitchView) {
-            LOGGER.info("[AbsolutePitchView] YassTable.zoomPage start zoomMode=" + zoomMode
+            LOGGER.finest("[AbsolutePitchView] YassTable.zoomPage start zoomMode=" + zoomMode
                     + " selection=" + getSelectionModel().getMinSelectionIndex() + "-" + getSelectionModel().getMaxSelectionIndex()
                     + " playerPos=" + sheet.getPlayerPosition());
         }
@@ -3495,6 +3451,9 @@ public class YassTable extends JTable {
         int n = getRowCount();
         if (i == n - 1) // only end selected => select row before
             i--;
+        if (onePageDebug) {
+            LOGGER.finest("[OnePageDebug] zoomPage:normalizedSelection i=" + i + " j=" + j + " rowCount=" + n);
+        }
         int[] ij = null;
         if (zoomMode == ZOOM_ONE) {
             ij = enlargeToPages(i, j);
@@ -3529,7 +3488,13 @@ public class YassTable extends JTable {
             ij = new int[]{i, j};
         }
         if (ij == null) {
+            if (onePageDebug) {
+                LOGGER.finest("[OnePageDebug] zoomPage:abort ij=null");
+            }
             return;
+        }
+        if (onePageDebug) {
+            LOGGER.finest("[OnePageDebug] zoomPage:pageRows=" + ij[0] + "-" + ij[1]);
         }
 
         Rectangle rr = getCellRect(ij[0], 0, true);
@@ -3546,15 +3511,26 @@ public class YassTable extends JTable {
         if (absolutePitchView) {
             int[] centeringRows = resolveRowsForAbsoluteCentering(ij[0], ij[1]);
             if (centeringRows != null) {
+                if (onePageDebug) {
+                    LOGGER.finest("[OnePageDebug] zoomPage:centeringRows=" + centeringRows[0] + "-" + centeringRows[1]);
+                }
                 sheet.autoCenterAbsolutePitchView(centeringRows[0], centeringRows[1]);
             } else {
                 // Keep previous vertical context when no note row is available in target span.
                 Point currentView = sheet.getViewPosition();
                 sheet.setViewPosition(new Point(currentView.x, preservedAbsoluteViewY));
+                if (onePageDebug) {
+                    LOGGER.finest("[OnePageDebug] zoomPage:centeringRows=null preserveY=" + preservedAbsoluteViewY);
+                }
             }
         }
+        if (onePageDebug) {
+            Point v = sheet.getViewPosition();
+            LOGGER.finest("[OnePageDebug] zoomPage:end viewAfter=" + v.x + "," + v.y
+                    + " playerPos=" + sheet.getPlayerPosition());
+        }
         if (absolutePitchView) {
-            LOGGER.info("[AbsolutePitchView] YassTable.zoomPage end zoomMode=" + zoomMode
+            LOGGER.finest("[AbsolutePitchView] YassTable.zoomPage end zoomMode=" + zoomMode
                     + " selection=" + getSelectionModel().getMinSelectionIndex() + "-" + getSelectionModel().getMaxSelectionIndex()
                     + " playerPos=" + sheet.getPlayerPosition()
                     + " view=" + sheet.getViewPosition().x + "," + sheet.getViewPosition().y);
@@ -4358,14 +4334,15 @@ public class YassTable extends JTable {
      * @param rows      the notes to align (only rows where {@link YassRow#isNote()} is true are processed)
      * @param pitchData the Viterbi-smoothed pitch frames from {@link yass.analysis.PitchDetector}
      */
-    public Integer findAlignedPitchForRow(YassRow row, List<yass.analysis.PitchDetector.PitchData> pitchData) {
+    public Integer findAlignedPitchForRow(YassRow row, List<PitchDetector.PitchData> pitchData) {
         if (row == null || !row.isNote() || pitchData == null || pitchData.isEmpty()) {
             return null;
         }
         double noteStartMs = beatToMs(row.getBeatInt());
         double noteEndMs = beatToMs(row.getBeatInt() + row.getLengthInt());
         Map<Integer, Integer> histogram = new HashMap<>();
-        for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+        MusicalKeyEnum commentKey = getPreferredAlignmentKey();
+        for (PitchDetector.PitchData pd : pitchData) {
             double frameMs = pd.time() * 1000.0;
             if (frameMs >= noteStartMs && frameMs < noteEndMs) {
                 histogram.merge(pd.pitch(), 1, Integer::sum);
@@ -4380,6 +4357,13 @@ public class YassTable extends JTable {
                     if (byCount != 0) {
                         return byCount;
                     }
+                    if (commentKey != MusicalKeyEnum.UNDEFINED) {
+                        boolean leftInKey = commentKey.isInKey(left.getKey());
+                        boolean rightInKey = commentKey.isInKey(right.getKey());
+                        if (leftInKey != rightInKey) {
+                            return leftInKey ? 1 : -1;
+                        }
+                    }
                     int leftDistance = Math.abs(left.getKey() - row.getHeightInt());
                     int rightDistance = Math.abs(right.getKey() - row.getHeightInt());
                     return Integer.compare(rightDistance, leftDistance);
@@ -4388,10 +4372,25 @@ public class YassTable extends JTable {
                 .orElse(row.getHeightInt());
     }
 
-    public void alignToMelody(List<YassRow> rows, List<yass.analysis.PitchDetector.PitchData> pitchData) {
+    private MusicalKeyEnum getPreferredAlignmentKey() {
+        String keyFromComment = getKeyFromComment();
+        if (StringUtils.isBlank(keyFromComment)) {
+            return MusicalKeyEnum.UNDEFINED;
+        }
+        return MusicalKeyEnum.findKey(keyFromComment);
+    }
+
+    public void alignToMelody(List<YassRow> rows, List<PitchDetector.PitchData> pitchData) {
+        alignToMelody(rows, pitchData, AlignToMelodyContext.manual());
+    }
+
+    public void alignToMelody(List<YassRow> rows,
+                              List<PitchDetector.PitchData> pitchData,
+                              AlignToMelodyContext context) {
         if (rows == null || rows.isEmpty() || pitchData == null || pitchData.isEmpty()) {
             return;
         }
+        AlignToMelodyContext effectiveContext = context == null ? AlignToMelodyContext.manual() : context;
 
         Map<YassRow, Integer> prevalentPitches = new HashMap<>();
         for (YassRow row : rows) {
@@ -4403,7 +4402,10 @@ public class YassTable extends JTable {
             }
         }
         boolean absolutePitchView = sheet != null && sheet.isAbsolutePitchViewEnabled();
-        int octaveBias = absolutePitchView ? 0 : determineSignificantOctaveBias(prevalentPitches.values());
+        boolean keepDetectedOctave =
+                effectiveContext.origin() == AlignToMelodyOrigin.CREATE_WIZARD
+                        || effectiveContext.origin() == AlignToMelodyOrigin.RECORDING;
+        int octaveBias = keepDetectedOctave || absolutePitchView ? 0 : determineSignificantOctaveBias(prevalentPitches.values());
 
         // Build occupied-beat set from all rows in the table (beat..beat+length-1 inclusive)
         Set<Integer> occupiedBeats = new HashSet<>();
@@ -4428,18 +4430,25 @@ public class YassTable extends JTable {
             if (prevalentPitch == null) {
                 continue;
             }
-            int alignedPitch = prevalentPitch + octaveBias;
-            if (absolutePitchView) {
-                // Absolute mode should still snap to the nearest pitch-line octave
-                // around the current note, but avoid large accidental shifts.
-                int snappedPitch = normalizePitchIntoWindow(alignedPitch, row.getHeightInt());
-                if (Math.abs(snappedPitch - row.getHeightInt()) <= 10) {
-                    alignedPitch = snappedPitch;
-                } else {
-                    alignedPitch = row.getHeightInt();
-                }
+            int alignedPitch;
+            if (keepDetectedOctave) {
+                alignedPitch = prevalentPitch;
             } else {
-                alignedPitch = normalizePitchIntoWindow(alignedPitch, row.getHeightInt());
+                // Keep align-to-melody output in sync with the visual pitch rendering
+                // (pitch lines are currently displayed one octave higher).
+                alignedPitch = prevalentPitch + octaveBias + ALIGN_TO_MELODY_RENDER_SHIFT_SEMITONES;
+                if (absolutePitchView) {
+                    // Absolute mode should still snap to the nearest pitch-line octave
+                    // around the current note, but avoid large accidental shifts.
+                    int snappedPitch = normalizePitchIntoWindow(alignedPitch, row.getHeightInt());
+                    if (Math.abs(snappedPitch - row.getHeightInt()) <= 10) {
+                        alignedPitch = snappedPitch;
+                    } else {
+                        alignedPitch = row.getHeightInt();
+                    }
+                } else {
+                    alignedPitch = normalizePitchIntoWindow(alignedPitch, row.getHeightInt());
+                }
             }
 
             if (alignedPitch != row.getHeightInt()) {
@@ -4456,7 +4465,7 @@ public class YassTable extends JTable {
 
             // Count voiced frames per beat across the note
             int[] framesPerBeat = new int[curLength];
-            for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+            for (PitchDetector.PitchData pd : pitchData) {
                 double frameMs = pd.time() * 1000.0;
                 for (int i = 0; i < curLength; i++) {
                     if (frameMs >= beatToMs(curBeat + i) && frameMs < beatToMs(curBeat + i + 1)) {
@@ -4501,7 +4510,7 @@ public class YassTable extends JTable {
                 double beatStartMs = beatToMs(endBeat);
                 double beatEndMs   = beatToMs(endBeat + 1);
                 int matching = 0, total = 0;
-                for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+                for (PitchDetector.PitchData pd : pitchData) {
                     double frameMs = pd.time() * 1000.0;
                     if (frameMs >= beatStartMs && frameMs < beatEndMs) {
                         total++;
@@ -4522,7 +4531,7 @@ public class YassTable extends JTable {
                 double beatStartMs = beatToMs(curBeat - 1);
                 double beatEndMs   = beatToMs(curBeat);
                 int matching = 0, total = 0;
-                for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+                for (PitchDetector.PitchData pd : pitchData) {
                     double frameMs = pd.time() * 1000.0;
                     if (frameMs >= beatStartMs && frameMs < beatEndMs) {
                         total++;
@@ -4549,6 +4558,32 @@ public class YassTable extends JTable {
         }
         if (changed) {
             tm.fireTableDataChanged();
+        }
+    }
+
+    public enum AlignToMelodyOrigin {
+        MANUAL,
+        CREATE_WIZARD,
+        RECORDING
+    }
+
+    public record AlignToMelodyContext(AlignToMelodyOrigin origin) {
+        public AlignToMelodyContext {
+            if (origin == null) {
+                origin = AlignToMelodyOrigin.MANUAL;
+            }
+        }
+
+        public static AlignToMelodyContext manual() {
+            return new AlignToMelodyContext(AlignToMelodyOrigin.MANUAL);
+        }
+
+        public static AlignToMelodyContext createWizard() {
+            return new AlignToMelodyContext(AlignToMelodyOrigin.CREATE_WIZARD);
+        }
+
+        public static AlignToMelodyContext recording() {
+            return new AlignToMelodyContext(AlignToMelodyOrigin.RECORDING);
         }
     }
 
@@ -5471,7 +5506,7 @@ public class YassTable extends JTable {
      *
      * @param pitchData the Viterbi-smoothed pitch frames (already transposed for display)
      */
-    public void splitRowsByPitch(List<yass.analysis.PitchDetector.PitchData> pitchData) {
+    public void splitRowsByPitch(List<PitchDetector.PitchData> pitchData) {
         int row = getSelectionModel().getMinSelectionIndex();
         if (row < 0) {
             return;
@@ -5490,7 +5525,7 @@ public class YassTable extends JTable {
         // Count frames per beat and compute average density across the note
         int startBeat = r.getBeatInt();
         int[] framesPerBeat = new int[length];
-        for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+        for (PitchDetector.PitchData pd : pitchData) {
             double frameMs = pd.time() * 1000.0;
             for (int i = 0; i < length; i++) {
                 if (frameMs >= beatToMs(startBeat + i) && frameMs < beatToMs(startBeat + i + 1)) {
@@ -5515,7 +5550,7 @@ public class YassTable extends JTable {
             double beatStartMs = beatToMs(startBeat + i);
             double beatEndMs   = beatToMs(startBeat + i + 1);
             Map<Integer, Integer> histogram = new HashMap<>();
-            for (yass.analysis.PitchDetector.PitchData pd : pitchData) {
+            for (PitchDetector.PitchData pd : pitchData) {
                 double frameMs = pd.time() * 1000.0;
                 if (frameMs >= beatStartMs && frameMs < beatEndMs) {
                     histogram.merge(pd.pitch(), 1, Integer::sum);
@@ -5610,6 +5645,16 @@ public class YassTable extends JTable {
         if (rows == null || rows.length < 1) {
             return;
         }
+        int firstDeletedNoteBeat = Integer.MAX_VALUE;
+        for (int selectedRow : rows) {
+            if (selectedRow < 0 || selectedRow >= n) {
+                continue;
+            }
+            YassRow selected = getRowAt(selectedRow);
+            if (selected != null && selected.isNote()) {
+                firstDeletedNoteBeat = Math.min(firstDeletedNoteBeat, selected.getBeatInt());
+            }
+        }
 
         int sel = -1;
         Arrays.sort(rows);
@@ -5677,6 +5722,9 @@ public class YassTable extends JTable {
                 sel = row - 1;
             }
         }
+        if (firstDeletedNoteBeat != Integer.MAX_VALUE) {
+            normalizePageBreaksAfterDeletedNotes(firstDeletedNoteBeat);
+        }
         tm.fireTableDataChanged();
         if (sel >= 0) {
             setRowSelectionInterval(sel, sel);
@@ -5691,6 +5739,16 @@ public class YassTable extends JTable {
         int[] rows = getSelectedRows();
         if (rows == null || rows.length < 1) {
             return false;
+        }
+        int firstDeletedNoteBeat = Integer.MAX_VALUE;
+        for (int selectedRow : rows) {
+            if (selectedRow < 0 || selectedRow >= getRowCount()) {
+                continue;
+            }
+            YassRow selected = getRowAt(selectedRow);
+            if (selected != null && selected.isNote()) {
+                firstDeletedNoteBeat = Math.min(firstDeletedNoteBeat, selected.getBeatInt());
+            }
         }
         Arrays.sort(rows);
         for (int i = rows.length - 1; i >= 0; i--) {
@@ -5709,12 +5767,69 @@ public class YassTable extends JTable {
         else if (prev != null && (!prev.isNote()) && next != null && next.isPageBreak())
             tm.removeRowAt(rows[0]);
 
+        if (firstDeletedNoteBeat != Integer.MAX_VALUE) {
+            normalizePageBreaksAfterDeletedNotes(firstDeletedNoteBeat);
+        }
         tm.fireTableDataChanged();
         if (next != null)
             setRowSelectionInterval(rows[0], rows[0]);
         updatePlayerPosition();
         zoomPage();
         return true;
+    }
+
+    private void normalizePageBreaksAfterDeletedNotes(int firstDeletedNoteBeat) {
+        if (firstDeletedNoteBeat == Integer.MAX_VALUE) {
+            return;
+        }
+
+        removePageBreakDirectlyBeforeNextNoteAtOrAfterBeat(firstDeletedNoteBeat);
+        removeDanglingPageBreaksWithoutFollowingNotes();
+        auto.autoCorrectAllPageBreaks(this, true);
+    }
+
+    private void removePageBreakDirectlyBeforeNextNoteAtOrAfterBeat(int beat) {
+        int rowCount = getRowCount();
+        for (int row = 0; row < rowCount; row++) {
+            YassRow current = getRowAt(row);
+            if (current == null || !current.isNote() || current.getBeatInt() < beat) {
+                continue;
+            }
+            int check = row - 1;
+            while (check >= 0) {
+                YassRow prev = getRowAt(check);
+                if (prev == null || !prev.isPageBreak()) {
+                    break;
+                }
+                tm.removeRowAt(check);
+                row--;
+                check--;
+                rowCount--;
+            }
+            break;
+        }
+    }
+
+    /**
+     * Removes page-break rows that no longer have any note after them.
+     * This covers cases where notes near the end were deleted and stale
+     * page-break markers remain directly before the END row/comments.
+     */
+    private void removeDanglingPageBreaksWithoutFollowingNotes() {
+        boolean noteSeenAfter = false;
+        for (int row = getRowCount() - 1; row >= 0; row--) {
+            YassRow current = getRowAt(row);
+            if (current == null) {
+                continue;
+            }
+            if (current.isNote()) {
+                noteSeenAfter = true;
+                continue;
+            }
+            if (current.isPageBreak() && !noteSeenAfter) {
+                tm.removeRowAt(row);
+            }
+        }
     }
 
     /**

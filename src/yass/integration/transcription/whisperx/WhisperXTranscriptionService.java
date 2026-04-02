@@ -410,7 +410,7 @@ public class WhisperXTranscriptionService {
         }
         command.add(request.getUploadAudioFile().getAbsolutePath());
         command.add("--model");
-        command.add(StringUtils.defaultIfBlank(properties.getProperty("whisperx-model"), "large-v2"));
+        command.add(resolveModel());
         command.add("--output_dir");
         command.add(request.getCacheDir().getAbsolutePath());
         command.add("--output_format");
@@ -421,19 +421,56 @@ public class WhisperXTranscriptionService {
             command.add("--language");
             command.add(language);
         }
-        String device = StringUtils.defaultIfBlank(properties.getProperty("whisperx-device"), "auto");
-        if (!"auto".equalsIgnoreCase(device)) {
+
+        String device = resolveDevice();
+        if (StringUtils.isNotBlank(device)) {
             command.add("--device");
             command.add(device);
         }
-        String computeType = StringUtils.defaultIfBlank(properties.getProperty("whisperx-compute-type"), "auto");
-        if (!"auto".equalsIgnoreCase(computeType)) {
+
+        String computeType = resolveComputeType();
+        if (StringUtils.isNotBlank(computeType)) {
             command.add("--compute_type");
             command.add(computeType);
         }
+
+        appendAdvancedWhisperXOptions(command);
+
         command.add("--print_progress");
         command.add(printProgress ? "True" : "False");
         return command;
+    }
+
+    private String resolveModel() {
+        String model = StringUtils.defaultIfBlank(properties.getProperty("whisperx-model"), "large-v2");
+        if (!"auto".equalsIgnoreCase(model)) {
+            return model;
+        }
+        return StringUtils.defaultIfBlank(properties.getProperty("whisperx-effective-model"), "small");
+    }
+
+    private String resolveDevice() {
+        String device = StringUtils.defaultIfBlank(properties.getProperty("whisperx-device"), "auto");
+        if (!"auto".equalsIgnoreCase(device)) {
+            return device;
+        }
+        return StringUtils.defaultIfBlank(properties.getProperty("whisperx-effective-device"), "cpu");
+    }
+
+    private String resolveComputeType() {
+        String computeType = StringUtils.defaultIfBlank(properties.getProperty("whisperx-compute-type"), "auto");
+        if (!"auto".equalsIgnoreCase(computeType)) {
+            return computeType;
+        }
+        return StringUtils.defaultIfBlank(properties.getProperty("whisperx-effective-compute-type"), "int8");
+    }
+
+    /**
+     * Placeholder for future advanced decoder/VAD controls.
+     * Intentionally no-op in this iteration.
+     */
+    private void appendAdvancedWhisperXOptions(List<String> command) {
+        // Reserved for future options (beam size, VAD tuning, etc.)
     }
 
     private File findOutputJson(WhisperXTranscriptionRequest request) {
@@ -540,3 +577,4 @@ public class WhisperXTranscriptionService {
         return thread;
     }
 }
+

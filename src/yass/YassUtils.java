@@ -166,15 +166,18 @@ public class YassUtils {
         String artist = null;
         String title= null;
         String genre = "unknown";
-        if (f.getName().contains(" - ")) {
-            String[] temp = f.getName().split("-");
-            artist = temp[0].trim();
-            title = temp[1].trim();
-            if (title.endsWith(".mp3") || title.endsWith(".m4a") || title.endsWith(".wav") || title.endsWith(
-                    ".ogg") || title.endsWith(".aac")) {
-                title = title.substring(0, title.length() - 4);
-            } else if (title.endsWith(".webm") || title.endsWith(".flac") || title.endsWith(".opus")) {
-                title = title.substring(0, title.length() - 5);
+        String baseName = f.getName();
+        int dot = baseName.lastIndexOf('.');
+        if (dot > 0) {
+            baseName = baseName.substring(0, dot);
+        }
+        baseName = baseName.replaceFirst("\\.[A-Za-z0-9_-]{11}$", "").trim();
+
+        if (baseName.contains(" - ")) {
+            String[] temp = baseName.split("\\s-\\s", 2);
+            if (temp.length == 2) {
+                artist = temp[0].trim();
+                title = temp[1].trim();
             }
         }
         try {
@@ -198,10 +201,10 @@ public class YassUtils {
         } catch (Exception ignored) {
         }
         if (artist == null) {
-            artist = f.getName();
+            artist = baseName;
         }
         if (title == null) {
-            title = f.getName();
+            title = baseName;
         }
         String data[] = new String[3];
         data[0] = title;

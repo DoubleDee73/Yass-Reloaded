@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.List;
 
 public enum WhisperXModel implements YassEnum {
+    AUTO("auto", "Auto"),
     BASE("base", "base"),
     SMALL("small", "small"),
     MEDIUM("medium", "medium"),

@@ -38,9 +38,10 @@ public class TimeSpinner extends JPanel {
     public final static int POSITIVE = 1, NEGATIVE = 2;
     @Serial
     private static final long serialVersionUID = -1220107624676188602L;
-    private int duration;
+    private double duration;
     private final JSpinner msSpinner;
     private final SpinnerNumberModel msModel;
+    private final boolean decimalMode;
     private JLabel lab1 = null, lab2 = null;
 
 
@@ -92,13 +93,41 @@ public class TimeSpinner extends JPanel {
      * @param type  Description of the Parameter
      */
     public TimeSpinner(String label, int init, int dur, String mss, int type) {
-        duration = dur;
+        this(label, Integer.valueOf(init), Integer.valueOf(dur), Integer.valueOf(10), mss, type, false);
+    }
 
-        msModel = new SpinnerNumberModel(init, (type == POSITIVE ? 0 : -duration), duration, 10);
+    public TimeSpinner(String label, double init, double dur, double step) {
+        this(label, init, dur, step, null, POSITIVE);
+    }
+
+    public TimeSpinner(String label, double init, double dur, double step, String mss) {
+        this(label, init, dur, step, mss, POSITIVE);
+    }
+
+    public TimeSpinner(String label, double init, double dur, double step, String mss, int type) {
+        this(label, Double.valueOf(init), Double.valueOf(dur), Double.valueOf(step), mss, type, true);
+    }
+
+    private TimeSpinner(String label, Number init, Number dur, Number step, String mss, int type, boolean decimalMode) {
+        duration = dur.doubleValue();
+        this.decimalMode = decimalMode;
+
+        if (decimalMode) {
+            double minimum = type == POSITIVE ? 0d : -duration;
+            double maximum = duration;
+            msModel = new SpinnerNumberModel(init.doubleValue(), minimum, maximum, step.doubleValue());
+        } else {
+            int maximum = (int) Math.round(duration);
+            int minimum = type == POSITIVE ? 0 : -maximum;
+            msModel = new SpinnerNumberModel(init.intValue(), minimum, maximum, step.intValue());
+        }
         msSpinner = new JSpinner(msModel);
+        if (decimalMode) {
+            msSpinner.setEditor(new JSpinner.NumberEditor(msSpinner, "0.0"));
+        }
 
         JTextField tf = ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField();
-        tf.setColumns((String.valueOf(duration)).length());
+        tf.setColumns(Math.max(4, String.valueOf(dur).length()));
         tf.setHorizontalAlignment(JTextField.RIGHT);
         tf.addKeyListener(
                 new KeyAdapter() {
@@ -124,7 +153,6 @@ public class TimeSpinner extends JPanel {
             boxPanel.add(lab1);
             boxPanel.add(Box.createRigidArea(new Dimension(5, 0)));
         }
-        boxPanel.add(Box.createRigidArea(new Dimension(5, 0)));
 
         boxPanel.add(msSpinner);
         msSpinner.setToolTipText(I18.get("time_spinner_tip"));
@@ -204,7 +232,11 @@ public class TimeSpinner extends JPanel {
      * @return The time value
      */
     public int getTime() {
-        return ((Integer) (msSpinner.getValue())).intValue();
+        return (int) Math.round(((Number) msSpinner.getValue()).doubleValue());
+    }
+
+    public double getTimeDouble() {
+        return ((Number) msSpinner.getValue()).doubleValue();
     }
 
     /**
@@ -213,11 +245,15 @@ public class TimeSpinner extends JPanel {
      * @param t The new time value
      */
     public void setTime(int t) {
-        Integer ms = (Integer) msSpinner.getValue();
-        if (t == ms.intValue()) {
+        setTime((double) t);
+    }
+
+    public void setTime(double t) {
+        double current = ((Number) msSpinner.getValue()).doubleValue();
+        if (Double.compare(t, current) == 0) {
             return;
         }
-        msSpinner.setValue(t);
+        msSpinner.setValue(decimalMode ? t : (int) Math.round(t));
     }
 
     /**
@@ -226,11 +262,15 @@ public class TimeSpinner extends JPanel {
      * @param d The new duration value
      */
     public void setDuration(int d) {
-        if (d == duration) {
+        setDuration((double) d);
+    }
+
+    public void setDuration(double d) {
+        if (Double.compare(d, duration) == 0) {
             return;
         }
         duration = d;
-        msModel.setMaximum(duration);
+        msModel.setMaximum(decimalMode ? d : (int) Math.round(duration));
     }
 
     @Override

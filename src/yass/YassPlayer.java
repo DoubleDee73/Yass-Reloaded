@@ -143,9 +143,6 @@ public class YassPlayer {
 
     private List<PitchData> pitchDataList;
     private List<PitchData> rawPitchDataList;
-    private List<PitchData> locallyNormalizedPitchDataList;
-    private List<PitchData> viterbiPitchDataList;
-    private List<PitchData> transposedPitchDataList;
     private int pitchWaveformTranspose = 0;
     
     public void initNoteMap() {
@@ -506,9 +503,6 @@ public class YassPlayer {
         }
         setPitchDataList(Collections.emptyList());
         setRawPitchDataList(Collections.emptyList());
-        setLocallyNormalizedPitchDataList(Collections.emptyList());
-        setViterbiPitchDataList(Collections.emptyList());
-        setTransposedPitchDataList(Collections.emptyList());
         fps = -1;
         try (AudioInputStream in = AudioSystem.getAudioInputStream(file)) {
             AudioFormat baseFormat = in.getFormat();
@@ -529,9 +523,6 @@ public class YassPlayer {
         }
         pitchDataList = new ArrayList<>();
         rawPitchDataList = new ArrayList<>();
-        locallyNormalizedPitchDataList = new ArrayList<>();
-        viterbiPitchDataList = new ArrayList<>();
-        transposedPitchDataList = new ArrayList<>();
     }
 
     /**
@@ -701,7 +692,7 @@ public class YassPlayer {
             StackTraceElement frame = stack[2];
             caller = frame.getClassName() + "#" + frame.getMethodName() + ":" + frame.getLineNumber();
         }
-        LOGGER.info("YassPlayer.playSelection source=" + source
+        LOGGER.fine("YassPlayer.playSelection source=" + source
                 + " inUs=" + in
                 + " outUs=" + out
                 + " timebase=" + timebase
@@ -863,6 +854,24 @@ public class YassPlayer {
      */
     public long getPosition() {
         return position;
+    }
+
+    /**
+     * Returns an estimate of currently buffered output latency in milliseconds.
+     * This helps UI renderers align visuals with what is actually audible.
+     */
+    public long getOutputLatencyMs() {
+        SourceDataLine line = sharedLine;
+        AudioFormat format = sharedLineFormat != null ? sharedLineFormat : audioBytesFormat;
+        if (line == null || format == null || !line.isOpen()) {
+            return 0L;
+        }
+        int frameSize = Math.max(1, format.getFrameSize());
+        float frameRate = Math.max(1f, format.getFrameRate());
+        int bufferedBytes = Math.max(0, line.getBufferSize() - line.available());
+        double bufferedFrames = bufferedBytes / (double) frameSize;
+        double latencyMs = (bufferedFrames / frameRate) * 1000.0;
+        return Math.max(0L, Math.round(latencyMs));
     }
 
     /**
@@ -1281,7 +1290,7 @@ public class YassPlayer {
             long lastms = System.nanoTime();
 
             if (sharedLineInterrupted) {
-                LOGGER.info("Playback interrupted.");
+                LOGGER.fine("Playback interrupted.");
             }
             while (!sharedLineInterrupted) {
                 long tempdiff = (System.nanoTime() / 1000L) - nanoStart;
@@ -1381,7 +1390,7 @@ public class YassPlayer {
                     }
                 } catch (InterruptedException e) {
                     if (DEBUG)
-                        LOGGER.info("Playback renderer: interrupt.");
+                        LOGGER.fine("Playback renderer: interrupt.");
                     sharedLineInterrupted = true;
                 }
 
@@ -1948,7 +1957,7 @@ public class YassPlayer {
     public void playAudioData(byte[] audioData, AudioFormat audioFormat, int length,
                               Runnable onStarted) {
         if (audioData == null || audioFormat == null || length <= 0) {
-            LOGGER.info("YassPlayer.playAudioData: no audio data queued");
+            LOGGER.fine("YassPlayer.playAudioData: no audio data queued");
             if (onStarted != null) {
                 onStarted.run();
             }
@@ -1956,7 +1965,7 @@ public class YassPlayer {
         }
         int effectiveLength = Math.min(length, audioData.length);
         if (effectiveLength <= 0) {
-            LOGGER.info("YassPlayer.playAudioData: no audio data queued");
+            LOGGER.fine("YassPlayer.playAudioData: no audio data queued");
             if (onStarted != null) {
                 onStarted.run();
             }
@@ -1989,7 +1998,7 @@ public class YassPlayer {
                 offset += chunkLength;
             }
         } else  {
-            LOGGER.info("YassPlayer.playAudioData: SourceDataLine not open");
+            LOGGER.fine("YassPlayer.playAudioData: SourceDataLine not open");
             if (onStarted != null) {
                 onStarted.run();
             }

@@ -542,7 +542,18 @@ public class YassMain extends JFrame {
         JPanel contentPanel = new JPanel(new BorderLayout());
 
         JSplitPane horizontalSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, songHeader, lyrics);
-        horizontalSplit.setResizeWeight(0.5);
+        horizontalSplit.setResizeWeight(2d / 3d);
+        final boolean[] horizontalSplitInitialized = {false};
+        horizontalSplit.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                if (horizontalSplitInitialized[0] || horizontalSplit.getWidth() <= 0) {
+                    return;
+                }
+                horizontalSplit.setDividerLocation(2d / 3d);
+                horizontalSplitInitialized[0] = true;
+            }
+        });
 
         JScrollPane sheetPane = new JScrollPane(sheet);
         sheetPane.setWheelScrollingEnabled(false);
@@ -571,6 +582,20 @@ public class YassMain extends JFrame {
         JPanel sheetViewportPanel = new JPanel(new BorderLayout());
         sheetViewportPanel.add(sheetPane, BorderLayout.CENTER);
         sheetViewportPanel.add(verticalPitchScrollbar, BorderLayout.EAST);
+        Timer resizeRefreshTimer = new Timer(120, e -> {
+            if (actions == null || actions.getTable() == null) {
+                return;
+            }
+            sheet.refreshImage();
+            actions.getTable().zoomPage();
+        });
+        resizeRefreshTimer.setRepeats(false);
+        sheetViewportPanel.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                resizeRefreshTimer.restart();
+            }
+        });
 
         verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, horizontalSplit, sheetViewportPanel);
         verticalSplit.setResizeWeight(0.1);

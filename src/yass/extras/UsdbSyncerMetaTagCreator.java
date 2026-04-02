@@ -89,16 +89,6 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     private Map<String, String> prefilledTags = new HashMap<>();
 
     private static List<String> SYNCER_TAGS = List.of("v", "a", "co", "bg", "preview", "medley", "tags", "p1", "p2");
-    static final class RestoreState {
-        final String video;
-        final String commentTag;
-
-        RestoreState(String video, String commentTag) {
-            this.video = video;
-            this.commentTag = commentTag;
-        }
-    }
-
     static final class SaveState {
         final String video;
         final String commentTag;
@@ -168,7 +158,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
                                                    I18.get("usdb_syncer_restore_title"),
                                                    JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
             if (ok == JOptionPane.YES_OPTION) {
-                RestoreState restoredState = buildRestoreState(song.getVideo(), song.getCommentTag());
+                SaveState restoredState = buildRestoreState(song.getVideo(), song.getCommentTag());
                 song.setCommentTag(restoredState.commentTag);
                 song.setVideo(restoredState.video);
                 song.storeFile(song.getDirFilename());
@@ -1021,14 +1011,54 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         song.setCommentTag(saveState.commentTag);
         song.setVideo(saveState.video);
         song.storeFile(song.getDirFilename());
+        maybePromptDeleteYassCacheFolder();
         dispose();
     }
 
-    static RestoreState buildRestoreState(String currentVideo, String existingComment) {
+    private void maybePromptDeleteYassCacheFolder() {
+        if (song == null || StringUtils.isBlank(song.getDir())) {
+            return;
+        }
+        File songDir = new File(song.getDir());
+        File yassCacheFolder = new File(songDir, "yass-cache");
+        if (!yassCacheFolder.isDirectory()) {
+            return;
+        }
+
+        String message = "<html>Im Song-Ordner wurde ein <b>yass-cache</b> Verzeichnis gefunden.<br><br>"
+                + "Soll dieses Verzeichnis inkl. Inhalt in den Papierkorb verschoben werden?</html>";
+        int decision = JOptionPane.showConfirmDialog(this,
+                                                     message,
+                                                     I18.get("usdb_syncer_title"),
+                                                     JOptionPane.YES_NO_OPTION,
+                                                     JOptionPane.QUESTION_MESSAGE);
+        if (decision != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        boolean movedToTrash = false;
+        try {
+            if (Desktop.isDesktopSupported()
+                    && Desktop.getDesktop().isSupported(Desktop.Action.MOVE_TO_TRASH)) {
+                movedToTrash = Desktop.getDesktop().moveToTrash(yassCacheFolder);
+            }
+        } catch (Exception ex) {
+            LOGGER.warning("Could not move yass-cache folder to trash: " + ex.getMessage());
+        }
+
+        if (!movedToTrash) {
+            JOptionPane.showMessageDialog(this,
+                                          "Das Verzeichnis 'yass-cache' konnte nicht in den Papierkorb verschoben werden.",
+                                          I18.get("usdb_syncer_title"),
+                                          JOptionPane.WARNING_MESSAGE);
+        }
+    }
+
+    static SaveState buildRestoreState(String currentVideo, String existingComment) {
         String restoredVideo = extractPreservedVideo(existingComment);
         String preservedPayload = extractPreservedCommentPayload(existingComment);
         String mergedPayload = removeTagKeys(mergeTagLines(currentVideo, preservedPayload), Set.of("p1", "p2"));
-        return new RestoreState(StringUtils.trimToEmpty(restoredVideo), StringUtils.trimToEmpty(mergedPayload));
+        return new SaveState(StringUtils.trimToEmpty(restoredVideo), StringUtils.trimToEmpty(mergedPayload));
     }
 
     static SaveState buildSaveState(String currentVideo, String existingComment, String newSyncerVideo) {

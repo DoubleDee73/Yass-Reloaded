@@ -2,12 +2,15 @@ package yass.options;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
+import java.util.List;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -16,6 +19,7 @@ import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingWorker;
 import javax.swing.UIManager;
+import java.util.concurrent.CancellationException;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -32,6 +36,12 @@ public class WhisperXPanel extends OptionsPanel {
     private static final long serialVersionUID = 1L;
 
     private JTextArea statusArea;
+    private JButton whisperXTestButton;
+    private JButton whisperXUpdateButton;
+    private WhisperXHealthCheckService whisperXUpdateService;
+    private SwingWorker<WhisperXHealthCheckService.PackageUpdateResult, String> whisperXUpdateWorker;
+    private volatile boolean whisperXUpdateRunning;
+    private volatile boolean whisperXPythonAvailable;
 
     private void addFullWidthComment(String text) {
         JPanel row = new JPanel(new BorderLayout());
@@ -63,8 +73,60 @@ public class WhisperXPanel extends OptionsPanel {
         addChoice(I18.get("options_external_tools_whisperx_compute_type"),
                   WhisperXComputeType.values(),
                   "whisperx-compute-type");
+        harmonizeRuntimeChoiceWidths();
         addText(I18.get("options_external_tools_whisperx_cache_folder"), "whisperx-cache-folder");
         addHealthCheckSection();
+    }
+
+    private void harmonizeRuntimeChoiceWidths() {
+        JComboBox<?> reference = findChoiceComboByLabel(I18.get("options_external_tools_openai_model"));
+        if (reference == null) {
+            return;
+        }
+        Dimension referenceSize = reference.getPreferredSize();
+        if (referenceSize == null || referenceSize.width <= 0) {
+            return;
+        }
+        alignChoiceWidth(I18.get("options_external_tools_whisperx_model"), referenceSize);
+        alignChoiceWidth(I18.get("options_external_tools_whisperx_device"), referenceSize);
+        alignChoiceWidth(I18.get("options_external_tools_whisperx_compute_type"), referenceSize);
+    }
+
+    private void alignChoiceWidth(String labelText, Dimension referenceSize) {
+        JComboBox<?> combo = findChoiceComboByLabel(labelText);
+        if (combo == null) {
+            return;
+        }
+        int width = referenceSize.width;
+        int height = Math.max(combo.getPreferredSize().height, referenceSize.height);
+        Dimension size = new Dimension(width, height);
+        combo.setPreferredSize(size);
+        combo.setMinimumSize(size);
+        combo.setMaximumSize(size);
+    }
+
+    private JComboBox<?> findChoiceComboByLabel(String labelText) {
+        if (StringUtils.isBlank(labelText) || getRight() == null) {
+            return null;
+        }
+        for (Component rowComponent : getRight().getComponents()) {
+            if (!(rowComponent instanceof Container row)) {
+                continue;
+            }
+            JLabel rowLabel = null;
+            JComboBox<?> rowCombo = null;
+            for (Component child : row.getComponents()) {
+                if (rowLabel == null && child instanceof JLabel label) {
+                    rowLabel = label;
+                } else if (rowCombo == null && child instanceof JComboBox<?> combo) {
+                    rowCombo = combo;
+                }
+            }
+            if (rowLabel != null && rowCombo != null && labelText.equals(rowLabel.getText())) {
+                return rowCombo;
+            }
+        }
+        return null;
     }
 
     private void prefillDetectedPython() {
@@ -81,16 +143,24 @@ public class WhisperXPanel extends OptionsPanel {
     }
 
     private void addHealthCheckSection() {
+        getRight().add(Box.createRigidArea(new Dimension(0, 8)));
         JPanel buttonRow = new JPanel();
         buttonRow.setLayout(new BoxLayout(buttonRow, BoxLayout.X_AXIS));
         JLabel label = new JLabel(I18.get("options_external_tools_whisperx_test"));
         label.setPreferredSize(new Dimension(getLabelWidth(), 20));
-        JButton button = new JButton(I18.get("options_external_tools_whisperx_test_button"));
-        button.addActionListener(e -> runHealthCheck(button));
+        whisperXTestButton = new JButton(I18.get("options_external_tools_whisperx_test_button"));
+        whisperXUpdateButton = new JButton(I18.get("options_external_tools_whisperx_update_button"));
+        whisperXTestButton.addActionListener(e -> runHealthCheck(whisperXTestButton, whisperXUpdateButton));
+        whisperXUpdateButton.addActionListener(e -> runWhisperXUpdate(whisperXTestButton, whisperXUpdateButton));
+        whisperXPythonAvailable = false;
+        whisperXUpdateButton.setEnabled(canRunWhisperXInstallOrUpdate());
         buttonRow.add(label);
-        buttonRow.add(button);
+        buttonRow.add(whisperXTestButton);
+        buttonRow.add(Box.createRigidArea(new Dimension(8, 0)));
+        buttonRow.add(whisperXUpdateButton);
         buttonRow.add(Box.createHorizontalGlue());
         getRight().add(buttonRow);
+        getRight().add(Box.createRigidArea(new Dimension(0, 8)));
 
         statusArea = new JTextArea(5, 40);
         statusArea.setEditable(false);
@@ -119,8 +189,9 @@ public class WhisperXPanel extends OptionsPanel {
         getRight().add(Box.createRigidArea(new Dimension(0, 6)));
     }
 
-    private void runHealthCheck(JButton button) {
+    private void runHealthCheck(JButton button, JButton updateButton) {
         button.setEnabled(false);
+        updateButton.setEnabled(false);
         statusArea.setText(I18.get("options_external_tools_whisperx_status_running"));
 
         SwingWorker<WhisperXHealthCheckResult, Void> worker = new SwingWorker<>() {
@@ -138,41 +209,142 @@ public class WhisperXPanel extends OptionsPanel {
                 button.setEnabled(true);
                 try {
                     WhisperXHealthCheckResult result = get();
+                    whisperXPythonAvailable = result.isPythonFound();
                     String healthOk = Boolean.toString(result.isPythonFound() && result.isWhisperXAvailable() && result.isFfmpegAvailable());
+                    setProperty("whisperx-health-ok", healthOk);
                     prop.setProperty("whisperx-health-ok", healthOk);
-                    prop.store();
                     applyRecommendedRuntimeSettings(result);
+                    prop.store();
                     statusArea.setText(formatResult(result));
                 } catch (Exception ex) {
+                    whisperXPythonAvailable = false;
                     setProperty("whisperx-health-ok", "false");
                     prop.setProperty("whisperx-health-ok", "false");
+                    prop.store();
                     statusArea.setText(I18.get("options_external_tools_whisperx_status_failed") + "\n\n" + ex.getMessage());
                 }
+                updateButton.setEnabled(canRunWhisperXInstallOrUpdate());
             }
         };
         worker.execute();
     }
 
-    private void applyRecommendedRuntimeSettings(WhisperXHealthCheckResult result) {
-        String gpu = result.getGpuAvailability() == null ? "unknown" : result.getGpuAvailability().trim().toLowerCase();
-        String recommendedDevice = null;
-        String recommendedComputeType = null;
-
-        if (gpu.contains("not available")) {
-            recommendedDevice = WhisperXDevice.CPU.getValue();
-            recommendedComputeType = WhisperXComputeType.INT8.getValue();
-        } else if (gpu.contains("available")) {
-            recommendedDevice = WhisperXDevice.CUDA.getValue();
-            recommendedComputeType = WhisperXComputeType.FLOAT16.getValue();
+    private void runWhisperXUpdate(JButton testButton, JButton updateButton) {
+        if (whisperXUpdateRunning) {
+            cancelWhisperXUpdate();
+            return;
         }
+        testButton.setEnabled(false);
+        updateButton.setEnabled(false);
+        statusArea.setText(I18.get("options_external_tools_whisperx_status_updating"));
+        whisperXUpdateService = new WhisperXHealthCheckService(getProperty("whisperx-python"),
+                                                               Boolean.parseBoolean(getProperty("whisperx-use-module")),
+                                                               getProperty("whisperx-command"),
+                                                               getProperty("ffmpegPath"));
+        whisperXUpdateRunning = true;
+        updateButton.setText(I18.get("tool_correct_cancel"));
+        updateButton.setEnabled(true);
 
-        if (recommendedDevice != null && "auto".equalsIgnoreCase(getProperty("whisperx-device"))) {
-            setProperty("whisperx-device", recommendedDevice);
+        whisperXUpdateWorker = new SwingWorker<>() {
+            @Override
+            protected WhisperXHealthCheckService.PackageUpdateResult doInBackground() {
+                return whisperXUpdateService.updateWhisperXPackage(line -> publish(line));
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                for (String line : chunks) {
+                    appendStatusLine(line);
+                }
+            }
+
+            @Override
+            protected void done() {
+                testButton.setEnabled(true);
+                whisperXUpdateRunning = false;
+                updateButton.setText(I18.get("options_external_tools_whisperx_update_button"));
+                updateButton.setEnabled(canRunWhisperXInstallOrUpdate());
+                try {
+                    WhisperXHealthCheckService.PackageUpdateResult result = get();
+                    if (result.isCancelled()) {
+                        statusArea.setText(I18.get("options_external_tools_whisperx_status_update_cancelled"));
+                    } else if (result.isSuccess()) {
+                        statusArea.setText(result.getMessage());
+                    } else {
+                        statusArea.setText(I18.get("options_external_tools_whisperx_status_update_failed")
+                                           + "\n\n"
+                                           + result.getMessage());
+                    }
+                } catch (Exception ex) {
+                    if (ex instanceof CancellationException) {
+                        statusArea.setText(I18.get("options_external_tools_whisperx_status_update_cancelled"));
+                    } else {
+                        statusArea.setText(I18.get("options_external_tools_whisperx_status_update_failed")
+                                           + "\n\n"
+                                           + ex.getMessage());
+                    }
+                }
+            }
+        };
+        whisperXUpdateWorker.execute();
+    }
+
+    private void cancelWhisperXUpdate() {
+        if (!whisperXUpdateRunning || whisperXUpdateService == null) {
+            return;
         }
-        if (recommendedComputeType != null && "auto".equalsIgnoreCase(getProperty("whisperx-compute-type"))) {
-            setProperty("whisperx-compute-type", recommendedComputeType);
+        statusArea.setText(I18.get("options_external_tools_whisperx_status_update_cancelling"));
+        whisperXUpdateService.cancelWhisperXUpdate();
+        if (whisperXUpdateWorker != null) {
+            whisperXUpdateWorker.cancel(true);
         }
     }
+
+    private void appendStatusLine(String line) {
+        if (line == null) {
+            return;
+        }
+        String current = statusArea.getText();
+        String next = StringUtils.isBlank(current) ? line : current + "\n" + line;
+        statusArea.setText(next);
+        statusArea.setCaretPosition(statusArea.getDocument().getLength());
+    }
+
+    private boolean isWhisperXHealthOk() {
+        return Boolean.parseBoolean(StringUtils.defaultString(getProperty("whisperx-health-ok"), "false"));
+    }
+
+    private boolean canRunWhisperXInstallOrUpdate() {
+        return whisperXPythonAvailable || isWhisperXHealthOk();
+    }
+
+    private void applyRecommendedRuntimeSettings(WhisperXHealthCheckResult result) {
+        if (result == null) {
+            return;
+        }
+
+        if (isAutoValue("whisperx-model")) {
+            setAndPersist("whisperx-effective-model", StringUtils.defaultIfBlank(result.getRecommendedModel(), "small"));
+        }
+        if (isAutoValue("whisperx-device")) {
+            setAndPersist("whisperx-effective-device",
+                          StringUtils.defaultIfBlank(result.getRecommendedDevice(), WhisperXDevice.CPU.getValue()));
+        }
+        if (isAutoValue("whisperx-compute-type")) {
+            setAndPersist("whisperx-effective-compute-type",
+                          StringUtils.defaultIfBlank(result.getRecommendedComputeType(), WhisperXComputeType.INT8.getValue()));
+        }
+    }
+
+    private boolean isAutoValue(String key) {
+        return "auto".equalsIgnoreCase(StringUtils.defaultIfBlank(getProperty(key), "auto"));
+    }
+
+    private void setAndPersist(String key, String value) {
+        setProperty(key, value);
+        prop.setProperty(key, value);
+    }
+
     private String formatResult(WhisperXHealthCheckResult result) {
         StringBuilder text = new StringBuilder();
         text.append("Python: ")
@@ -202,10 +374,57 @@ public class WhisperXPanel extends OptionsPanel {
         if (result.getTorchCudaBuild() != null) {
             text.append("\nTorch CUDA build: ").append(result.getTorchCudaBuild());
         }
-        text.append("\nGPU: ").append(result.getGpuAvailability());
-        text.append("\nRecommended device: ").append(StringUtils.defaultIfBlank(getProperty("whisperx-device"), "auto"));
-        text.append("\nRecommended compute type: ").append(StringUtils.defaultIfBlank(getProperty("whisperx-compute-type"), "auto"));
+        String gpuLabel = StringUtils.defaultIfBlank(result.getGpuAvailability(), "unknown");
+        if (StringUtils.isNotBlank(result.getGpuName())) {
+            gpuLabel += " (" + result.getGpuName() + ")";
+        }
+        if (result.getGpuVramMiB() != null) {
+            gpuLabel += " " + result.getGpuVramMiB() + " MiB";
+        }
+        text.append("\nGPU: ").append(gpuLabel);
+
+        String recommendedModel = StringUtils.defaultIfBlank(result.getRecommendedModel(), "small");
+        String recommendedDevice = StringUtils.defaultIfBlank(result.getRecommendedDevice(), WhisperXDevice.CPU.getValue());
+        String recommendedComputeType = StringUtils.defaultIfBlank(result.getRecommendedComputeType(), WhisperXComputeType.INT8.getValue());
+
+        String appliedModel = resolveAppliedValue("whisperx-model",
+                                                  "whisperx-effective-model",
+                                                  recommendedModel,
+                                                  "small");
+        String appliedDevice = resolveAppliedValue("whisperx-device",
+                                                   "whisperx-effective-device",
+                                                   recommendedDevice,
+                                                   WhisperXDevice.CPU.getValue());
+        String appliedComputeType = resolveAppliedValue("whisperx-compute-type",
+                                                        "whisperx-effective-compute-type",
+                                                        recommendedComputeType,
+                                                        WhisperXComputeType.INT8.getValue());
+
+        text.append("\nRecommended model: ").append(recommendedModel);
+        text.append("\nRecommended device: ").append(recommendedDevice);
+        text.append("\nRecommended compute type: ").append(recommendedComputeType);
+        text.append("\nApplied model: ").append(appliedModel);
+        text.append("\nApplied device: ").append(appliedDevice);
+        text.append("\nApplied compute type: ").append(appliedComputeType);
+        if (StringUtils.isNotBlank(result.getRecommendationReason())) {
+            text.append("\nReason: ").append(result.getRecommendationReason());
+        }
         text.append("\n\n").append(result.getDetails());
         return text.toString();
+    }
+
+    private String resolveAppliedValue(String configKey,
+                                       String effectiveKey,
+                                       String recommendedValue,
+                                       String fallback) {
+        String configured = StringUtils.defaultIfBlank(getProperty(configKey), "auto");
+        if (!"auto".equalsIgnoreCase(configured)) {
+            return configured;
+        }
+        String effective = StringUtils.defaultIfBlank(getProperty(effectiveKey), "");
+        if (StringUtils.isNotBlank(effective)) {
+            return effective;
+        }
+        return StringUtils.defaultIfBlank(recommendedValue, fallback);
     }
 }

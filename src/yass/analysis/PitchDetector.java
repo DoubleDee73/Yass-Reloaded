@@ -27,6 +27,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -35,6 +36,8 @@ public class PitchDetector {
     private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static final double A4_FREQ = 440.0;
     private static final double C4_FREQ = A4_FREQ * Math.pow(2.0, -9.0 / 12.0); // approx 261.626 Hz
+    private static final int MIN_TUNING_ANALYSIS_SAMPLES = 24;
+    private static final double DEFAULT_TUNING_OUTLIER_GATE_CENTS = 12.0;
 
     public static List<PitchData> detectPitch(File tempWavFile, YassProperties properties) {
         return detectPitchWithRaw(tempWavFile, properties, MusicalKeyEnum.UNDEFINED).processedPitchData();
@@ -46,6 +49,81 @@ public class PitchDetector {
         return detectPitchWithRaw(tempWavFile, properties, musicalKey).processedPitchData();
     }
 
+    public static TuningOffsetAnalysis analyzeTuningOffset(PitchDetectionResult pitchDetectionResult) {
+        if (pitchDetectionResult == null) {
+            return TuningOffsetAnalysis.unavailable("No pitch detection result available.");
+        }
+        List<PitchData> source = pitchDetectionResult.rawPitchData();
+        if (source == null || source.isEmpty()) {
+            source = pitchDetectionResult.processedPitchData();
+        }
+        return analyzeTuningOffset(source);
+    }
+
+    public static TuningOffsetAnalysis analyzeTuningOffset(List<PitchData> pitchData) {
+        if (pitchData == null || pitchData.isEmpty()) {
+            return TuningOffsetAnalysis.unavailable("No pitch frames available.");
+        }
+
+        List<Double> centsOffsets = new ArrayList<>(pitchData.size());
+        for (PitchData frame : pitchData) {
+            if (frame == null || frame.rawFrequency() <= 0d) {
+                continue;
+            }
+            double centsOffset = centsToNearestEqualTemperedNote(frame.rawFrequency());
+            if (Double.isFinite(centsOffset)) {
+                centsOffsets.add(centsOffset);
+            }
+        }
+
+        if (centsOffsets.size() < MIN_TUNING_ANALYSIS_SAMPLES) {
+            return TuningOffsetAnalysis.unavailable(
+                    "Not enough stable pitch frames for tuning analysis.",
+                    centsOffsets.size(),
+                    0,
+                    0d,
+                    0d
+            );
+        }
+
+        double medianOffset = median(centsOffsets);
+        List<Double> absDeviation = new ArrayList<>(centsOffsets.size());
+        for (double centsOffset : centsOffsets) {
+            absDeviation.add(Math.abs(centsOffset - medianOffset));
+        }
+        double mad = median(absDeviation);
+        double outlierGate = Math.max(DEFAULT_TUNING_OUTLIER_GATE_CENTS, mad * 3.0);
+
+        List<Double> inliers = new ArrayList<>(centsOffsets.size());
+        for (double centsOffset : centsOffsets) {
+            if (Math.abs(centsOffset - medianOffset) <= outlierGate) {
+                inliers.add(centsOffset);
+            }
+        }
+
+        if (inliers.size() < MIN_TUNING_ANALYSIS_SAMPLES / 2) {
+            return TuningOffsetAnalysis.unavailable(
+                    "Pitch frames are too inconsistent for a reliable global tuning offset.",
+                    centsOffsets.size(),
+                    inliers.size(),
+                    mad,
+                    medianOffset
+            );
+        }
+
+        double estimatedOffset = median(inliers);
+        return new TuningOffsetAnalysis(
+                true,
+                estimatedOffset,
+                -estimatedOffset,
+                Math.pow(2.0, (-estimatedOffset) / 1200.0),
+                centsOffsets.size(),
+                inliers.size(),
+                mad,
+                "Computed from raw Aubio pitch frequencies."
+        );
+    }
+
     public static PitchDetectionResult detectPitchWithRaw(File tempWavFile,
                                                           YassProperties properties,
                                                           MusicalKeyEnum musicalKey) {
@@ -53,7 +131,14 @@ public class PitchDetector {
         List<PitchData> locallyNormalizedPitchData;
         List<PitchData> viterbiPitchData;
         List<PitchData> finalPitchData;
+        File analysisInputFile = tempWavFile;
+        File monoTempFile = null;
         try {
+            monoTempFile = createMonoAnalysisFile(tempWavFile, properties);
+            if (monoTempFile != null) {
+                analysisInputFile = monoTempFile;
+                LOGGER.info("Pitch detection using mono downmix: " + monoTempFile.getAbsolutePath());
+            }
             String aubioCommand = "aubiopitch";
             String aubioPath = properties.getProperty("aubioPath");
             if (aubioPath != null && !aubioPath.isEmpty()) {
@@ -61,7 +146,7 @@ public class PitchDetector {
             } else {
                 return new PitchDetectionResult(Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
             }
-            String[] command = {aubioCommand, "-i", tempWavFile.getAbsolutePath()};
+            String[] command = {aubioCommand, "-i", analysisInputFile.getAbsolutePath()};
             ProcessBuilder processBuilder = new ProcessBuilder(command);
             Process process = processBuilder.start();
 
@@ -94,6 +179,7 @@ public class PitchDetector {
                 viterbiPitchData = viterbiSmooth(locallyNormalizedPitchData, musicalKey);
                 finalPitchData = List.copyOf(viterbiPitchData);
                 LOGGER.info("Viterbi smoothing complete. Resulting " + finalPitchData.size() + " pitched frames.");
+                logTuningOffsetAnalysis(analysisInputFile, rawPitchData);
                 return new PitchDetectionResult(List.copyOf(rawPitchData), List.copyOf(locallyNormalizedPitchData), List.copyOf(viterbiPitchData), List.copyOf(viterbiPitchData), finalPitchData);
             } else {
                 // Handle errors by logging them
@@ -106,7 +192,109 @@ public class PitchDetector {
                                " options?",
                        e);
             return new PitchDetectionResult(Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
+        } finally {
+            if (monoTempFile != null && monoTempFile.exists() && !monoTempFile.delete()) {
+                LOGGER.finest("Could not delete temporary mono pitch file: " + monoTempFile.getAbsolutePath());
+            }
         }
+    }
+
+    private static File createMonoAnalysisFile(File sourceWavFile, YassProperties properties) {
+        if (sourceWavFile == null || !sourceWavFile.isFile()) {
+            return null;
+        }
+        String ffmpeg = resolveFfmpegExecutable(properties);
+        if (ffmpeg == null) {
+            return null;
+        }
+        try {
+            File monoFile = File.createTempFile("yass-pitch-mono-", ".wav");
+            monoFile.deleteOnExit();
+            List<String> command = List.of(
+                    ffmpeg,
+                    "-y",
+                    "-i", sourceWavFile.getAbsolutePath(),
+                    "-ac", "1",
+                    "-vn",
+                    monoFile.getAbsolutePath()
+            );
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                while (reader.readLine() != null) {
+                    // Drain process output to avoid deadlocks.
+                }
+            }
+            boolean finished = process.waitFor(3, TimeUnit.MINUTES);
+            if (!finished) {
+                process.destroyForcibly();
+                LOGGER.warning("FFmpeg mono downmix timed out. Falling back to original analysis input.");
+                if (!monoFile.delete()) {
+                    LOGGER.finest("Could not delete timed-out mono file: " + monoFile.getAbsolutePath());
+                }
+                return null;
+            }
+            if (process.exitValue() != 0 || !monoFile.isFile() || monoFile.length() == 0L) {
+                LOGGER.warning("FFmpeg mono downmix failed (exit=" + process.exitValue()
+                        + "). Falling back to original analysis input.");
+                if (!monoFile.delete()) {
+                    LOGGER.finest("Could not delete failed mono file: " + monoFile.getAbsolutePath());
+                }
+                return null;
+            }
+            return monoFile;
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO, "Could not create mono downmix for pitch analysis. Falling back to source file.",
+                    ex);
+            return null;
+        }
+    }
+
+    private static String resolveFfmpegExecutable(YassProperties properties) {
+        String ffmpegPath = properties != null ? properties.getProperty("ffmpegPath") : null;
+        if (ffmpegPath == null || ffmpegPath.isBlank()) {
+            return "ffmpeg";
+        }
+        File ffmpegFile = new File(ffmpegPath);
+        if (ffmpegFile.isDirectory()) {
+            File windowsExe = new File(ffmpegFile, "ffmpeg.exe");
+            if (windowsExe.isFile()) {
+                return windowsExe.getAbsolutePath();
+            }
+            File unixExe = new File(ffmpegFile, "ffmpeg");
+            if (unixExe.isFile()) {
+                return unixExe.getAbsolutePath();
+            }
+        } else if (ffmpegFile.isFile()) {
+            return ffmpegFile.getAbsolutePath();
+        }
+        return "ffmpeg";
+    }
+
+    private static void logTuningOffsetAnalysis(File analysisInputFile, List<PitchData> rawPitchData) {
+        TuningOffsetAnalysis analysis = analyzeTuningOffset(rawPitchData);
+        String sourceName = analysisInputFile != null ? analysisInputFile.getName() : "<unknown>";
+        if (analysis.available()) {
+            LOGGER.info(String.format(Locale.US,
+                    "[PitchTuning] source=%s offset=%.2f cents correction=%.2f cents factor=%.8f samples=%d inliers=%d mad=%.2f",
+                    sourceName,
+                    analysis.estimatedOffsetCents(),
+                    analysis.suggestedCorrectionCents(),
+                    analysis.suggestedPitchFactor(),
+                    analysis.sampleCount(),
+                    analysis.inlierCount(),
+                    analysis.medianAbsoluteDeviationCents()));
+            return;
+        }
+        LOGGER.info(String.format(Locale.US,
+                "[PitchTuning] source=%s unavailable reason=\"%s\" samples=%d inliers=%d mad=%.2f offset=%.2f",
+                sourceName,
+                analysis.reason(),
+                analysis.sampleCount(),
+                analysis.inlierCount(),
+                analysis.medianAbsoluteDeviationCents(),
+                analysis.estimatedOffsetCents()));
     }
 
     /**
@@ -512,6 +700,36 @@ public class PitchDetector {
         return normalized;
     }
 
+    private static double centsToNearestEqualTemperedNote(double frequency) {
+        int midiNote = frequencyToMidi(frequency);
+        double referenceFrequency = midiToFrequency(midiNote);
+        return 1200.0 * (Math.log(frequency / referenceFrequency) / Math.log(2.0));
+    }
+
+    private static int frequencyToMidi(double frequency) {
+        if (frequency <= 0) {
+            throw new IllegalArgumentException("Frequency must be positive.");
+        }
+        return (int) Math.round(69 + 12 * Math.log(frequency / A4_FREQ) / Math.log(2.0));
+    }
+
+    private static double midiToFrequency(int midiNote) {
+        return A4_FREQ * Math.pow(2.0, (midiNote - 69) / 12.0);
+    }
+
+    private static double median(List<Double> values) {
+        if (values == null || values.isEmpty()) {
+            return 0d;
+        }
+        List<Double> sorted = new ArrayList<>(values);
+        Collections.sort(sorted);
+        int middle = sorted.size() / 2;
+        if ((sorted.size() & 1) == 1) {
+            return sorted.get(middle);
+        }
+        return (sorted.get(middle - 1) + sorted.get(middle)) / 2.0;
+    }
+
 
     /**
      * A simple record to hold the results of pitch detection at a specific time.
@@ -520,6 +738,36 @@ public class PitchDetector {
      * @param pitch The detected pitch in semitones relative to C4 (C4 = 0).
      */
     public record PitchData(float time, int pitch, String noteName, double rawFrequency) {
+    }
+
+    public record TuningOffsetAnalysis(boolean available,
+                                       double estimatedOffsetCents,
+                                       double suggestedCorrectionCents,
+                                       double suggestedPitchFactor,
+                                       int sampleCount,
+                                       int inlierCount,
+                                       double medianAbsoluteDeviationCents,
+                                       String reason) {
+        public static TuningOffsetAnalysis unavailable(String reason) {
+            return unavailable(reason, 0, 0, 0d, 0d);
+        }
+
+        public static TuningOffsetAnalysis unavailable(String reason,
+                                                       int sampleCount,
+                                                       int inlierCount,
+                                                       double medianAbsoluteDeviationCents,
+                                                       double estimatedOffsetCents) {
+            return new TuningOffsetAnalysis(
+                    false,
+                    estimatedOffsetCents,
+                    -estimatedOffsetCents,
+                    Math.pow(2.0, (-estimatedOffsetCents) / 1200.0),
+                    sampleCount,
+                    inlierCount,
+                    medianAbsoluteDeviationCents,
+                    reason
+            );
+        }
     }
 
     public record PitchDetectionResult(List<PitchData> rawPitchData,

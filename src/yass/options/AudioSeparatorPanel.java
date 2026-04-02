@@ -11,12 +11,19 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionListener;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 
 public class AudioSeparatorPanel extends OptionsPanel {
     private static final long serialVersionUID = 1L;
 
     private JTextArea statusArea;
     private JComboBox<String> modelComboBox;
+    private JButton audioSepTestButton;
+    private JButton audioSepUpdateButton;
+    private AudioSeparatorHealthCheckService audioSepUpdateService;
+    private SwingWorker<AudioSeparatorHealthCheckService.PackageUpdateResult, String> audioSepUpdateWorker;
+    private volatile boolean audioSepUpdateRunning;
+    private volatile boolean audioSepPythonAvailable;
 
     private void addFullWidthComment(String text) {
         JPanel row = new JPanel(new BorderLayout());
@@ -165,10 +172,16 @@ public class AudioSeparatorPanel extends OptionsPanel {
         buttonRow.setLayout(new BoxLayout(buttonRow, BoxLayout.X_AXIS));
         JLabel label = new JLabel(I18.get("options_external_tools_audiosep_test"));
         label.setPreferredSize(new Dimension(getLabelWidth(), 20));
-        JButton button = new JButton(I18.get("options_external_tools_audiosep_test_button"));
-        button.addActionListener(e -> runHealthCheck(button));
+        audioSepTestButton = new JButton(I18.get("options_external_tools_audiosep_test_button"));
+        audioSepUpdateButton = new JButton(I18.get("options_external_tools_audiosep_update_button"));
+        audioSepTestButton.addActionListener(e -> runHealthCheck(audioSepTestButton, audioSepUpdateButton));
+        audioSepUpdateButton.addActionListener(e -> runAudioSeparatorUpdate(audioSepTestButton, audioSepUpdateButton));
+        audioSepPythonAvailable = false;
+        audioSepUpdateButton.setEnabled(canRunAudioSeparatorInstallOrUpdate());
         buttonRow.add(label);
-        buttonRow.add(button);
+        buttonRow.add(audioSepTestButton);
+        buttonRow.add(Box.createRigidArea(new Dimension(8, 0)));
+        buttonRow.add(audioSepUpdateButton);
         buttonRow.add(Box.createHorizontalGlue());
         getRight().add(buttonRow);
 
@@ -184,21 +197,25 @@ public class AudioSeparatorPanel extends OptionsPanel {
         statusRow.setLayout(new BoxLayout(statusRow, BoxLayout.X_AXIS));
         JLabel statusLabel = new JLabel(I18.get("options_external_tools_audiosep_status_label"));
         statusLabel.setVerticalAlignment(SwingConstants.TOP);
-        statusLabel.setPreferredSize(new Dimension(getLabelWidth(), 20));
+        statusLabel.setPreferredSize(new Dimension(getLabelWidth(), 120));
+        statusLabel.setMaximumSize(new Dimension(getLabelWidth(), 120));
+        statusLabel.setAlignmentY(Component.TOP_ALIGNMENT);
         JScrollPane statusScroll = new JScrollPane(statusArea);
         statusScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         statusScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
         statusScroll.setBorder(BorderFactory.createCompoundBorder(
                 UIManager.getBorder("TextField.border"), BorderFactory.createEmptyBorder()));
         statusScroll.setPreferredSize(new Dimension(460, 120));
+        statusScroll.setAlignmentY(Component.TOP_ALIGNMENT);
         statusRow.add(statusLabel);
         statusRow.add(statusScroll);
         getRight().add(statusRow);
         getRight().add(Box.createRigidArea(new Dimension(0, 6)));
     }
 
-    private void runHealthCheck(JButton button) {
+    private void runHealthCheck(JButton button, JButton updateButton) {
         button.setEnabled(false);
+        updateButton.setEnabled(false);
         statusArea.setText(I18.get("options_external_tools_audiosep_status_running"));
 
         SwingWorker<AudioSeparatorHealthCheckResult, Void> worker = new SwingWorker<>() {
@@ -214,18 +231,108 @@ public class AudioSeparatorPanel extends OptionsPanel {
                 button.setEnabled(true);
                 try {
                     AudioSeparatorHealthCheckResult result = get();
+                    audioSepPythonAvailable = result.isPythonFound();
                     String healthOk = Boolean.toString(result.isHealthy());
                     prop.setProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK, healthOk);
                     prop.store();
                     statusArea.setText(formatResult(result));
                 } catch (Exception ex) {
+                    audioSepPythonAvailable = false;
                     prop.setProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK, "false");
                     prop.store();
                     statusArea.setText(I18.get("options_external_tools_audiosep_status_failed") + "\n\n" + ex.getMessage());
                 }
+                updateButton.setEnabled(canRunAudioSeparatorInstallOrUpdate());
             }
         };
         worker.execute();
+    }
+
+    private void runAudioSeparatorUpdate(JButton testButton, JButton updateButton) {
+        if (audioSepUpdateRunning) {
+            cancelAudioSeparatorUpdate();
+            return;
+        }
+        testButton.setEnabled(false);
+        updateButton.setEnabled(false);
+        statusArea.setText(I18.get("options_external_tools_audiosep_status_updating"));
+        audioSepUpdateService = new AudioSeparatorHealthCheckService(
+                getProperty(AudioSeparatorSeparationService.PROP_PYTHON), getProperty("ffmpegPath"));
+        audioSepUpdateRunning = true;
+        updateButton.setText(I18.get("tool_correct_cancel"));
+        updateButton.setEnabled(true);
+
+        audioSepUpdateWorker = new SwingWorker<>() {
+            @Override
+            protected AudioSeparatorHealthCheckService.PackageUpdateResult doInBackground() {
+                return audioSepUpdateService.updateAudioSeparatorPackage(line -> publish(line));
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                for (String line : chunks) {
+                    appendStatusLine(line);
+                }
+            }
+
+            @Override
+            protected void done() {
+                testButton.setEnabled(true);
+                audioSepUpdateRunning = false;
+                updateButton.setText(I18.get("options_external_tools_audiosep_update_button"));
+                updateButton.setEnabled(canRunAudioSeparatorInstallOrUpdate());
+                try {
+                    AudioSeparatorHealthCheckService.PackageUpdateResult result = get();
+                    if (result.isCancelled()) {
+                        statusArea.setText(I18.get("options_external_tools_audiosep_status_update_cancelled"));
+                    } else if (result.isSuccess()) {
+                        statusArea.setText(result.getMessage());
+                    } else {
+                        statusArea.setText(I18.get("options_external_tools_audiosep_status_update_failed")
+                                           + "\n\n"
+                                           + result.getMessage());
+                    }
+                } catch (Exception ex) {
+                    if (ex instanceof CancellationException) {
+                        statusArea.setText(I18.get("options_external_tools_audiosep_status_update_cancelled"));
+                    } else {
+                        statusArea.setText(I18.get("options_external_tools_audiosep_status_update_failed")
+                                           + "\n\n"
+                                           + ex.getMessage());
+                    }
+                }
+            }
+        };
+        audioSepUpdateWorker.execute();
+    }
+
+    private void cancelAudioSeparatorUpdate() {
+        if (!audioSepUpdateRunning || audioSepUpdateService == null) {
+            return;
+        }
+        statusArea.setText(I18.get("options_external_tools_audiosep_status_update_cancelling"));
+        audioSepUpdateService.cancelAudioSeparatorUpdate();
+        if (audioSepUpdateWorker != null) {
+            audioSepUpdateWorker.cancel(true);
+        }
+    }
+
+    private void appendStatusLine(String line) {
+        if (line == null) {
+            return;
+        }
+        String current = statusArea.getText();
+        String next = StringUtils.isBlank(current) ? line : current + "\n" + line;
+        statusArea.setText(next);
+        statusArea.setCaretPosition(statusArea.getDocument().getLength());
+    }
+
+    private boolean isAudioSeparatorHealthOk() {
+        return Boolean.parseBoolean(StringUtils.defaultString(getProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK), "false"));
+    }
+
+    private boolean canRunAudioSeparatorInstallOrUpdate() {
+        return audioSepPythonAvailable || isAudioSeparatorHealthOk();
     }
 
     private String formatResult(AudioSeparatorHealthCheckResult result) {

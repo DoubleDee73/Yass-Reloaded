@@ -61,6 +61,8 @@ public class YouTube extends JPanel {
     private CreateSongWizard wizard;
     private JTextField youTubeUrl = null;
     private int fallbackLevel = 0; // 0=Strict, 1=Relaxed Codec, 2=Best
+    private File discoveredManualSubtitleFile = null;
+    private File discoveredAutoSubtitleFile = null;
 
     public YouTube(CreateSongWizard wizard) {
         this.wizard = wizard;
@@ -118,6 +120,8 @@ public class YouTube extends JPanel {
         if (StringUtils.isEmpty(getYouTubeUrl())) {
             return;
         }
+        discoveredManualSubtitleFile = null;
+        discoveredAutoSubtitleFile = null;
         File existing = findExistingDownloadByYouTubeId();
         if (existing != null) {
             int reuse = JOptionPane.showConfirmDialog(SwingUtilities.getWindowAncestor(this),
@@ -325,6 +329,7 @@ public class YouTube extends JPanel {
     private void handleDownloadSuccess(DownloadSplashFrame splash) {
         LOGGER.info("yt-dlp process finished successfully.");
         renameDownloadedFiles();
+        applyPreferredSubtitleSelection();
 
         // If filename wasn't set (e.g. yt-dlp skipped ExtractAudio because format already matched),
         // scan the temp dir and pick the best audio file by YouTube ID.
@@ -416,11 +421,15 @@ public class YouTube extends JPanel {
             wizard.setValue("filename", new File(tempDir, relativePath).getAbsolutePath());
         } else if (line.contains("[info] Writing video automatic subtitles to:")) {
             String relativePath = line.substring(line.indexOf(":") + 2).trim();
-            wizard.setValue("subtitle", new File(tempDir, relativePath).getAbsolutePath());
-            wizard.setValue("subtitles-auto-generated", "true");
+            discoveredAutoSubtitleFile = new File(tempDir, relativePath);
+            if (discoveredManualSubtitleFile == null) {
+                wizard.setValue("subtitle", discoveredAutoSubtitleFile.getAbsolutePath());
+                wizard.setValue("subtitles-auto-generated", "true");
+            }
         } else if (line.contains("[info] Writing video subtitles to:")) {
             String relativePath = line.substring(line.indexOf(":") + 2).trim();
-            wizard.setValue("subtitle", new File(tempDir, relativePath).getAbsolutePath());
+            discoveredManualSubtitleFile = new File(tempDir, relativePath);
+            wizard.setValue("subtitle", discoveredManualSubtitleFile.getAbsolutePath());
             wizard.setValue("subtitles-auto-generated", "false");
         } else if (line.contains("[download] Destination:")) {
             String relativePath = line.substring(line.indexOf(":") + 2).trim();
@@ -470,6 +479,11 @@ public class YouTube extends JPanel {
         // This regex removes the ".v_...a_..." part from the filename.
         // The non-greedy `.*?` is used to correctly handle video codec names that may contain dots.
         String newFilename = filename.replaceAll("\\.v_.*?\\.a_.*?\\.", ".");
+        String youTubeId = extractYouTubeId(getYouTubeUrl());
+        if (StringUtils.isNotBlank(youTubeId)) {
+            newFilename = newFilename.replace("." + youTubeId + ".", ".");
+            newFilename = newFilename.replace("." + youTubeId, "");
+        }
 
         if (filename.equals(newFilename)) {
             return; // No change needed
@@ -486,6 +500,26 @@ public class YouTube extends JPanel {
         } else {
             LOGGER.warning("Could not rename file " + oldPath + " to " + newFilename);
         }
+    }
+
+    private void applyPreferredSubtitleSelection() {
+        if (discoveredManualSubtitleFile != null && discoveredManualSubtitleFile.isFile()) {
+            wizard.setValue("subtitle", discoveredManualSubtitleFile.getAbsolutePath());
+            wizard.setValue("subtitles-auto-generated", "false");
+            return;
+        }
+        if (discoveredAutoSubtitleFile != null && discoveredAutoSubtitleFile.isFile()) {
+            wizard.setValue("subtitle", discoveredAutoSubtitleFile.getAbsolutePath());
+            wizard.setValue("subtitles-auto-generated", "true");
+            return;
+        }
+        // Preserve existing subtitle if already set and valid.
+        String existingSubtitle = wizard.getValue("subtitle");
+        if (StringUtils.isNotBlank(existingSubtitle) && new File(existingSubtitle).isFile()) {
+            return;
+        }
+        wizard.setValue("subtitle", "");
+        wizard.setValue("subtitles-auto-generated", "");
     }
 }
 

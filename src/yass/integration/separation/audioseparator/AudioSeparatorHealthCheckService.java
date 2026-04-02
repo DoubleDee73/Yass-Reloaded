@@ -11,14 +11,18 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.logging.Logger;
 
 public class AudioSeparatorHealthCheckService {
     private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(20);
+    private static final Duration UPDATE_TIMEOUT = Duration.ofMinutes(10);
 
     private final String configuredPythonExecutable;
     private final String configuredFfmpegPath;
+    private volatile Process activeUpdateProcess;
+    private volatile boolean updateCancelRequested;
 
     public AudioSeparatorHealthCheckService(String configuredPythonExecutable, String configuredFfmpegPath) {
         this.configuredPythonExecutable = StringUtils.trimToEmpty(configuredPythonExecutable);
@@ -84,6 +88,49 @@ public class AudioSeparatorHealthCheckService {
                 details.toString());
     }
 
+    public PackageUpdateResult updateAudioSeparatorPackage() {
+        return updateAudioSeparatorPackage(null);
+    }
+
+    public PackageUpdateResult updateAudioSeparatorPackage(Consumer<String> outputListener) {
+        String pythonCmd = configuredPythonExecutable.isBlank() ? detectPythonExecutable() : configuredPythonExecutable;
+        if (pythonCmd.isBlank()) {
+            return new PackageUpdateResult(false, "Python was not found. Configure a Python executable first.");
+        }
+        CommandResult update = run(List.of(pythonCmd,
+                                           "-m",
+                                           "pip",
+                                           "install",
+                                           "-U",
+                                           "audio-separator"), UPDATE_TIMEOUT, outputListener);
+        if (updateCancelRequested) {
+            return new PackageUpdateResult(false, "audio-separator update cancelled.", true);
+        }
+        if (update.success) {
+            return new PackageUpdateResult(true, "audio-separator update completed successfully.");
+        }
+        String details = StringUtils.defaultIfBlank(update.output, "No output.");
+        return new PackageUpdateResult(false, "audio-separator update failed.\n" + details);
+    }
+
+
+    public boolean cancelAudioSeparatorUpdate() {
+        updateCancelRequested = true;
+        Process process = activeUpdateProcess;
+        if (process == null) {
+            return false;
+        }
+        process.destroy();
+        try {
+            Thread.sleep(150);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
+        if (process.isAlive()) {
+            process.destroyForcibly();
+        }
+        return true;
+    }
     /**
      * Lists available models by running {@code audio-separator --list_models}.
      * Returns model filenames parsed from the tabular output (first column, skipping header/separator rows).
@@ -178,22 +225,37 @@ public class AudioSeparatorHealthCheckService {
     }
 
     private CommandResult run(List<String> command) {
+        return run(command, COMMAND_TIMEOUT);
+    }
+
+    private CommandResult run(List<String> command, Duration timeout) {
+        return run(command, timeout, null);
+    }
+
+    private CommandResult run(List<String> command, Duration timeout, Consumer<String> outputListener) {
         List<String> filtered = command.stream().filter(s -> !s.isBlank()).toList();
         if (filtered.isEmpty()) return new CommandResult(false, "");
         try {
             ProcessBuilder pb = new ProcessBuilder(filtered);
             pb.redirectErrorStream(true);
             Process process = pb.start();
+            boolean updateCommand = isPipUpdateCommand(filtered);
+            if (updateCommand) {
+                activeUpdateProcess = process;
+            }
             StringBuilder output = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
+                    if (outputListener != null) {
+                        outputListener.accept(line);
+                    }
                     if (!output.isEmpty()) output.append("\n");
                     output.append(line);
                 }
             }
-            boolean finished = process.waitFor(COMMAND_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+            boolean finished = process.waitFor(timeout.toSeconds(), TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
                 return new CommandResult(false, output.toString());
@@ -203,8 +265,49 @@ public class AudioSeparatorHealthCheckService {
             LOGGER.fine("Command failed: " + filtered + " — " + ex.getMessage());
             if (ex instanceof InterruptedException) Thread.currentThread().interrupt();
             return new CommandResult(false, "");
+        } finally {
+            if (isPipUpdateCommand(filtered)) {
+                activeUpdateProcess = null;
+            }
         }
     }
 
+    private boolean isPipUpdateCommand(List<String> command) {
+        return command != null
+                && command.size() >= 6
+                && "-m".equals(command.get(1))
+                && "pip".equalsIgnoreCase(command.get(2))
+                && "install".equalsIgnoreCase(command.get(3))
+                && "-U".equalsIgnoreCase(command.get(4));
+    }
+
     private record CommandResult(boolean success, String output) {}
+
+    public static final class PackageUpdateResult {
+        private final boolean success;
+        private final String message;
+        private final boolean cancelled;
+
+        public PackageUpdateResult(boolean success, String message) {
+            this(success, message, false);
+        }
+
+        public PackageUpdateResult(boolean success, String message, boolean cancelled) {
+            this.success = success;
+            this.message = message;
+            this.cancelled = cancelled;
+        }
+
+        public boolean isSuccess() {
+            return success;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public boolean isCancelled() {
+            return cancelled;
+        }
+    }
 }
