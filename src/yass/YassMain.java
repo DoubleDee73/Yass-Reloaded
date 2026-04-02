@@ -588,6 +588,15 @@ public class YassMain extends JFrame {
             }
             sheet.refreshImage();
             actions.getTable().zoomPage();
+            if (sheet.isAbsolutePitchViewEnabled()) {
+                sheet.autoCenterAbsolutePitchView();
+                SwingUtilities.invokeLater(() -> {
+                    if (sheet.isAbsolutePitchViewEnabled()) {
+                        sheet.autoCenterAbsolutePitchView();
+                        sheet.repaint();
+                    }
+                });
+            }
         });
         resizeRefreshTimer.setRepeats(false);
         sheetViewportPanel.addComponentListener(new ComponentAdapter() {

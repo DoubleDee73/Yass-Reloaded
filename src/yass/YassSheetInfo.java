@@ -635,34 +635,6 @@ public class YassSheetInfo extends JPanel {
         repaint(0);
     }
 
-    private int getPageNumberAtMs(YassTable table, double ms) {
-        if (table == null) {
-            return -1;
-        }
-        int beat = (int) Math.floor(table.msToBeatExact(ms));
-        int page = 1;
-        for (YassRow row : table.getModelData()) {
-            if (row == null || row.isComment()) {
-                continue;
-            }
-            if (row.isEnd()) {
-                break;
-            }
-            if (row.isPageBreak() && row.getBeatInt() <= beat) {
-                page++;
-            }
-        }
-        return page;
-    }
-
-    private String formatCursorTime(double ms) {
-        long totalMs = Math.max(0L, Math.round(ms));
-        long minutes = totalMs / 60000L;
-        long seconds = (totalMs % 60000L) / 1000L;
-        long millis = totalMs % 1000L;
-        return String.format("%d:%02d.%03d", minutes, seconds, millis);
-    }
-
     public void paintComponent(Graphics g) {
         super.paintComponent(g);
         paintInfoArea((Graphics2D)g);
@@ -672,8 +644,6 @@ public class YassSheetInfo extends JPanel {
         YassTable masterTable = sheet.getTable(0);
         YassTable table = sheet.getTable(track);
         if (table == null) return;
-        boolean recordingPlaybackActive = table.getActions() != null && table.getActions().isRecording();
-        if (sheet.isPlaying() && !recordingPlaybackActive) return;
         int activeTrack = table.getActions().getActiveTrack();
         boolean isActive = track == activeTrack;
 
@@ -1013,15 +983,6 @@ public class YassSheetInfo extends JPanel {
 
         String gapString = String.format("%.3f", (int) (gap+0.5)/1000.0); // show rounded (resolution < 1ms makes no sense)
 
-        int pageForCursor = table.getFirstVisiblePageNumber();
-        if (pageForCursor <= 0) {
-            pageForCursor = getPageNumberAtMs(table, posMs);
-        }
-        String cursorInfo = formatCursorTime(posMs);
-        if (pageForCursor > 0) {
-            cursorInfo = "P" + pageForCursor + " \u00B7 " + cursorInfo;
-        }
-
         if (s2 != null && s2.length() > 0)
             s2 += " \u00B7 ";
         s2 += gapString + "s";
@@ -1035,13 +996,6 @@ public class YassSheetInfo extends JPanel {
         int sw = g2.getFontMetrics().stringWidth(s);
         int sw1 = g2.getFontMetrics().stringWidth(s1);
         int sw2 = g2.getFontMetrics().stringWidth(s2);
-        int swCursor = g2.getFontMetrics().stringWidth(cursorInfo);
-        int cursorX = sideBar + 110;
-        int cursorRightLimit = getWidth() - sideBar - errorWidth - 12;
-        if (cursorX + swCursor < cursorRightLimit) {
-            g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.HI_GRAY);
-            g2.drawString(cursorInfo, cursorX, y);
-        }
         if (sw2 < w-trackNameWidth-errorWidth-20) {
             g2.setColor(sheet.darkMode ? sheet.hiGrayDarkMode : sheet.HI_GRAY);
             g2.drawString(s2, x - sw2 - 4, y);

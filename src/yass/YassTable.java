@@ -43,8 +43,11 @@ import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
@@ -4906,6 +4909,14 @@ public class YassTable extends JTable {
     }
 
     private void pasteLyrics(String trstring) {
+        if (getSelectionModel().getSelectedItemsCount() <= 0) {
+            insertRowsAt(trstring, -1, true);
+            if (sheet != null) {
+                sheet.updateActiveTable();
+                zoomPage();
+            }
+            return;
+        }
         String[] lines = splitTextToLines(trstring, 0);
         for (int i = 0; i < getSelectionModel().getSelectedItemsCount(); i++) {
             YassRow row = getRowAt(i + getSelectedRow());
@@ -4921,6 +4932,99 @@ public class YassTable extends JTable {
      * Description of the Method
      */
     public void insertNote() {
+        String noteText = promptForInsertedLyrics();
+        if (noteText == null) {
+            return;
+        }
+        insertNoteWithOptionalText(noteText);
+    }
+
+    private String promptForInsertedLyrics() {
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        JDialog dialog = new JDialog(owner, I18.get("edit_insert_notes_title"), Dialog.ModalityType.APPLICATION_MODAL);
+        JPanel content = new JPanel(new BorderLayout(0, 8));
+        content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+
+        JLabel promptLabel = new JLabel(I18.get("edit_insert_notes_prompt"));
+        JTextField textField = new JTextField(28);
+        content.add(promptLabel, BorderLayout.NORTH);
+        content.add(textField, BorderLayout.CENTER);
+
+        String okText = StringUtils.defaultIfBlank(UIManager.getString("OptionPane.okButtonText"), "OK");
+        String cancelText = StringUtils.defaultIfBlank(UIManager.getString("OptionPane.cancelButtonText"), "Cancel");
+        JButton okButton = new JButton(okText);
+        JButton cancelButton = new JButton(cancelText);
+        final String[] result = new String[1];
+
+        okButton.addActionListener(e -> {
+            result[0] = textField.getText();
+            dialog.dispose();
+        });
+        cancelButton.addActionListener(e -> {
+            result[0] = null;
+            dialog.dispose();
+        });
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        buttons.add(okButton);
+        buttons.add(cancelButton);
+        content.add(buttons, BorderLayout.SOUTH);
+
+        dialog.setContentPane(content);
+        dialog.getRootPane().setDefaultButton(okButton);
+        dialog.getRootPane().registerKeyboardAction(e -> {
+                    result[0] = null;
+                    dialog.dispose();
+                },
+                KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0),
+                JComponent.WHEN_IN_FOCUSED_WINDOW);
+        dialog.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowOpened(WindowEvent e) {
+                SwingUtilities.invokeLater(() -> {
+                    textField.requestFocusInWindow();
+                    textField.requestFocus();
+                    textField.selectAll();
+                });
+            }
+        });
+        dialog.pack();
+        dialog.setLocationRelativeTo(owner);
+        dialog.setVisible(true);
+        return result[0];
+    }
+
+    private void restoreAbsoluteViewYLater(int preservedAbsoluteViewY) {
+        if (sheet == null || preservedAbsoluteViewY < 0 || !sheet.isAbsolutePitchViewEnabled()) {
+            return;
+        }
+        Point currentView = sheet.getViewPosition();
+        sheet.setViewPosition(new Point(currentView.x, preservedAbsoluteViewY));
+        SwingUtilities.invokeLater(() -> {
+            if (sheet == null || !sheet.isAbsolutePitchViewEnabled()) {
+                return;
+            }
+            Point current = sheet.getViewPosition();
+            sheet.setViewPosition(new Point(current.x, preservedAbsoluteViewY));
+            sheet.repaint();
+        });
+    }
+
+    private void insertNoteWithOptionalText(String noteText) {
+        int preservedAbsoluteViewY = -1;
+        if (sheet != null && sheet.isAbsolutePitchViewEnabled()) {
+            preservedAbsoluteViewY = sheet.getViewPosition().y;
+        }
+        if (StringUtils.isNotBlank(noteText)) {
+            insertRowsAt(noteText, -1, true);
+            if (sheet != null) {
+                sheet.updateActiveTable();
+                updatePlayerPosition();
+                zoomPage();
+                restoreAbsoluteViewYLater(preservedAbsoluteViewY);
+            }
+            return;
+        }
         int n = getRowCount();
         int row = getSelectionModel().getMinSelectionIndex();
         boolean useCursorBeat = row < 0 && sheet != null && sheet.getPlayerPosition() >= 0;
@@ -5019,6 +5123,7 @@ public class YassTable extends JTable {
         setRowSelectionInterval(row + 1, row + 1);
         updatePlayerPosition();
         zoomPage();
+        restoreAbsoluteViewYLater(preservedAbsoluteViewY);
     }
 
     public void togglePageBreak() {

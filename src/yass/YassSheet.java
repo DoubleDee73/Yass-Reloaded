@@ -3024,7 +3024,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
             paintLines(db);
             if (!live) {
                 paintBeats(db);
-                paintInOut(db);
+                paintSelectionOverlay(db);
                 // Avoid double-visualization ("ghost note") while dragging a note:
                 // snapshot overlay and center-drag preview can overlap in single-selection drags.
                 if (paintSnapshot && !hasCenterDragPreview()) {
@@ -3118,7 +3118,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 paintLines(layerG);
                 if (!live) {
                     paintBeats(layerG);
-                    paintInOut(layerG);
+                    paintSelectionOverlay(layerG);
                 }
             } finally {
                 clip = originalClip;
@@ -4689,10 +4689,8 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
         }
     }
 
-    public void paintInOut(Graphics2D g2) {
+    public void paintSelectionOverlay(Graphics2D g2) {
         if (sketchStarted())
-            return;
-        if (isPlaying() && (actions == null || !actions.isRecording()))
             return;
 
         if (marqueeSelectActive && (select.width > 0 || select.height > 0)) {
@@ -4753,16 +4751,6 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 g2.drawString(s, x + xw / 2 - sw / 2, 18);
             }
         }
-
-        if (inPoint < 0)
-            return;
-        if (outPoint < 0)
-            outPoint = inPoint;
-
-        g2.setColor(inoutColor);
-        g2.fillRect(Math.min(inPoint, outPoint), TOP_LINE - 10,
-                Math.abs(outPoint - inPoint), clip.height - TOP_LINE + 10
-                        - BOTTOM_BORDER);
     }
 
     public void paintPlayerPosition(Graphics2D g2, boolean active) {
@@ -8161,10 +8149,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 paintPlainRectangles(pgb);
                 pgb.translate(clip.x, 0);
             } else {
-                int top = getTopLine() - 10;
-                int w = plain.getWidth();
-                int h = plain.getHeight() - top;
-                    pgb.drawImage(plain, 0, top, w, top + h, 0, top, w,top + h, null);
+                pgb.drawImage(plain, 0, 0, null);
             }
 
             if (getPlainBuffer().contentsLost())

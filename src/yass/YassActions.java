@@ -4065,6 +4065,13 @@ public class YassActions implements DropTargetListener {
                             sheet.repaint();
                         }
                     });
+                } else if (currentView == VIEW_EDIT) {
+                    SwingUtilities.invokeLater(() -> {
+                        if (sheet != null) {
+                            sheet.refreshImage();
+                            sheet.repaint();
+                        }
+                    });
                 }
             }
 
@@ -9582,8 +9589,18 @@ public class YassActions implements DropTargetListener {
             SwingUtilities.invokeLater(() -> {
                 sheet.refreshImage();
                 table.zoomPage();
+                if (sheet.isAbsolutePitchViewEnabled()) {
+                    sheet.autoCenterAbsolutePitchView();
+                }
                 sheet.repaint();
                 logEditorLayoutState("after-editor-late-refresh");
+                SwingUtilities.invokeLater(() -> {
+                    if (sheet.isAbsolutePitchViewEnabled()) {
+                        sheet.autoCenterAbsolutePitchView();
+                        sheet.repaint();
+                        logEditorLayoutState("after-editor-absolute-recenter");
+                    }
+                });
             });
         });
         lyrics.setTable(table);
