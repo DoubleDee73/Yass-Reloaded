@@ -65,7 +65,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
 
 
     public SongHeader(YassActions actions) {
-        LOGGER.info("Init Songheader");
+        LOGGER.fine("Init Songheader");
         setLayout(new BorderLayout());
         setOpaque(true);
         setBackground(Color.LIGHT_GRAY);
@@ -445,7 +445,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         genreField.hideSuggestions();
         tagField.hideSuggestions();
         setInternalUpdate(false);
-        LOGGER.info("SongHeader.initSongHeader audio=" + audio + " bpm=" + table.getBPM()
+        LOGGER.fine("SongHeader.initSongHeader audio=" + audio + " bpm=" + table.getBPM()
                 + " headerSize=" + getWidth() + "x" + getHeight()
                 + " bpmFieldSize=" + (bpmField == null ? "null" : bpmField.getWidth() + "x" + bpmField.getHeight()));
         if (debugWaveform && StringUtils.isNotEmpty(table.getVocals())) {
@@ -528,7 +528,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
                     if (isInternalUpdate) {
                         return;
                     }
-                    LOGGER.info("SongHeader: Deselecting " + e.getItem() + ": " + audioField.getText());
+                    LOGGER.fine("SongHeader: Deselecting " + e.getItem() + ": " + audioField.getText());
                     table.setAudioByTag(e.getItem().toString(), audioField.getText());
                 }
                 if (e.getStateChange() == ItemEvent.SELECTED && audioField != null) {
@@ -538,11 +538,11 @@ public class SongHeader extends JPanel implements YassSheetListener {
                     YassRow mp3Row = table.getCommentRow(e.getItem() + ":");
                     if (mp3Row != null) {
                         audioField.setText(mp3Row.getHeaderComment());
-                        LOGGER.info("SongHeader: Selecting " + e.getItem() + ": " + audioField.getText());
+                        LOGGER.fine("SongHeader: Selecting " + e.getItem() + ": " + audioField.getText());
                         audioField.repaint();
                         actions.openMp3(table.getDir() + File.separator + mp3Row.getHeaderComment());
                     } else {
-                        LOGGER.info("SongHeader: Selecting. No " + e.getItem() + " configured");
+                        LOGGER.fine("SongHeader: Selecting. No " + e.getItem() + " configured");
                         audioField.setText(StringUtils.EMPTY);
                     }
                     sheet.refreshImage();
@@ -657,7 +657,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         if (audioSelector == null) {
             return;
         }
-        LOGGER.info("SongHeader.setSelectedAudio start tag=" + selectedAudioTag
+        LOGGER.fine("SongHeader.setSelectedAudio start tag=" + selectedAudioTag
                 + " headerSize=" + getWidth() + "x" + getHeight()
                 + " bpmFieldSize=" + (bpmField == null ? "null" : bpmField.getWidth() + "x" + bpmField.getHeight()));
         YassTable table = getTable();
@@ -676,7 +676,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         }
         if (mp3Row != null) {
             String fullPath = table.getDir() + File.separator + mp3Row.getHeaderComment();
-            LOGGER.info("SongHeader.setSelectedAudio resolvedFile=" + fullPath);
+            LOGGER.fine("SongHeader.setSelectedAudio resolvedFile=" + fullPath);
             if (!fullPath.equals(actions.getMP3().getFilename())) {
                 actions.openMp3(fullPath);
             }
@@ -708,7 +708,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
                 sheet.autoCenterAbsolutePitchView(selStart, Math.max(selStart, selEnd));
             });
         }
-        LOGGER.info("SongHeader.setSelectedAudio end tag=" + selectedAudioTag
+        LOGGER.fine("SongHeader.setSelectedAudio end tag=" + selectedAudioTag
                 + " headerSize=" + getWidth() + "x" + getHeight()
                 + " bpmFieldSize=" + (bpmField == null ? "null" : bpmField.getWidth() + "x" + bpmField.getHeight()));
     }

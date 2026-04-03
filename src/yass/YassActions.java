@@ -257,7 +257,7 @@ public class YassActions implements DropTargetListener {
 
     private void logSaveActionState(String origin) {
         Component focusOwner = kbdFocus != null ? kbdFocus.getFocusOwner() : null;
-        LOGGER.info("[SaveDebug] " + origin
+        LOGGER.fine("[SaveDebug] " + origin
                 + " focusOwner=" + (focusOwner == null ? "null" : focusOwner.getClass().getName())
                 + " focusInHeader=" + isFocusInSongHeader()
                 + " lyricsEditable=" + lyrics.isEditable()
@@ -6978,7 +6978,7 @@ public class YassActions implements DropTargetListener {
         saveAll.setEnabled(!isAllSaved);
         Component focusOwner = kbdFocus != null ? kbdFocus.getFocusOwner() : null;
         if (focusOwner instanceof JComboBox || isFocusInSongHeader()) {
-            LOGGER.info("[SaveDebug] updateActions"
+            LOGGER.fine("[SaveDebug] updateActions"
                     + " focusOwner=" + (focusOwner == null ? "null" : focusOwner.getClass().getName())
                     + " focusInHeader=" + isFocusInSongHeader()
                     + " isTrackSaved=" + isTrackSaved
@@ -9640,7 +9640,7 @@ public class YassActions implements DropTargetListener {
         try {
             SongHeader header = sheet != null ? sheet.getSongHeader() : null;
             JTextField bpmField = header != null ? header.getBpmField() : null;
-            LOGGER.info(String.format(
+            LOGGER.fine(String.format(
                     "Editor layout %s split=%s sheet=%s lyrics=%s header=%s bpmField=%s divider=%d currentView=%d",
                     phase,
                     editorSplit == null ? "null" : (editorSplit.getWidth() + "x" + editorSplit.getHeight()),
@@ -9651,7 +9651,7 @@ public class YassActions implements DropTargetListener {
                     editorSplit == null ? -1 : editorSplit.getDividerLocation(),
                     currentView));
         } catch (Exception ex) {
-            LOGGER.log(Level.INFO, "Could not log editor layout state for phase " + phase, ex);
+            LOGGER.log(Level.FINE, "Could not log editor layout state for phase " + phase, ex);
         }
     }
 

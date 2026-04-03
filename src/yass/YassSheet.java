@@ -3175,7 +3175,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
             if (!backVolImage.contentsLost()) {
                 return;
             }
-            LOGGER.info("contents lost (" + i + ")");
+            LOGGER.fine("contents lost (" + i + ")");
         }
         g.drawImage(image, clip.x, clip.y, clip.x + clip.width, clip.y
                 + clip.height, 0, 0, clip.width, clip.height, Color.WHITE, this);
@@ -3225,7 +3225,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
             if (!backVolImage.contentsLost()) {
                 return;
             }
-            LOGGER.info("contents lost (" + i + ")");
+            LOGGER.fine("contents lost (" + i + ")");
         }
         g2.drawImage(image, clip.x, clip.y, clip.x + clip.width, clip.y
                 + clip.height, 0, 0, clip.width, clip.height, Color.WHITE, this);
@@ -3669,7 +3669,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 .filter(pd -> pd.time() >= startSeconds && pd.time() <= endSeconds)
                 .toList();
         if (noteProcessedPitchData.isEmpty() && noteRawPitchData.isEmpty()) {
-            LOGGER.info("Selected note row " + selectedRow
+            LOGGER.fine("Selected note row " + selectedRow
                     + " beat " + selectedNote.getBeatInt()
                     + " len " + selectedNote.getLengthInt()
                     + " has no detected pitches.");
@@ -3684,7 +3684,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
         String rawDistribution = formatRawPitchDistribution(noteRawPitchData);
         String displayedDistribution = formatPitchDistribution(noteProcessedPitchData, pitchTranspose);
 
-        LOGGER.info("Selected note row " + selectedRow
+        LOGGER.fine("Selected note row " + selectedRow
                 + " beat " + selectedNote.getBeatInt()
                 + " len " + selectedNote.getLengthInt()
                 + " text=\"" + selectedNote.getTrimmedText() + "\""
@@ -5820,8 +5820,8 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 && actions.isRecording()
                 && !actions.isRecordingInputFinished()
                 && (isPlaying() || actions.isRecordingPlaybackStarted());
-        if (actions != null && actions.isRecording() && recordingNoteIndex != -1 && LOGGER.isLoggable(java.util.logging.Level.INFO)) {
-            LOGGER.info("[TapQueueDebug] paintText noteIndex=" + recordingNoteIndex
+        if (actions != null && actions.isRecording() && recordingNoteIndex != -1 && LOGGER.isLoggable(java.util.logging.Level.FINEST)) {
+            LOGGER.finest("[TapQueueDebug] paintText noteIndex=" + recordingNoteIndex
                     + " recording=" + actions.isRecording()
                     + " inputFinished=" + actions.isRecordingInputFinished()
                     + " playbackStarted=" + actions.isRecordingPlaybackStarted()
@@ -5991,8 +5991,8 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
         float baselineY = getStickyBandTopYLocal() - 8f - yOffset;
         int boxHeight = Math.max(30, metrics.getHeight() + 14);
         float boxTop = baselineY - metrics.getAscent() - 5;
-        if (LOGGER.isLoggable(java.util.logging.Level.INFO)) {
-            LOGGER.info("[TapQueueDebug] paintQueue startRow=" + startRow
+        if (LOGGER.isLoggable(java.util.logging.Level.FINEST)) {
+            LOGGER.finest("[TapQueueDebug] paintQueue startRow=" + startRow
                     + " endRow=" + endRow
                     + " baselineY=" + baselineY
                     + " boxTop=" + boxTop
@@ -6070,8 +6070,8 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 drawX = x;
             }
             if (drawX + boxWidth >= maxX) {
-                if (!loggedFirstToken && LOGGER.isLoggable(java.util.logging.Level.INFO)) {
-                    LOGGER.info("[TapQueueDebug] firstTokenClipped row=" + rowIndex
+                if (!loggedFirstToken && LOGGER.isLoggable(java.util.logging.Level.FINEST)) {
+                    LOGGER.finest("[TapQueueDebug] firstTokenClipped row=" + rowIndex
                             + " text=" + text
                             + " drawX=" + drawX
                             + " boxWidth=" + boxWidth
@@ -6081,8 +6081,8 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 break;
             }
 
-            if (!loggedFirstToken && LOGGER.isLoggable(java.util.logging.Level.INFO)) {
-                LOGGER.info("[TapQueueDebug] firstTokenDrawn row=" + rowIndex
+            if (!loggedFirstToken && LOGGER.isLoggable(java.util.logging.Level.FINEST)) {
+                LOGGER.finest("[TapQueueDebug] firstTokenDrawn row=" + rowIndex
                         + " text=" + text
                         + " drawX=" + drawX
                         + " boxWidth=" + boxWidth
@@ -7793,7 +7793,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
         // quick hack to get actual size on screen
         int d = ((JViewport) getParent()).getExtentSize().width - 2;
         if (d < 0) {
-            LOGGER.info("warning: invalid sheet width");
+            LOGGER.fine("warning: invalid sheet width");
         }
         d -= LEFT_BORDER + RIGHT_BORDER;
         if (paintHeights)

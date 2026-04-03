@@ -242,7 +242,7 @@ public class YassPlayer {
      * @param t       The new capture value
      */
     public void setCapture(int t, String device, int channel) {
-        LOGGER.info("player " + t + " " + device + " (" + channel + ")");
+        LOGGER.fine("player " + t + " " + device + " (" + channel + ")");
         if (device == null) {
             playerdevice[t] = -1;
             playerchannel[t] = channel;
@@ -344,7 +344,7 @@ public class YassPlayer {
         Mixer.Info[] mixerInfo = AudioSystem.getMixerInfo();
         for (int i = 0; i < mixerInfo.length; i++) {
 
-            LOGGER.info("Mixer[" + i + "]: \"" + mixerInfo[i].getName() + "\"");
+            LOGGER.fine("Mixer[" + i + "]: \"" + mixerInfo[i].getName() + "\"");
         }
     }
 
@@ -363,17 +363,17 @@ public class YassPlayer {
                     AudioFormat[] formats = ((DataLine.Info) aLineInfo)
                             .getFormats();
                     for (int j = 0; j < formats.length; j++) {
-                        LOGGER.info(indent + formats[j]);
+                        LOGGER.fine(indent + formats[j]);
                     }
                     numDumped++;
                 } else if (aLineInfo instanceof Port.Info) {
-                    LOGGER.info(indent + aLineInfo);
+                    LOGGER.fine(indent + aLineInfo);
                     numDumped++;
                 }
             }
         }
         if (numDumped == 0) {
-            LOGGER.info(indent + "none");
+            LOGGER.fine(indent + "none");
         }
     }
 
@@ -586,7 +586,7 @@ public class YassPlayer {
                 }
                 memcache = bout.toByteArray();
                 cachedMP3 = filename;
-                LOGGER.info("MP3 cached.");
+                LOGGER.fine("MP3 cached.");
             } catch (Exception e) {
                 LOGGER.log(Level.INFO, e.getMessage(), e);
             } finally {
@@ -1192,8 +1192,8 @@ public class YassPlayer {
             }
 
             if (DEBUG) {
-                LOGGER.info("in: " + inpoint);
-                LOGGER.info("out: " + outpoint);
+                LOGGER.fine("in: " + inpoint);
+                LOGGER.fine("out: " + outpoint);
                 if (ArrayUtils.isNotEmpty(clicks)) {
                     for (int i = 0; i < clicks.length; i++) {
                         long duration = clicks[i].end() - clicks[i].start();
@@ -1215,7 +1215,7 @@ public class YassPlayer {
             long off;
 
             if (DEBUG) {
-                LOGGER.info("playAudio:" + playAudio);
+                LOGGER.fine("playAudio:" + playAudio);
             }
             if (hasPlaybackRenderer) {
                 playbackRenderer.setErrorMessage(null);
@@ -1552,7 +1552,7 @@ public class YassPlayer {
             Files.createDirectories(parentDir.toPath());
         }
         if (tempFile.isFile() && tempFile.length() > 0) {
-            LOGGER.info("YassPlayer: reusing cached temp audio " + tempFile.getAbsolutePath());
+            LOGGER.fine("YassPlayer: reusing cached temp audio " + tempFile.getAbsolutePath());
             return tempFile;
         }
         if (timeBase != yass.Timebase.NORMAL) {
@@ -1577,9 +1577,9 @@ public class YassPlayer {
         });
 
         Thread conversionThread = new Thread(() -> {
-            LOGGER.info("YassPlayer: Starting conversion of " + source + " to " + filename);
+            LOGGER.fine("YassPlayer: Starting conversion of " + source + " to " + filename);
             job.run();
-            LOGGER.info("YassPlayer: finished converting " + source + " to " + filename);
+            LOGGER.fine("YassPlayer: finished converting " + source + " to " + filename);
         }, "FFmpeg-Conversion-Thread");
 
         conversionThread.start();
@@ -1644,7 +1644,7 @@ public class YassPlayer {
                     try {
                         double r128Gain = Double.parseDouble(trackGain);
                         double gain = r128Gain / 256.0;
-                        LOGGER.info("Found R128_TRACK_GAIN tag: " + gain + " dB. Applying this gain.");
+                        LOGGER.fine("Found R128_TRACK_GAIN tag: " + gain + " dB. Applying this gain.");
                         return gain;
                     } catch (NumberFormatException e) {
                         LOGGER.warning("Could not parse R128_TRACK_GAIN value: " + trackGain);
@@ -1661,7 +1661,7 @@ public class YassPlayer {
                 try {
                     String numericPart = gainTag.toLowerCase().replace("db", "").trim();
                     double gain = Double.parseDouble(numericPart);
-                    LOGGER.info("Found ReplayGain tag: " + gain + " dB. Applying this gain.");
+                    LOGGER.fine("Found ReplayGain tag: " + gain + " dB. Applying this gain.");
                     return gain;
                 } catch (NumberFormatException e) {
                     LOGGER.warning("Could not parse ReplayGain value: " + gainTag);
@@ -1722,7 +1722,7 @@ public class YassPlayer {
             if (parts.length > 1) {
                 String gainStr = parts[1].replace("dB", "").trim();
                 double gain = Double.parseDouble(gainStr);
-                LOGGER.info("FFmpeg analysis: ReplayGain track_gain is " + gain + " dB.");
+                LOGGER.fine("FFmpeg analysis: ReplayGain track_gain is " + gain + " dB.");
                 return gain;
             }
         } catch (NumberFormatException e) {
@@ -1836,7 +1836,7 @@ public class YassPlayer {
             return MusicalKeyEnum.findKey(tag.getFirst(FieldKey.KEY));
         } catch (CannotReadException | IOException | TagException | ReadOnlyFileException |
                  InvalidAudioFrameException e) {
-            LOGGER.info("Could not determine key for " + filename);
+            LOGGER.fine("Could not determine key for " + filename);
         }
         return MusicalKeyEnum.UNDEFINED;
     }

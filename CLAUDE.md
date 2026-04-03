@@ -94,4 +94,4 @@ test/groovy/yass/     # Spock test specs
 
 ## Versioning
 
-The version is managed in `resources/version.properties` and filtered into the build via Maven resource filtering. Current release branch convention: `YYYY.N_release` (e.g., `2026.3_release`).
+The version is managed in `resources/version.properties` and filtered into the build via Maven resource filtering. Current release branch convention: `YYYY.N_release` (e.g., `2026.4_release`).
