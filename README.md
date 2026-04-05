@@ -2,6 +2,7 @@
 <meta name="keywords" content="Yass, Yass Reloaded, Karaoke, Karaoke Editor, Ultrastar, Ultrastar Deluxe, Song Editor, Lyrics Editor, Open Source, Java, Windows, macOS, Linux">
 
 # Yass Reloaded – Open-Source Karaoke Editor for UltraStar Songs
+Documentation: [https://doubledee73.github.io/Yass-Reloaded/](https://doubledee73.github.io/Yass-Reloaded/)
 
 ## What is Yass Reloaded?
 
