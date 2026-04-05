@@ -50,7 +50,10 @@
           buildPhase = ''
             runHook preBuild
             export HOME="$TMPDIR"
-            mvn -q clean package -DskipTests -Djavafx.platform=linux
+            mkdir -p "$TMPDIR/.m2/repository"
+            mvn -q \
+              -Dmaven.repo.local="$TMPDIR/.m2/repository" \
+              clean package -DskipTests -Djavafx.platform=linux
             runHook postBuild
           '';
 
