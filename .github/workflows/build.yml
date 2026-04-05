@@ -13,6 +13,7 @@ on:
         required: true
 env:
   JAVA_VERSION: "21"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   build:
@@ -45,7 +46,7 @@ jobs:
             artifact_type: dmg
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -147,7 +148,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Nix
         uses: cachix/install-nix-action@v30
