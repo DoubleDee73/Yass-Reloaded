@@ -22,8 +22,8 @@ package yass;
 import com.nexes.wizard.Wizard;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -87,9 +87,9 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 @Getter
 @Setter
@@ -7620,10 +7620,18 @@ public class YassActions implements DropTargetListener {
         }
         long maxMs = getLastNoteEndMs();
         long clampedMs = Math.max(0L, Math.min(requestedMs, maxMs > 0L ? maxMs : requestedMs));
-        sheet.setPlayerPosition(sheet.toTimeline(clampedMs));
-        if (table != null) {
-            table.updatePlayerPosition();
-            table.zoomPage();
+        int targetX = sheet.toTimeline(clampedMs);
+        sheet.setPlayerPosition(targetX);
+        Point currentView = sheet.getViewPosition();
+        Rectangle visible = sheet.getVisibleRect();
+        int visibleWidth = visible != null && visible.width > 0 ? visible.width : sheet.getWidth();
+        if (visibleWidth > 0) {
+            int left = currentView.x;
+            int right = currentView.x + visibleWidth;
+            if (targetX < left || targetX > right) {
+                int centeredX = Math.max(0, targetX - visibleWidth / 2);
+                sheet.setViewPosition(new Point(centeredX, currentView.y));
+            }
         }
         sheet.repaint();
     }
