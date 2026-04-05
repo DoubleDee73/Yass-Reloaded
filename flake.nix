@@ -21,15 +21,16 @@
           gtk3
           harfbuzz
           libGL
+          pango
+          zlib
+        ] ++ (with pkgs.xorg; [
           libX11
           libXcursor
           libXi
           libXrandr
           libXrender
           libXtst
-          pango
-          zlib
-        ];
+        ]);
       in {
         packages.default = pkgs.stdenv.mkDerivation {
           inherit pname version;
