@@ -54,11 +54,18 @@ import yass.renderer.YassSession;
 import yass.video.YassVideoDialog;
 
 import javax.sound.sampled.*;
+import javax.swing.*;
+import java.awt.SecondaryLoop;
+import java.awt.Toolkit;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -110,6 +117,8 @@ public class YassPlayer {
     private AudioFormat audioBytesFormat = null;
     private int audioBytesChannels = 2;
     private float audioBytesSampleRate = 44100;
+    private byte[] overlayAudioBytes;
+    private AudioFormat overlayAudioBytesFormat = null;
     public static final String USER_PATH = System.getProperty("user.home") + File.separator + ".yass" + File.separator;
     private Map<Integer, byte[]> LONG_NOTE_MAP;
     private Map<Integer, byte[]> SHORT_NOTE_MAP;
@@ -133,6 +142,8 @@ public class YassPlayer {
     private final BlockingQueue<Pair<byte[], Runnable>> sharedLineQueue = new LinkedBlockingQueue<>();
 
     private List<PitchData> pitchDataList;
+    private List<PitchData> rawPitchDataList;
+    private int pitchWaveformTranspose = 0;
     
     public void initNoteMap() {
         lastNote = null;
@@ -201,7 +212,7 @@ public class YassPlayer {
         return file;
     }
 
-    public static final String TEMP_WAV = USER_PATH + "temp.wav";
+    public static final String TEMP_WAV = "temp.wav";
 
     public YassPlayer(YassPlaybackRenderer s, YassProperties prop) {
         playbackRenderer = s;
@@ -231,7 +242,7 @@ public class YassPlayer {
      * @param t       The new capture value
      */
     public void setCapture(int t, String device, int channel) {
-        LOGGER.info("player " + t + " " + device + " (" + channel + ")");
+        LOGGER.fine("player " + t + " " + device + " (" + channel + ")");
         if (device == null) {
             playerdevice[t] = -1;
             playerchannel[t] = channel;
@@ -302,6 +313,10 @@ public class YassPlayer {
         return playbackRenderer;
     }
 
+    public String getFilename() {
+        return filename;
+    }
+
     /**
      * Sets the playbackRenderer attribute of the YassPlayer object
      *
@@ -329,7 +344,7 @@ public class YassPlayer {
         Mixer.Info[] mixerInfo = AudioSystem.getMixerInfo();
         for (int i = 0; i < mixerInfo.length; i++) {
 
-            LOGGER.info("Mixer[" + i + "]: \"" + mixerInfo[i].getName() + "\"");
+            LOGGER.fine("Mixer[" + i + "]: \"" + mixerInfo[i].getName() + "\"");
         }
     }
 
@@ -348,17 +363,17 @@ public class YassPlayer {
                     AudioFormat[] formats = ((DataLine.Info) aLineInfo)
                             .getFormats();
                     for (int j = 0; j < formats.length; j++) {
-                        LOGGER.info(indent + formats[j]);
+                        LOGGER.fine(indent + formats[j]);
                     }
                     numDumped++;
                 } else if (aLineInfo instanceof Port.Info) {
-                    LOGGER.info(indent + aLineInfo);
+                    LOGGER.fine(indent + aLineInfo);
                     numDumped++;
                 }
             }
         }
         if (numDumped == 0) {
-            LOGGER.info(indent + "none");
+            LOGGER.fine(indent + "none");
         }
     }
 
@@ -487,6 +502,7 @@ public class YassPlayer {
             return;
         }
         setPitchDataList(Collections.emptyList());
+        setRawPitchDataList(Collections.emptyList());
         fps = -1;
         try (AudioInputStream in = AudioSystem.getAudioInputStream(file)) {
             AudioFormat baseFormat = in.getFormat();
@@ -506,6 +522,29 @@ public class YassPlayer {
             }
         }
         pitchDataList = new ArrayList<>();
+        rawPitchDataList = new ArrayList<>();
+    }
+
+    /**
+     * Reloads audio bytes from an already-converted temp WAV file without clearing pitch data.
+     * Used when switching back to a previously loaded file to restore waveform amplitude display.
+     */
+    public void reloadAudioBytesOnly(File tempWavFile) {
+        if (tempWavFile == null || !tempWavFile.exists()) {
+            return;
+        }
+        try (AudioInputStream in = AudioSystem.getAudioInputStream(tempWavFile)) {
+            AudioFormat baseFormat = in.getFormat();
+            fps = baseFormat.getFrameRate();
+            audioBytesFormat = baseFormat;
+            audioBytesChannels = baseFormat.getChannels();
+            audioBytesSampleRate = baseFormat.getSampleRate();
+            audioBytes = writeByteArray(tempWavFile);
+            duration = (long) (in.getFrameLength() / baseFormat.getFrameRate() * 1000000);
+            openSharedLine(baseFormat);
+        } catch (Exception e) {
+            LOGGER.log(Level.INFO, "reloadAudioBytesOnly failed: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -547,7 +586,7 @@ public class YassPlayer {
                 }
                 memcache = bout.toByteArray();
                 cachedMP3 = filename;
-                LOGGER.info("MP3 cached.");
+                LOGGER.fine("MP3 cached.");
             } catch (Exception e) {
                 LOGGER.log(Level.INFO, e.getMessage(), e);
             } finally {
@@ -627,10 +666,45 @@ public class YassPlayer {
         if (filename == null) {
             return;
         }
+        playSelection(filename, in, out, clicks, timebase, 0);
+    }
+
+    public void playSelection(long in, long out, Click[] clicks, Timebase timebase, int fadeOutMs) {
+        if (filename == null) {
+            return;
+        }
+        playSelection(filename, in, out, clicks, timebase, fadeOutMs);
+    }
+
+    public void playSelection(String sourceOverride, long in, long out, Click[] clicks, Timebase timebase) {
+        playSelection(sourceOverride, in, out, clicks, timebase, 0);
+    }
+
+    public void playSelection(String sourceOverride, long in, long out, Click[] clicks, Timebase timebase, int fadeOutMs) {
+        String source = StringUtils.defaultIfBlank(sourceOverride, filename);
+        if (source == null) {
+            return;
+        }
+
+        String caller = "unknown";
+        StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+        if (stack != null && stack.length > 2) {
+            StackTraceElement frame = stack[2];
+            caller = frame.getClassName() + "#" + frame.getMethodName() + ":" + frame.getLineNumber();
+        }
+        LOGGER.fine("YassPlayer.playSelection source=" + source
+                + " inUs=" + in
+                + " outUs=" + out
+                + " timebase=" + timebase
+                + " fadeOutMs=" + fadeOutMs
+                + " caller=" + caller);
 
         interruptMP3();
+        // Keep logical playback position in sync immediately, even before the
+        // new playback thread has started rendering audio.
+        position = in;
 
-        player = new PlayThread(in, out, clicks, timebase);
+        player = new PlayThread(source, in, out, clicks, timebase, fadeOutMs);
         player.start();
     }
 
@@ -642,6 +716,15 @@ public class YassPlayer {
             sharedLineInterrupted = true;
             if (hasPlaybackRenderer) {
                 playbackRenderer.setPlaybackInterrupted(true);
+            }
+        }
+        // Drop any queued audio immediately so a subsequent resume cannot
+        // start with stale chunks from the previous playback position.
+        sharedLineQueue.clear();
+        if (sharedLine != null) {
+            try {
+                sharedLine.flush();
+            } catch (Exception ignored) {
             }
         }
         playThreadMap.clear();
@@ -774,6 +857,24 @@ public class YassPlayer {
     }
 
     /**
+     * Returns an estimate of currently buffered output latency in milliseconds.
+     * This helps UI renderers align visuals with what is actually audible.
+     */
+    public long getOutputLatencyMs() {
+        SourceDataLine line = sharedLine;
+        AudioFormat format = sharedLineFormat != null ? sharedLineFormat : audioBytesFormat;
+        if (line == null || format == null || !line.isOpen()) {
+            return 0L;
+        }
+        int frameSize = Math.max(1, format.getFrameSize());
+        float frameRate = Math.max(1f, format.getFrameRate());
+        int bufferedBytes = Math.max(0, line.getBufferSize() - line.available());
+        double bufferedFrames = bufferedBytes / (double) frameSize;
+        double latencyMs = (bufferedFrames / frameRate) * 1000.0;
+        return Math.max(0L, Math.round(latencyMs));
+    }
+
+    /**
      * Adds a feature to the PlayerListener attribute of the YassPlayer object
      *
      * @param p The feature to be added to the PlayerListener attribute
@@ -875,6 +976,27 @@ public class YassPlayer {
         return (int) (128 * data / 32768.0);
     }
 
+    public int getOverlayWaveFormAtMillis(double ms) {
+        if (overlayAudioBytes == null || overlayAudioBytesFormat == null) {
+            return 0;
+        }
+        int bytePosition = findByteAtMilli((int) ms, overlayAudioBytes, overlayAudioBytesFormat);
+        int data;
+        try {
+            byte lowLeft = overlayAudioBytes[bytePosition];
+            byte hiLeft = overlayAudioBytes[bytePosition + 1];
+            byte lowRight = overlayAudioBytes[bytePosition + 2];
+            byte hiRight = overlayAudioBytes[bytePosition + 3];
+
+            int dataLeft = (hiLeft << 8) | (lowLeft & 255);
+            int dataRight = (hiRight << 8) | (lowRight & 255);
+            data = (dataLeft + dataRight) / 2;
+        } catch (Exception e) {
+            data = 0;
+        }
+        return (int) (128 * data / 32768.0);
+    }
+
     public boolean isClicksEnabled() {
         return playClicks;
     }
@@ -910,20 +1032,68 @@ public class YassPlayer {
     }
 
     private int findByteAtMilli(int milli) {
-        int frameSize = audioBytesFormat.getFrameSize();
-        double bytesPerMillisecond = audioBytesFormat.getFrameRate() * frameSize / 1000;
-        int bytePos = Math.min(audioBytes.length - 1, (int) (milli * bytesPerMillisecond));
+        return findByteAtMilli(milli, audioBytes, audioBytesFormat);
+    }
+
+    private int findByteAtMilli(int milli, byte[] sourceBytes, AudioFormat sourceFormat) {
+        int frameSize = sourceFormat.getFrameSize();
+        double bytesPerMillisecond = sourceFormat.getFrameRate() * frameSize / 1000;
+        int bytePos = Math.min(sourceBytes.length - 1, (int) (milli * bytesPerMillisecond));
         if (bytePos % frameSize != 0) {
             bytePos = bytePos - (bytePos % frameSize);
         }
         return Math.max(0, bytePos);
     }
 
+    public boolean hasOverlayWaveform() {
+        return overlayAudioBytes != null && overlayAudioBytesFormat != null;
+    }
+
+    public void clearOverlayWaveform() {
+        overlayAudioBytes = null;
+        overlayAudioBytesFormat = null;
+    }
+
+    public void loadOverlayWaveform(String filename) {
+        clearOverlayWaveform();
+        if (StringUtils.isBlank(filename)) {
+            return;
+        }
+        File file;
+        try {
+            file = generateTemp(filename);
+        } catch (IOException e) {
+            LOGGER.log(Level.INFO, "Could not generate temp waveform overlay for " + filename, e);
+            return;
+        }
+        if (file == null || !file.exists()) {
+            file = new File(filename);
+        }
+        if (!file.exists()) {
+            return;
+        }
+        try (AudioInputStream in = AudioSystem.getAudioInputStream(file)) {
+            AudioFormat baseFormat = in.getFormat();
+            overlayAudioBytesFormat = baseFormat;
+            overlayAudioBytes = writeByteArray(file);
+        } catch (Exception e) {
+            clearOverlayWaveform();
+            LOGGER.log(Level.INFO, "Could not load overlay waveform for " + filename, e);
+        }
+    }
+
     private byte[] getAudioBytesInRange(int startMillis, int endMillis) {
-        int startByte = findByteAtMilli(startMillis);
-        int endByte = Math.max(startByte, findByteAtMilli(endMillis));
+        return getAudioBytesInRange(startMillis, endMillis, audioBytes, audioBytesFormat);
+    }
+
+    private byte[] getAudioBytesInRange(int startMillis, int endMillis, byte[] sourceBytes, AudioFormat sourceFormat) {
+        if (sourceBytes == null || sourceFormat == null || sourceBytes.length == 0) {
+            return new byte[0];
+        }
+        int startByte = findByteAtMilli(startMillis, sourceBytes, sourceFormat);
+        int endByte = Math.max(startByte, findByteAtMilli(endMillis, sourceBytes, sourceFormat));
         byte[] audioData = new byte[endByte - startByte];
-        System.arraycopy(audioBytes, startByte, audioData, 0, endByte - startByte);
+        System.arraycopy(sourceBytes, startByte, audioData, 0, endByte - startByte);
         return audioData;
     }
 
@@ -940,6 +1110,8 @@ public class YassPlayer {
         long in, out;
         Click[] clicks;
         Timebase timebase;
+        String source;
+        int fadeOutMs;
         /**
          * Constructor for the PlayThread object
          *
@@ -948,11 +1120,13 @@ public class YassPlayer {
          * @param clicks   Description of the Parameter
          * @param timebase Description of the Parameter
          */
-        public PlayThread(long in, long out, Click[] clicks, Timebase timebase) {
+        public PlayThread(String source, long in, long out, Click[] clicks, Timebase timebase, int fadeOutMs) {
+            this.source = source;
             this.in = in;
             this.out = out;
             this.clicks = clicks;
             this.timebase = timebase;
+            this.fadeOutMs = Math.max(0, fadeOutMs);
         }
 
         /**
@@ -975,35 +1149,51 @@ public class YassPlayer {
             finished = false;
             started = true;
             File mp3File;
-            if (timebase == Timebase.NORMAL) {
-                mp3File = new File(TEMP_WAV);
-                setPlayrate(yass.Timebase.NORMAL);
-            } else {
-                mp3File = new File(USER_PATH + timebase.id + "temp.wav");
-                if (!mp3File.exists()) {
-                    try {
-                        mp3File = generateTemp(USER_PATH + "temp.wav", timebase);
-                        setPlayrate(timebase);
-                    } catch (IOException e) {
-                        // Couldn't find slowed down ffmpeg conversion, we are using the ugly JavaFX-slow down
-                        setPlayrate(yass.Timebase.NORMAL);
-                    }
+            byte[] playbackAudioBytes = audioBytes;
+            AudioFormat playbackAudioFormat = audioBytesFormat;
+            long playbackDurationMicros = getDuration();
+            String playbackSource = StringUtils.defaultIfBlank(source, filename);
+            LOGGER.fine("PlayThread.playMP3 source=" + playbackSource + " requestedTimebase=" + timebase);
+            try {
+                if (timebase == Timebase.NORMAL) {
+                    mp3File = playbackSource.equals(filename) ? tempFile : generateTemp(playbackSource, Timebase.NORMAL);
                 } else {
-                    setPlayrate(timebase);
+                    mp3File = generateTemp(playbackSource, timebase);
                 }
+                setPlayrate(timebase == Timebase.NORMAL ? yass.Timebase.NORMAL : timebase);
+                LOGGER.fine("PlayThread.playMP3 usingFile=" + mp3File + " effectiveTimebase=" + getPlayrate());
+            } catch (IOException e) {
+                mp3File = tempFile;
+                // Couldn't generate the alternate ffmpeg conversion, so fall back to normal speed playback.
+                setPlayrate(yass.Timebase.NORMAL);
+                LOGGER.log(Level.FINE, "PlayThread.playMP3 falling back to normal speed for " + playbackSource, e);
             }
             if (!mp3File.exists()) {
                 finished = true;
                 return;
             } else {
-                if (audioBytes == null) {
-                    audioBytes = writeByteArray(mp3File);
+                if (timebase == Timebase.NORMAL) {
+                    if (audioBytes == null) {
+                        audioBytes = writeByteArray(mp3File);
+                    }
+                    playbackAudioBytes = audioBytes;
+                    playbackAudioFormat = audioBytesFormat;
+                } else {
+                    try (AudioInputStream in = AudioSystem.getAudioInputStream(mp3File)) {
+                        playbackAudioFormat = in.getFormat();
+                        playbackDurationMicros = (long) (in.getFrameLength() / playbackAudioFormat.getFrameRate() * 1000000);
+                    } catch (UnsupportedAudioFileException | IOException e) {
+                        LOGGER.log(Level.INFO, "Could not inspect slowed playback file " + mp3File, e);
+                        finished = true;
+                        return;
+                    }
+                    playbackAudioBytes = writeByteArray(mp3File);
                 }
             }
 
             if (DEBUG) {
-                LOGGER.info("in: " + inpoint);
-                LOGGER.info("out: " + outpoint);
+                LOGGER.fine("in: " + inpoint);
+                LOGGER.fine("out: " + outpoint);
                 if (ArrayUtils.isNotEmpty(clicks)) {
                     for (int i = 0; i < clicks.length; i++) {
                         long duration = clicks[i].end() - clicks[i].start();
@@ -1014,18 +1204,18 @@ public class YassPlayer {
                 }
             }
             double multiplier = getPlayrate().getMultiplier();
-            long duration = (long) (getDuration() * multiplier);
+            long duration = timebase == Timebase.NORMAL ? playbackDurationMicros : playbackDurationMicros;
             if (outpoint < 0 || outpoint > duration) {
                 outpoint = duration;
             } else {
-                outpoint = (long) (outpoint * multiplier);
+                outpoint = timebase == Timebase.NORMAL ? outpoint : (long) (outpoint * multiplier);
             }
-            int inMillis = (int) (inpoint * multiplier) / 1000;
+            int inMillis = (int) ((timebase == Timebase.NORMAL ? inpoint : (inpoint * multiplier))) / 1000;
             int outMillis = (int) outpoint / 1000;
             long off;
 
             if (DEBUG) {
-                LOGGER.info("playAudio:" + playAudio);
+                LOGGER.fine("playAudio:" + playAudio);
             }
             if (hasPlaybackRenderer) {
                 playbackRenderer.setErrorMessage(null);
@@ -1057,7 +1247,7 @@ public class YassPlayer {
                     playbackRenderer.setBackgroundImage(bgImage);
                 }
             }
-            if (audioBytes == null) {
+            if (playbackAudioBytes == null || playbackAudioFormat == null) {
                 playbackRenderer.setErrorMessage(I18.get("sheet_msg_still_loading"));
                 return;
             }
@@ -1075,14 +1265,18 @@ public class YassPlayer {
             }; 
             byte[] pianoAndClicks = createAudioStreamFromClicks(clicks, timebase.timerate, playClicks, midiEnabled, inpoint);
             byte[] audioData = getAudioBytesInRange(inMillis + (int) seekInOffsetMs,
-                                                    outMillis + (int) seekOutOffsetMs);
+                                                    outMillis + (int) seekOutOffsetMs,
+                                                    playbackAudioBytes, playbackAudioFormat);
             byte[] mixedAudio;
             if (playAudio) {
                 mixedAudio = mixAudioStereo(audioData, pianoAndClicks);
             } else {
                 mixedAudio = pianoAndClicks;
             }
-            playAudioData(mixedAudio, audioBytesFormat, audioData.length, onPlaybackStarted);
+            if (fadeOutMs > 0) {
+                mixedAudio = applyFadeOut(mixedAudio, playbackAudioFormat, fadeOutMs);
+            }
+            playAudioData(mixedAudio, playbackAudioFormat, audioData.length, onPlaybackStarted);
             try {
                 playbackStartLatch.await();
             } catch (InterruptedException e) {
@@ -1091,12 +1285,12 @@ public class YassPlayer {
             }
 
             long nanoStart = System.nanoTime() / 1000L; // Start timing AFTER audio has started
-            position = (long) (inpoint * multiplier);
+            position = timebase == Timebase.NORMAL ? inpoint : (long) (inpoint * multiplier);
 
             long lastms = System.nanoTime();
 
             if (sharedLineInterrupted) {
-                LOGGER.info("Playback interrupted.");
+                LOGGER.fine("Playback interrupted.");
             }
             while (!sharedLineInterrupted) {
                 long tempdiff = (System.nanoTime() / 1000L) - nanoStart;
@@ -1109,7 +1303,9 @@ public class YassPlayer {
                 }
 
                 if (hasPlaybackRenderer) {
-                    long currentMillis = (position / (long) (1000 * multiplier));
+                long currentMillis = timebase == Timebase.NORMAL
+                        ? (position / 1000L)
+                        : (position / (long) (1000 * multiplier));
                     YassSession session = playbackRenderer.getSession();
                     if (session != null) {
                         session.updateSession(currentMillis);
@@ -1194,7 +1390,7 @@ public class YassPlayer {
                     }
                 } catch (InterruptedException e) {
                     if (DEBUG)
-                        LOGGER.info("Playback renderer: interrupt.");
+                        LOGGER.fine("Playback renderer: interrupt.");
                     sharedLineInterrupted = true;
                 }
 
@@ -1292,13 +1488,39 @@ public class YassPlayer {
     }
 
     public File generateTemp(String source, Timebase timeBase) throws IOException {
-        String filename;
-        if (timeBase == yass.Timebase.NORMAL) {
-            filename = TEMP_WAV;
-        } else {
-            filename = USER_PATH + timeBase.getId() + "temp.wav";
+        return generateTemp(source, timeBase, resolveTempFilename(source, timeBase));
+    }
+
+    private String resolveTempFilename(String source, Timebase timeBase) throws IOException {
+        File sourceFile = new File(source);
+        File tempDir = getTempCacheDirectory();
+        Files.createDirectories(tempDir.toPath());
+        String hash = buildTempAudioHash(sourceFile, timeBase);
+        String suffix = timeBase == yass.Timebase.NORMAL ? "normal" : "speed-" + timeBase.getId();
+        return new File(tempDir, "audio-" + hash + "-" + suffix + ".wav").getAbsolutePath();
+    }
+
+    private File getTempCacheDirectory() {
+        String configured = properties != null ? properties.getProperty("temp-dir") : null;
+        File baseDir = StringUtils.isNotBlank(configured)
+                ? new File(configured)
+                : new File(USER_PATH, "temp");
+        return new File(baseDir, "audio-cache");
+    }
+
+    private String buildTempAudioHash(File sourceFile, Timebase timeBase) {
+        String fingerprint = sourceFile.getAbsolutePath() + "|" + sourceFile.length() + "|" + sourceFile.lastModified() + "|" + timeBase.getId();
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            byte[] bytes = digest.digest(fingerprint.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < Math.min(bytes.length, 8); i++) {
+                sb.append(String.format(Locale.ROOT, "%02x", bytes[i]));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException ex) {
+            return Integer.toHexString(fingerprint.hashCode());
         }
-        return generateTemp(source, timeBase, filename);
     }
 
     public File generateTemp(String source, Timebase timeBase, String filename) throws IOException {
@@ -1319,9 +1541,20 @@ public class YassPlayer {
         } else {
             durationNs = null;
         }
-        this.key = findKey();
+        MusicalKeyEnum detectedKey = findKey();
+        if (detectedKey != MusicalKeyEnum.UNDEFINED) {
+            this.key = detectedKey;
+        }
         replayGain = determineReplayGain(source);
         File tempFile = new File(filename);
+        File parentDir = tempFile.getParentFile();
+        if (parentDir != null) {
+            Files.createDirectories(parentDir.toPath());
+        }
+        if (tempFile.isFile() && tempFile.length() > 0) {
+            LOGGER.fine("YassPlayer: reusing cached temp audio " + tempFile.getAbsolutePath());
+            return tempFile;
+        }
         if (timeBase != yass.Timebase.NORMAL) {
             fFmpegBuilder.setAudioFilter(timeBase.getFilter());
         }
@@ -1344,34 +1577,55 @@ public class YassPlayer {
         });
 
         Thread conversionThread = new Thread(() -> {
-            LOGGER.info("YassPlayer: Starting conversion of " + source + " to " + filename);
+            LOGGER.fine("YassPlayer: Starting conversion of " + source + " to " + filename);
             job.run();
-            LOGGER.info("YassPlayer: finished converting " + source + " to " + filename);
+            LOGGER.fine("YassPlayer: finished converting " + source + " to " + filename);
         }, "FFmpeg-Conversion-Thread");
 
         conversionThread.start();
 
-        SplashFrame splashFrame = new SplashFrame();
-        splashFrame.setVisible(true); // Mach den Frame sofort sichtbar
-
-        // Aktualisiere den Fortschrittsbalken in einer Schleife, bis der Thread fertig ist
-        while (conversionThread.isAlive()) {
-            net.bramp.ffmpeg.progress.Progress progress = progressHolder.get();
-            if (progress != null && durationNs != null) {
-                double percentage = (progress.out_time_ns / durationNs) * 100;
-                splashFrame.updateProgress("Generating Temp file", (int) percentage);
+        String splashTitle = I18.get("create_lyrics_separate_transcribe_progress_convert");
+        String baseName = tempFile.getName();
+        String speedLabel = timeBase == yass.Timebase.NORMAL
+                ? "100%"
+                : Integer.toString((int) Math.round(timeBase.getTimerate() * 100)) + "%";
+        String initialLabel = splashTitle + " - " + baseName + " (" + speedLabel + ")";
+        SplashFrame splashFrame = new SplashFrame(splashTitle, initialLabel);
+        if (SwingUtilities.isEventDispatchThread()) {
+            SecondaryLoop loop = Toolkit.getDefaultToolkit().getSystemEventQueue().createSecondaryLoop();
+            javax.swing.Timer timer = new javax.swing.Timer(100, e -> {
+                net.bramp.ffmpeg.progress.Progress progress = progressHolder.get();
+                if (progress != null && durationNs != null) {
+                    double percentage = (progress.out_time_ns / durationNs) * 100;
+                    splashFrame.updateProgress(initialLabel, (int) percentage);
+                }
+                if (!conversionThread.isAlive()) {
+                    ((javax.swing.Timer) e.getSource()).stop();
+                    splashFrame.dispose();
+                    loop.exit();
+                }
+            });
+            timer.setRepeats(true);
+            splashFrame.setVisible(true);
+            timer.start();
+            loop.enter();
+        } else {
+            splashFrame.setVisible(true);
+            while (conversionThread.isAlive()) {
+                net.bramp.ffmpeg.progress.Progress progress = progressHolder.get();
+                if (progress != null && durationNs != null) {
+                    double percentage = (progress.out_time_ns / durationNs) * 100;
+                    splashFrame.updateProgress(initialLabel, (int) percentage);
+                }
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
-            try {
-                // Gib dem UI-Thread eine kurze Pause, um sich neu zu zeichnen
-                // und andere Events zu verarbeiten.
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break; // Schleife bei Interruption verlassen
-            }
+            splashFrame.dispose();
         }
-
-        splashFrame.dispose();
         return tempFile;
     }
 
@@ -1390,7 +1644,7 @@ public class YassPlayer {
                     try {
                         double r128Gain = Double.parseDouble(trackGain);
                         double gain = r128Gain / 256.0;
-                        LOGGER.info("Found R128_TRACK_GAIN tag: " + gain + " dB. Applying this gain.");
+                        LOGGER.fine("Found R128_TRACK_GAIN tag: " + gain + " dB. Applying this gain.");
                         return gain;
                     } catch (NumberFormatException e) {
                         LOGGER.warning("Could not parse R128_TRACK_GAIN value: " + trackGain);
@@ -1407,7 +1661,7 @@ public class YassPlayer {
                 try {
                     String numericPart = gainTag.toLowerCase().replace("db", "").trim();
                     double gain = Double.parseDouble(numericPart);
-                    LOGGER.info("Found ReplayGain tag: " + gain + " dB. Applying this gain.");
+                    LOGGER.fine("Found ReplayGain tag: " + gain + " dB. Applying this gain.");
                     return gain;
                 } catch (NumberFormatException e) {
                     LOGGER.warning("Could not parse ReplayGain value: " + gainTag);
@@ -1468,7 +1722,7 @@ public class YassPlayer {
             if (parts.length > 1) {
                 String gainStr = parts[1].replace("dB", "").trim();
                 double gain = Double.parseDouble(gainStr);
-                LOGGER.info("FFmpeg analysis: ReplayGain track_gain is " + gain + " dB.");
+                LOGGER.fine("FFmpeg analysis: ReplayGain track_gain is " + gain + " dB.");
                 return gain;
             }
         } catch (NumberFormatException e) {
@@ -1539,21 +1793,28 @@ public class YassPlayer {
         return key == null ? MusicalKeyEnum.UNDEFINED : key;
     }
 
+    public void setKey(MusicalKeyEnum musicalKeyEnum) {
+        this.key = musicalKeyEnum;
+    }
+
     public void saveKey(MusicalKeyEnum musicalKeyEnum) {
-        if (musicalKeyEnum == null || musicalKeyEnum == MusicalKeyEnum.UNDEFINED || musicalKeyEnum == getKey()) {
+        if (musicalKeyEnum == null || musicalKeyEnum == MusicalKeyEnum.UNDEFINED) {
             this.key = MusicalKeyEnum.UNDEFINED;
             return;
         }
+        MusicalKeyEnum previousKey = getKey();
         this.key = musicalKeyEnum;
-        AudioFile audioFile;
+        if (musicalKeyEnum == previousKey) {
+            return;
+        }
         try {
-            audioFile = AudioFileIO.read(new File(filename));
+            AudioFile audioFile = AudioFileIO.read(new File(filename));
             Tag tag = audioFile.getTagOrCreateAndSetDefault();
             tag.setField(FieldKey.KEY, musicalKeyEnum.getRelevantKey());
             audioFile.commit();
         } catch (CannotReadException | IOException | TagException | ReadOnlyFileException | InvalidAudioFrameException |
                  CannotWriteException e) {
-            throw new RuntimeException(e);
+            LOGGER.log(Level.WARNING, "Could not write musical key tag to audio file " + filename, e);
         }
     }
 
@@ -1575,7 +1836,7 @@ public class YassPlayer {
             return MusicalKeyEnum.findKey(tag.getFirst(FieldKey.KEY));
         } catch (CannotReadException | IOException | TagException | ReadOnlyFileException |
                  InvalidAudioFrameException e) {
-            LOGGER.info("Could not determine key for " + filename);
+            LOGGER.fine("Could not determine key for " + filename);
         }
         return MusicalKeyEnum.UNDEFINED;
     }
@@ -1604,6 +1865,7 @@ public class YassPlayer {
         }
         return result;
     }
+
 
     /**
      * Öffnet eine geteilte SourceDataLine mit dem aktuellen AudioFormat, falls noch nicht vorhanden.
@@ -1692,8 +1954,26 @@ public class YassPlayer {
     /**
      * Sets the audioEnabled attribute of the YassPlayer object
      */
-    public void playAudioData(byte[] audioData, AudioFormat audioFormat, int length, 
+    public void playAudioData(byte[] audioData, AudioFormat audioFormat, int length,
                               Runnable onStarted) {
+        if (audioData == null || audioFormat == null || length <= 0) {
+            LOGGER.fine("YassPlayer.playAudioData: no audio data queued");
+            if (onStarted != null) {
+                onStarted.run();
+            }
+            return;
+        }
+        int effectiveLength = Math.min(length, audioData.length);
+        if (effectiveLength <= 0) {
+            LOGGER.fine("YassPlayer.playAudioData: no audio data queued");
+            if (onStarted != null) {
+                onStarted.run();
+            }
+            return;
+        }
+        if (!isSharedLineOpen() || !audioFormat.matches(sharedLineFormat)) {
+            openSharedLine(audioFormat);
+        }
         if (isSharedLineOpen() && audioFormat.matches(sharedLineFormat)) {
             if (!sharedLine.isRunning()) {
                 sharedLine.start();
@@ -1702,8 +1982,11 @@ public class YassPlayer {
             int offset = 0;
             int chunkSize = 4096; // z.B.
             boolean firstChunk = true;
-            while (offset < length) {
-                int chunkLength = Math.min(chunkSize, length - offset);
+            while (offset < effectiveLength) {
+                int chunkLength = Math.min(chunkSize, effectiveLength - offset);
+                if (chunkLength <= 0) {
+                    break;
+                }
                 byte[] chunk = Arrays.copyOfRange(audioData, offset, offset + chunkLength);
                 Runnable callback = firstChunk ? onStarted : null;
                 try {
@@ -1715,7 +1998,10 @@ public class YassPlayer {
                 offset += chunkLength;
             }
         } else  {
-            LOGGER.info("YassPlayer.playAudioData: SourceDataLine not open");
+            LOGGER.fine("YassPlayer.playAudioData: SourceDataLine not open");
+            if (onStarted != null) {
+                onStarted.run();
+            }
         }
     }
 
@@ -1769,6 +2055,55 @@ public class YassPlayer {
 
     public boolean hasAudio() {
         return StringUtils.isNotEmpty(filename);
+    }
+
+    private byte[] applyFadeOut(byte[] audioData, AudioFormat audioFormat, int fadeOutMs) {
+        if (audioData == null || audioFormat == null || fadeOutMs <= 0) {
+            return audioData;
+        }
+        int frameSize = Math.max(1, audioFormat.getFrameSize());
+        float frameRate = audioFormat.getFrameRate();
+        if (frameRate <= 0) {
+            return audioData;
+        }
+        int totalFrames = audioData.length / frameSize;
+        int fadeFrames = Math.min(totalFrames, Math.max(1, Math.round(frameRate * fadeOutMs / 1000f)));
+        if (fadeFrames <= 0 || fadeFrames >= totalFrames) {
+            return audioData;
+        }
+
+        byte[] faded = Arrays.copyOf(audioData, audioData.length);
+        int channels = Math.max(1, audioFormat.getChannels());
+        int sampleSizeBytes = Math.max(1, audioFormat.getSampleSizeInBits() / 8);
+        if (sampleSizeBytes != 2 || audioFormat.isBigEndian()) {
+            for (int frame = totalFrames - fadeFrames; frame < totalFrames; frame++) {
+                double factor = (double) (totalFrames - frame) / fadeFrames;
+                int frameOffset = frame * frameSize;
+                for (int i = 0; i < frameSize && frameOffset + i < faded.length; i++) {
+                    faded[frameOffset + i] = (byte) Math.round(faded[frameOffset + i] * factor);
+                }
+            }
+            return faded;
+        }
+
+        for (int frame = totalFrames - fadeFrames; frame < totalFrames; frame++) {
+            double factor = (double) (totalFrames - frame) / fadeFrames;
+            int frameOffset = frame * frameSize;
+            for (int channel = 0; channel < channels; channel++) {
+                int sampleOffset = frameOffset + channel * sampleSizeBytes;
+                if (sampleOffset + 1 >= faded.length) {
+                    break;
+                }
+                short sample = ByteBuffer.wrap(faded, sampleOffset, 2)
+                        .order(ByteOrder.LITTLE_ENDIAN)
+                        .getShort();
+                short scaled = (short) Math.round(sample * factor);
+                ByteBuffer.wrap(faded, sampleOffset, 2)
+                        .order(ByteOrder.LITTLE_ENDIAN)
+                        .putShort(scaled);
+            }
+        }
+        return faded;
     }
 
     /**

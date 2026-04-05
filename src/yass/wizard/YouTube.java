@@ -19,24 +19,37 @@
 
 package yass.wizard;
 
-import com.jfposton.ytdlp.YtDlp;
-import com.jfposton.ytdlp.YtDlpCallback;
-import com.jfposton.ytdlp.YtDlpRequest;
-import org.apache.commons.lang3.StringUtils;
-import yass.I18;
-import yass.analysis.BpmDetector;
-import yass.options.YtDlpPanel;
+import static yass.wizard.CreateSongWizard.LOGGER;
 
-import javax.swing.*;
-import javax.swing.text.html.HTMLDocument;
-import java.awt.*;
+import java.awt.BorderLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
 import java.io.Serial;
 import java.net.URL;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import static yass.wizard.CreateSongWizard.LOGGER;
+import javax.swing.ImageIcon;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextField;
+import javax.swing.JTextPane;
+import javax.swing.SwingUtilities;
+import javax.swing.text.html.HTMLDocument;
+
+import org.apache.commons.lang3.StringUtils;
+
+import com.jfposton.ytdlp.YtDlp;
+import com.jfposton.ytdlp.YtDlpCallback;
+import com.jfposton.ytdlp.YtDlpRequest;
+
+import yass.I18;
+import yass.analysis.BpmDetector;
+import yass.options.YtDlpPanel;
 
 public class YouTube extends JPanel {
     /**
@@ -48,6 +61,8 @@ public class YouTube extends JPanel {
     private CreateSongWizard wizard;
     private JTextField youTubeUrl = null;
     private int fallbackLevel = 0; // 0=Strict, 1=Relaxed Codec, 2=Best
+    private File discoveredManualSubtitleFile = null;
+    private File discoveredAutoSubtitleFile = null;
 
     public YouTube(CreateSongWizard wizard) {
         this.wizard = wizard;
@@ -105,10 +120,84 @@ public class YouTube extends JPanel {
         if (StringUtils.isEmpty(getYouTubeUrl())) {
             return;
         }
-        fallbackLevel = 0; // Reset fallback level on new download
+        discoveredManualSubtitleFile = null;
+        discoveredAutoSubtitleFile = null;
+        File existing = findExistingDownloadByYouTubeId();
+        if (existing != null) {
+            int reuse = JOptionPane.showConfirmDialog(SwingUtilities.getWindowAncestor(this),
+                    I18.get("create_youtube_reuse_download_prompt"),
+                    I18.get("create_title"),
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.QUESTION_MESSAGE);
+            if (reuse == JOptionPane.YES_OPTION) {
+                wizard.setValue("filename", existing.getAbsolutePath());
+                return;
+            }
+        }
+        fallbackLevel = 0;
         startDownload(new DownloadSplashFrame(SwingUtilities.getWindowAncestor(this)));
     }
 
+    private File findExistingDownloadByYouTubeId() {
+        String youTubeId = extractYouTubeId(getYouTubeUrl());
+        if (StringUtils.isBlank(youTubeId)) {
+            return null;
+        }
+        File tempDir = new File(wizard.getProperty("temp-dir"));
+        if (!tempDir.isDirectory()) {
+            return null;
+        }
+        File[] matches = tempDir.listFiles(f -> f.isFile() && f.getName().contains(youTubeId));
+        if (matches == null || matches.length == 0) {
+            return null;
+        }
+        // Prefer audio-only stream file (pre-extraction intermediate)
+        for (File f : matches) {
+            if (f.getName().contains(".v_none.")) {
+                return f;
+            }
+        }
+        // Prefer files with known audio-only extensions (e.g. opus, mp3 after extraction)
+        for (File f : matches) {
+            String ext = f.getName().contains(".") ? f.getName().substring(f.getName().lastIndexOf('.') + 1).toLowerCase() : "";
+            if (AUDIO_EXTENSIONS.contains(ext)) {
+                return f;
+            }
+        }
+        return matches[0];
+    }
+
+    private File findBestAudioFileByYouTubeId() {
+        String youTubeId = extractYouTubeId(getYouTubeUrl());
+        if (StringUtils.isBlank(youTubeId)) {
+            return null;
+        }
+        File tempDir = new File(wizard.getProperty("temp-dir"));
+        if (!tempDir.isDirectory()) {
+            return null;
+        }
+        File[] matches = tempDir.listFiles(f -> f.isFile() && f.getName().contains(youTubeId));
+        if (matches == null || matches.length == 0) {
+            return null;
+        }
+        // Prefer files with known audio-only extensions
+        for (File f : matches) {
+            String ext = f.getName().contains(".") ? f.getName().substring(f.getName().lastIndexOf('.') + 1).toLowerCase() : "";
+            if (AUDIO_EXTENSIONS.contains(ext)) {
+                return f;
+            }
+        }
+        return null;
+    }
+
+    static String extractYouTubeId(String url) {
+        if (StringUtils.isBlank(url)) {
+            return null;
+        }
+        // Handles: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID
+        Matcher m = Pattern.compile("(?:v=|youtu\\.be/|/shorts/)([A-Za-z0-9_-]{11})").matcher(url);
+        return m.find() ? m.group(1) : null;
+    }
     private void startDownload(DownloadSplashFrame splash) {
         new Thread(() -> {
             try {
@@ -136,8 +225,8 @@ public class YouTube extends JPanel {
 
         YtDlpRequest request = new YtDlpRequest(getYouTubeUrl().trim());
         request.setDirectory(tempDir.getAbsolutePath());
-        request.setOption("output", "%(title)s.v_%(vcodec)s.a_%(acodec)s.%(ext)s");
-        
+        request.setOption("output", "%(title)s.%(id)s.v_%(vcodec)s.a_%(acodec)s.%(ext)s");
+
         if (fallbackLevel == 2) {
             LOGGER.info("Using fallback format 'best'");
             request.setOption("format", "best");
@@ -149,6 +238,11 @@ public class YouTube extends JPanel {
         if (StringUtils.isNotEmpty(audioFormat)) {
             request.setOption("extract-audio");
             request.setOption("audio-format", audioFormat);
+        }
+
+        String ffmpegPath = wizard.getYassProperties().getProperty("ffmpegPath");
+        if (StringUtils.isNotEmpty(ffmpegPath)) {
+            request.setOption("ffmpeg-location", ffmpegPath);
         }
 
         request.setOption("write-subs");
@@ -165,17 +259,17 @@ public class YouTube extends JPanel {
         String videoCodec = wizard.getProperty(YtDlpPanel.YTDLP_VIDEO_CODEC);
         String videoResolution = wizard.getProperty(YtDlpPanel.YTDLP_VIDEO_RESOLUTION);
         StringBuilder ytDlpArgs = new StringBuilder("bestvideo");
-        
+
         // Level 0: Use Codec if set
         if (fallbackLevel == 0 && StringUtils.isNotEmpty(videoCodec)) {
             ytDlpArgs.append(videoCodec);
         }
-        
+
         // Level 0 & 1: Use Resolution if set
         if (StringUtils.isNotEmpty(videoResolution)) {
             ytDlpArgs.append(videoResolution);
         }
-        
+
         ytDlpArgs.append(",bestaudio");
         String audioBitrate = wizard.getProperty(YtDlpPanel.YTDLP_AUDIO_BITRATE);
         if (StringUtils.isNotEmpty(audioBitrate)) {
@@ -229,9 +323,23 @@ public class YouTube extends JPanel {
         };
     }
 
+    private static final Set<String> AUDIO_EXTENSIONS =
+            Set.of("opus", "mp3", "aac", "ogg", "flac", "m4a", "wav");
+
     private void handleDownloadSuccess(DownloadSplashFrame splash) {
         LOGGER.info("yt-dlp process finished successfully.");
         renameDownloadedFiles();
+        applyPreferredSubtitleSelection();
+
+        // If filename wasn't set (e.g. yt-dlp skipped ExtractAudio because format already matched),
+        // scan the temp dir and pick the best audio file by YouTube ID.
+        if (StringUtils.isEmpty(wizard.getValue("filename"))) {
+            File audioFile = findBestAudioFileByYouTubeId();
+            if (audioFile != null) {
+                LOGGER.info("Auto-resolved filename from temp dir: " + audioFile.getAbsolutePath());
+                wizard.setValue("filename", audioFile.getAbsolutePath());
+            }
+        }
 
         String autoGenerated = wizard.getValue("subtitles-auto-generated");
         if ("true".equals(autoGenerated)) {
@@ -246,13 +354,23 @@ public class YouTube extends JPanel {
     private void handleDownloadFailure(int exitCode, String error, DownloadSplashFrame splash) {
         if (fallbackLevel < 2 && error != null && error.contains("Requested format is not available")) {
             fallbackLevel++;
-            String msg = (fallbackLevel == 1) 
-                ? "Requested format not available. Retrying with relaxed codec constraints..." 
+            String msg = (fallbackLevel == 1)
+                ? "Requested format not available. Retrying with relaxed codec constraints..."
                 : "Requested format not available. Retrying with fallback format 'best'...";
-            
+
             LOGGER.warning(msg);
             splash.appendText(msg);
             startDownload(splash);
+            return;
+        }
+
+        // If ffmpeg was not found for merging but the media files were already downloaded,
+        // treat this as a success — the files exist and the merge error is a false failure.
+        if (error != null && error.contains("ffprobe and ffmpeg not found")
+                && findExistingDownloadByYouTubeId() != null) {
+            LOGGER.warning("ffmpeg not found for merging, but media files already exist. Treating as success.");
+            handleDownloadSuccess(splash);
+            splash.enableCloseButton();
             return;
         }
 
@@ -303,11 +421,15 @@ public class YouTube extends JPanel {
             wizard.setValue("filename", new File(tempDir, relativePath).getAbsolutePath());
         } else if (line.contains("[info] Writing video automatic subtitles to:")) {
             String relativePath = line.substring(line.indexOf(":") + 2).trim();
-            wizard.setValue("subtitle", new File(tempDir, relativePath).getAbsolutePath());
-            wizard.setValue("subtitles-auto-generated", "true");
+            discoveredAutoSubtitleFile = new File(tempDir, relativePath);
+            if (discoveredManualSubtitleFile == null) {
+                wizard.setValue("subtitle", discoveredAutoSubtitleFile.getAbsolutePath());
+                wizard.setValue("subtitles-auto-generated", "true");
+            }
         } else if (line.contains("[info] Writing video subtitles to:")) {
             String relativePath = line.substring(line.indexOf(":") + 2).trim();
-            wizard.setValue("subtitle", new File(tempDir, relativePath).getAbsolutePath());
+            discoveredManualSubtitleFile = new File(tempDir, relativePath);
+            wizard.setValue("subtitle", discoveredManualSubtitleFile.getAbsolutePath());
             wizard.setValue("subtitles-auto-generated", "false");
         } else if (line.contains("[download] Destination:")) {
             String relativePath = line.substring(line.indexOf(":") + 2).trim();
@@ -357,6 +479,11 @@ public class YouTube extends JPanel {
         // This regex removes the ".v_...a_..." part from the filename.
         // The non-greedy `.*?` is used to correctly handle video codec names that may contain dots.
         String newFilename = filename.replaceAll("\\.v_.*?\\.a_.*?\\.", ".");
+        String youTubeId = extractYouTubeId(getYouTubeUrl());
+        if (StringUtils.isNotBlank(youTubeId)) {
+            newFilename = newFilename.replace("." + youTubeId + ".", ".");
+            newFilename = newFilename.replace("." + youTubeId, "");
+        }
 
         if (filename.equals(newFilename)) {
             return; // No change needed
@@ -374,4 +501,25 @@ public class YouTube extends JPanel {
             LOGGER.warning("Could not rename file " + oldPath + " to " + newFilename);
         }
     }
+
+    private void applyPreferredSubtitleSelection() {
+        if (discoveredManualSubtitleFile != null && discoveredManualSubtitleFile.isFile()) {
+            wizard.setValue("subtitle", discoveredManualSubtitleFile.getAbsolutePath());
+            wizard.setValue("subtitles-auto-generated", "false");
+            return;
+        }
+        if (discoveredAutoSubtitleFile != null && discoveredAutoSubtitleFile.isFile()) {
+            wizard.setValue("subtitle", discoveredAutoSubtitleFile.getAbsolutePath());
+            wizard.setValue("subtitles-auto-generated", "true");
+            return;
+        }
+        // Preserve existing subtitle if already set and valid.
+        String existingSubtitle = wizard.getValue("subtitle");
+        if (StringUtils.isNotBlank(existingSubtitle) && new File(existingSubtitle).isFile()) {
+            return;
+        }
+        wizard.setValue("subtitle", "");
+        wizard.setValue("subtitles-auto-generated", "");
+    }
 }
+

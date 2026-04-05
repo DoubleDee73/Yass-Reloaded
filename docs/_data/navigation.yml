@@ -1,0 +1,37 @@
+sections:
+  - title: Getting Started
+    links:
+      - title: Home
+        url: /
+      - title: Installation
+        url: /installation.html
+      - title: Quick Start
+        url: /quick-start.html
+      - title: Settings
+        url: /settings/overview.html
+  - title: Editor
+    links:
+      - title: Song Editor
+        url: /editor/overview.html
+      - title: Note and Lyrics Editing
+        url: /editor/note-editing.html
+      - title: Absolute Pitch View
+        url: /editor/absolute-pitch-view.html
+      - title: Keyboard Shortcuts
+        url: /editor/keyboard-shortcuts.html
+      - title: Recording and Tapping
+        url: /recording/tapping.html
+  - title: Tools
+    links:
+      - title: External Tools
+        url: /tools/overview.html
+      - title: Wizard
+        url: /wizard/overview.html
+      - title: Library
+        url: /library/overview.html
+  - title: Reference
+    links:
+      - title: FAQ
+        url: /reference/faq.html
+      - title: Troubleshooting
+        url: /reference/troubleshooting.html

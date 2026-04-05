@@ -28,10 +28,6 @@ import javafx.scene.media.MediaPlayer;
 import javafx.scene.media.MediaView;
 import javafx.util.Duration;
 import net.bramp.ffmpeg.FFmpeg;
-import net.bramp.ffmpeg.FFprobe;
-import net.bramp.ffmpeg.builder.FFmpegBuilder;
-import net.bramp.ffmpeg.probe.FFmpegProbeResult;
-import net.bramp.ffmpeg.probe.FFmpegStream;
 import org.apache.commons.lang3.StringUtils;
 import yass.*;
 import yass.ffmpeg.FFMPEGLocator;
@@ -51,8 +47,17 @@ import java.awt.event.ComponentEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -88,9 +93,17 @@ public class YassVideoDialog extends JDialog {
             "(?:youtube\\.com/(?:watch\\?v=|shorts/|embed/)|youtu\\.be/)([A-Za-z0-9_-]{11})");
     private long lastUiUpdateNs   = 0;
     private long lastSeekUpdateNs = 0;
+    private final AtomicInteger videoLoadGeneration = new AtomicInteger();
+    private volatile VideoLoadTask currentVideoLoadTask;
+    private volatile String failedVideoPath;
+    private JDialog videoLoadDialog;
+    private JLabel videoLoadStatusLabel;
+    private JButton videoLoadCancelButton;
 
     /** Logical playhead position in seconds, updated immediately on stepMs so rapid key presses accumulate correctly. */
     private double logicalPositionSeconds = 0;
+
+    private static final long VIDEO_TRANSCODE_TIMEOUT_MS = 60L * 60L * 1000L;
 
     public YassVideoDialog(Frame owner, YassPlayer yassPlayer, YassActions yassActions) {
         super(owner, "Video Preview", false); // Non-modal
@@ -310,6 +323,7 @@ public class YassVideoDialog extends JDialog {
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
+                cancelCurrentVideoLoad();
                 stop();
                 Platform.runLater(() -> {
                     if (mediaPlayer != null) {
@@ -659,8 +673,11 @@ public class YassVideoDialog extends JDialog {
                         }
                     }
                 } else {
-                    // Try to recover if mediaPlayer is null but we have a video file
-                    if (video != null && video.exists()) {
+                    // Avoid automatic reload loops after failed/cancelled video loads.
+                    if (video != null
+                            && video.exists()
+                            && currentVideoLoadTask == null
+                            && !video.getAbsolutePath().equalsIgnoreCase(StringUtils.defaultString(failedVideoPath))) {
                         loadVideoFile(video.getAbsolutePath());
                     }
                 }
@@ -669,18 +686,13 @@ public class YassVideoDialog extends JDialog {
     }
 
     public void closeVideo() {
+        cancelCurrentVideoLoad();
         stop();
         video = null;
         SwingUtilities.invokeLater(() -> videoFile.setText(""));
     }
 
-    private static final int MAX_RELOAD_ATTEMPTS = 2;
-
     private void loadVideoFile(String path) {
-        loadVideoFile(path, 0);
-    }
-
-    private void loadVideoFile(String path, int attempt) {
         if (StringUtils.isEmpty(path)) {
             return;
         }
@@ -689,6 +701,12 @@ public class YassVideoDialog extends JDialog {
             SwingUtilities.invokeLater(() -> videoFile.setText(""));
             return;
         }
+
+        cancelCurrentVideoLoad();
+        failedVideoPath = null;
+        int generation = videoLoadGeneration.incrementAndGet();
+        VideoLoadTask task = new VideoLoadTask(generation, file.getAbsolutePath());
+        currentVideoLoadTask = task;
 
         // Tear down the existing player on the FX thread first, then hand off to a
         // background thread for the blocking ffprobe/ffmpeg work.
@@ -704,54 +722,33 @@ public class YassVideoDialog extends JDialog {
         SwingUtilities.invokeLater(() -> {
             videoFile.setText(file.getName());
             setTitle(I18.get("video_dialog_title") + " - " + file.getName());
+            setVideoControlsEnabled(false);
+            showVideoLoadDialog(task, I18.get("video_dialog_loading_open"));
         });
 
         Thread.ofVirtual().name("yass-video-loader").start(() -> {
             try {
-                File mediaFile = needsTransCoding(path) ? transcodeToTempMp4(path) : file;
+                File mediaFile = prepareInitialPlaybackFile(file, task);
+                task.ensureActive();
                 Platform.runLater(() -> {
-                    initMediaPlayer(mediaFile);
-
-                    mediaPlayer.setOnError(() -> {
-                        MediaPlayer failed = mediaPlayer;
-                        String errorMessage = failed.getError() != null ? failed.getError().getMessage() : "unknown error";
-                        Platform.runLater(() -> {
-                            failed.dispose();
-                            mediaPlayer = null;
-                            jfxPanel.setScene(null);
-                        });
-                        Thread.ofVirtual().name("yass-video-error-transcode").start(() -> {
-                            try {
-                                File fallback = transcodeToTempMp4(path);
-                                Platform.runLater(() -> initMediaPlayer(fallback));
-                            } catch (Exception ex) {
-                                LOGGER.log(Level.SEVERE, "Fallback transcode failed: " + errorMessage, ex);
-                                SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
-                                        "Media Error: " + errorMessage));
-                            }
-                        });
-                    });
-
-                    mediaPlayer.setOnHalted(() -> {
-                        if (attempt >= MAX_RELOAD_ATTEMPTS) {
-                            LOGGER.log(Level.SEVERE, "MediaPlayer halted after " + attempt + " reload attempt(s), giving up: " + path);
-                            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
-                                    I18.get("video_dialog_halted_error")));
-                            return;
-                        }
-                        LOGGER.log(Level.WARNING, "MediaPlayer halted, reload attempt " + (attempt + 1) + " of " + MAX_RELOAD_ATTEMPTS + ": " + path);
-                        loadVideoFile(path, attempt + 1);
-                    });
+                    if (!task.isActive()) {
+                        return;
+                    }
+                    initMediaPlayer(mediaFile, task);
                 });
+            } catch (CancellationException ignored) {
+                LOGGER.fine("Cancelled video load for " + path);
             } catch (Exception e) {
                 LOGGER.log(Level.SEVERE, "Error loading video: " + path, e);
-                SwingUtilities.invokeLater(
-                        () -> JOptionPane.showMessageDialog(this, "Error loading video: " + e.getMessage()));
+                handleVideoLoadFailure(task, path, e);
             }
         });
     }
 
-    private void initMediaPlayer(File file) {
+    private void initMediaPlayer(File file, VideoLoadTask task) {
+        if (!task.isActive()) {
+            return;
+        }
         Media media = new Media(file.toURI().toString());
         mediaPlayer = new MediaPlayer(media);
         mediaPlayer.setAutoPlay(false);
@@ -769,81 +766,373 @@ public class YassVideoDialog extends JDialog {
         SwingUtilities.invokeLater(() -> jfxPanel.setScene(scene));
 
         mediaPlayer.setOnReady(() -> {
+            if (!task.isActive()) {
+                return;
+            }
             videoDurationSeconds = media.getDuration().toSeconds();
+            failedVideoPath = null;
+            finishVideoLoad(task);
             SwingUtilities.invokeLater(() -> {
                 gapSpinner.setDuration((int) (videoDurationSeconds * 1000));
                 timeSlider.setEnabled(true);
             });
         });
+        mediaPlayer.setOnError(() -> handleMediaPlaybackFailure(task,
+                                                                file,
+                                                                new IOException(getMediaPlayerErrorMessage(mediaPlayer))));
+        mediaPlayer.setOnHalted(() -> handleMediaPlaybackFailure(task,
+                                                                 file,
+                                                                 new IOException(I18.get("video_dialog_halted_error"))));
     }
 
-    private boolean needsTransCoding(String path) throws IOException {
-        FFprobe ffprobe = FFMPEGLocator.getInstance().getFfprobe();
-        FFmpegProbeResult probe = ffprobe.probe(path);
-
-        FFmpegStream videoStream = probe.getStreams().stream()
-                                 .filter(s -> s.codec_type == FFmpegStream.CodecType.VIDEO)
-                                 .findFirst()
-                                 .orElse(null);
-
-        if (videoStream == null || videoStream.codec_name == null) {
-            return true;
+    private File prepareInitialPlaybackFile(File file, VideoLoadTask task) throws IOException {
+        File cacheFile = getCachedVideoFile(file.getAbsolutePath());
+        task.setCacheFile(cacheFile);
+        if (cacheFile.isFile() && cacheFile.length() > 0) {
+            LOGGER.info("Reusing cached transcoded video " + cacheFile.getAbsolutePath());
+            task.setCurrentPlaybackFile(cacheFile);
+            task.setUsedCachedFile(true);
+            updateVideoLoadDialog(task, I18.get("video_dialog_loading_cached"));
+            return cacheFile;
         }
-
-        if (!"h264".equalsIgnoreCase(videoStream.codec_name)) {
-            return true;
-        }
-
-        if (videoStream.pix_fmt != null) {
-            String pix = videoStream.pix_fmt.toLowerCase();
-            if (!pix.contains("yuv420p") && !pix.contains("yuvj420p")) {
-                return true;
-            }
-        }
-
-        if (probe.getFormat() != null && probe.getFormat().format_name != null) {
-            String format = probe.getFormat().format_name.toLowerCase();
-            if (!format.contains("mp4") && !format.contains("mov")) {
-                return true;
-            }
-        }
-
-        String audioCodec = probe.getStreams().stream()
-                                 .filter(s -> s.codec_type == FFmpegStream.CodecType.AUDIO)
-                                 .map(s -> s.codec_name)
-                                 .findFirst()
-                                 .orElse(null);
-
-        if (audioCodec != null) {
-            switch (audioCodec.toLowerCase()) {
-                case "opus", "vorbis", "flac":
-                    return true;
-            }
-        }
-
-        return false;
+        task.setCurrentPlaybackFile(file);
+        task.setUsedCachedFile(false);
+        updateVideoLoadDialog(task, I18.get("video_dialog_loading_open"));
+        return file;
     }
 
-    private File transcodeToTempMp4(String inputPath) throws IOException {
+    private File transcodeToTempMp4(String inputPath, VideoLoadTask task) throws IOException {
         FFmpeg ffmpeg = FFMPEGLocator.getInstance().getFfmpeg();
-        File tempFile = new File(YassPlayer.USER_PATH, "yass_video_temp.mp4");
-        FFmpegBuilder builder = new FFmpegBuilder()
-                .setInput(inputPath)
-                .overrideOutputFiles(true)
-                .addOutput(tempFile.getAbsolutePath())
-                .setFormat("mp4")
-                .setVideoCodec("libx264")
-                .addExtraArgs("-an")
-                .addExtraArgs("-preset", "ultrafast")
-                .addExtraArgs("-tune", "zerolatency")
-                .addExtraArgs("-crf", "23")
-                .addExtraArgs("-pix_fmt", "yuv420p")
-                .addExtraArgs("-profile:v", "baseline")
-                .addExtraArgs("-level", "3.0")
-                .addExtraArgs("-movflags", "+faststart")
-                .done();
-        ffmpeg.run(builder);
+        if (ffmpeg == null) {
+            throw new IOException("FFmpeg not configured");
+        }
+        File tempDir = new File(YassPlayer.USER_PATH, "temp");
+        Files.createDirectories(tempDir.toPath());
+        File tempFile = new File(tempDir, "video-" + buildVideoTranscodeHash(inputPath) + ".mp4");
+
+        ProcessBuilder builder = new ProcessBuilder(
+                ffmpeg.getPath(),
+                "-y",
+                "-i", inputPath,
+                "-an",
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-tune", "zerolatency",
+                "-crf", "23",
+                "-pix_fmt", "yuv420p",
+                "-profile:v", "baseline",
+                "-level", "3.0",
+                "-movflags", "+faststart",
+                tempFile.getAbsolutePath());
+        CommandResult result = runProcess(builder,
+                                          VIDEO_TRANSCODE_TIMEOUT_MS,
+                                          "Timed out while transcoding video.",
+                                          task);
+        if (result.exitCode != 0 || !tempFile.exists() || tempFile.length() == 0) {
+            throw new IOException("FFmpeg transcoding failed (" + result.exitCode + "): " + result.output);
+        }
         return tempFile;
+    }
+
+    private CommandResult runProcess(ProcessBuilder builder,
+                                     long timeoutMillis,
+                                     String timeoutMessage,
+                                     VideoLoadTask task) throws IOException {
+        builder.redirectErrorStream(true);
+        Process process = builder.start();
+        task.registerProcess(process);
+
+        StringBuilder output = new StringBuilder();
+        Thread collector = Thread.ofVirtual().name("yass-video-process-output").start(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    synchronized (output) {
+                        output.append(line).append(System.lineSeparator());
+                    }
+                }
+            } catch (IOException ignored) {
+                if (process.isAlive()) {
+                    LOGGER.log(Level.FINE, "Could not read process output", ignored);
+                }
+            }
+        });
+
+        try {
+            boolean finished = process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                throw new IOException(timeoutMessage);
+            }
+            try {
+                collector.join(2_000L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while reading process output", e);
+            }
+            task.ensureActive();
+            synchronized (output) {
+                return new CommandResult(process.exitValue(), output.toString());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            process.destroyForcibly();
+            throw new IOException("Interrupted while waiting for process", e);
+        } finally {
+            task.clearProcess(process);
+        }
+    }
+
+    private void handleVideoLoadFailure(VideoLoadTask task, String path, Exception e) {
+        if (e instanceof CancellationException || !task.isActive()) {
+            finishVideoLoad(task);
+            return;
+        }
+
+        failedVideoPath = new File(path).getAbsolutePath();
+        Platform.runLater(() -> {
+            if (mediaPlayer != null) {
+                mediaPlayer.dispose();
+                mediaPlayer = null;
+            }
+            jfxPanel.setScene(null);
+        });
+        finishVideoLoad(task);
+        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
+                                                                       I18.get("video_dialog_loading_failed") + " " + e.getMessage(),
+                                                                       I18.get("video_dialog_loading_failed_title"),
+                                                                       JOptionPane.ERROR_MESSAGE));
+    }
+
+    private void handleMediaPlaybackFailure(VideoLoadTask task, File attemptedFile, Exception e) {
+        if (e instanceof CancellationException || !task.isActive()) {
+            finishVideoLoad(task);
+            return;
+        }
+
+        if (!task.hasTranscodeAttempted()) {
+            task.markTranscodeAttempted();
+            Platform.runLater(() -> {
+                if (mediaPlayer != null) {
+                    mediaPlayer.dispose();
+                    mediaPlayer = null;
+                }
+                jfxPanel.setScene(null);
+            });
+            updateVideoLoadDialog(task, I18.get("video_dialog_loading_transcode"));
+            Thread.ofVirtual().name("yass-video-transcode-fallback").start(() -> {
+                try {
+                    File transcoded = transcodeToTempMp4(task.path, task);
+                    task.ensureActive();
+                    task.setCurrentPlaybackFile(transcoded);
+                    task.setUsedCachedFile(true);
+                    Platform.runLater(() -> {
+                        if (!task.isActive()) {
+                            return;
+                        }
+                        initMediaPlayer(transcoded, task);
+                    });
+                } catch (CancellationException ignored) {
+                    LOGGER.fine("Cancelled video transcode for " + task.path);
+                } catch (Exception ex) {
+                    LOGGER.log(Level.SEVERE, "Video transcode fallback failed: " + task.path, ex);
+                    handleVideoLoadFailure(task, task.path, ex);
+                }
+            });
+            return;
+        }
+
+        String attempted = attemptedFile != null ? attemptedFile.getAbsolutePath() : task.path;
+        LOGGER.log(Level.SEVERE, "Video playback failed after transcode fallback: " + attempted, e);
+        handleVideoLoadFailure(task, attempted, e);
+    }
+
+    private String getMediaPlayerErrorMessage(MediaPlayer player) {
+        if (player == null || player.getError() == null || StringUtils.isBlank(player.getError().getMessage())) {
+            return I18.get("video_dialog_loading_failed_unknown");
+        }
+        return player.getError().getMessage();
+    }
+
+    private void finishVideoLoad(VideoLoadTask task) {
+        if (currentVideoLoadTask != task) {
+            return;
+        }
+        currentVideoLoadTask = null;
+        SwingUtilities.invokeLater(() -> {
+            hideVideoLoadDialog(task);
+            setVideoControlsEnabled(mediaPlayer != null);
+        });
+    }
+
+    private void cancelCurrentVideoLoad() {
+        VideoLoadTask task = currentVideoLoadTask;
+        if (task != null) {
+            task.cancel();
+            failedVideoPath = task.path;
+            currentVideoLoadTask = null;
+        }
+        SwingUtilities.invokeLater(() -> {
+            hideVideoLoadDialog(task);
+            setVideoControlsEnabled(mediaPlayer != null);
+        });
+    }
+
+    private void setVideoControlsEnabled(boolean enabled) {
+        playPauseButton.setEnabled(enabled);
+        timeSlider.setEnabled(enabled && videoDurationSeconds > 0);
+        gapSpinner.getSpinner().setEnabled(enabled);
+    }
+
+    private void showVideoLoadDialog(VideoLoadTask task, String message) {
+        if (videoLoadDialog == null) {
+            videoLoadDialog = new JDialog(this, I18.get("video_dialog_loading_title"), Dialog.ModalityType.MODELESS);
+            videoLoadDialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+            videoLoadDialog.setLayout(new BorderLayout(10, 10));
+
+            JPanel content = new JPanel(new BorderLayout(10, 10));
+            content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+            videoLoadStatusLabel = new JLabel(message);
+            JProgressBar progressBar = new JProgressBar();
+            progressBar.setIndeterminate(true);
+            content.add(videoLoadStatusLabel, BorderLayout.NORTH);
+            content.add(progressBar, BorderLayout.CENTER);
+
+            videoLoadCancelButton = new JButton(I18.get("wizard_cancel"));
+            videoLoadCancelButton.addActionListener(e -> cancelCurrentVideoLoad());
+            JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+            buttons.add(videoLoadCancelButton);
+            content.add(buttons, BorderLayout.SOUTH);
+
+            videoLoadDialog.add(content, BorderLayout.CENTER);
+            videoLoadDialog.pack();
+            videoLoadDialog.setResizable(false);
+            videoLoadDialog.setLocationRelativeTo(this);
+        }
+
+        videoLoadDialog.setTitle(I18.get("video_dialog_loading_title"));
+        videoLoadStatusLabel.setText(message);
+        videoLoadCancelButton.setEnabled(true);
+        videoLoadDialog.setLocationRelativeTo(this);
+        if (!videoLoadDialog.isVisible() && task != null && task.isActive()) {
+            videoLoadDialog.setVisible(true);
+        }
+    }
+
+    private File getCachedVideoFile(String inputPath) throws IOException {
+        File tempDir = new File(YassPlayer.USER_PATH, "temp");
+        Files.createDirectories(tempDir.toPath());
+        return new File(tempDir, "video-" + buildVideoTranscodeHash(inputPath) + ".mp4");
+    }
+
+    private void updateVideoLoadDialog(VideoLoadTask task, String message) {
+        SwingUtilities.invokeLater(() -> {
+            if (task.isActive() && videoLoadDialog != null && videoLoadStatusLabel != null) {
+                videoLoadStatusLabel.setText(message);
+                videoLoadDialog.pack();
+                videoLoadDialog.setLocationRelativeTo(this);
+            }
+        });
+    }
+
+    private void hideVideoLoadDialog(VideoLoadTask task) {
+        if (videoLoadDialog != null) {
+            videoLoadDialog.setVisible(false);
+        }
+    }
+
+    private static final class CommandResult {
+        private final int exitCode;
+        private final String output;
+
+        private CommandResult(int exitCode, String output) {
+            this.exitCode = exitCode;
+            this.output = output;
+        }
+    }
+
+    private static final class VideoLoadTask {
+        private final int generation;
+        private final String path;
+        private volatile boolean cancelled;
+        private volatile Process process;
+        private volatile File cacheFile;
+        private volatile File currentPlaybackFile;
+        private volatile boolean usedCachedFile;
+        private volatile boolean transcodeAttempted;
+
+        private VideoLoadTask(int generation, String path) {
+            this.generation = generation;
+            this.path = path;
+        }
+
+        private boolean isActive() {
+            return !cancelled;
+        }
+
+        private void ensureActive() {
+            if (cancelled) {
+                throw new CancellationException("Video load was cancelled for " + path + " (" + generation + ")");
+            }
+        }
+
+        private void registerProcess(Process process) {
+            this.process = process;
+            if (cancelled && process != null) {
+                process.destroyForcibly();
+            }
+        }
+
+        private void clearProcess(Process process) {
+            if (this.process == process) {
+                this.process = null;
+            }
+        }
+
+        private void cancel() {
+            cancelled = true;
+            Process running = process;
+            if (running != null) {
+                running.destroyForcibly();
+            }
+        }
+
+        private boolean hasTranscodeAttempted() {
+            return transcodeAttempted;
+        }
+
+        private void markTranscodeAttempted() {
+            transcodeAttempted = true;
+        }
+
+        private void setCacheFile(File cacheFile) {
+            this.cacheFile = cacheFile;
+        }
+
+        private void setCurrentPlaybackFile(File currentPlaybackFile) {
+            this.currentPlaybackFile = currentPlaybackFile;
+        }
+
+        private void setUsedCachedFile(boolean usedCachedFile) {
+            this.usedCachedFile = usedCachedFile;
+        }
+    }
+
+    private String buildVideoTranscodeHash(String inputPath) {
+        File sourceFile = new File(inputPath);
+        String fingerprint = sourceFile.getAbsolutePath() + "|" + sourceFile.length() + "|" + sourceFile.lastModified();
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            byte[] bytes = digest.digest(fingerprint.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < Math.min(bytes.length, 8); i++) {
+                sb.append(String.format("%02x", bytes[i]));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            return Integer.toHexString(fingerprint.hashCode());
+        }
     }
 
     private void togglePlayPause() {

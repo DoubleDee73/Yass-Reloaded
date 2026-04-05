@@ -27,17 +27,27 @@ public class SeparationRequest {
     private final String model;
     private final String outputFormat;
     private final String songBaseName;
+    private final String modelType;
 
     public SeparationRequest(String songDirectory, File audioFile, String model, String outputFormat, String songBaseName) {
+        this(songDirectory, audioFile, model, outputFormat, songBaseName, null);
+    }
+
+    public SeparationRequest(String songDirectory, File audioFile, String model, String outputFormat, String songBaseName, String modelType) {
         this.songDirectory = songDirectory;
         this.audioFile = audioFile;
         this.model = model;
         this.outputFormat = outputFormat;
         this.songBaseName = songBaseName;
+        this.modelType = modelType;
     }
 
     public SeparationRequest withOptions(String newModel, String newOutputFormat) {
-        return new SeparationRequest(songDirectory, audioFile, newModel, newOutputFormat, songBaseName);
+        return new SeparationRequest(songDirectory, audioFile, newModel, newOutputFormat, songBaseName, modelType);
+    }
+
+    public SeparationRequest withOptions(String newModel, String newOutputFormat, String newModelType) {
+        return new SeparationRequest(songDirectory, audioFile, newModel, newOutputFormat, songBaseName, newModelType);
     }
 
     public String getSongDirectory() {
@@ -58,5 +68,9 @@ public class SeparationRequest {
 
     public String getSongBaseName() {
         return songBaseName;
+    }
+
+    public String getModelType() {
+        return modelType;
     }
 }

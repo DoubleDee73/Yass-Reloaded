@@ -1,1 +1,16 @@
+title: Yass Reloaded Documentation
+description: Structured documentation for Yass Reloaded, the UltraStar song editor.
 theme: jekyll-theme-leap-day
+show_downloads: false
+url: https://doubledee73.github.io
+baseurl: /Yass-Reloaded
+repository_url: https://github.com/DoubleDee73/Yass-Reloaded
+wiki_url: https://github.com/DoubleDee73/Yass-Reloaded/wiki
+releases_url: https://github.com/DoubleDee73/Yass-Reloaded/releases
+favicon: /assets/images/favicon.png
+defaults:
+  -
+    scope:
+      path: ""
+    values:
+      layout: default

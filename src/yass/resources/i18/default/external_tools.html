@@ -1,0 +1,109 @@
+<head>
+    <link rel="stylesheet" href="../stylesheet.css">
+</head>
+<body>
+
+<a href="help.html">Navigation</a> -
+<a href="help1.html">Playback</a> -
+<a href="help2.html">Notes</a> -
+<a href="help3.html">Lyrics</a> -
+<a href="help4.html">Songlist</a> -
+<a href="help5.html">License</a> -
+External Tools
+
+<h3>External Tools</h3>
+
+<p>Yass Reloaded integrates with several optional external tools to enable vocal separation and lyrics transcription.
+Open <b>Settings &gt; External Tools</b> to configure them.</p>
+
+<h4>FFmpeg</h4>
+<p>FFmpeg is required for audio format conversion (AAC, OGG, OPUS, etc.) and for the vocal separation workflow.
+Yass can auto-download FFmpeg, or you can point to an existing installation under
+<b>External Tools &gt; Locations</b>.</p>
+<ul>
+  <li>Download: <code>https://ffmpeg.org/download.html</code></li>
+  <li>On Windows, set the path to the <code>bin</code> folder containing <code>ffmpeg.exe</code>.</li>
+</ul>
+
+<h4>yt-dlp</h4>
+<p>yt-dlp is used by the Create Song Wizard to download audio from YouTube and other platforms.
+No API key required.</p>
+<ul>
+  <li>Install: <code>pip install yt-dlp</code> or download the standalone binary.</li>
+  <li>Configure codec, resolution and audio format under <b>Settings &gt; Wizard &gt; yt-dlp</b>.</li>
+</ul>
+
+<h4>MVSEP (online vocal separation)</h4>
+<p>MVSEP is a cloud-based vocal separation service. It uploads your audio to the MVSEP API,
+separates it into stems and downloads the result. Requires an account and API token.</p>
+<ol>
+  <li>Register at <code>https://mvsep.com</code> and copy your API token from your profile.</li>
+  <li>Open <b>Settings &gt; External Tools &gt; MVSEP</b> and paste the token.</li>
+  <li>Choose a separation model (e.g. <i>BS-Roformer</i> for highest quality) and output format.</li>
+  <li>In the Create Song Wizard, click <b>Separate Vocals + Transcribe</b> to run the full pipeline.</li>
+  <li>For songs already open in the editor, use <b>Edit &gt; Separate Audio</b>.</li>
+</ol>
+
+<h4>audio-separator (local vocal separation)</h4>
+<p>audio-separator runs pre-trained separation models locally on your machine — no internet or API key needed.
+It supports the same MDX-Net, VR Architecture and Demucs models used by Ultimate Vocal Remover (UVR).</p>
+<ol>
+  <li>Install Python 3.9 or later.</li>
+  <li>Install audio-separator:
+    <ul>
+      <li>CPU only: <code>pip install audio-separator[cpu]</code></li>
+      <li>NVIDIA GPU: <code>pip install audio-separator[gpu]</code></li>
+    </ul>
+  </li>
+  <li>Open <b>Settings &gt; External Tools &gt; audio-separator</b>.</li>
+  <li>Set the Python executable (e.g. <code>python</code> or full path).</li>
+  <li>Choose a model. Recommended models:
+    <ul>
+      <li><code>Kim_Vocal_2.onnx</code> — fast, good quality (default)</li>
+      <li><code>MDX23C-8KFFT-InstVoc_HQ.ckpt</code> — high quality</li>
+      <li><code>UVR-MDX-NET-Inst_HQ_3.onnx</code> — alternative</li>
+      <li><code>BS-Roformer-Viperx-1297.ckpt</code> — highest quality, slower</li>
+    </ul>
+  </li>
+  <li>Optionally set a model cache directory to avoid re-downloading models.</li>
+  <li>Click <b>Test configuration</b> to verify the setup.</li>
+  <li>When health check passes, the <b>Separate Vocals + Transcribe</b> button in the Create Song Wizard becomes available.
+      audio-separator is preferred over MVSEP when both are configured.</li>
+</ol>
+
+<h4>OpenAI Whisper (cloud transcription)</h4>
+<p>The OpenAI Whisper API transcribes audio to timestamped words and applies them to notes in the editor.
+Requires an OpenAI API key.</p>
+<ol>
+  <li>Get an API key at <code>https://platform.openai.com/api-keys</code>.</li>
+  <li>Open <b>Settings &gt; External Tools &gt; OpenAI</b> and enter the key.</li>
+  <li>Choose a transcription model (e.g. <i>whisper-1</i>) and optionally a language code.</li>
+  <li>In the editor, use <b>Edit &gt; Align Notes (Transcription)</b> to transcribe and align the current song.</li>
+</ol>
+
+<h4>WhisperX (local transcription)</h4>
+<p>WhisperX runs Whisper-based transcription locally with word-level timestamps. No internet or API key required.</p>
+<ol>
+  <li>Install Python 3.9 or later.</li>
+  <li>Install WhisperX: <code>pip install whisperx</code></li>
+  <li>Open <b>Settings &gt; External Tools &gt; WhisperX</b>.</li>
+  <li>Set the Python executable and choose invocation mode (<i>python -m whisperx</i> recommended).</li>
+  <li>Select a model (e.g. <i>large-v2</i>) and your device (<i>cpu</i> or <i>cuda</i>).</li>
+  <li>Click <b>Test configuration</b> to run the health check. The result is saved and used to enable the
+      <b>Separate Vocals + Transcribe</b> button in the wizard.</li>
+  <li>In the editor, use <b>Edit &gt; Align Notes (Transcription)</b> and select <i>WhisperX</i>.</li>
+</ol>
+
+<h4>Create Song Wizard: full pipeline</h4>
+<p>The wizard can run the complete pipeline automatically:</p>
+<ol>
+  <li>Enter a YouTube URL on the <b>YouTube</b> page and download the audio.</li>
+  <li>On the <b>Lyrics</b> page, click <b>Separate Vocals + Transcribe</b>.</li>
+  <li>Yass converts the audio to WAV, separates vocals (audio-separator or MVSEP) and transcribes them (WhisperX).</li>
+  <li>The lyrics are filled in automatically. You can correct them before proceeding.</li>
+  <li>Complete the wizard to create the song with timestamps pre-filled from the transcript.</li>
+</ol>
+<p><b>Requirements:</b> either audio-separator (local, health check passed) or MVSEP (API token configured),
+plus WhisperX (health check passed).</p>
+
+</body>

@@ -56,6 +56,7 @@ public class DialogTools {
         //lab.setMaximumSize(new Dimension(200, 20));
 
         JTextField txtField = new JTextField(text);
+        txtField.setMinimumSize(new Dimension(150, 25));
         if (StringUtils.isNotEmpty(txtFieldName)) {
             txtField.setName(txtFieldName);
         }
@@ -64,6 +65,7 @@ public class DialogTools {
         }
         row.add(lab);
         row.add(txtField);
+        row.add(Box.createHorizontalGlue());
         return row;
     }
 }

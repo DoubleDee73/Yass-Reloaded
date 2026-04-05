@@ -67,7 +67,7 @@ Prebuilt binaries for Windows, macOS, and Linux are available in the GitHub
 **Recommended:**  
 Download and run the Windows installer:
 
-- `yass-installer-2026.3.exe`
+- `yass-installer-2026.4.exe`
 
 Java is bundled. No manual setup required.
 
@@ -87,6 +87,7 @@ If macOS blocks the app:
 
 Options:
 - Debian/Ubuntu: `yass-linux-amd64.deb`
+- Nix-based Linux package: `yass-linux-x86_64-nix.tar.gz`
 - or run the Fat JAR `Yass-Reloaded.jar` (see below)
 
 FFmpeg must be installed via your package manager.
@@ -99,10 +100,9 @@ If no native build is available, you can use the Fat JAR:
 java -jar Yass-Reloaded.jar
 ```
 ### Requirements for starting the JAR
-Min. Requirement is Java 21 (e.g. Open JDK ZuluFX https://www.azul.com/downloads/).
+Minimum requirement is Java 21.
 
-
-Yass Reloaded requires FFmpeg to support a variety of audio formats.
+Yass Reloaded also requires FFmpeg to support a variety of audio formats.
 https://www.ffmpeg.org/download.html
 - Windows (`winget install --id=Gyan.FFmpeg -e`) - Check out: https://www.gyan.dev/ffmpeg/builds/
 - MacOS (`brew install ffmpeg`)
@@ -111,17 +111,21 @@ https://www.ffmpeg.org/download.html
 # Starting Yass Reloaded
 If you install Yass Reloaded with the Windows installer, you can simply run `yass.exe`
 
+If you use one of the packaged builds (`.exe`, `.dmg`, `.deb`, or the Linux Nix package), no manual JavaFX setup is required.
+
 Alternatively, you can download the jar file and start it from the console:
 
 On Windows, you can simply do this: `java -jar Yass-Reloaded.jar`
 
-On Mac/Linux, it is recommended, that you add a runtime variable like so:
+On macOS/Linux, `java -jar Yass-Reloaded.jar` also works if your Java installation already includes JavaFX.
+
+Only if you use a plain JDK without JavaFX, add a JavaFX SDK manually, for example:
 
 `export PATH_TO_FX=path/to/javafx-sdk-[whateverversion]/lib`
 
-and then start the jar like so:
+and start the jar like this:
 
-`java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2026.3.jar`
+`java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2026.4.jar`
 
 # Developers
 
@@ -190,7 +194,7 @@ If you like this  app, feel free (but not pressured!) to buy me coffee. Any supp
   - Open a command line window and type in `java -version`. 
   - You should have Java 21
 - Have you tried opening it as a jar?
-  - Download the jar, open a command line window and type in `java -jar Yass-Reloaded-2026.3.jar`
+  - Download the jar, open a command line window and type in `java -jar Yass-Reloaded-2026.4.jar`
   - Any error messages are then printed out in the command line window for debugging
 
 ## Cannot find FFmpeg?

@@ -114,6 +114,8 @@ public class YassOptions extends JDialog {
 
         addPanel(externalTools, I18.get("options_locations"), new LocationsPanel());
         addPanel(externalTools, I18.get("options_external_tools_mvsep"), new MvsepPanel());
+        addPanel(externalTools, I18.get("options_external_tools_audiosep"), new AudioSeparatorPanel());
+        addPanel(externalTools, I18.get("options_external_tools_transcription"), new WhisperXPanel());
         addPanel(advanced, I18.get("options_advanced_audio"), new AudioPanel());
         addPanel(advanced, I18.get("options_advanced_debug"), new DebugPanel());
 
@@ -170,14 +172,15 @@ public class YassOptions extends JDialog {
                     }
 
                     dispose();
+                    actions.refreshActiveWizardButtonStates();
                 });
 
         setModal(true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         pack();
         Dimension dim = this.getToolkit().getScreenSize();
-        setSize(800, 680);
-        setLocation(dim.width / 2 - 400, dim.height / 2 - 340);
+        setSize(920, 720);
+        setLocation(dim.width / 2 - 460, dim.height / 2 - 360);
         setTitle(I18.get("options_title"));
         showPanel(I18.get("options_directories"));
         setVisible(true);
@@ -294,5 +297,6 @@ public class YassOptions extends JDialog {
     
     
 }
+
 
 

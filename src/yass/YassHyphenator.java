@@ -27,6 +27,7 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 /**
  * Description of the Class
@@ -201,49 +202,50 @@ public class YassHyphenator {
     }
 
     public List<String> rehyphenate(List<String> original) {
-        String word = String.join("", original);
+        // Special case: ["word", "~"] with apostrophe split (e.g. "it’s" -> ["it", "’s"])
         if (original.size() == 2 && original.get(1).equals("~")) {
             List<String> apostropheTilde = splitAtApostrophe(original.get(0));
             if (apostropheTilde.size() == 2) {
                 return apostropheTilde;
             }
         }
-        boolean triedFallback = false;
-        String apostrophe = yassProperties.getBooleanProperty("typographic-apostrophes") ? "’" : "'";
+
+        // Strip tildes from raw text before lookup: tildes are note-extension markers, not part of the word.
+        String word = original.stream()
+                .map(s -> s.replace("~", ""))
+                .collect(Collectors.joining());
+
+        // Abbreviation check (e.g. "TV", "ATM") — handle before any other transformation
+        if (checkAbbreviatedWord(original)) {
+            String[] abbrev = hyphenateAbbreviation(original.get(0)).split("\u00AD");
+            if (abbrev.length == original.size()) {
+                return Arrays.stream(abbrev).toList();
+            }
+        }
+
+        String apostrophe = yassProperties.getBooleanProperty("typographic-apostrophes") ? "’" : "’";
         boolean shortened = word.endsWith("in" + apostrophe);
         if (shortened) {
             word = word.substring(0, word.length() - 1) + "g";
         }
-        String hyphenated = hyphenator != null ? hyphenator.hyphenate(word, 2, 2) : word;
+
+        // 1. Try the user dictionary first (fallback hyphenations), then the tex hyphenator.
+        //    This gives user-defined splits priority over the algorithmic hyphenator.
+        String hyphenated = fallbackHyphenation(word);
         String[] newSyllables = hyphenated.split("\u00AD");
-        if (newSyllables.length < 2) {
-            triedFallback = true;
-            hyphenated = fallbackHyphenation(word);
-            newSyllables = hyphenated.split("\u00AD");
-        }
-        if (!triedFallback && original.get(0).equals(newSyllables[0])) {
-            hyphenated = fallbackHyphenation(word);
+
+        // 2. If dictionary produced no split, try the tex hyphenator
+        if (newSyllables.length < 2 && hyphenator != null) {
+            hyphenated = hyphenator.hyphenate(word, 2, 2);
             newSyllables = hyphenated.split("\u00AD");
         }
 
-        if (word.endsWith("~")) {
-            if (newSyllables.length != original.size()) {
-                hyphenated = fallbackHyphenation(word.substring(0, word.indexOf("~")));
-                newSyllables = hyphenated.split("\u00AD");
-            } else {
-                String lastSyllable = newSyllables[newSyllables.length - 1];
-                if (lastSyllable.endsWith("~")) {
-                    newSyllables[newSyllables.length - 1] = lastSyllable.substring(0, lastSyllable.length() - 1);
-                }
-            }
-        }
-        if (newSyllables.length != original.size() && checkAbbreviatedWord(original)) {
-            hyphenated = hyphenateAbbreviation(original.get(0));
-            newSyllables = hyphenated.split("\u00AD");
-        }
+        // 3. Syllable count must match the number of selected notes
         if (newSyllables.length != original.size()) {
             return original;
         }
+
+        // Restore apostrophe ending on last syllable if needed
         if (shortened) {
             newSyllables[newSyllables.length - 1] = newSyllables[newSyllables.length - 1].replace("ing",
                                                                                                   "in" + apostrophe);

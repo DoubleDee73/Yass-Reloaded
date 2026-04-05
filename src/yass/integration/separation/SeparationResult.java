@@ -1,44 +1,39 @@
-/*
- * Yass Reloaded - Karaoke Editor
- * Copyright (C) 2009-2023 Saruta
- * Copyright (C) 2023 DoubleDee
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
- */
-
 package yass.integration.separation;
 
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
+import java.util.Collections;
+import java.util.List;
 
 public class SeparationResult {
+    private final File vocalsFile;
     private final File leadFile;
     private final File instrumentalFile;
     private final File instrumentalBackingFile;
+    private final List<File> downloadedFiles;
 
-    public SeparationResult(File leadFile, File instrumentalFile, File instrumentalBackingFile) {
+    public SeparationResult(File vocalsFile, File leadFile, File instrumentalFile, File instrumentalBackingFile) {
+        this(vocalsFile, leadFile, instrumentalFile, instrumentalBackingFile, Collections.emptyList());
+    }
+
+    public SeparationResult(File vocalsFile,
+                            File leadFile,
+                            File instrumentalFile,
+                            File instrumentalBackingFile,
+                            List<File> downloadedFiles) {
+        this.vocalsFile = vocalsFile;
         this.leadFile = leadFile;
         this.instrumentalFile = instrumentalFile;
         this.instrumentalBackingFile = instrumentalBackingFile;
-    }
-
-    public File getLeadFile() {
-        return leadFile;
+        this.downloadedFiles = downloadedFiles == null ? Collections.emptyList() : List.copyOf(downloadedFiles);
     }
 
     public File getVocalsFile() {
+        return vocalsFile != null ? vocalsFile : leadFile;
+    }
+
+    public File getLeadFile() {
         return leadFile;
     }
 
@@ -57,4 +52,9 @@ public class SeparationResult {
         }
         return instrumentalFile != null ? instrumentalFile : instrumentalBackingFile;
     }
+
+    public List<File> getDownloadedFiles() {
+        return downloadedFiles;
+    }
+
 }

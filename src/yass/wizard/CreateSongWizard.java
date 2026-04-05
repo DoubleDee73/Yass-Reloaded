@@ -23,16 +23,41 @@ import com.nexes.wizard.WizardPanelDescriptor;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
-import yass.I18;
-import yass.YassProperties;
-import yass.YassTable;
+import yass.*;
+import yass.ffmpeg.FFMPEGLocator;
+import yass.integration.separation.SeparationPreference;
+import yass.integration.separation.SeparationRequest;
+import yass.integration.separation.SeparationResult;
+import yass.integration.separation.SeparationService;
+import yass.integration.separation.audioseparator.AudioSeparatorSeparationService;
+import yass.integration.separation.mvsep.MvsepSeparationService;
+import yass.alignment.TranscriptTruthRewriteService;
+import yass.integration.transcription.TranscriptionEngine;
+import yass.integration.transcription.openai.OpenAiTranscriptionRequest;
+import yass.integration.transcription.openai.OpenAiTranscriptionResult;
+import yass.integration.transcription.openai.OpenAiTranscriptionService;
+import yass.integration.transcription.whisperx.WhisperXTranscriptionRequest;
+import yass.integration.transcription.whisperx.WhisperXTranscriptionService;
 import yass.musicbrainz.MusicBrainz;
 import yass.musicbrainz.MusicBrainzInfo;
 
 import javax.swing.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
 import java.awt.*;
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -57,6 +82,8 @@ public class CreateSongWizard extends Wizard {
     YouTube youtube = null;
 
     private YassProperties yassProperties;
+    private WizardTranscriptionState wizardTranscriptionState;
+    private JButton separateAndTranscribeButton;
 
     /**
      * Constructor for the CreateSongWizard object
@@ -118,17 +145,33 @@ public class CreateSongWizard extends Wizard {
 
 
             public void aboutToDisplayPanel() {
+                setLyricsActionButtonsVisible(true);
+                if (lyrics != null) {
+                    lyrics.setPasteLyricsAction(new AbstractAction(I18.get("create_lyrics_paste")) {
+                        @Override
+                        public void actionPerformed(java.awt.event.ActionEvent e) {
+                            pasteLyricsFromClipboard();
+                        }
+                    });
+                }
                 setValue("melodytable", "");
                 lyrics.setText(getValue("lyrics"));
                 lyrics.setSubtitleFile(getValue("subtitle"));
+                lyrics.refreshIntegrationAvailability();
             }
 
 
             public void aboutToHidePanel() {
+                setLyricsActionButtonsVisible(false);
+                if (lyrics != null) {
+                    lyrics.setPasteLyricsAction(null);
+                }
                 setValue("lyrics", lyrics.getText());
                 setValue("melodytable", lyrics.getTable());
             }
         });
+        initWizardFooterButtons();
+
         registerWizardPanel(MIDI.ID, new WizardPanelDescriptor(MIDI.ID, midi = new MIDI(this)) {
             public Object getNextPanelDescriptor() {
                 if (melody.getFilename() != null && new File(melody.getFilename()).exists()) {
@@ -271,9 +314,9 @@ public class CreateSongWizard extends Wizard {
                     header.setGenre(getValue("genre"));
                     header.setYear(getValue("year"));
                 }
-                String creator = getValue("creator");
+                String creator = StringUtils.trimToEmpty(getValue("creator"));
                 if (StringUtils.isEmpty(creator)) {
-                    creator = getProperty("creator");
+                    creator = StringUtils.trimToEmpty(getProperty("creator"));
                 }
                 header.setCreator(creator);
             }
@@ -285,9 +328,10 @@ public class CreateSongWizard extends Wizard {
                 setValue("genre", header.getGenre());
                 setValue("language", header.getLanguage());
                 setValue("bpm", header.getBPM());
-                setValue("creator", header.getCreator());
+                String creator = StringUtils.trimToEmpty(header.getCreator());
+                setValue("creator", creator);
                 setValue("year", header.getYear());
-                setProperty("creator", header.getCreator());
+                setProperty("creator", creator);
                 setProperty("wizard-midi",
                             melody != null && StringUtils.isNotEmpty(melody.getFilename()) ? "true" : "");
             }
@@ -386,7 +430,11 @@ public class CreateSongWizard extends Wizard {
 
     public void setProperty(String key, String value) {
         if (yassProperties != null) {
-            yassProperties.setProperty(key, value);
+            if (StringUtils.isBlank(value)) {
+                yassProperties.remove(key);
+            } else {
+                yassProperties.setProperty(key, value);
+            }
             yassProperties.store();
         }
     }
@@ -413,4 +461,729 @@ public class CreateSongWizard extends Wizard {
     public Lyrics getLyricsPanel() {
         return lyrics;
     }
+
+    private void initWizardFooterButtons() {
+        if (separateAndTranscribeButton != null) {
+            return;
+        }
+        separateAndTranscribeButton = new JButton(I18.get("create_lyrics_separate_transcribe"));
+        separateAndTranscribeButton.addActionListener(e -> startSeparateAndTranscribeFromLyrics());
+        separateAndTranscribeButton.setVisible(false);
+        separateAndTranscribeButton.setToolTipText(I18.get("create_lyrics_separate_transcribe_tooltip"));
+
+        JPanel bottomLeftPanel = getBottomLeftPanel();
+        if (bottomLeftPanel != null) {
+            bottomLeftPanel.add(separateAndTranscribeButton);
+        }
+    }
+
+    void setLyricsActionButtonsVisible(boolean visible) {
+        if (separateAndTranscribeButton != null) {
+            separateAndTranscribeButton.setVisible(visible);
+        }
+    }
+
+    public void refreshSeparateAndTranscribeButtonState() {
+        if (separateAndTranscribeButton != null) {
+            String reason = getSeparateAndTranscribeUnavailableReason();
+            boolean enabled = reason == null;
+            separateAndTranscribeButton.setEnabled(enabled);
+            separateAndTranscribeButton.setToolTipText(enabled ? I18.get("create_lyrics_separate_transcribe_tooltip") : reason);
+        }
+    }
+
+    public boolean canSeparateAndTranscribeInWizard() {
+        return getSeparateAndTranscribeUnavailableReason() == null;
+    }
+
+    public String getSeparateAndTranscribeUnavailableReason() {
+        String filename = getValue("filename");
+        if (StringUtils.isBlank(filename) || !new File(filename).isFile()) {
+            return I18.get("create_lyrics_separate_transcribe_requires_audio");
+        }
+        boolean mvsepConfigured = StringUtils.isNotBlank(getProperty("mvsep-api-token"));
+        boolean audioSepConfigured = StringUtils.isNotBlank(getProperty(AudioSeparatorSeparationService.PROP_PYTHON))
+                && Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK), "false"));
+        if (!mvsepConfigured && !audioSepConfigured) {
+            return I18.get("create_lyrics_separate_transcribe_requires_mvsep");
+        }
+        if (!hasAnyTranscriptionEngine()) {
+            return I18.get("edit_align_transcription_missing_engine");
+        }
+        if (getPreferredTranscriptionEngine() == TranscriptionEngine.WHISPERX
+                && !Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty("whisperx-health-ok"), "false"))) {
+            return I18.get("create_lyrics_separate_transcribe_requires_healthcheck");
+        }
+        return null;
+    }
+
+    private boolean hasOpenAiApiKey() {
+        return StringUtils.isNotBlank(getProperty("openai-api-key"));
+    }
+
+    private boolean hasWhisperXConfiguration() {
+        boolean useModule = Boolean.parseBoolean(getProperty("whisperx-use-module"));
+        return useModule
+                ? StringUtils.isNotBlank(getProperty("whisperx-python"))
+                : StringUtils.isNotBlank(getProperty("whisperx-command"));
+    }
+
+    private boolean hasAnyTranscriptionEngine() {
+        return hasOpenAiApiKey() || hasWhisperXConfiguration();
+    }
+
+    private TranscriptionEngine getPreferredTranscriptionEngine() {
+        TranscriptionEngine configured = TranscriptionEngine.fromValue(getProperty("transcription-engine"));
+
+        switch (configured) {
+            case ONLINE_FIRST -> {
+                if (hasOpenAiApiKey() && isOnlineReachable()) {
+                    return TranscriptionEngine.OPENAI;
+                }
+                if (hasWhisperXConfiguration()) {
+                    LOGGER.info("Online transcription unavailable, falling back to WhisperX.");
+                    return TranscriptionEngine.WHISPERX;
+                }
+                return TranscriptionEngine.OPENAI;
+            }
+            case LOCAL_FIRST -> {
+                if (hasWhisperXConfiguration()) {
+                    return TranscriptionEngine.WHISPERX;
+                }
+                LOGGER.info("Local transcription unavailable, falling back to OpenAI.");
+                return TranscriptionEngine.OPENAI;
+            }
+            case OPENAI -> { return TranscriptionEngine.OPENAI; }
+            case WHISPERX -> { return TranscriptionEngine.WHISPERX; }
+            default -> { return TranscriptionEngine.OPENAI; }
+        }
+    }
+
+    private SeparationService buildSeparationService() {
+        boolean audioSepConfigured = StringUtils.isNotBlank(getProperty(AudioSeparatorSeparationService.PROP_PYTHON))
+                && Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK), "false"));
+        boolean mvsepConfigured = StringUtils.isNotBlank(getProperty("mvsep-api-token"));
+        SeparationPreference preference = SeparationPreference.fromValue(getProperty("separation-preference"));
+
+        switch (preference) {
+            case ONLINE_FIRST -> {
+                if (mvsepConfigured && isOnlineReachable()) {
+                    LOGGER.info("Using MVSEP for wizard vocal separation (online-first).");
+                    return new MvsepSeparationService(yassProperties);
+                }
+                if (audioSepConfigured) {
+                    LOGGER.info("Online separation unavailable, falling back to audio-separator.");
+                    return new AudioSeparatorSeparationService(yassProperties);
+                }
+                return new MvsepSeparationService(yassProperties);
+            }
+            case MVSEP_ONLY -> {
+                LOGGER.info("Using MVSEP for wizard vocal separation (MVSEP only).");
+                return new MvsepSeparationService(yassProperties);
+            }
+            case AUDIO_SEP_ONLY -> {
+                LOGGER.info("Using audio-separator for wizard vocal separation (audio-separator only).");
+                return new AudioSeparatorSeparationService(yassProperties);
+            }
+            default -> {
+                // LOCAL_FIRST: prefer audio-separator, fall back to MVSEP
+                if (audioSepConfigured) {
+                    LOGGER.info("Using audio-separator for wizard vocal separation (local-first).");
+                    return new AudioSeparatorSeparationService(yassProperties);
+                }
+                LOGGER.info("Using MVSEP for wizard vocal separation.");
+                return new MvsepSeparationService(yassProperties);
+            }
+        }
+    }
+
+    /**
+     * Quick connectivity check: attempts a TCP connection to api.openai.com:443.
+     * Returns true if reachable within 3 seconds, false otherwise.
+     */
+    private boolean isOnlineReachable() {
+        try (java.net.Socket socket = new java.net.Socket()) {
+            socket.connect(new java.net.InetSocketAddress("api.openai.com", 443), 3000);
+            return true;
+        } catch (java.io.IOException ex) {
+            LOGGER.info("Online reachability check failed: " + ex.getMessage());
+            return false;
+        }
+    }
+
+    public WizardTranscriptionState getWizardTranscriptionState() {
+        return wizardTranscriptionState;
+    }
+
+    private void pasteLyricsFromClipboard() {
+        String clipboardText = readClipboardText();
+        if (clipboardText == null) {
+            JOptionPane.showMessageDialog(getDialog(),
+                    I18.get("create_lyrics_paste_clipboard_unavailable"),
+                    I18.get("create_lyrics_paste"),
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        String normalizedClipboardText = normalizeClipboardLyrics(clipboardText);
+        if (StringUtils.isBlank(normalizedClipboardText)) {
+            JOptionPane.showMessageDialog(getDialog(),
+                    I18.get("create_lyrics_paste_clipboard_empty"),
+                    I18.get("create_lyrics_paste"),
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        OpenAiTranscriptionResult transcriptionResult = wizardTranscriptionState != null ? wizardTranscriptionState.getTranscriptionResult() : null;
+        String transcriptText = "";
+        if (transcriptionResult != null) {
+            TranscriptTruthRewriteService rewriteService = new TranscriptTruthRewriteService();
+            OpenAiTranscriptionResult alignedTranscript = rewriteService.alignToReferenceLines(transcriptionResult, normalizedClipboardText);
+            transcriptText = normalizeClipboardLyrics(alignedTranscript != null ? alignedTranscript.getTranscriptText() : transcriptionResult.getTranscriptText());
+        }
+        if (StringUtils.isBlank(transcriptText)) {
+            applyLyricsText(normalizedClipboardText);
+            return;
+        }
+        ClipboardLyricsDiffDialog dialog = new ClipboardLyricsDiffDialog(getDialog(), transcriptText, normalizedClipboardText);
+        ClipboardLyricsDiffDialog.Result diffResult = dialog.showDialog();
+        if (diffResult != null) {
+            applyLyricsTexts(diffResult.transcriptText(), diffResult.clipboardText());
+        }
+    }
+
+    private void applyLyricsText(String text) {
+        applyLyricsTexts(null, text);
+    }
+
+    private void applyLyricsTexts(String transcriptStructureText, String finalLyricsText) {
+        String normalizedFinalLyrics = normalizeClipboardLyrics(finalLyricsText);
+        String normalizedTranscriptStructure = normalizeClipboardLyrics(transcriptStructureText);
+        if (wizardTranscriptionState != null && wizardTranscriptionState.getTranscriptionResult() != null) {
+            TranscriptTruthRewriteService rewriteService = new TranscriptTruthRewriteService();
+            OpenAiTranscriptionResult baseTranscript = wizardTranscriptionState.getTranscriptionResult();
+            OpenAiTranscriptionResult rewritten;
+            if (StringUtils.isNotBlank(normalizedTranscriptStructure)) {
+                OpenAiTranscriptionResult structuredTranscript = rewriteService.rewrite(baseTranscript, normalizedTranscriptStructure);
+                rewritten = rewriteService.applyLyricsToStructuredTranscript(structuredTranscript, normalizedFinalLyrics);
+            } else {
+                rewritten = rewriteService.rewrite(baseTranscript, normalizedFinalLyrics);
+            }
+            wizardTranscriptionState = wizardTranscriptionState.withTranscriptionResult(rewritten);
+            applyWizardTranscriptionState(wizardTranscriptionState);
+        } else {
+            setValue("lyrics", normalizedFinalLyrics);
+            if (lyrics != null) {
+                lyrics.setText(normalizedFinalLyrics);
+            }
+        }
+        if (lyrics != null) {
+            lyrics.setWizardStatusText(I18.get("create_lyrics_paste_status_ready"));
+            lyrics.refreshIntegrationAvailability();
+        }
+    }
+
+    private String readClipboardText() {
+        try {
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            if (clipboard == null || !clipboard.isDataFlavorAvailable(DataFlavor.stringFlavor)) {
+                return null;
+            }
+            Object value = clipboard.getData(DataFlavor.stringFlavor);
+            return value instanceof String ? (String) value : null;
+        } catch (Exception ex) {
+            LOGGER.log(Level.FINE, "Could not read clipboard lyrics", ex);
+            return null;
+        }
+    }
+
+    private String normalizeClipboardLyrics(String text) {
+        if (text == null) {
+            return "";
+        }
+        String normalized = text.replace("\r\n", "\n").replace("\r", "\n");
+        normalized = normalized.replaceAll("[\t\u000B\f]+", " ");
+        normalized = normalized.replaceAll("(?m)[ \t]+$", "");
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        for (String rawLine : normalized.split("\n", -1)) {
+            String line = StringUtils.trimToEmpty(rawLine);
+            if (YassUtils.isSongPartLine(line)) {
+                continue;
+            }
+            lines.add(line);
+        }
+        return String.join("\n", lines);
+    }
+
+    public void startSeparateAndTranscribeFromLyrics() {
+
+        String unavailableReason = getSeparateAndTranscribeUnavailableReason();
+        if (unavailableReason != null) {
+            JOptionPane.showMessageDialog(getDialog(), unavailableReason, I18.get("create_lyrics_separate_transcribe"), JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        File sourceAudio = new File(getValue("filename"));
+        WizardTranscriptionState reusableState = findReusableWizardTranscriptionState(sourceAudio);
+        if (reusableState != null) {
+            int reuse = JOptionPane.showConfirmDialog(getDialog(),
+                    I18.get("create_lyrics_separate_transcribe_cached_prompt"),
+                    I18.get("create_lyrics_separate_transcribe"),
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.QUESTION_MESSAGE);
+            if (reuse == JOptionPane.YES_OPTION) {
+                applyWizardTranscriptionState(reusableState);
+                return;
+            }
+        }
+
+        JLabel statusLabel = new JLabel(I18.get("create_lyrics_separate_transcribe_progress_prepare"));
+        statusLabel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createEtchedBorder(),
+                BorderFactory.createEmptyBorder(6, 8, 6, 8)));
+        JTextArea statusHistory = new JTextArea(10, 68);
+        statusHistory.setEditable(false);
+        statusHistory.setLineWrap(true);
+        statusHistory.setWrapStyleWord(true);
+        statusHistory.setMargin(new Insets(6, 8, 6, 8));
+        statusHistory.setText(I18.get("create_lyrics_separate_transcribe_progress_prepare"));
+        JScrollPane statusScrollPane = new JScrollPane(statusHistory,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        statusScrollPane.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createEtchedBorder(),
+                BorderFactory.createEmptyBorder(0, 0, 0, 0)));
+
+        JProgressBar progressBar = new JProgressBar();
+        progressBar.setIndeterminate(true);
+
+        JLabel hintLabel = new JLabel("<html>" + I18.get("create_lyrics_separate_transcribe_hint") + "</html>");
+        hintLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
+
+        JPanel centerPanel = new JPanel(new BorderLayout(0, 8));
+        centerPanel.add(statusLabel, BorderLayout.NORTH);
+        centerPanel.add(statusScrollPane, BorderLayout.CENTER);
+
+        JButton cancelButton = new JButton(I18.get("create_lyrics_separate_transcribe_cancel"));
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttonPanel.add(cancelButton);
+
+        JPanel panel = new JPanel(new BorderLayout(0, 10));
+        panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        panel.add(hintLabel, BorderLayout.NORTH);
+        panel.add(centerPanel, BorderLayout.CENTER);
+        JPanel southPanel = new JPanel(new BorderLayout(0, 4));
+        southPanel.add(progressBar, BorderLayout.NORTH);
+        southPanel.add(buttonPanel, BorderLayout.SOUTH);
+        panel.add(southPanel, BorderLayout.SOUTH);
+
+        JDialog progressDialog = new JDialog(getDialog(), I18.get("create_lyrics_separate_transcribe"), true);
+        progressDialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        progressDialog.getContentPane().add(panel);
+        progressDialog.setSize(760, 400);
+        progressDialog.setLocationRelativeTo(getDialog());
+
+        SwingWorker<WizardTranscriptionState, String> worker = new SwingWorker<>() {
+            @Override
+            protected WizardTranscriptionState doInBackground() throws Exception {
+                String runBaseName = buildWizardRunBaseName(sourceAudio);
+
+                // Check if separation was already done in a previous run — reuse stems if found.
+                WizardTranscriptionState existingState = loadPersistedWizardTranscriptionState(sourceAudio);
+                File runDirectory;
+                File wavFile;
+                SeparationResult separationResult;
+                boolean separationReused = existingState != null
+                        && existingState.getSeparationResult() != null
+                        && existingState.getSeparationResult().getVocalsFile() != null
+                        && existingState.getSeparationResult().getVocalsFile().isFile();
+
+                if (separationReused) {
+                    LOGGER.info("Reusing existing separation from " + existingState.getRunDirectory().getAbsolutePath());
+                    publish("Reusing existing vocal separation...");
+                    runDirectory = existingState.getRunDirectory();
+                    wavFile = existingState.getSourceConvertedFile();
+                    separationResult = existingState.getSeparationResult();
+                    // If a cached transcription already exists too, return it immediately.
+                    if (existingState.getTranscriptionResult() != null) {
+                        return existingState;
+                    }
+                } else {
+                    runDirectory = createWizardRunDirectory();
+                    publish(I18.get("create_lyrics_separate_transcribe_progress_convert"));
+                    wavFile = convertWizardSourceToWav(sourceAudio, runDirectory, runBaseName);
+
+                    SeparationService separationService = buildSeparationService();
+                    SeparationRequest request;
+                    if (separationService instanceof AudioSeparatorSeparationService as) {
+                        request = as.createRequest(runDirectory, wavFile, runBaseName);
+                        publish(I18.get("create_lyrics_separate_transcribe_progress_audiosep"));
+                    } else {
+                        request = ((MvsepSeparationService) separationService).createRequest(runDirectory, wavFile, runBaseName);
+                        publish(I18.get("create_lyrics_separate_transcribe_progress_mvsep"));
+                    }
+                    separationResult = separationService.startSeparation(request, this::publish);
+                    // Write metadata right after separation so the run directory is identifiable
+                    // even if transcription is cancelled or fails later.
+                    WizardTranscriptionState partialState = new WizardTranscriptionState(runDirectory, sourceAudio, wavFile, separationResult, null);
+                    persistWizardRunMetadata(partialState, runBaseName);
+                }
+
+                File vocalsFile = separationResult.getVocalsFile();
+                if (vocalsFile == null || !vocalsFile.isFile()) {
+                    throw new IllegalStateException(I18.get("create_lyrics_separate_transcribe_missing_vocals"));
+                }
+
+                // Ask the user whether to proceed with transcription before starting the (potentially costly) API call.
+                publish(I18.get("create_lyrics_separate_transcribe_separation_done"));
+                boolean[] proceedWithTranscription = {true};
+                try {
+                    javax.swing.SwingUtilities.invokeAndWait(() -> {
+                        int choice = JOptionPane.showConfirmDialog(
+                                progressDialog,
+                                I18.get("create_lyrics_separate_transcribe_confirm_transcribe"),
+                                I18.get("create_lyrics_separate_transcribe_confirm_transcribe_title"),
+                                JOptionPane.YES_NO_OPTION,
+                                JOptionPane.QUESTION_MESSAGE);
+                        proceedWithTranscription[0] = (choice == JOptionPane.YES_OPTION);
+                    });
+                } catch (java.lang.reflect.InvocationTargetException ex) {
+                    LOGGER.log(Level.WARNING, "Error showing transcription confirmation dialog.", ex);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting for transcription confirmation.", ex);
+                }
+                if (!proceedWithTranscription[0]) {
+                    cancel(false);
+                    return new WizardTranscriptionState(runDirectory, sourceAudio, wavFile, separationResult, null);
+                }
+
+                File cacheDir = new File(runDirectory, StringUtils.defaultIfBlank(getProperty("whisperx-cache-folder"), ".yass-cache"));
+                TranscriptionEngine engine = getPreferredTranscriptionEngine();
+                YassTable tempTable = new YassTable();
+                tempTable.init(yassProperties);
+                OpenAiTranscriptionResult transcriptionResult;
+                if (engine == TranscriptionEngine.WHISPERX) {
+                    WhisperXTranscriptionService whisperXService = new WhisperXTranscriptionService(yassProperties);
+                    WhisperXTranscriptionRequest transcriptionRequest = whisperXService.createRequest(vocalsFile,
+                                                                                                      "#VOCALS",
+                                                                                                      cacheDir,
+                                                                                                      runBaseName);
+                    publish(I18.get("create_lyrics_separate_transcribe_progress_whisperx"));
+                    transcriptionResult = whisperXService.transcribe(transcriptionRequest, tempTable, message -> publish(message));
+                } else {
+                    OpenAiTranscriptionService openAiService = new OpenAiTranscriptionService(yassProperties);
+                    OpenAiTranscriptionRequest transcriptionRequest = openAiService.createRequest(vocalsFile, "#VOCALS", runBaseName);
+                    publish(I18.get("edit_align_transcription_progress"));
+                    transcriptionResult = openAiService.transcribe(transcriptionRequest, tempTable);
+                }
+                WizardTranscriptionState state = new WizardTranscriptionState(runDirectory,
+                                                    sourceAudio,
+                                                    wavFile,
+                                                    separationResult,
+                                                    transcriptionResult);
+                persistWizardRunMetadata(state, runBaseName);
+                return state;
+            }
+
+            @Override
+            protected void process(java.util.List<String> chunks) {
+                if (!chunks.isEmpty()) {
+                    String latest = chunks.get(chunks.size() - 1);
+                    statusLabel.setText(latest);
+                    for (String chunk : chunks) {
+                        if (StringUtils.isBlank(chunk)) {
+                            continue;
+                        }
+                        if (statusHistory.getDocument().getLength() > 0) {
+                            statusHistory.append(System.lineSeparator());
+                        }
+                        statusHistory.append(chunk);
+                    }
+                    statusHistory.setCaretPosition(statusHistory.getDocument().getLength());
+                }
+            }
+
+            @Override
+            protected void done() {
+                progressDialog.dispose();
+                try {
+                    wizardTranscriptionState = get();
+                    applyWizardTranscriptionState(wizardTranscriptionState);
+                    JOptionPane.showMessageDialog(getDialog(),
+                                                  I18.get("create_lyrics_separate_transcribe_done"),
+                                                  I18.get("create_lyrics_separate_transcribe"),
+                                                  JOptionPane.INFORMATION_MESSAGE);
+                } catch (CancellationException ex) {
+                    if (lyrics != null) {
+                        lyrics.refreshIntegrationAvailability();
+                    }
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                } catch (ExecutionException ex) {
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    LOGGER.severe("Separate & Transcribe failed: " + cause.getMessage());
+                    if (lyrics != null) {
+                        lyrics.setWizardStatusText(I18.get("create_lyrics_separate_transcribe_status_failed"));
+                        lyrics.refreshIntegrationAvailability();
+                    }
+                    JOptionPane.showMessageDialog(getDialog(), cause.getMessage(), I18.get("create_lyrics_separate_transcribe"), JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        cancelButton.addActionListener(e -> {
+            cancelButton.setEnabled(false);
+            worker.cancel(true);
+        });
+        worker.execute();
+        progressDialog.setVisible(true);
+    }
+
+    private WizardTranscriptionState findReusableWizardTranscriptionState(File sourceAudio) {
+        if (wizardTranscriptionState != null
+                && sourceAudio != null
+                && sourceAudio.isFile()
+                && wizardTranscriptionState.getSourceAudioFile() != null
+                && sourceAudio.equals(wizardTranscriptionState.getSourceAudioFile())
+                && wizardTranscriptionState.getTranscriptionResult() != null) {
+            return wizardTranscriptionState;
+        }
+        WizardTranscriptionState persistedState = loadPersistedWizardTranscriptionState(sourceAudio);
+        if (persistedState != null) {
+            wizardTranscriptionState = persistedState;
+            // Only offer reuse if transcription is complete — separation-only states are
+            // handled transparently by the worker (it skips re-separation automatically).
+            if (persistedState.getTranscriptionResult() == null) {
+                return null;
+            }
+        }
+        return persistedState;
+    }
+
+    private void applyWizardTranscriptionState(WizardTranscriptionState state) {
+        if (state == null || state.getTranscriptionResult() == null) {
+            return;
+        }
+        OpenAiTranscriptionResult result = state.getTranscriptionResult();
+        setValue("lyrics", result.getTranscriptText());
+        if (lyrics != null) {
+            // Build a subtitles map (ms → line text) from segments so that getTable()
+            // can derive a correct #GAP and beat positions instead of defaulting to 0.
+            if (!result.getSegments().isEmpty()) {
+                Map<Integer, String> subtitles = new LinkedHashMap<>();
+                for (var segment : result.getSegments()) {
+                    subtitles.put(segment.getStartMs(), segment.getText().trim());
+                }
+                lyrics.setSubtitles(subtitles);
+            }
+            lyrics.setText(result.getTranscriptText());
+            lyrics.setWizardStatusText(I18.get("create_lyrics_separate_transcribe_status_ready"));
+            lyrics.refreshIntegrationAvailability();
+        }
+    }
+    private WizardTranscriptionState loadPersistedWizardTranscriptionState(File sourceAudio) {
+        if (sourceAudio == null || !sourceAudio.isFile()) {
+            return null;
+        }
+        File wizardBaseDir = getWizardBaseDirectory();
+        String expectedBaseName = buildWizardRunBaseName(sourceAudio);
+        String currentYouTubeId = YouTube.extractYouTubeId(getValue("youtube"));
+
+        // Fast path: check the named directory directly (YouTube ID or base name)
+        String expectedDirName = buildWizardRunDirectoryName();
+        File namedDir = new File(wizardBaseDir, expectedDirName);
+        if (namedDir.isDirectory()) {
+            try {
+                WizardTranscriptionState state = tryLoadWizardRunState(namedDir, sourceAudio, expectedBaseName, currentYouTubeId);
+                if (state != null) {
+                    LOGGER.info("Reusing persisted wizard separation/transcription from " + namedDir.getAbsolutePath());
+                    return state;
+                }
+            } catch (Exception ex) {
+                LOGGER.log(Level.FINE, "Named wizard run directory not usable: " + namedDir.getAbsolutePath(), ex);
+            }
+        }
+
+        // Fallback: scan all subdirectories (covers legacy run-* dirs and other cases)
+        File[] runDirectories = wizardBaseDir.listFiles(f -> f.isDirectory() && !f.equals(namedDir));
+        if (runDirectories == null || runDirectories.length == 0) {
+            return null;
+        }
+        Arrays.sort(runDirectories, Comparator.comparingLong(File::lastModified).reversed());
+        for (File runDirectory : runDirectories) {
+            try {
+                WizardTranscriptionState state = tryLoadWizardRunState(runDirectory, sourceAudio, expectedBaseName, currentYouTubeId);
+                if (state != null) {
+                    LOGGER.info("Reusing persisted wizard separation/transcription from " + runDirectory.getAbsolutePath());
+                    return state;
+                }
+            } catch (Exception ex) {
+                LOGGER.log(Level.FINE, "Ignoring unusable wizard run directory " + runDirectory.getAbsolutePath(), ex);
+            }
+        }
+        return null;
+    }
+
+    private WizardTranscriptionState tryLoadWizardRunState(File runDirectory, File sourceAudio, String expectedBaseName, String currentYouTubeId) throws IOException {
+        Properties metadata = loadWizardRunMetadata(runDirectory);
+        String metadataSource = StringUtils.trimToEmpty(metadata.getProperty("sourceAudioPath"));
+        String metadataBaseName = StringUtils.trimToEmpty(metadata.getProperty("songBaseName"));
+        String metadataYouTubeId = StringUtils.trimToEmpty(metadata.getProperty("youTubeId"));
+        boolean metadataMatches = StringUtils.isNotBlank(metadataSource) && sourceAudio.getAbsolutePath().equalsIgnoreCase(metadataSource);
+        boolean baseNameMatches = StringUtils.isNotBlank(metadataBaseName) && metadataBaseName.equalsIgnoreCase(expectedBaseName);
+        boolean youTubeIdMatches = StringUtils.isNotBlank(currentYouTubeId) && currentYouTubeId.equalsIgnoreCase(metadataYouTubeId);
+
+        File vocalsFile = findRunStem(runDirectory, "(Vocals)", "(Lead)");
+        if (vocalsFile == null || !vocalsFile.isFile()) {
+            return null;
+        }
+        // The YouTube ID stored in metadata is the most reliable identifier for wizard runs.
+        boolean stemNamedAfterBaseName = vocalsFile.getName().toLowerCase().startsWith(expectedBaseName.toLowerCase());
+        if (!metadataMatches && !youTubeIdMatches && !baseNameMatches && !stemNamedAfterBaseName) {
+            return null;
+        }
+
+        SeparationResult separationResult = new SeparationResult(
+                findRunStem(runDirectory, "(Vocals)"),
+                findRunStem(runDirectory, "(Lead)"),
+                findRunStem(runDirectory, "(Instrumental)", "(Karaoke)", "(No Vocals)"),
+                findRunStem(runDirectory, "(Instrumental + Backing)")
+        );
+        File[] sourceFiles = runDirectory.listFiles((dir, name) -> !name.contains("(") && !name.equals("wizard-run.properties"));
+        File sourceFile = (sourceFiles != null && sourceFiles.length > 0) ? sourceFiles[0] : null;
+
+        // Try to load a cached transcription if one exists — but a separation-only state
+        // (null transcription) is still valid and allows skipping re-separation.
+        File cacheDir = new File(runDirectory, StringUtils.defaultIfBlank(getProperty("whisperx-cache-folder"), ".yass-cache"));
+        File cacheFile = new File(cacheDir, "vocals-transcript.json");
+        if (!cacheFile.isFile()) {
+            File[] transcriptCandidates = cacheDir.listFiles((dir, name) -> name.toLowerCase().endsWith("-transcript.json") || name.toLowerCase().endsWith(".json"));
+            if (transcriptCandidates != null && transcriptCandidates.length > 0) {
+                Arrays.sort(transcriptCandidates, Comparator.comparingLong(File::lastModified).reversed());
+                cacheFile = transcriptCandidates[0];
+            }
+        }
+        if (!cacheFile.isFile()) {
+            return new WizardTranscriptionState(runDirectory, sourceAudio, sourceFile, separationResult, null);
+        }
+
+        WhisperXTranscriptionService whisperXService = new WhisperXTranscriptionService(yassProperties);
+        WhisperXTranscriptionRequest request = whisperXService.createRequest(vocalsFile, "#VOCALS", cacheDir,
+                StringUtils.defaultIfBlank(metadataBaseName, expectedBaseName));
+        YassTable tempTable = new YassTable();
+        tempTable.init(yassProperties);
+        return new WizardTranscriptionState(runDirectory,
+                sourceAudio,
+                sourceFile,
+                separationResult,
+                whisperXService.loadCachedTranscription(request, tempTable));
+    }
+
+    private Properties loadWizardRunMetadata(File runDirectory) {
+        Properties properties = new Properties();
+        File metadataFile = new File(runDirectory, "wizard-run.properties");
+        if (!metadataFile.isFile()) {
+            return properties;
+        }
+        try (InputStream input = Files.newInputStream(metadataFile.toPath())) {
+            properties.load(input);
+        } catch (IOException ex) {
+            LOGGER.log(Level.FINE, "Could not read wizard run metadata from " + metadataFile.getAbsolutePath(), ex);
+        }
+        return properties;
+    }
+
+    private void persistWizardRunMetadata(WizardTranscriptionState state, String songBaseName) {
+        File runDirectory = state.getRunDirectory();
+        if (runDirectory == null || !runDirectory.isDirectory()) {
+            return;
+        }
+        Properties metadata = new Properties();
+        metadata.setProperty("sourceAudioPath", StringUtils.defaultString(state.getSourceAudioFile() != null ? state.getSourceAudioFile().getAbsolutePath() : ""));
+        metadata.setProperty("songBaseName", StringUtils.defaultString(songBaseName));
+        String youTubeId = YouTube.extractYouTubeId(getValue("youtube"));
+        if (StringUtils.isNotBlank(youTubeId)) {
+            metadata.setProperty("youTubeId", youTubeId);
+        }
+        File metadataFile = new File(runDirectory, "wizard-run.properties");
+        try (OutputStream output = Files.newOutputStream(metadataFile.toPath())) {
+            metadata.store(output, "Wizard separation/transcription metadata");
+        } catch (IOException ex) {
+            LOGGER.log(Level.FINE, "Could not write wizard run metadata to " + metadataFile.getAbsolutePath(), ex);
+        }
+    }
+
+    private File findRunStem(File runDirectory, String... markers) {
+        File[] candidates = runDirectory.listFiles(File::isFile);
+        if (candidates == null) {
+            return null;
+        }
+        for (String marker : markers) {
+            if (StringUtils.isBlank(marker)) {
+                continue;
+            }
+            for (File candidate : candidates) {
+                if (candidate.getName().contains(marker)) {
+                    return candidate;
+                }
+            }
+        }
+        return null;
+    }
+
+    private File getWizardBaseDirectory() {
+        File tempBaseDir = new File(StringUtils.defaultIfBlank(getProperty("temp-dir"), System.getProperty("java.io.tmpdir")));
+        return new File(tempBaseDir, "wizard-separation");
+    }
+
+    private File createWizardRunDirectory() throws IOException {
+        File wizardBaseDir = getWizardBaseDirectory();
+        Files.createDirectories(wizardBaseDir.toPath());
+        String dirName = buildWizardRunDirectoryName();
+        File runDirectory = new File(wizardBaseDir, dirName);
+        Files.createDirectories(runDirectory.toPath());
+        return runDirectory;
+    }
+
+    private String buildWizardRunDirectoryName() {
+        String youTubeId = YouTube.extractYouTubeId(getValue("youtube"));
+        if (StringUtils.isNotBlank(youTubeId)) {
+            return youTubeId;
+        }
+        String artist = StringUtils.trimToEmpty(getValue("artist"));
+        String title = StringUtils.trimToEmpty(getValue("title"));
+        if (StringUtils.isNotBlank(artist) && StringUtils.isNotBlank(title)) {
+            return (artist + " - " + title).replaceAll("[\\\\/:*?\"<>|]", "_");
+        }
+        String filename = StringUtils.trimToEmpty(getValue("filename"));
+        if (StringUtils.isNotBlank(filename)) {
+            String base = new File(filename).getName();
+            int dot = base.lastIndexOf('.');
+            return (dot > 0 ? base.substring(0, dot) : base).replaceAll("[\\\\/:*?\"<>|]", "_");
+        }
+        return "run-" + System.currentTimeMillis();
+    }
+
+    private File convertWizardSourceToWav(File sourceAudio, File runDirectory, String baseName) throws IOException {
+        FFMPEGLocator.initFfmpeg(yassProperties.getProperty("ffmpegPath"));
+        String safeName = baseName.replaceAll("[\\\\/:*?\"<>|]", "_");
+        File wavTarget = new File(runDirectory, safeName + ".wav");
+        YassPlayer player = new YassPlayer(null, yassProperties);
+        File converted = player.generateTemp(sourceAudio.getAbsolutePath(), Timebase.NORMAL, wavTarget.getAbsolutePath());
+        if (converted == null || !converted.isFile()) {
+            throw new IllegalStateException(I18.get("create_lyrics_separate_transcribe_convert_failed"));
+        }
+        return converted;
+    }
+
+    private String buildWizardRunBaseName(File sourceAudio) {
+        String artist = StringUtils.trimToEmpty(getValue("artist"));
+        String title = StringUtils.trimToEmpty(getValue("title"));
+        if (StringUtils.isNotBlank(artist) && StringUtils.isNotBlank(title)) {
+            return artist + " - " + title;
+        }
+        String fileName = sourceAudio.getName();
+        int dot = fileName.lastIndexOf('.');
+        return dot > 0 ? fileName.substring(0, dot) : fileName;
+    }
 }
+

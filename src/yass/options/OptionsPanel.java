@@ -18,18 +18,56 @@
 
 package yass.options;
 
-import lombok.Getter;
-import lombok.Setter;
-import yass.*;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.GridLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.ItemEvent;
+import java.awt.event.ItemListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.io.File;
+import java.util.Enumeration;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.StringTokenizer;
+import java.util.Vector;
 
-import javax.swing.*;
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JColorChooser;
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JFileChooser;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JRadioButton;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.ScrollPaneConstants;
+import javax.swing.SwingConstants;
+import javax.swing.UIManager;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import java.awt.*;
-import java.awt.event.*;
-import java.io.File;
-import java.util.*;
-import java.util.List;
+
+import lombok.Getter;
+import lombok.Setter;
+import yass.DialogTools;
+import yass.I18;
+import yass.YassActions;
+import yass.YassEnum;
+import yass.YassProperties;
+import yass.logger.YassLogger;
 
 /**
  * Description of the Class
@@ -41,7 +79,7 @@ import java.util.List;
 public class OptionsPanel extends JPanel {
     private static final long serialVersionUID = -5593710558109233649L;
     private static Hashtable<String, String> myprop = null;
-    private static YassProperties prop = null;
+    static YassProperties prop = null;
     private JLabel title = null;
     private JPanel left = null, right = null;
     private JButton resetButton = null;
@@ -107,6 +145,7 @@ public class OptionsPanel extends JPanel {
             }
             prop.put(key, val);
         }
+        YassLogger.applyLogLevel(prop.getProperty("log-level"));
         if (resetContextMenu) {
             actions.reloadLibMenu();
         }
@@ -367,6 +406,36 @@ public class OptionsPanel extends JPanel {
         right.add(DialogTools.createTextfield(label, labelWidth, getProperty(key), new MyDocumentListener(key), key));
     }
 
+    public void addApiKey(String label, String key) {
+        JPanel row = new JPanel();
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+
+        JLabel lab = new JLabel(label);
+        lab.setVerticalAlignment(JLabel.TOP);
+        lab.setHorizontalAlignment(JLabel.LEFT);
+        lab.setPreferredSize(new Dimension(labelWidth, 60));
+        lab.setMaximumSize(new Dimension(labelWidth, 60));
+        lab.setAlignmentY(Component.TOP_ALIGNMENT);
+
+        JTextArea textArea = new JTextArea(getProperty(key), 3, 0);
+        textArea.setName(key);
+        textArea.setLineWrap(true);
+        textArea.setWrapStyleWord(false);
+        textArea.setMinimumSize(new Dimension(150, 60));
+        textArea.getDocument().addDocumentListener(new MyDocumentListener(key));
+
+        JScrollPane scroll = new JScrollPane(textArea);
+        scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
+        scroll.setBorder(UIManager.getBorder("TextField.border"));
+        scroll.setMinimumSize(new Dimension(150, 60));
+        scroll.setAlignmentY(Component.TOP_ALIGNMENT);
+
+        row.add(lab);
+        row.add(scroll);
+        right.add(row);
+    }
+
     /**
      * Adds a feature to the Button attribute of the OptionsPanel object
      *
@@ -507,6 +576,12 @@ public class OptionsPanel extends JPanel {
         //lab.setMaximumSize(new Dimension(200, 20));
 
         String ch = getProperty(choices_key);
+        if (ch == null) {
+            ch = prop.getProperty(choices_key);
+        }
+        if (ch == null) {
+            ch = choices_labels;
+        }
         StringTokenizer st = new StringTokenizer(ch, "|");
         StringTokenizer st2 = new StringTokenizer(choices_labels, "|");
         Vector<String> labels = new Vector<>();
@@ -531,7 +606,7 @@ public class OptionsPanel extends JPanel {
     public void addChoice(String label, YassEnum[] enumElements, String selectKey) {
         addChoice(label, enumElements, selectKey, labelWidth);
     }
-    
+
     public void addChoice(String label, YassEnum[] enumElements, String select_key, int localLabelWidth) {
         JPanel row = new JPanel();
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
@@ -547,12 +622,14 @@ public class OptionsPanel extends JPanel {
             labels.add(keyVal.getLabel());
         }
         JComboBox<String> choiceBox = new JComboBox<>(labels);
+        choiceBox.setMaximumSize(new Dimension(200, 25));
         String key = getProperty(select_key);
         int i = keys.indexOf(key);
         choiceBox.setSelectedIndex(i);
         choiceBox.addActionListener(new ChoiceListener(keys, select_key));
         row.add(lab);
         row.add(choiceBox);
+        row.add(Box.createHorizontalGlue());
         lab.setAlignmentY(Component.TOP_ALIGNMENT);
         choiceBox.setAlignmentY(Component.TOP_ALIGNMENT);
         right.add(row);

@@ -13,6 +13,7 @@ on:
         required: true
 env:
   JAVA_VERSION: "21"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   build:
@@ -45,7 +46,7 @@ jobs:
             artifact_type: dmg
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -139,5 +140,45 @@ jobs:
             dist/yass-linux-amd64.deb
             yass.exe
             package-input/Yass-Reloaded.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux-nix:
+    name: Build Linux (Nix)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build Linux package with Nix
+        shell: bash
+        run: |
+          nix build --option sandbox false .#packages.x86_64-linux.default
+
+      - name: Archive Nix package
+        shell: bash
+        run: |
+          mkdir -p dist
+          tar --dereference -czf dist/yass-linux-x86_64-nix.tar.gz result
+
+      - name: Upload Nix Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yass-Reloaded-Linux-Nix
+          path: dist/yass-linux-x86_64-nix.tar.gz
+
+      - name: Upload Nix package to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ github.ref_name || inputs.tag }}
+          files: dist/yass-linux-x86_64-nix.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

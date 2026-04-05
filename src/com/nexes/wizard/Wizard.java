@@ -59,6 +59,7 @@ public class Wizard extends WindowAdapter implements PropertyChangeListener{
     private JButton backButton;
     private JButton nextButton;
     private JButton cancelButton;
+    private JPanel leftButtonPanel;
     
     private int returnCode;
 
@@ -259,6 +260,10 @@ public class Wizard extends WindowAdapter implements PropertyChangeListener{
     public int getReturnCode() {
         return returnCode;
     }
+
+    public JPanel getBottomLeftPanel() {
+        return leftButtonPanel;
+    }
     
    /**
      * Mirrors the WizardModel method of the same name.
@@ -365,6 +370,10 @@ public class Wizard extends WindowAdapter implements PropertyChangeListener{
         
         buttonPanel.setLayout(new BorderLayout());
         buttonPanel.add(separator, BorderLayout.NORTH);
+
+        leftButtonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
+        leftButtonPanel.setBorder(new EmptyBorder(new Insets(5, 10, 5, 10)));
+        buttonPanel.add(leftButtonPanel, BorderLayout.WEST);
 
         buttonBox.setBorder(new EmptyBorder(new Insets(5, 10, 5, 10)));       
         buttonBox.add(backButton);

@@ -151,6 +151,16 @@ public class YassSongList extends JTable {
             actions.startSeparateAudioForSongFile(song.getDirectory() + File.separator + song.getFilename());
         }
     };
+    Action createDuet = new AbstractAction(I18.get("edit_tracks_create_duet")) {
+        public void actionPerformed(ActionEvent e) {
+            Vector<YassSong> selection = getSelectedSongs();
+            if (selection == null || selection.size() != 1) {
+                return;
+            }
+            YassSong song = selection.firstElement();
+            actions.createDuetForSongFile(song.getDirectory() + File.separator + song.getFilename());
+        }
+    };
     Action editVisitUsdb = new AbstractAction(I18.get("lib_visit_usdb")) {
         @Override
         public void actionPerformed(ActionEvent e) {
@@ -209,6 +219,7 @@ public class YassSongList extends JTable {
     private final ActionListener actionEdition;
     private final ActionListener actionTags;
     private JMenuItem separateAudioMenuItem;
+    private JMenuItem createDuetMenuItem;
     private final JMenu languagePopup, genrePopup, editionPopup, sortbyPopup, tagsPopup;
     private String emptyString = I18.get("songlist_msg_empty");
     private boolean showErrors = false;
@@ -304,6 +315,7 @@ public class YassSongList extends JTable {
         getInputMap().put(KeyStroke.getKeyStroke("F7"), "editID");
         getActionMap().put("editID", editID);
         combinedPopup.add(new JMenuItem(editCalcMedley));
+        combinedPopup.add(createDuetMenuItem = new JMenuItem(createDuet));
         combinedPopup.add(menuItem = new JMenuItem(I18.get("lib_undo_selected")));
         menuItem.addActionListener(e -> undoSelection());
         combinedPopup.add(menuItem = new JMenuItem(I18.get("lib_save_selected")));
@@ -549,8 +561,18 @@ public class YassSongList extends JTable {
                                     }
                                 }
                             }
+                            Vector<YassSong> selectedSongs = getSelectedSongs();
                             if (separateAudioMenuItem != null) {
-                                separateAudioMenuItem.setEnabled(getSelectedSongs().size() == 1 && actions.hasMvsepApiToken());
+                                separateAudioMenuItem.setEnabled(selectedSongs.size() == 1 && actions.hasMvsepApiToken());
+                            }
+                            if (createDuetMenuItem != null) {
+                                boolean canCreateDuet = false;
+                                if (selectedSongs.size() == 1) {
+                                    YassSong song = selectedSongs.firstElement();
+                                    String songFile = song.getDirectory() + File.separator + song.getFilename();
+                                    canCreateDuet = actions.canCreateDuetForSongFile(songFile);
+                                }
+                                createDuetMenuItem.setEnabled(canCreateDuet);
                             }
                             combinedPopup.show(e.getComponent(), e.getX(), e.getY());
                         }

@@ -35,7 +35,8 @@ public class MusicalKey extends JDialog {
     
     private YassActions actions;
 
-    public MusicalKey(YassActions yassActions) {
+    public MusicalKey(Window owner, YassActions yassActions) {
+        super(owner, ModalityType.DOCUMENT_MODAL);
         // Manually initialize components
         contentPane = new JPanel(new BorderLayout(10, 10));
         buttonOK = new JButton("OK");
@@ -44,7 +45,6 @@ public class MusicalKey extends JDialog {
         lblKey = new JLabel();
 
         setContentPane(contentPane);
-        setModal(true);
         getRootPane().setDefaultButton(buttonOK);
 
         // Build UI with standard Swing layouts
@@ -94,7 +94,15 @@ public class MusicalKey extends JDialog {
     }
 
     private void onOK() {
-        actions.getMP3().saveKey((MusicalKeyEnum) cboKey.getSelectedItem());
+        MusicalKeyEnum selected = (MusicalKeyEnum) cboKey.getSelectedItem();
+        if (selected != null && selected != MusicalKeyEnum.UNDEFINED) {
+            actions.getMP3().setKey(selected);
+            actions.getTable().setKeyInComment(selected.getRelevantKey());
+            actions.getMP3().saveKey(selected);
+        } else {
+            actions.getMP3().setKey(MusicalKeyEnum.UNDEFINED);
+            actions.getTable().removeKeyFromComment();
+        }
         actions.getTable().fireTableTableDataChanged();
         dispose();
     }

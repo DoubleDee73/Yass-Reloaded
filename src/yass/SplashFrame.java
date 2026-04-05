@@ -32,11 +32,15 @@ public class SplashFrame extends JWindow {
     private OutlinedLabel textLabel;
     
     public SplashFrame() {
+        this(I18.get("splash_title"), "Loading please wait...");
+    }
+
+    public SplashFrame(String title, String initialText) {
         JPanel content = new JPanel(new BorderLayout());
-        setName(I18.get("splash_title"));
-        JLabel imageLabel = new JLabel(new ImageIcon(getClass().getResource("/yass/resources/splash/splash.png"))); // Bilddatei hinzufügen
+        setName(StringUtils.defaultIfBlank(title, I18.get("splash_title")));
+        JLabel imageLabel = new JLabel(new ImageIcon(getClass().getResource("/yass/resources/splash/splash.png"))); // Bilddatei hinzuf??gen
         imageLabel.setLayout(new BorderLayout());
-        textLabel = new OutlinedLabel("Loading please wait...", new Font("Arial", Font.PLAIN, 18),
+        textLabel = new OutlinedLabel(StringUtils.defaultIfBlank(initialText, "Loading please wait..."), new Font("Arial", Font.PLAIN, 18),
                                                     Color.WHITE, Color.BLACK, 1);
         textLabel.setHorizontalAlignment(SwingConstants.CENTER);
         textLabel.setBorder(BorderFactory.createEmptyBorder(20, 10, 10, 10));

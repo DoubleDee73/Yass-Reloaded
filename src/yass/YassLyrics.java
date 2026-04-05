@@ -153,6 +153,13 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 
     public void colorsChanged() {
         if (sheet != null) {
+            Color lyricsBg = lyricsArea.isEditable()
+                    ? (sheet.darkMode ? YassSheet.hiGrayDarkMode : Color.WHITE)
+                    : (sheet.darkMode ? new Color(73, 73, 73) : new Color(225, 225, 225));
+            lyricsArea.setBackground(lyricsBg);
+            lyricsScrollPane.setBackground(lyricsBg);
+            lyricsScrollPane.getViewport().setBackground(lyricsBg);
+            setBackground(lyricsBg);
             if (isEditable()) {
                 StyleConstants.setForeground(notLongStyle, sheet.darkMode ? YassSheet.blackDarkMode : YassSheet.DK_GRAY);
                 StyleConstants.setForeground(notSelectStyle,
@@ -748,9 +755,12 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
         lyricsScrollPane = new JScrollPane(lyricsArea);
         // lyricsArea.setBackground(YassMain.combinedLyrics ? fontBG :
         // lyricsArea.getBackground());
-        lyricsArea.setOpaque(false);
-        lyricsScrollPane.setOpaque(false);
-        lyricsScrollPane.getViewport().setOpaque(false);
+        lyricsArea.setOpaque(true);
+        lyricsScrollPane.setOpaque(true);
+        lyricsScrollPane.getViewport().setOpaque(true);
+        lyricsArea.setBackground(Color.WHITE);
+        lyricsScrollPane.setBackground(Color.WHITE);
+        lyricsScrollPane.getViewport().setBackground(Color.WHITE);
         lyricsScrollPane.getViewport().addChangeListener(e -> lineNumbers.repaint());
         lyricsScrollPane.setBorder(null);
 
@@ -759,7 +769,8 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
         add("Center", lyricsScrollPane);
         // sp.setPreferredSize(new Dimension(600,400));
 
-        setOpaque(false);
+        setOpaque(true);
+        setBackground(Color.WHITE);
     }
 
     /**
@@ -1521,6 +1532,9 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
             Rectangle rr = table.getCellRect(i, 0, true);
             rr.add(table.getCellRect(j, 4, true));
             table.scrollRectToVisible(rr);
+            if (sheet != null) {
+                sheet.scrollRectToVisible(i, j);
+            }
 
             table.adjustMultiSize();
         }

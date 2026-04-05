@@ -276,6 +276,7 @@ public class YassMain extends JFrame {
 
     public void init() {
         prop = new YassProperties();
+        YassLogger.applyFromProperties(prop);
         initLanguage();
         checkVersion();
         initTempDir();
@@ -541,7 +542,18 @@ public class YassMain extends JFrame {
         JPanel contentPanel = new JPanel(new BorderLayout());
 
         JSplitPane horizontalSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, songHeader, lyrics);
-        horizontalSplit.setResizeWeight(0.5);
+        horizontalSplit.setResizeWeight(2d / 3d);
+        final boolean[] horizontalSplitInitialized = {false};
+        horizontalSplit.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                if (horizontalSplitInitialized[0] || horizontalSplit.getWidth() <= 0) {
+                    return;
+                }
+                horizontalSplit.setDividerLocation(2d / 3d);
+                horizontalSplitInitialized[0] = true;
+            }
+        });
 
         JScrollPane sheetPane = new JScrollPane(sheet);
         sheetPane.setWheelScrollingEnabled(false);
@@ -553,10 +565,48 @@ public class YassMain extends JFrame {
             if (notches == 0) {
                 return;
             }
+            if (e.isControlDown() && !e.isAltDown()) {
+                int steps = Math.abs(notches);
+                for (int i = 0; i < steps; i++) {
+                    if (notches < 0) {
+                        actions.zoomPagesIn();
+                    } else {
+                        actions.zoomPagesOut();
+                    }
+                }
+                return;
+            }
             actions.getTable().gotoPage(notches < 0 ? -1 : 1);
         });
+        YassVerticalPitchScrollbar verticalPitchScrollbar = new YassVerticalPitchScrollbar(sheet);
+        JPanel sheetViewportPanel = new JPanel(new BorderLayout());
+        sheetViewportPanel.add(sheetPane, BorderLayout.CENTER);
+        sheetViewportPanel.add(verticalPitchScrollbar, BorderLayout.EAST);
+        Timer resizeRefreshTimer = new Timer(120, e -> {
+            if (actions == null || actions.getTable() == null) {
+                return;
+            }
+            sheet.refreshImage();
+            actions.getTable().zoomPage();
+            if (sheet.isAbsolutePitchViewEnabled()) {
+                sheet.autoCenterAbsolutePitchView();
+                SwingUtilities.invokeLater(() -> {
+                    if (sheet.isAbsolutePitchViewEnabled()) {
+                        sheet.autoCenterAbsolutePitchView();
+                        sheet.repaint();
+                    }
+                });
+            }
+        });
+        resizeRefreshTimer.setRepeats(false);
+        sheetViewportPanel.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                resizeRefreshTimer.restart();
+            }
+        });
 
-        verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, horizontalSplit, sheetPane);
+        verticalSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, horizontalSplit, sheetViewportPanel);
         verticalSplit.setResizeWeight(0.1);
         actions.setEditorSplit(verticalSplit);
         contentPanel.add(verticalSplit, BorderLayout.CENTER);
@@ -564,6 +614,7 @@ public class YassMain extends JFrame {
         mainPanel.add(contentPanel, BorderLayout.CENTER);
 
         YassSheetInfo sheetInfo = new YassSheetInfo(sheet, 0);
+
         sheetInfoPanel = new JPanel(new GridLayout(1, 1));
         sheetInfoPanel.add(sheetInfo);
         mainPanel.add(sheetInfoPanel, BorderLayout.SOUTH);
@@ -622,7 +673,7 @@ public class YassMain extends JFrame {
                                                                      YassSheet.HI_GRAY_2, 3));
 
         sheetPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        sheetPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        sheetPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
         sheetPane.getViewport().setScrollMode(JViewport.SIMPLE_SCROLL_MODE);
         sheetPane.setBorder(null);
         sheetPane.getActionMap().clear();
@@ -886,7 +937,7 @@ public class YassMain extends JFrame {
         songInfo.validate();
 
         songInfo.addComponentListener(new ComponentAdapter() {
-            public void componentResized(ComponentEvent e) {
+            private void layout() {
                 int ww = songInfo.getWidth();
                 int hh = songInfo.getHeight();
 
@@ -908,6 +959,16 @@ public class YassMain extends JFrame {
                 playlistPanel.setBounds(w4, bb, 200, hh - 20);
 
                 actions.updateDetails();
+            }
+
+            @Override
+            public void componentResized(ComponentEvent e) {
+                layout();
+            }
+
+            @Override
+            public void componentShown(ComponentEvent e) {
+                layout();
             }
         });
 

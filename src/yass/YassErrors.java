@@ -279,6 +279,7 @@ public class YassErrors extends JPanel {
             table.setRowSelectionInterval(i, i);
             table.updatePlayerPosition();
             table.zoomPage();
+            ensureAbsolutePitchViewCentered(i);
         }
 
         YassRow r = table.getRowAt(i);
@@ -292,6 +293,52 @@ public class YassErrors extends JPanel {
             msgButtonPanel.add("West", buttons);
         }
         repaint();
+    }
+
+    private void ensureAbsolutePitchViewCentered(int selectedRow) {
+        if (table == null) {
+            return;
+        }
+        YassSheet sheet = table.getSheet();
+        if (sheet == null || !sheet.isAbsolutePitchViewEnabled()) {
+            return;
+        }
+        int rowToCenter = resolveNearestNoteRow(selectedRow);
+        if (rowToCenter < 0) {
+            sheet.autoCenterAbsolutePitchView();
+            return;
+        }
+        sheet.autoCenterAbsolutePitchView(rowToCenter, rowToCenter);
+    }
+
+    private int resolveNearestNoteRow(int seedRow) {
+        if (table == null || seedRow < 0 || seedRow >= table.getRowCount()) {
+            return -1;
+        }
+        YassRow seed = table.getRowAt(seedRow);
+        if (seed != null && seed.isNote()) {
+            return seedRow;
+        }
+        for (int delta = 1; delta < table.getRowCount(); delta++) {
+            int up = seedRow - delta;
+            if (up >= 0) {
+                YassRow upRow = table.getRowAt(up);
+                if (upRow != null && upRow.isNote()) {
+                    return up;
+                }
+            }
+            int down = seedRow + delta;
+            if (down < table.getRowCount()) {
+                YassRow downRow = table.getRowAt(down);
+                if (downRow != null && downRow.isNote()) {
+                    return down;
+                }
+            }
+            if (up < 0 && down >= table.getRowCount()) {
+                break;
+            }
+        }
+        return -1;
     }
 
     /**
