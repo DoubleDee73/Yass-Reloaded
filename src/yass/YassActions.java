@@ -255,11 +255,6 @@ public class YassActions implements DropTargetListener {
         return focusOwner != null && songHeader != null && SwingUtilities.isDescendingFrom(focusOwner, songHeader);
     }
 
-    private boolean isFocusInLyrics() {
-        Component focusOwner = kbdFocus != null ? kbdFocus.getFocusOwner() : null;
-        return focusOwner != null && lyrics != null && SwingUtilities.isDescendingFrom(focusOwner, lyrics);
-    }
-
     private void logSaveActionState(String origin) {
         Component focusOwner = kbdFocus != null ? kbdFocus.getFocusOwner() : null;
         LOGGER.fine("[SaveDebug] " + origin
@@ -424,7 +419,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action alignToMelody = new AbstractAction(I18.get("edit_align_to_melody")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || isFocusInLyrics() || isFocusInSongHeader()) {
+            if (lyrics.isEditable() || isFocusInSongHeader()) {
                 return;
             }
             int[] selectedRows = table.getSelectedRows();
@@ -1980,7 +1975,7 @@ public class YassActions implements DropTargetListener {
     private final Action moveCursorDialog = new AbstractAction("Move Cursor") {
         @Override
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || isFocusInLyrics() || isFocusInSongHeader()) {
+            if (lyrics.isEditable() || isFocusInSongHeader()) {
                 return;
             }
             openMoveCursorDialog();
@@ -1989,7 +1984,7 @@ public class YassActions implements DropTargetListener {
     private final Action moveRemainderDialog = new AbstractAction("Move Remainder") {
         @Override
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || isFocusInLyrics() || isFocusInSongHeader()) {
+            if (lyrics.isEditable() || isFocusInSongHeader()) {
                 return;
             }
             openMoveRemainderDialog();
