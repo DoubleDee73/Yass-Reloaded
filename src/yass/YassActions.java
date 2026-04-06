@@ -251,8 +251,13 @@ public class YassActions implements DropTargetListener {
      * @return {@code true} if the focus is in the song header, {@code false} otherwise.
      */
     private boolean isFocusInSongHeader() {
-        Component focusOwner = kbdFocus.getFocusOwner();
+        Component focusOwner = kbdFocus != null ? kbdFocus.getFocusOwner() : null;
         return focusOwner != null && songHeader != null && SwingUtilities.isDescendingFrom(focusOwner, songHeader);
+    }
+
+    private boolean isFocusInLyrics() {
+        Component focusOwner = kbdFocus != null ? kbdFocus.getFocusOwner() : null;
+        return focusOwner != null && lyrics != null && SwingUtilities.isDescendingFrom(focusOwner, lyrics);
     }
 
     private void logSaveActionState(String origin) {
@@ -419,6 +424,9 @@ public class YassActions implements DropTargetListener {
     };
     private final Action alignToMelody = new AbstractAction(I18.get("edit_align_to_melody")) {
         public void actionPerformed(ActionEvent e) {
+            if (lyrics.isEditable() || isFocusInLyrics() || isFocusInSongHeader()) {
+                return;
+            }
             int[] selectedRows = table.getSelectedRows();
             if (selectedRows == null || selectedRows.length == 0) {
                 return;
@@ -1972,7 +1980,7 @@ public class YassActions implements DropTargetListener {
     private final Action moveCursorDialog = new AbstractAction("Move Cursor") {
         @Override
         public void actionPerformed(ActionEvent e) {
-            if (isFocusInSongHeader()) {
+            if (lyrics.isEditable() || isFocusInLyrics() || isFocusInSongHeader()) {
                 return;
             }
             openMoveCursorDialog();
@@ -1981,7 +1989,7 @@ public class YassActions implements DropTargetListener {
     private final Action moveRemainderDialog = new AbstractAction("Move Remainder") {
         @Override
         public void actionPerformed(ActionEvent e) {
-            if (isFocusInSongHeader()) {
+            if (lyrics.isEditable() || isFocusInLyrics() || isFocusInSongHeader()) {
                 return;
             }
             openMoveRemainderDialog();

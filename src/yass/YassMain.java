@@ -107,11 +107,11 @@ public class YassMain extends JFrame {
                 LOGGER.info("Initialized.");
                 y.initConvert();
                 y.onShow();
+
+                y.initFrame();
     
                 LOGGER.info("Starting...");
                 y.load();
-    
-                y.initFrame();
                 if (y.refreshLibrary()) {
                     LOGGER.info("Song Library was refreshed...");
                 }

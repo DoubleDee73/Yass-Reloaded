@@ -55,8 +55,7 @@ import yass.video.YassVideoDialog;
 
 import javax.sound.sampled.*;
 import javax.swing.*;
-import java.awt.SecondaryLoop;
-import java.awt.Toolkit;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.URL;
@@ -67,6 +66,7 @@ import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -492,7 +492,8 @@ public class YassPlayer {
             file = generateTemp(filename);
             tempFile = file;
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            LOGGER.log(Level.WARNING, "Could not prepare temporary audio for " + filename, e);
+            file = null;
         }
         if (file == null || !file.exists()) {
             file = new File(filename);
@@ -513,6 +514,11 @@ public class YassPlayer {
             audioBytes = writeByteArray(file);
             duration = (long) (in.getFrameLength() / baseFormat.getFrameRate() * 1000000);
             openSharedLine(baseFormat);
+        } catch (UnsupportedAudioFileException e) {
+            audioBytes = null;
+            createWaveform = false;
+            playbackRenderer.setErrorMessage(I18.get("sheet_msg_audio_format"));
+            LOGGER.log(Level.WARNING, "Unsupported audio format for " + file, e);
         } catch (Exception e) {
             audioBytes = null;
             createWaveform = false;
