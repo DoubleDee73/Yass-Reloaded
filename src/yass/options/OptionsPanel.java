@@ -127,6 +127,20 @@ public class OptionsPanel extends JPanel {
         contentPanel.revalidate();
     }
 
+    public void refreshContent() {
+        if (contentPanel == null) {
+            return;
+        }
+        BorderLayout layout = (BorderLayout) contentPanel.getLayout();
+        Component currentBody = layout.getLayoutComponent(BorderLayout.CENTER);
+        if (currentBody != null) {
+            contentPanel.remove(currentBody);
+        }
+        contentPanel.add("Center", getBody());
+        contentPanel.revalidate();
+        contentPanel.repaint();
+    }
+
 
     /**
      * Description of the Method

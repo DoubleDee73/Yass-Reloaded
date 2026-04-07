@@ -3367,6 +3367,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action showOptions = new AbstractAction(I18.get("lib_prefs_title")) {
         public void actionPerformed(ActionEvent e) {
+            LOGGER.info("[OptionsDebug] showOptions action triggered");
             String oldDir = prop.getProperty("song-directory");
             String oldListDir = prop.getProperty("playlist-directory");
             boolean oldSpacing = prop.isUncommonSpacingAfter();
@@ -3379,9 +3380,18 @@ public class YassActions implements DropTargetListener {
 
             boolean moveArticles = prop.get("use-articles").equals("true");
 
-            //
-            new yass.options.YassOptions(YassActions.this);
-            //
+            try {
+                LOGGER.info("[OptionsDebug] Opening YassOptions dialog");
+                new yass.options.YassOptions(YassActions.this);
+                LOGGER.info("[OptionsDebug] YassOptions dialog returned");
+            } catch (Throwable ex) {
+                LOGGER.log(Level.SEVERE, "[OptionsDebug] Failed to open settings dialog", ex);
+                JOptionPane.showMessageDialog(tab,
+                                              StringUtils.defaultIfBlank(ex.getMessage(), ex.toString()),
+                                              I18.get("lib_prefs_title"),
+                                              JOptionPane.ERROR_MESSAGE);
+                return;
+            }
 
             loadColors();
             loadKeys();

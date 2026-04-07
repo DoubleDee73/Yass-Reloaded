@@ -39,6 +39,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.logging.Logger;
+import java.util.logging.Level;
 
 /**
  * Description of the Class
@@ -47,12 +48,14 @@ import java.util.logging.Logger;
  */
 public class YassOptions extends JDialog {
     private static final long serialVersionUID = -3946878493552010967L;
+    private static final String OPTIONS_DEBUG = "[OptionsDebug] ";
     private final JTree tree;
     private final Hashtable<String, OptionsPanel> panels;
     private final JPanel main;
     private final JScrollPane scrollMain;
     private final YassActions actions;
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+    private final YtDlpPanel ytDlpPanel;
 
 
     /**
@@ -66,7 +69,9 @@ public class YassOptions extends JDialog {
         actions = a;
         YassProperties prop = actions.getProperties();
 
-        String ytDlpVersion = checkYtDlpVersion(prop);
+        LOGGER.info(OPTIONS_DEBUG + "YassOptions constructor start");
+        String ytDlpVersion = StringUtils.trimToNull(prop.getProperty("ytdlp-version"));
+        LOGGER.info(OPTIONS_DEBUG + "Using cached yt-dlp version=" + StringUtils.defaultString(ytDlpVersion, "<none>"));
         panels = new Hashtable<>();
         DefaultMutableTreeNode top = new DefaultMutableTreeNode("Yass");
         DefaultMutableTreeNode library = new DefaultMutableTreeNode(I18.get("options_library"));
@@ -110,7 +115,8 @@ public class YassOptions extends JDialog {
         addPanel(editor, I18.get("options_spelling"), new DictionaryPanel());
         
         addPanel(wizard, I18.get("options_wizard_defaults"), new WizardPanel());
-        addPanel(wizard, I18.get("options_wizard_ytdlp"), new YtDlpPanel(ytDlpVersion));
+        ytDlpPanel = new YtDlpPanel(ytDlpVersion);
+        addPanel(wizard, I18.get("options_wizard_ytdlp"), ytDlpPanel);
 
         addPanel(externalTools, I18.get("options_locations"), new LocationsPanel());
         addPanel(externalTools, I18.get("options_external_tools_mvsep"), new MvsepPanel());
@@ -183,41 +189,100 @@ public class YassOptions extends JDialog {
         setLocation(dim.width / 2 - 460, dim.height / 2 - 360);
         setTitle(I18.get("options_title"));
         showPanel(I18.get("options_directories"));
+        startAsyncYtDlpCheck(prop);
+        LOGGER.info(OPTIONS_DEBUG + "YassOptions dialog prepared, opening modal window");
         setVisible(true);
+        LOGGER.info(OPTIONS_DEBUG + "YassOptions dialog closed");
+    }
+
+    private void startAsyncYtDlpCheck(YassProperties prop) {
+        SwingWorker<String, Void> worker = new SwingWorker<>() {
+            @Override
+            protected String doInBackground() {
+                LOGGER.info(OPTIONS_DEBUG + "Async yt-dlp check started");
+                return resolveYtDlpVersion(prop);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    String resolvedVersion = StringUtils.trimToNull(get());
+                    LOGGER.info(OPTIONS_DEBUG + "Async yt-dlp check finished version="
+                            + StringUtils.defaultString(resolvedVersion, "<none>"));
+                    if (!StringUtils.equals(StringUtils.trimToNull(ytDlpPanel.getYtDlpVersion()), resolvedVersion)) {
+                        ytDlpPanel.setYtDlpVersion(resolvedVersion);
+                        ytDlpPanel.refreshContent();
+                        if (StringUtils.equals(I18.get("options_wizard_ytdlp"), tree.getLastSelectedPathComponent() != null
+                                ? String.valueOf(((DefaultMutableTreeNode) tree.getLastSelectedPathComponent()).getUserObject())
+                                : null)) {
+                            showPanel(I18.get("options_wizard_ytdlp"));
+                        } else {
+                            ytDlpPanel.repaint();
+                        }
+                    }
+                } catch (Exception ex) {
+                    LOGGER.log(Level.WARNING, OPTIONS_DEBUG + "Async yt-dlp check failed", ex);
+                }
+            }
+        };
+        worker.execute();
     }
 
     @Nullable
-    private static String checkYtDlpVersion(YassProperties prop) {
-        String ytDlpVersion = prop.getProperty("ytdlp-version");
+    private static String resolveYtDlpVersion(YassProperties prop) {
+        String ytDlpVersion = StringUtils.trimToNull(prop.getProperty("ytdlp-version"));
+        String ytdlpPath = StringUtils.trimToNull(prop.getProperty("ytdlpPath"));
         boolean ytDlpChanged = false;
-        if (ytDlpVersion == null) {
-            try {
-                ytDlpVersion = StringUtils.trim(YtDlp.getVersion());
-                LOGGER.info("yt-dlp version: " + ytDlpVersion);
+
+        if (StringUtils.isNotEmpty(ytdlpPath)) {
+            LOGGER.info(OPTIONS_DEBUG + "Configured yt-dlp path=" + ytdlpPath);
+            if (new java.io.File(ytdlpPath).isFile()) {
+                YtDlp.setExecutablePath(ytdlpPath);
+                LOGGER.info(OPTIONS_DEBUG + "Applied configured yt-dlp executable path");
+            } else {
+                LOGGER.info(OPTIONS_DEBUG + "Configured yt-dlp path does not exist");
+            }
+        } else {
+            LOGGER.info(OPTIONS_DEBUG + "No configured yt-dlp path, relying on library/path resolution");
+        }
+
+        try {
+            String detectedVersion = StringUtils.trimToNull(YtDlp.getVersion());
+            LOGGER.info(OPTIONS_DEBUG + "Detected yt-dlp version=" + StringUtils.defaultString(detectedVersion, "<none>"));
+            if (!StringUtils.equals(ytDlpVersion, detectedVersion)) {
+                ytDlpVersion = detectedVersion;
                 ytDlpChanged = true;
-            } catch (YtDlpException e) {
-                LOGGER.info("yt-dlp not found");
             }
+        } catch (YtDlpException e) {
+            LOGGER.log(Level.INFO, OPTIONS_DEBUG + "yt-dlp detection failed", e);
+            if (ytDlpVersion != null) {
+                ytDlpVersion = null;
+                ytDlpChanged = true;
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, OPTIONS_DEBUG + "Unexpected yt-dlp detection failure", e);
         }
+
         if (StringUtils.isNotEmpty(ytDlpVersion)) {
-            LocalDate ytDlpDate = LocalDate.parse(ytDlpVersion, DateTimeFormatter.ofPattern("yyyy.MM.dd"));
-            if (ChronoUnit.DAYS.between(ytDlpDate, LocalDate.now()) > 30) {
-                try {
-                    YtDlp.update();
-                } catch (YtDlpException e) {
-                    LOGGER.info("yt-dlp not found");
-                    ytDlpVersion = null;
-                    ytDlpChanged = true;
+            try {
+                LocalDate ytDlpDate = LocalDate.parse(ytDlpVersion, DateTimeFormatter.ofPattern("yyyy.MM.dd"));
+                long ageDays = ChronoUnit.DAYS.between(ytDlpDate, LocalDate.now());
+                if (ageDays > 30) {
+                    LOGGER.info(OPTIONS_DEBUG + "yt-dlp version is stale (" + ageDays
+                            + " days old); skipping automatic update while opening settings");
                 }
+            } catch (Exception parseEx) {
+                LOGGER.log(Level.FINE, OPTIONS_DEBUG + "Could not parse yt-dlp version date: " + ytDlpVersion, parseEx);
             }
         }
+
         if (ytDlpChanged) {
             if (StringUtils.isNotEmpty(ytDlpVersion)) {
                 prop.setProperty("ytdlp-version", ytDlpVersion);
-                LOGGER.info("yt-dlp version set to: " + ytDlpVersion);
+                LOGGER.info(OPTIONS_DEBUG + "Stored yt-dlp version=" + ytDlpVersion);
             } else {
                 prop.remove("ytdlp-version");
-                LOGGER.info("yt-dlp was removed from properties");
+                LOGGER.info(OPTIONS_DEBUG + "Removed cached yt-dlp version from properties");
             }
             prop.store();
         }
@@ -232,6 +297,7 @@ public class YassOptions extends JDialog {
      * @param p     The feature to be added to the Node attribute
      */
     public void addPanel(DefaultMutableTreeNode node, String title, OptionsPanel p) {
+        LOGGER.info(OPTIONS_DEBUG + "Initializing options panel: " + title);
         DefaultMutableTreeNode n = new DefaultMutableTreeNode(title);
         node.add(n);
         panels.put(title, p);
@@ -254,6 +320,7 @@ public class YassOptions extends JDialog {
      * @param id Description of the Parameter
      */
     public void showPanel(String id) {
+        LOGGER.info(OPTIONS_DEBUG + "Showing options panel: " + id);
         main.removeAll();
         main.add("Center", getPanel(id));
         getPanel(id).validate();
