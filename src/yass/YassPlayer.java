@@ -775,6 +775,10 @@ public class YassPlayer {
         // clickEnabled = !onoff;
     }
 
+    public boolean isMIDIEnabled() {
+        return midiEnabled;
+    }
+
     /**
      * Sets the audioEnabled attribute of the YassPlayer object
      *
@@ -782,6 +786,10 @@ public class YassPlayer {
      */
     public void setAudioEnabled(boolean onoff) {
         playAudio = onoff;
+    }
+
+    public boolean isAudioEnabled() {
+        return playAudio;
     }
 
     /**

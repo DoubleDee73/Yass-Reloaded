@@ -33,6 +33,7 @@ import yass.analysis.PitchDetector;
 import yass.autocorrect.YassAutoCorrect;
 import yass.extras.UsdbSyncerMetaTagCreator;
 import yass.hyphenator.HyphenatorDictionary;
+import yass.input.*;
 import yass.integration.cover.fanart.FanartTvCoverCandidate;
 import yass.integration.cover.fanart.FanartTvCoverPickerDialog;
 import yass.integration.cover.fanart.FanartTvCoverSearchService;
@@ -207,6 +208,12 @@ public class YassActions implements DropTargetListener {
     public HyphenatorDictionary hyphenatorDictionary = null;
     private JSplitPane editorSplit;
     private KeyboardFocusManager kbdFocus = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+    private final EditorKeyBindingRegistry editorKeyBindingRegistry = new EditorKeyBindingRegistry();
+    private final KeySequenceTracker editorKeySequenceTracker = new KeySequenceTracker(350L);
+    private EditorKeyDispatcher editorKeyDispatcher;
+
+    private record EditorShortcutBinding(KeyStroke keyStroke, String actionKey, Action action, KeyStroke accelerator) {
+    }
 
     private enum SeparationJobState {
         MONITORING,
@@ -253,6 +260,449 @@ public class YassActions implements DropTargetListener {
     private boolean isFocusInSongHeader() {
         Component focusOwner = kbdFocus != null ? kbdFocus.getFocusOwner() : null;
         return focusOwner != null && songHeader != null && SwingUtilities.isDescendingFrom(focusOwner, songHeader);
+    }
+
+    private FocusArea determineEditorFocusArea() {
+        Component focusOwner = kbdFocus != null ? kbdFocus.getFocusOwner() : null;
+        if (focusOwner == null) {
+            return FocusArea.OTHER;
+        }
+        Window window = SwingUtilities.getWindowAncestor(focusOwner);
+        if (window instanceof JDialog) {
+            return FocusArea.DIALOG;
+        }
+        if (songHeader != null && SwingUtilities.isDescendingFrom(focusOwner, songHeader)) {
+            return FocusArea.SONG_HEADER;
+        }
+        if (lyrics != null && SwingUtilities.isDescendingFrom(focusOwner, lyrics)) {
+            return lyrics.isEditable() ? FocusArea.LYRICS_EDIT : FocusArea.LYRICS_VIEW;
+        }
+        if (sheet != null && SwingUtilities.isDescendingFrom(focusOwner, sheet)) {
+            return FocusArea.SHEET;
+        }
+        return FocusArea.OTHER;
+    }
+
+    private EditorInputContext buildEditorInputContext() {
+        int[] selectedRows = table != null ? table.getSelectedRows() : null;
+        int selectionCount = selectedRows == null ? 0 : selectedRows.length;
+        return new EditorInputContext(
+                determineEditorFocusArea(),
+                lyrics != null && lyrics.isEditable(),
+                isFocusInSongHeader(),
+                mp3 != null && mp3.isPlaying(),
+                isRecording(),
+                sheet != null && sheet.isAbsolutePitchViewEnabled(),
+                selectionCount > 0,
+                selectionCount > 1
+        );
+    }
+
+    private void initEditorKeyDispatcher() {
+        editorKeyDispatcher = new EditorKeyDispatcher(
+                () -> currentView == VIEW_EDIT,
+                this::buildEditorInputContext,
+                editorKeyBindingRegistry,
+                editorKeySequenceTracker
+        );
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(editorKeyDispatcher);
+    }
+
+    private EditorCommand createEditorCommand(String id, java.util.function.Consumer<EditorInputContext> executor) {
+        return new SimpleEditorCommand(id, context -> context.focusArea() != FocusArea.DIALOG, executor);
+    }
+
+    private void importEditorBindings(InputMap inputMap, ActionMap actionMap) {
+        if (inputMap == null || actionMap == null) {
+            return;
+        }
+        KeyStroke[] keys = inputMap.allKeys();
+        if (keys == null) {
+            return;
+        }
+        for (KeyStroke key : keys) {
+            Object actionKey = inputMap.get(key);
+            if (actionKey == null) {
+                continue;
+            }
+            Action action = actionMap.get(actionKey);
+            if (action == null) {
+                continue;
+            }
+            editorKeyBindingRegistry.bind(key, createEditorCommand(String.valueOf(actionKey), ctx -> action.actionPerformed(null)));
+            inputMap.remove(key);
+        }
+    }
+
+    private void applyEditorShortcutBindings(InputMap im, ActionMap am, List<EditorShortcutBinding> bindings) {
+        for (EditorShortcutBinding binding : bindings) {
+            im.put(binding.keyStroke(), binding.actionKey());
+            am.put(binding.actionKey(), binding.action());
+            if (binding.accelerator() != null) {
+                binding.action().putValue(AbstractAction.ACCELERATOR_KEY, binding.accelerator());
+            }
+        }
+    }
+
+    private List<EditorShortcutBinding> getEditorGlobalShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0), "showHelp", showHelp,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F4, 0), "editLyrics", editLyrics,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_F4, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0), "editLyrics", editLyrics, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK), "saveTrack", saveTrack,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_S, 0), "saveTrack", saveTrack, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                                          "saveAll", saveAll,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0), "reloadAll", reloadAll,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK), "openFile", openFile,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
+                                          "openFolder", openFolder,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK), "gotoLibrary", gotoLibrary,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK))
+        );
+    }
+
+    private List<EditorShortcutBinding> getEditorPlaybackShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK), "recordSelection", recordSelection,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.CTRL_DOWN_MASK), "playSlower", playSlower,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), "playSelection", playSelection,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK),
+                                          "playSelectionWithMIDI", playSelectionWithMIDI,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_MASK),
+                                          "playSelectionWithMIDIAudio", playSelectionWithMIDIAudio,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                                          "addSpace", addSpace,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                                          "removeSpace", removeSpace,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_P, 0), "playPage", playPage,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_P, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.SHIFT_DOWN_MASK), "playPageWithMIDI", playPageWithMIDI,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK),
+                                          "playPageWithMIDIAudio", playPageWithMIDIAudio, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK),
+                                          "playPageWithMIDIAudio", playPageWithMIDIAudio,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_B, 0), "playBefore", playBefore,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_B, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_N, 0), "playNext", playNext,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_N, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_C, 0), "playFrozen", playFrozen,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_C, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK),
+                                          "playFrozenWithMIDI", playFrozenWithMIDI,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK),
+                                          "playFrozenWithMIDIAudio", playFrozenWithMIDIAudio,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "interruptPlay", interruptPlay,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0))
+        );
+    }
+
+    private List<EditorShortcutBinding> getEditorToggleShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_M, 0), "alignToMelody", alignToMelody,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_M, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_T, 0), "moveCursorDialog", moveCursorDialog,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_T, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.SHIFT_DOWN_MASK),
+                                          "moveRemainderDialog", moveRemainderDialog,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.CTRL_DOWN_MASK),
+                                          "autoCorrectPageBreaks", autoCorrectPageBreaks,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_B, InputEvent.CTRL_DOWN_MASK), "enableMidi", enableMidi,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_B, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK), "enableAudio", enableAudio,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_W, InputEvent.CTRL_DOWN_MASK), "enableClicks", enableClicks,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_W, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.ALT_MASK), "darkmode", darkmode,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                                          "toggleCase", toggleCase,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK))
+        );
+    }
+
+    private List<EditorShortcutBinding> getEditorNavigationShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT,
+                        InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
+                        "shiftLeftRemainder", shiftLeftRemainder,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_LEFT,
+                                InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT,
+                        InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
+                        "shiftRightRemainder", shiftRightRemainder,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT,
+                                InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
+                        "shiftLeft", shiftLeft,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.SHIFT_DOWN_MASK),
+                        "shiftLeft", shiftLeft, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
+                        "shiftRight", shiftRight,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.SHIFT_DOWN_MASK),
+                        "shiftRight", shiftRight, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK),
+                        "decHeight", decHeight,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                        "decHeightPlay", decHeightPlay, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "decHeightOctave", decHeightOctave,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN,
+                        InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "decHeightOctavePlay", decHeightOctavePlay,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DOWN,
+                                InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK),
+                        "incHeight", incHeight,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                        "incHeightPlay", incHeightPlay, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "incHeightOctave", incHeightOctave,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UP,
+                        InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "incHeightOctavePlay", incHeightOctavePlay,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_UP,
+                                InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK),
+                        "decLeft", decLeft,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK),
+                        "incLeft", incLeft,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.ALT_MASK),
+                        "decRight", decRight,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_MASK),
+                        "incRight", incRight,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke("pressed UP"), "prevPagePressed", prevPagePressed, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke("released UP"), "prevPageReleased", prevPageReleased, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0), "prevBeat", prevBeat, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "nextBeat", nextBeat, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke("pressed DOWN"), "nextPagePressed", nextPagePressed, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke("released DOWN"), "nextPageReleased", nextPageReleased, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK),
+                        "selectPrevBeat", selectPrevBeat,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK),
+                        "selectNextBeat", selectNextBeat,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0), "prevPage", prevPage,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0), "nextPage", nextPage,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK),
+                        "lessPages", lessPages,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK),
+                        "morePages", morePages,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "onePage", onePage,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_NUMPAD0, InputEvent.CTRL_DOWN_MASK),
+                        "onePage", onePage, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "allRemainingPages", allRemainingPages,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
+                        InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                        "viewAll", viewAll,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
+                                InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK))
+        );
+    }
+
+    private List<EditorShortcutBinding> getEditorClipboardShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK), "pasteRows", pasteRows,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "pasteNotes", pasteNotes,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_V,
+                        InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                        "pasteNoteHeights", pasteNoteHeights,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_V,
+                                InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_DOWN_MASK), "copyRows", copyRows,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK), "removeCopy", removeCopy,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "removeRows", removeRows,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, InputEvent.CTRL_DOWN_MASK),
+                        "removeRowsWithLyrics", removeRowsWithLyrics,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, 0), "removePageBreak", removePageBreak, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK), "insertNote", insertNote,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK), "insertNote", insertNote,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK))
+        );
+    }
+
+    private List<EditorShortcutBinding> getEditorNoteTypeShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_V, 0), "showCopiedRows", showCopiedRows,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_V, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK), "undo", undo,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK), "redo", redo,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0), "splitRows", splitRows,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, 0), "joinRows", joinRows,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.SHIFT_DOWN_MASK), "rollLeft", rollLeft,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_R, 0), "rollRight", rollRight,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_R, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_HOME, 0), "home", home, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_END, 0), "end", end, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_HOME, InputEvent.CTRL_DOWN_MASK), "first", first, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_END, InputEvent.CTRL_DOWN_MASK), "last", last, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_G, 0), "golden", golden,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_G, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F, 0), "freestyle", freestyle,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_F, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.SHIFT_DOWN_MASK), "rapgolden", rapgolden,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.SHIFT_DOWN_MASK), "rap", rap,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_N, InputEvent.SHIFT_DOWN_MASK), "standard", standard,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_N, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0), "addEndian", addEndian,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_CIRCUMFLEX, 0), "addEndian", addEndian, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke("~"), "addEndian", addEndian, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UNDERSCORE, InputEvent.SHIFT_DOWN_MASK), "minus", minus,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_UNDERSCORE, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.SHIFT_DOWN_MASK), "togglePreview", togglePreview,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_A, 0), "toggleMedleyStart", toggleMedleyStart,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_A, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.SHIFT_DOWN_MASK), "toggleMedleyEnd", toggleMedleyEnd,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_DOWN_MASK), "alignGrid", alignToGrid,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_9, 0), "decGap", decGap,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_9, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_0, 0), "incGap", incGap,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_0, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.SHIFT_DOWN_MASK), "decGap2", decGap2,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.SHIFT_DOWN_MASK), "incGap2", incGap2,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK), "decBpm", decBpm,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK), "incBpm", incBpm,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), "decBpm2", decBpm2,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), "incBpm2", incBpm2,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK), "selectLine", selectLine,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), "selectAll", selectAll,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "togglePageBreak", togglePageBreak,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_L, 0), "absolute", absolute,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_L, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_L, InputEvent.SHIFT_DOWN_MASK), "absolute", absolute, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.ALT_MASK), "fullscreen", fullscreen,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.ALT_MASK))
+        );
+    }
+
+    private List<EditorShortcutBinding> getEditorTrackShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.CTRL_DOWN_MASK), "prevTrack", activatePrevTrack,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK), "nextTrack", activateNextTrack,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_1, InputEvent.CTRL_DOWN_MASK), "track1", activateTrack1,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_1, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_2, InputEvent.CTRL_DOWN_MASK), "track2", activateTrack2,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_2, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_3, InputEvent.CTRL_DOWN_MASK), "track3", activateTrack3,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_3, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_4, InputEvent.CTRL_DOWN_MASK), "track4", activateTrack4,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_4, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_5, InputEvent.CTRL_DOWN_MASK), "track5", activateTrack5,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_5, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_6, InputEvent.CTRL_DOWN_MASK), "track6", activateTrack6,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_6, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_7, InputEvent.CTRL_DOWN_MASK), "track7", activateTrack7,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_7, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_8, InputEvent.CTRL_DOWN_MASK), "track8", activateTrack8,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_8, InputEvent.CTRL_DOWN_MASK))
+        );
+    }
+
+    private void applyPlaybackToggleProperties() {
+        if (prop == null) {
+            return;
+        }
+        boolean audioEnabled = prop.getBooleanProperty("play-audio-enabled");
+        boolean clicksEnabled = prop.getBooleanProperty("play-clicks-enabled");
+        boolean instrumentEnabled = prop.getBooleanProperty("play-instrument-enabled");
+
+        mp3.setAudioEnabled(audioEnabled);
+        mp3.setClicksEnabled(clicksEnabled);
+        mp3.setMIDIEnabled(instrumentEnabled);
+
+        if (mp3Button != null) {
+            mp3Button.setSelected(audioEnabled);
+        }
+        if (audioCBI != null) {
+            audioCBI.setState(audioEnabled);
+        }
+        if (clicksCBI != null) {
+            clicksCBI.setState(clicksEnabled);
+        }
+        if (midiButton != null) {
+            midiButton.setSelected(instrumentEnabled);
+        }
+        if (midiCBI != null) {
+            midiCBI.setState(instrumentEnabled);
+        }
+        sheet.setPaintHeights(instrumentEnabled);
+    }
+
+    private void storePlaybackToggleProperty(String key, boolean enabled) {
+        if (prop == null) {
+            return;
+        }
+        prop.setProperty(key, Boolean.toString(enabled));
+        prop.store();
     }
 
     private void logSaveActionState(String origin) {
@@ -3923,12 +4373,12 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             if (e.getSource() != mp3Button) {
                 mp3Button.setSelected(!mp3Button.isSelected());
-            } else {
-                mp3.setAudioEnabled(mp3Button.isSelected());
             }
+            mp3.setAudioEnabled(mp3Button.isSelected());
             if (audioCBI != null) {
                 audioCBI.setState(mp3Button.isSelected());
             }
+            storePlaybackToggleProperty("play-audio-enabled", mp3Button.isSelected());
         }
     };
     private final Action toggleCase = new AbstractAction(I18.get("edit_toggle_case")) {
@@ -3943,6 +4393,7 @@ public class YassActions implements DropTargetListener {
             if (clicksCBI != null) {
                 clicksCBI.setState(mp3.isClicksEnabled());
             }
+            storePlaybackToggleProperty("play-clicks-enabled", mp3.isClicksEnabled());
         }
     };
     private final Action alignToGrid = new AbstractAction(I18.get("edit_align_to_grid")) {
@@ -3980,6 +4431,7 @@ public class YassActions implements DropTargetListener {
         if (midiCBI != null) {
             midiCBI.setState(midiButton.isSelected());
         }
+        storePlaybackToggleProperty("play-instrument-enabled", midiButton.isSelected());
         if (sheet.isAbsolutePitchViewEnabled()) {
             LOGGER.finest("[AbsolutePitchView] enableMidi selected=" + midiButton.isSelected()
                                 + " paintHeightsBefore=" + sheet.isPaintHeights()
@@ -4128,6 +4580,7 @@ public class YassActions implements DropTargetListener {
 
         // setDropTarget(sheet);
         registerEditorActions(sheet);
+        initEditorKeyDispatcher();
         PropertyChangeListener plis = e -> {
             String p = e.getPropertyName();
             if (p.equals("play")) {
@@ -4761,6 +5214,7 @@ public class YassActions implements DropTargetListener {
 
         boolean useWav = prop.getProperty("use-sample").equals("true");
         mp3.useWav(useWav);
+        applyPlaybackToggleProperties();
 
         auto = new YassAutoCorrect();
         auto.init(prop);
@@ -5275,9 +5729,8 @@ public class YassActions implements DropTargetListener {
         menu.addSeparator();
         menu.add(midiCBI = new JCheckBoxMenuItem(enableMidi));
         menu.add(audioCBI = new JCheckBoxMenuItem(enableAudio));
-        audioCBI.setState(true);
         menu.add(clicksCBI = new JCheckBoxMenuItem(enableClicks));
-        clicksCBI.setState(true);
+        applyPlaybackToggleProperties();
 //        menu.add(micCBI = new JCheckBoxMenuItem(enableMic));
 //        micCBI.setState(true);
 
@@ -5568,8 +6021,8 @@ public class YassActions implements DropTargetListener {
         mp3Button.setIcon(getIcon("mute24Icon"));
         mp3Button.setSelectedIcon(getIcon("nomute24Icon"));
         mp3Button.setFocusable(false);
-        mp3Button.setSelected(true);
         mp3Button.setOpaque(false);
+        applyPlaybackToggleProperties();
 
         videoButton = new JToggleButton();
         t.add(videoButton = new JToggleButton());
@@ -10676,282 +11129,9 @@ public class YassActions implements DropTargetListener {
     public void registerEditorActions(JComponent c) {
         InputMap im = c.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
         ActionMap am = c.getActionMap();
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0), "showHelp");
-        am.put("showHelp", showHelp);
-        showHelp.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F4, 0), "editLyrics");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0), "editLyrics");
-        editLyrics.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F4, 0));
-        am.put("editLyrics", editLyrics);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK), "saveTrack");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_S, 0), "saveTrack");
-        saveTrack.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK));
-        am.put("saveTrack", saveTrack);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "saveAll");
-        saveAll.putValue(AbstractAction.ACCELERATOR_KEY,
-                         KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
-        am.put("saveAll", saveAll);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0), "reloadAll");
-        reloadAll.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0));
-        am.put("reloadAll", reloadAll);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK), "openFile");
-        am.put("openFile", openFile);
-        openFile.putValue(AbstractAction.ACCELERATOR_KEY,
-                          KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK), "openFolder");
-        am.put("openFolder", openFolder);
-        openFolder.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK), "openFolder");
-        am.put("openFolder", openFolder);
-        openFolderFromLibrary.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_E,
-                                                                                              InputEvent.CTRL_DOWN_MASK |
-                                                                                                      InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK), "gotoLibrary");
-        am.put("gotoLibrary", gotoLibrary);
-        gotoLibrary.putValue(AbstractAction.ACCELERATOR_KEY,
-                             KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT,
-                                      InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
-               "shiftLeftRemainder");
-        am.put("shiftLeftRemainder", shiftLeftRemainder);
-        shiftLeftRemainder.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_LEFT,
-                                                                                           InputEvent.SHIFT_DOWN_MASK |
-                                                                                                   InputEvent.CTRL_DOWN_MASK |
-                                                                                                   InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT,
-                                      InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
-               "shiftRightRemainder");
-        am.put("shiftRightRemainder", shiftRightRemainder);
-        shiftRightRemainder.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT,
-                                                                                            InputEvent.SHIFT_DOWN_MASK |
-                                                                                                    InputEvent.CTRL_DOWN_MASK |
-                                                                                                    InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK), "shiftLeft");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.SHIFT_DOWN_MASK), "shiftLeft");
-        am.put("shiftLeft", shiftLeft);
-        shiftLeft.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
-               "shiftRight");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.SHIFT_DOWN_MASK), "shiftRight");
-        am.put("shiftRight", shiftRight);
-        shiftRight.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK), "decHeight");
-        am.put("decHeight", decHeight);
-        decHeight.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
-               "decHeightPlay");
-        am.put("decHeightPlay", decHeightPlay);
-        incHeight.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "decHeightOctave");
-        am.put("decHeightOctave", decHeightOctave);
-        decHeightOctave.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DOWN,
-                                                                                        InputEvent.CTRL_DOWN_MASK |
-                                                                                                InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK |
-                InputEvent.SHIFT_DOWN_MASK), "decHeightOctavePlay");
-        am.put("decHeightOctavePlay", decHeightOctavePlay);
-        decHeightOctavePlay.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DOWN,
-                                                                                            InputEvent.ALT_DOWN_MASK |
-                                                                                                    InputEvent.CTRL_DOWN_MASK |
-                                                                                                    InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK), "incHeight");
-        am.put("incHeight", incHeight);
-        incHeight.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP,
-                                                                                  InputEvent.CTRL_DOWN_MASK |
-                                                                                          InputEvent.ALT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
-               "incHeightPlay");
-        am.put("incHeightPlay", incHeightPlay);
-        incHeight.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "incHeightOctave");
-        am.put("incHeightOctave", incHeightOctave);
-        incHeightOctave.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP,
-                                                                                        InputEvent.CTRL_DOWN_MASK |
-                                                                                                InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK |
-                InputEvent.SHIFT_DOWN_MASK), "incHeightOctavePlay");
-        am.put("incHeightOctavePlay", incHeightOctavePlay);
-        incHeightOctavePlay.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP,
-                                                                                            InputEvent.ALT_DOWN_MASK |
-                                                                                                    InputEvent.CTRL_DOWN_MASK |
-                                                                                                    InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK), "decLeft");
-        am.put("decLeft", decLeft);
-        decLeft.putValue(AbstractAction.ACCELERATOR_KEY,
-                         KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK), "incLeft");
-        am.put("incLeft", incLeft);
-        incLeft.putValue(AbstractAction.ACCELERATOR_KEY,
-                         KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.ALT_MASK), "decRight");
-        am.put("decRight", decRight);
-        decRight.putValue(AbstractAction.ACCELERATOR_KEY,
-                          KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_MASK), "incRight");
-        am.put("incRight", incRight);
-        incRight.putValue(AbstractAction.ACCELERATOR_KEY,
-                          KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke("pressed UP"), "prevPagePressed");
-        im.put(KeyStroke.getKeyStroke("released UP"), "prevPageReleased");
-        am.put("prevPage", prevPage);
-        am.put("prevPagePressed", prevPagePressed);
-        am.put("prevPageReleased", prevPageReleased);
-        prevPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0), "prevBeat");
-        am.put("prevBeat", prevBeat);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "nextBeat");
-        am.put("nextBeat", nextBeat);
-
-        im.put(KeyStroke.getKeyStroke("pressed DOWN"), "nextPagePressed");
-        im.put(KeyStroke.getKeyStroke("released DOWN"), "nextPageReleased");
-        am.put("nextPagePressed", nextPagePressed);
-        am.put("nextPageReleased", nextPageReleased);
-        am.put("nextPage", nextPage);
-        nextPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK), "selectPrevBeat");
-        am.put("selectPrevBeat", selectPrevBeat);
-        selectPrevBeat.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK), "selectNextBeat");
-        am.put("selectNextBeat", selectNextBeat);
-        selectNextBeat.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0), "prevPage");
-        prevPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0), "nextPage");
-        nextPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK), "lessPages");
-        am.put("lessPages", lessPages);
-        lessPages.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK), "morePages");
-        am.put("morePages", morePages);
-        morePages.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "onePage");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_NUMPAD0, InputEvent.CTRL_DOWN_MASK), "onePage");
-        am.put("onePage", onePage);
-        onePage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP,
-                                                                                InputEvent.CTRL_DOWN_MASK |
-                                                                                        InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "allRemainingPages");
-        am.put("allRemainingPages", allRemainingPages);
-        allRemainingPages.putValue(AbstractAction.ACCELERATOR_KEY,
-                                   KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
-                                                          InputEvent.CTRL_DOWN_MASK |
-                                                                  InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
-                                      InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK |
-                                              InputEvent.ALT_DOWN_MASK),
-               "viewAll");
-        am.put("viewAll", viewAll);
-        viewAll.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
-                                                                                InputEvent.CTRL_DOWN_MASK |
-                                                                                        InputEvent.SHIFT_DOWN_MASK |
-                                                                                        InputEvent.ALT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK), "pasteRows");
-        am.put("pasteRows", pasteRows);
-        pasteRows.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "pasteNotes");
-        am.put("pasteNotes", pasteNotes);
-        pasteNotes.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_V,
-                                                                                   InputEvent.CTRL_DOWN_MASK |
-                                                                                           InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK |
-                InputEvent.ALT_DOWN_MASK), "pasteNoteHeights");
-        am.put("pasteNoteHeights", pasteNoteHeights);
-        pasteNoteHeights.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_V,
-                                                                                         InputEvent.CTRL_DOWN_MASK |
-                                                                                                 InputEvent.SHIFT_DOWN_MASK |
-                                                                                                 InputEvent.ALT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_DOWN_MASK), "copyRows");
-        am.put("copyRows", copyRows);
-        copyRows.putValue(AbstractAction.ACCELERATOR_KEY,
-                          KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK), "removeCopy");
-        am.put("removeCopy", removeCopy);
-        removeCopy.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "togglePageBreak");
-        am.put("togglePageBreak", togglePageBreak);
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, 0), "removePageBreak");
-        am.put("removePageBreak", removePageBreak);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "removeRows");
-        am.put("removeRows", removeRows);
-        removeRows.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, InputEvent.CTRL_DOWN_MASK), "removeRowsWithLyrics");
-        am.put("removeRowsWithLyrics", removeRowsWithLyrics);
-        removeRowsWithLyrics.putValue(AbstractAction.ACCELERATOR_KEY,
-                                      KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_L, 0), "absolute");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_L, InputEvent.SHIFT_DOWN_MASK), "absolute");
-        am.put("absolute", absolute);
-        absolute.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_L, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.ALT_MASK), "fullscreen");
-        am.put("fullscreen", fullscreen);
-        fullscreen.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.ALT_MASK));
+        applyEditorShortcutBindings(im, am, getEditorGlobalShortcutBindings());
+        applyEditorShortcutBindings(im, am, getEditorNavigationShortcutBindings());
+        applyEditorShortcutBindings(im, am, getEditorClipboardShortcutBindings());
 
         // im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F12, // InputEvent.SHIFT_DOWN_MASK), // "playAll");
         // am.put("playAll", playAll);
@@ -10963,337 +11143,13 @@ public class YassActions implements DropTargetListener {
         // playAllFromHere.putValue(AbstractAction.ACCELERATOR_KEY, // KeyStroke.getKeyStroke(KeyEvent.VK_F12, 0));
 
         // am.put("recordAll", recordAll);
+        applyEditorShortcutBindings(im, am, getEditorPlaybackShortcutBindings());
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK), "recordSelection");
-        am.put("recordSelection", recordSelection);
-        recordSelection.putValue(AbstractAction.ACCELERATOR_KEY,
-                                 KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK));
+        applyEditorShortcutBindings(im, am, getEditorToggleShortcutBindings());
+        applyEditorShortcutBindings(im, am, getEditorNoteTypeShortcutBindings());
+        applyEditorShortcutBindings(im, am, getEditorTrackShortcutBindings());
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.CTRL_DOWN_MASK), "playSlower");
-        am.put("playSlower", playSlower);
-        playSlower.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), "playSelection");
-        am.put("playSelection", playSelection);
-        playSelection.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK), "playSelectionWithMIDI");
-        am.put("playSelectionWithMIDI", playSelectionWithMIDI);
-        playSelectionWithMIDI.putValue(AbstractAction.ACCELERATOR_KEY,
-                                       KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_MASK),
-               "playSelectionWithMIDIAudio");
-        am.put("playSelectionWithMIDIAudio", playSelectionWithMIDIAudio);
-        playSelectionWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE,
-                                                                                                   InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
-               "addSpace");
-        am.put("addSpace", addSpace);
-        addSpace.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE,
-                                                                                 InputEvent.CTRL_DOWN_MASK |
-                                                                                         InputEvent.ALT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
-               "removeSpace");
-        am.put("removeSpace", removeSpace);
-        removeSpace.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE,
-                                                                                    InputEvent.CTRL_DOWN_MASK |
-                                                                                            InputEvent.ALT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, 0), "playPage");
-        am.put("playPage", playPage);
-        playPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_P, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.SHIFT_DOWN_MASK), "playPageWithMIDI");
-        am.put("playPageWithMIDI", playPageWithMIDI);
-        playPageWithMIDI.putValue(AbstractAction.ACCELERATOR_KEY,
-                                  KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK),
-               "playPageWithMIDIAudio");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK), "playPageWithMIDIAudio");
-        am.put("playPageWithMIDIAudio", playPageWithMIDIAudio);
-        playPageWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY,
-                                       KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK), "playPageWithMIDIAudio");
-        am.put("playPageWithMIDIAudio", playPageWithMIDIAudio);
-        playPageWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY,
-                                       KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_B, 0), "playBefore");
-        am.put("playNext", playBefore);
-        playBefore.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_B, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_N, 0), "playNext");
-        am.put("playNext", playNext);
-        playNext.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_N, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_V, 0), "showCopiedRows");
-        am.put("showCopiedRows", showCopiedRows);
-        showCopiedRows.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_V, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_C, 0), "playFrozen");
-        am.put("playFrozen", playFrozen);
-        playFrozen.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_C, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK), "playFrozenWithMIDI");
-        am.put("playFrozenWithMIDI", playFrozenWithMIDI);
-        playFrozenWithMIDI.putValue(AbstractAction.ACCELERATOR_KEY,
-                                    KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK),
-               "playFrozenWithMIDIAudio");
-        am.put("playFrozenWithMIDIAudio", playFrozenWithMIDIAudio);
-        playFrozenWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_C,
-                                                                                                InputEvent.SHIFT_DOWN_MASK |
-                                                                                                        InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_B, InputEvent.CTRL_DOWN_MASK), "enableMidi");
-        am.put("enableMidi", enableMidi);
-        enableMidi.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_B, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK), "enableAudio");
-        am.put("enableAudio", enableAudio);
-        enableAudio.putValue(AbstractAction.ACCELERATOR_KEY,
-                             KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_W, InputEvent.CTRL_DOWN_MASK), "enableClicks");
-        am.put("enableClicks", enableClicks);
-        enableClicks.putValue(AbstractAction.ACCELERATOR_KEY,
-                              KeyStroke.getKeyStroke(KeyEvent.VK_W, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "interruptPlay");
-        am.put("interruptPlay", interruptPlay);
-        interruptPlay.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK), "undo");
-        am.put("undo", undo);
-        undo.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK), "redo");
-        am.put("redo", redo);
-        redo.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0), "splitRows");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, 0), "joinRows");
-        am.put("splitRows", splitRows);
-        am.put("joinRows", joinRows);
-        splitRows.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0));
-        joinRows.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.SHIFT_DOWN_MASK), "rollLeft");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_R, 0), "rollRight");
-        am.put("rollLeft", rollLeft);
-        am.put("rollRight", rollRight);
-        rollLeft.putValue(AbstractAction.ACCELERATOR_KEY,
-                          KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.SHIFT_DOWN_MASK));
-        rollRight.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_R, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_HOME, 0), "home");
-        am.put("home", home);
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_END, 0), "end");
-        am.put("end", end);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_HOME, InputEvent.CTRL_DOWN_MASK), "first");
-        am.put("first", first);
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_END, InputEvent.CTRL_DOWN_MASK), "last");
-        am.put("last", last);
-
-        /*
-         * im.put(KeyStroke.getKeyStroke(KeyEvent.VK_L , InputEvent.CTRL_DOWN_MASK), * "lock"); am.put("lock",
-         * enableHyphenKeys);
-         * enableHyphenKeys.putValue(AbstractAction.ACCELERATOR_KEY, * KeyStroke.getKeyStroke(KeyEvent.VK_L,
-         * InputEvent.CTRL_DOWN_MASK));
-         */
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_G, 0), "golden");
-        am.put("golden", golden);
-        golden.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_G, 0));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F, 0), "freestyle");
-        am.put("freestyle", freestyle);
-        freestyle.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.SHIFT_DOWN_MASK), "rapgolden");
-        am.put("rapgolden", rapgolden);
-        rapgolden.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.SHIFT_DOWN_MASK));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.SHIFT_DOWN_MASK), "rap");
-        am.put("rap", rap);
-        rap.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_N, InputEvent.SHIFT_DOWN_MASK), "standard");
-        am.put("standard", standard);
-        standard.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_N, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0), "addEndian");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_CIRCUMFLEX, 0), "addEndian");
-        im.put(KeyStroke.getKeyStroke("~"), "addEndian");
-        am.put("addEndian", addEndian);
-        addEndian.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UNDERSCORE, InputEvent.SHIFT_DOWN_MASK), "minus");
-        am.put("minus", minus);
-        minus.putValue(AbstractAction.ACCELERATOR_KEY,
-                       KeyStroke.getKeyStroke(KeyEvent.VK_UNDERSCORE, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.SHIFT_DOWN_MASK), "togglePreview");
-        am.put("togglePreview", togglePreview);
-        togglePreview.putValue(AbstractAction.ACCELERATOR_KEY,
-                               KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.SHIFT_DOWN_MASK));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, 0), "toggleMedleyStart");
-        am.put("toggleMedleyStart", toggleMedleyStart);
-        toggleMedleyStart.putValue(AbstractAction.ACCELERATOR_KEY,
-                                   KeyStroke.getKeyStroke(KeyEvent.VK_A, 0));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.SHIFT_DOWN_MASK), "toggleMedleyEnd");
-        am.put("toggleMedleyEnd", toggleMedleyEnd);
-        toggleMedleyEnd.putValue(AbstractAction.ACCELERATOR_KEY,
-                                 KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.SHIFT_DOWN_MASK));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_DOWN_MASK), "alignGrid");
-        am.put("alignGrid", alignToGrid);
-        alignToGrid.putValue(AbstractAction.ACCELERATOR_KEY,
-                             KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_DOWN_MASK));
-
-        // umlaute not working
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_9, 0), "decGap");
-        am.put("decGap", decGap);
-        decGap.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_9, 0));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_0, 0), "incGap");
-        am.put("incGap", incGap);
-        incGap.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_0, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.SHIFT_DOWN_MASK), "decGap2");
-        am.put("decGap2", decGap2);
-        decGap2.putValue(AbstractAction.ACCELERATOR_KEY,
-                         KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.SHIFT_DOWN_MASK));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.SHIFT_DOWN_MASK), "incGap2");
-        am.put("incGap2", incGap2);
-        incGap2.putValue(AbstractAction.ACCELERATOR_KEY,
-                         KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK), "decBpm");
-        am.put("decBpm", decBpm);
-        decGap.putValue(AbstractAction.ACCELERATOR_KEY,
-                        KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK), "incBpm");
-        am.put("incBpm", incBpm);
-        incGap.putValue(AbstractAction.ACCELERATOR_KEY,
-                        KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "decBpm2");
-        am.put("decBpm2", decBpm2);
-        decGap2.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_MINUS,
-                                                                                InputEvent.CTRL_DOWN_MASK |
-                                                                                        InputEvent.SHIFT_DOWN_MASK));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "incBpm2");
-        am.put("incBpm2", incBpm2);
-        incGap2.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PLUS,
-                                                                                InputEvent.CTRL_DOWN_MASK |
-                                                                                        InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK), "selectLine");
-        am.put("selectLine", selectLine);
-        selectLine.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "selectAll");
-        am.put("selectAll", selectAll);
-        selectAll.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_A,
-                                                                                  InputEvent.CTRL_DOWN_MASK |
-                                                                                          InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "togglePageBreak");
-        am.put("togglePageBreak", togglePageBreak);
-        togglePageBreak.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_T, 0), "moveCursorDialog");
-        am.put("moveCursorDialog", moveCursorDialog);
-        moveCursorDialog.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_T, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.SHIFT_DOWN_MASK), "moveRemainderDialog");
-        am.put("moveRemainderDialog", moveRemainderDialog);
-        moveRemainderDialog.putValue(AbstractAction.ACCELERATOR_KEY,
-                                     KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.CTRL_DOWN_MASK), "autoCorrectPageBreaks");
-        am.put("autoCorrectPageBreaks", autoCorrectPageBreaks);
-        autoCorrectPageBreaks.putValue(AbstractAction.ACCELERATOR_KEY,
-                                       KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK), "insertNote");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK), "insertNote");
-        am.put("insertNote", insertNote);
-        insertNote.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK));
-        insertNote.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.CTRL_DOWN_MASK), "prevTrack");
-        am.put("prevTrack", activatePrevTrack);
-        activatePrevTrack.putValue(AbstractAction.ACCELERATOR_KEY,
-                                   KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK), "nextTrack");
-        am.put("nextTrack", activateNextTrack);
-        activateNextTrack.putValue(AbstractAction.ACCELERATOR_KEY,
-                                   KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_1, InputEvent.CTRL_DOWN_MASK), "track1");
-        am.put("track1", activateTrack1);
-        activateTrack1.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_1, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_2, InputEvent.CTRL_DOWN_MASK), "track2");
-        am.put("track2", activateTrack2);
-        activateTrack2.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_2, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_3, InputEvent.CTRL_DOWN_MASK), "track3");
-        am.put("track3", activateTrack3);
-        activateTrack3.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_3, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_4, InputEvent.CTRL_DOWN_MASK), "track4");
-        am.put("track4", activateTrack4);
-        activateTrack4.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_4, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_5, InputEvent.CTRL_DOWN_MASK), "track5");
-        am.put("track5", activateTrack5);
-        activateTrack5.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_5, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_6, InputEvent.CTRL_DOWN_MASK), "track6");
-        am.put("track6", activateTrack6);
-        activateTrack6.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_6, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_7, InputEvent.CTRL_DOWN_MASK), "track7");
-        am.put("track7", activateTrack7);
-        activateTrack7.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_7, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_8, InputEvent.CTRL_DOWN_MASK), "track8");
-        am.put("track8", activateTrack8);
-        activateTrack8.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_8, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.ALT_MASK), "darkmode");
-        am.put("darkmode", darkmode);
-        darkmode.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "toggleCase");
-        am.put("toggleCase", toggleCase);
-        enableAudio.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_U,
-                                                                                    InputEvent.CTRL_DOWN_MASK |
-                                                                                            InputEvent.SHIFT_DOWN_MASK));
+        importEditorBindings(im, am);
     }
 
 

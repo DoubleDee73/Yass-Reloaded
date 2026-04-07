@@ -26,11 +26,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 
 import javax.swing.*;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -478,6 +474,9 @@ public class YassProperties extends Properties {
 
         //piano
         p.putIfAbsent("piano-volume", "100");
+        p.putIfAbsent("play-audio-enabled", "true");
+        p.putIfAbsent("play-clicks-enabled", "true");
+        p.putIfAbsent("play-instrument-enabled", "false");
 
         //non-editable
         p.putIfAbsent("welcome", "true");
