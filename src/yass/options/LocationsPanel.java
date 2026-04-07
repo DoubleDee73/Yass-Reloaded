@@ -35,6 +35,7 @@ public class LocationsPanel extends OptionsPanel {
 
     private static final long serialVersionUID = -7453496938869803003L;
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+    private static final String OPTIONS_DEBUG = "[OptionsDebug] ";
 
     public LocationsPanel() {
         super();
@@ -72,18 +73,21 @@ public class LocationsPanel extends OptionsPanel {
      * fields if they are found and not already configured by the user.
      */
     private void prefillToolPaths() {
+        LOGGER.info(OPTIONS_DEBUG + "LocationsPanel prefillToolPaths start");
         if (StringUtils.isEmpty(getProperty("ffmpegPath"))) {
             String ffmpegPath = findExecutable("ffmpeg");
             if (ffmpegPath != null) {
                 File ffmpegFile = new File(ffmpegPath);
                 setProperty("ffmpegPath", ffmpegFile.getParent());
                 setGoToYtDlpPanel(true);
+                LOGGER.info(OPTIONS_DEBUG + "Auto-detected ffmpeg at " + ffmpegPath);
             }
         }
         if (StringUtils.isEmpty(getProperty("ytdlpPath"))) {
             String ytdlpPath = findExecutable("yt-dlp");
             if (ytdlpPath != null) {
                 setProperty("ytdlpPath", ytdlpPath);
+                LOGGER.info(OPTIONS_DEBUG + "Auto-detected yt-dlp at " + ytdlpPath);
             }
         }
         if (StringUtils.isEmpty(getProperty("aubioPath"))) {
@@ -92,8 +96,10 @@ public class LocationsPanel extends OptionsPanel {
             if (aubioToolPath != null) {
                 File aubioFile = new File(aubioToolPath);
                 setProperty("aubioPath", aubioFile.getParent());
+                LOGGER.info(OPTIONS_DEBUG + "Auto-detected aubio at " + aubioToolPath);
             }
         }
+        LOGGER.info(OPTIONS_DEBUG + "LocationsPanel prefillToolPaths end");
     }
 
     /**
@@ -103,22 +109,28 @@ public class LocationsPanel extends OptionsPanel {
      * @return The absolute path to the executable if found, otherwise null.
      */
     private String findExecutable(String executableName) {
+        LOGGER.info(OPTIONS_DEBUG + "Searching PATH for executable: " + executableName);
         String os = System.getProperty("os.name").toLowerCase();
         String[] executableNames = os.contains("win")
                 ? new String[]{executableName + ".exe", executableName + ".bat", executableName + ".cmd"}
                 : new String[]{executableName};
 
         String systemPath = System.getenv("PATH");
-        if (systemPath == null) return null;
+        if (systemPath == null) {
+            LOGGER.info(OPTIONS_DEBUG + "PATH environment variable is empty while searching for " + executableName);
+            return null;
+        }
 
         for (String pathDir : systemPath.split(File.pathSeparator)) {
             for (String name : executableNames) {
                 File file = new File(pathDir, name);
                 if (file.isFile() && file.canExecute()) {
+                    LOGGER.info(OPTIONS_DEBUG + "Found " + executableName + " at " + file.getAbsolutePath());
                     return file.getAbsolutePath();
                 }
             }
         }
+        LOGGER.info(OPTIONS_DEBUG + "Did not find " + executableName + " on PATH");
         return null;
     }
 
