@@ -1186,6 +1186,10 @@ public class YassActions implements DropTargetListener {
             if (isFilterEditing()) {
                 return;
             }
+            if (mp3.isPlaying()) {
+                stopPlaySong();
+                return;
+            }
             playSong();
         }
     };
@@ -1792,6 +1796,10 @@ public class YassActions implements DropTargetListener {
                     || isFilterEditing()) {
                 return;
             }
+            if (mp3.isPlaying() && !isRecording()) {
+                stopPlaying();
+                return;
+            }
 
             playSelection(0);
         }
@@ -1803,6 +1811,10 @@ public class YassActions implements DropTargetListener {
                     || isFilterEditing()) {
                 return;
             }
+            if (mp3.isPlaying() && !isRecording()) {
+                stopPlaying();
+                return;
+            }
 
             playSelection(1);
         }
@@ -1812,6 +1824,10 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             if (lyrics.isEditable() || songList.isEditing()
                     || isFilterEditing()) {
+                return;
+            }
+            if (mp3.isPlaying() && !isRecording()) {
+                stopPlaying();
                 return;
             }
 
