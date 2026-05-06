@@ -37,12 +37,18 @@ import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.ConnectException;
+import java.net.HttpURLConnection;
+import java.net.Proxy;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.*;
+import java.util.logging.Level;
 import java.util.List;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -87,6 +93,9 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     private final Map<String, JTextField> textfields = new HashMap<>();
 
     private Map<String, String> prefilledTags = new HashMap<>();
+
+    private static final int IMAGE_DOWNLOAD_CONNECT_TIMEOUT_MS = 10_000;
+    private static final int IMAGE_DOWNLOAD_READ_TIMEOUT_MS = 20_000;
 
     private static List<String> SYNCER_TAGS = List.of("v", "a", "co", "bg", "preview", "medley", "tags", "p1", "p2");
     static final class SaveState {
@@ -677,8 +686,9 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
                 if (StringUtils.isEmpty(coUrl)) {
                     return;
                 }
-                String normalizedForDownload = normalizeImageDownloadUrl(coUrl);
+                String normalizedForDownload = toDownloadableImageUrl(coUrl);
                 if (StringUtils.isBlank(normalizedForDownload)) {
+                    LOGGER.info("Skipping cover download because image URL could not be normalized: " + coUrl);
                     return;
                 }
                 if (coUrl.startsWith("https://i.ytimg.com") && coverResize.getValue() != null &&
@@ -729,13 +739,15 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     private File downloadAndSaveFile(String imageUrl, String destinationFile, int[] crop, int resize) {
         File imageFile;
         try {
-            String normalizedUrl = normalizeImageDownloadUrl(imageUrl);
+            String normalizedUrl = toDownloadableImageUrl(imageUrl);
             if (StringUtils.isBlank(normalizedUrl)) {
+                LOGGER.info("Skipping image download because URL could not be normalized: " + imageUrl);
                 return null;
             }
-            URL url = new URI(normalizedUrl).toURL();
-            BufferedImage image = ImageIO.read(url);
+            LOGGER.info("Downloading image from " + normalizedUrl + " to " + destinationFile + ".jpg");
+            BufferedImage image = readDownloadImage(normalizedUrl);
             if (image == null) {
+                LOGGER.info("Skipping image download because image data could not be decoded: " + normalizedUrl);
                 return null;
             }
             if (crop != null) {
@@ -747,16 +759,93 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
             imageFile = new File(destinationFile + ".jpg");
             if (imageFile.exists()) {
                 log.info(destinationFile + ".jpg already exist");
+                LOGGER.info("Skipping image download because target file already exists: " + imageFile);
                 return null;
             }
             ImageIO.write(image, "jpeg", imageFile);
         } catch (IOException | URISyntaxException e) {
+            LOGGER.log(Level.INFO, "Skipping image download because it failed: " + imageUrl, e);
             return null;
         }
         return imageFile;
     }
 
-    private String normalizeImageDownloadUrl(String imageUrl) {
+    private BufferedImage readDownloadImage(String imageUrl) throws IOException, URISyntaxException {
+        String route = describeImageDownloadRoute(imageUrl);
+        try {
+            return readDownloadImage(imageUrl, false);
+        } catch (IOException e) {
+            if (!shouldRetryImageDownloadDirectly(e, route)) {
+                throw e;
+            }
+            LOGGER.log(Level.INFO, "Image download through configured proxy failed; retrying direct route: "
+                    + imageUrl + ", route=" + route, e);
+            return readDownloadImage(imageUrl, true);
+        }
+    }
+
+    private BufferedImage readDownloadImage(String imageUrl, boolean direct) throws IOException, URISyntaxException {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URI(imageUrl).toURL();
+            connection = (HttpURLConnection) (direct ? url.openConnection(Proxy.NO_PROXY) : url.openConnection());
+            connection.setInstanceFollowRedirects(true);
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(IMAGE_DOWNLOAD_CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(IMAGE_DOWNLOAD_READ_TIMEOUT_MS);
+            connection.setRequestProperty("Accept", "image/webp,image/png,image/jpeg,image/*,*/*;q=0.8");
+            connection.setRequestProperty("User-Agent", "Yass Reloaded/" + VersionUtils.getVersion()
+                    + " ( https://github.com/DoubleDee73/Yass-Reloaded )");
+            connection.setRequestProperty("Connection", "close");
+            LOGGER.info("Image download request: url=" + imageUrl
+                    + ", route=" + (direct ? "[DIRECT fallback]" : describeImageDownloadRoute(imageUrl))
+                    + ", useSystemProxies=" + System.getProperty("java.net.useSystemProxies")
+                    + ", https.proxyHost=" + StringUtils.defaultString(System.getProperty("https.proxyHost"))
+                    + ", socksProxyHost=" + StringUtils.defaultString(System.getProperty("socksProxyHost")));
+            int status = connection.getResponseCode();
+            String contentType = connection.getContentType();
+            LOGGER.info("Image download response status=" + status + ", contentType=" + contentType + ", url=" + imageUrl);
+            if (status < 200 || status >= 300) {
+                throw new IOException("HTTP " + status + " while loading image " + imageUrl);
+            }
+            try (InputStream inputStream = connection.getInputStream()) {
+                return YassUtils.readImage(inputStream);
+            }
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    static boolean shouldRetryImageDownloadDirectly(IOException exception, String route) {
+        return exception instanceof ConnectException
+                && StringUtils.isNotBlank(route)
+                && !StringUtils.containsIgnoreCase(route, "DIRECT");
+    }
+
+    private static String describeImageDownloadRoute(String imageUrl) {
+        if (StringUtils.isBlank(imageUrl)) {
+            return "<blank-url>";
+        }
+        try {
+            ProxySelector proxySelector = ProxySelector.getDefault();
+            if (proxySelector == null) {
+                return "<no-proxy-selector>";
+            }
+            List<Proxy> proxies = proxySelector.select(new URI(imageUrl));
+            if (proxies == null || proxies.isEmpty()) {
+                return "[]";
+            }
+            return proxies.toString();
+        } catch (URISyntaxException e) {
+            return "<invalid-uri>";
+        } catch (Exception e) {
+            return "<proxy-route-error:" + e.getClass().getSimpleName() + ">";
+        }
+    }
+
+    public static String toDownloadableImageUrl(String imageUrl) {
         String source = StringUtils.trimToEmpty(toSyncerImageLink(imageUrl));
         if (StringUtils.isBlank(source)) {
             return null;
@@ -766,6 +855,8 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
             normalized = "https:" + source;
         } else if (source.contains("://")) {
             normalized = source;
+        } else if (isFanartAssetPath(source)) {
+            normalized = "https://assets.fanart.tv/fanart/" + source;
         } else if (source.contains("/")) {
             normalized = "https://" + source;
         } else {
@@ -783,6 +874,19 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         } catch (URISyntaxException ex) {
             return null;
         }
+    }
+
+    private static boolean isFanartAssetPath(String source) {
+        String trimmed = StringUtils.trimToEmpty(source);
+        if (StringUtils.isBlank(trimmed)) {
+            return false;
+        }
+        int slash = trimmed.indexOf('/');
+        if (slash < 0) {
+            return true;
+        }
+        String firstSegment = trimmed.substring(0, slash);
+        return !firstSegment.contains(".");
     }
 
     private int coverRotationContrastResizeLine(GridBagConstraints gbc, int line, JPanel main) {

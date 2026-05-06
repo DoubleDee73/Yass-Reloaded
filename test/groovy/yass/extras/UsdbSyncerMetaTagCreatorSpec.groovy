@@ -21,6 +21,8 @@ package yass.extras
 
 import spock.lang.Specification
 
+import java.net.ConnectException
+
 class UsdbSyncerMetaTagCreatorSpec extends Specification {
 
     def 'restore keeps syncer tags from current video and old video from comment'() {
@@ -81,5 +83,44 @@ class UsdbSyncerMetaTagCreatorSpec extends Specification {
         then:
         saved.video == 'v=tLJPsHhcEOo,key=Fm,co=https://i.ytimg.com/vi/Lsx_6jg22uI/maxresdefault.jpg,co-resize=720'
         saved.commentTag == '#VIDEO:Babyface - Give U My Heart feat. Toni Braxton.mp4|key=Fm,foo=bar'
+    }
+
+    def 'normalizes fanart syncer paths to downloadable asset urls'() {
+        expect:
+        UsdbSyncerMetaTagCreator.toDownloadableImageUrl(
+                'https://assets.fanart.tv/fanart/music/albums/album-id/albumcover/cover.jpg'
+        ) == 'https://assets.fanart.tv/fanart/music/albums/album-id/albumcover/cover.jpg'
+
+        and:
+        UsdbSyncerMetaTagCreator.toDownloadableImageUrl(
+                'music/albums/album-id/albumcover/cover.jpg'
+        ) == 'https://assets.fanart.tv/fanart/music/albums/album-id/albumcover/cover.jpg'
+    }
+
+    def 'normalizes host path image sources without treating them as fanart paths'() {
+        expect:
+        UsdbSyncerMetaTagCreator.toDownloadableImageUrl(
+                'cdn-images.dzcdn.net/images/cover/cover.jpg'
+        ) == 'https://cdn-images.dzcdn.net/images/cover/cover.jpg'
+    }
+
+    def 'retries image downloads directly after a proxied connection refusal'() {
+        expect:
+        UsdbSyncerMetaTagCreator.shouldRetryImageDownloadDirectly(
+                new ConnectException('Connection refused'),
+                '[SOCKS @ 127.0.0.1:1080]'
+        )
+
+        and:
+        !UsdbSyncerMetaTagCreator.shouldRetryImageDownloadDirectly(
+                new IOException('HTTP 404'),
+                '[SOCKS @ 127.0.0.1:1080]'
+        )
+
+        and:
+        !UsdbSyncerMetaTagCreator.shouldRetryImageDownloadDirectly(
+                new ConnectException('Connection refused'),
+                '[DIRECT]'
+        )
     }
 }
