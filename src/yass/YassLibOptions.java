@@ -37,6 +37,7 @@ public class YassLibOptions extends JDialog {
     private static final long serialVersionUID = -7342966934700458895L;
     private JTextField songdirInput, playlistdirInput, coverdirInput;
     private JComboBox<String> defaults = null;
+    private JComboBox<UiLanguageSupport.LanguageOption> languageSelector = null;
     private YassProperties prop = null;
     private YassSongList songList = null;
     private YassPlayer mp3 = null;
@@ -46,7 +47,20 @@ public class YassLibOptions extends JDialog {
     private JLabel songdirlabel;
     private JLabel playlistdirlabel;
     private JLabel coverdirlabel;
+    private JLabel titleLabel;
+    private JLabel languageLabel;
+    private JLabel programsLabel;
+    private JLabel helpLabel;
     private Color fgColor = new JLabel().getForeground();
+    private JButton addButton;
+    private JButton songdirBrowse;
+    private JButton playlistdirBrowse;
+    private JButton coverdirBrowse;
+    private JOptionPane optionPane;
+    private String okOptionText;
+    private String cancelOptionText;
+    private boolean updatingLanguageSelector = false;
+    private boolean confirmed = false;
 
     private YassActions actions = null;
 
@@ -71,13 +85,32 @@ public class YassLibOptions extends JDialog {
         JPanel panel = new JPanel(new BorderLayout());
         JPanel left = new JPanel(new GridLayout(0, 1));
         JPanel right = new JPanel(new GridLayout(0, 1));
-        panel.add("North", new JLabel(I18.get("tool_prefs_where")));
+        panel.add("North", titleLabel = new JLabel(I18.get("tool_prefs_where")));
         panel.add("West", left);
         panel.add("Center", right);
 
         left.add(new JLabel(""));
         right.add(new JLabel(""));
-        left.add(new JLabel(I18.get("tool_prefs_programs") + " "));
+        left.add(languageLabel = new JLabel(I18.get("tool_language") + " "));
+        languageSelector = new JComboBox<>();
+        for (UiLanguageSupport.LanguageOption option : UiLanguageSupport.getSupportedDialogLanguages()) {
+            languageSelector.addItem(option);
+        }
+        languageSelector.addActionListener(e -> {
+            if (updatingLanguageSelector) {
+                return;
+            }
+            UiLanguageSupport.LanguageOption selected = (UiLanguageSupport.LanguageOption) languageSelector.getSelectedItem();
+            if (selected == null) {
+                return;
+            }
+            I18.setLanguage(selected.code());
+            prop.setProperty("yass-language", selected.code());
+            prop.store();
+            refreshTexts();
+        });
+        right.add(languageSelector);
+        left.add(programsLabel = new JLabel(I18.get("tool_prefs_programs") + " "));
         defaults = new JComboBox<>();
         defaults.setEditable(false);
         defaults.addItem("");
@@ -186,8 +219,8 @@ public class YassLibOptions extends JDialog {
                     }
                 });
 
-        JButton add = new JButton(I18.get("tool_prefs_programs_add"));
-        add.addActionListener(
+        addButton = new JButton(I18.get("tool_prefs_programs_add"));
+        addButton.addActionListener(
                 new ActionListener() {
                     public void actionPerformed(ActionEvent e) {
                         JFileChooser chooser = new JFileChooser();
@@ -232,12 +265,11 @@ public class YassLibOptions extends JDialog {
                 });
         JPanel defaultsBox = new JPanel(new BorderLayout());
         defaultsBox.add("Center", defaults);
-        defaultsBox.add("East", add);
+        defaultsBox.add("East", addButton);
 
         JPanel help = new JPanel(new GridLayout(1, 3));
         help.add(new JLabel(""));
         help.add(new JLabel(""));
-        JLabel helpLabel;
         help.add(helpLabel = new JLabel(I18.get("tool_prefs_need_help"), JLabel.RIGHT));
         helpLabel.setForeground(Color.BLUE);
         helpLabel.setCursor(new java.awt.Cursor(java.awt.Cursor.HAND_CURSOR));
@@ -260,7 +292,6 @@ public class YassLibOptions extends JDialog {
 
         songdirInput = new JTextField(songdir != null ? songdir : "");
         JPanel sdbPanel = new JPanel(new GridLayout(1, 0));
-        JButton songdirBrowse;
         sdbPanel.add(songdirBrowse = new JButton(I18.get("tool_prefs_browse")));
 
         JPanel sdPanel = new JPanel(new BorderLayout());
@@ -324,7 +355,7 @@ public class YassLibOptions extends JDialog {
         left.add(playlistdirlabel = new JLabel(I18.get("tool_prefs_playlists")));
 
         playlistdirInput = new JTextField(playlistdir != null ? playlistdir : "");
-        JButton playlistdirBrowse = new JButton(I18.get("tool_prefs_browse"));
+        playlistdirBrowse = new JButton(I18.get("tool_prefs_browse"));
         JPanel pldPanel = new JPanel(new BorderLayout());
         pldPanel.add("Center", playlistdirInput);
         pldPanel.add("East", playlistdirBrowse);
@@ -357,7 +388,7 @@ public class YassLibOptions extends JDialog {
         left.add(coverdirlabel = new JLabel(I18.get("tool_prefs_covers")));
 
         coverdirInput = new JTextField(coverdir != null ? coverdir : "");
-        JButton coverdirBrowse = new JButton(I18.get("tool_prefs_browse"));
+        coverdirBrowse = new JButton(I18.get("tool_prefs_browse"));
         JPanel cdPanel = new JPanel(new BorderLayout());
         cdPanel.add("Center", coverdirInput);
         cdPanel.add("East", coverdirBrowse);
@@ -391,7 +422,8 @@ public class YassLibOptions extends JDialog {
         playlistdirInput.setBackground(helpLabel.getBackground());
         coverdirInput.setBackground(helpLabel.getBackground());
 
-        JOptionPane optionPane = new JOptionPane(panel, JOptionPane.PLAIN_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
+        optionPane = new JOptionPane(panel, JOptionPane.PLAIN_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
+        updateOptionPaneButtons();
         setContentPane(optionPane);
         optionPane.addPropertyChangeListener(
                 new PropertyChangeListener() {
@@ -409,8 +441,7 @@ public class YassLibOptions extends JDialog {
                             return;
                         }
 
-                        int value = ((Integer) val).intValue();
-                        if (value == JOptionPane.OK_OPTION) {
+                        if (okOptionText.equals(val)) {
                             songdir = songdirInput.getText();
                             File f = new File(songdir);
                             songdir = f.getAbsolutePath();
@@ -450,14 +481,16 @@ public class YassLibOptions extends JDialog {
 
                             prop.setProperty("import-directory", songdir);
 
+                            confirmed = true;
                             prop.store();
                             dispose();
 
                             actions.refreshLibrary();
                             //LOGGER.info("load lib");
-                        } else if (value == JOptionPane.CANCEL_OPTION) {
+                        } else if (cancelOptionText.equals(val)) {
                             dispose();
                         }
+                        optionPane.setValue(JOptionPane.UNINITIALIZED_VALUE);
                     }
                 });
 
@@ -468,7 +501,7 @@ public class YassLibOptions extends JDialog {
         setSize(500, 300);
         setLocation(dim.width / 2 - 250, dim.height / 2 - 150);
         //setIconImage(new ImageIcon(YassLibOptions.this.getClass().getResource("/yass/yass-icon-16.png")).getImage());
-        setTitle(I18.get("tool_prefs_title"));
+        refreshTexts();
         setVisible(true);
     }
 
@@ -488,6 +521,45 @@ public class YassLibOptions extends JDialog {
      */
     public YassPlayer getMP3() {
         return mp3;
+    }
+
+    public boolean isConfirmed() {
+        return confirmed;
+    }
+
+    private void refreshTexts() {
+        setTitle(I18.get("tool_prefs_title"));
+        titleLabel.setText(I18.get("tool_prefs_where"));
+        languageLabel.setText(I18.get("tool_language") + " ");
+        programsLabel.setText(I18.get("tool_prefs_programs") + " ");
+        helpLabel.setText(I18.get("tool_prefs_need_help"));
+        addButton.setText(I18.get("tool_prefs_programs_add"));
+        songdirlabel.setText(I18.get("tool_prefs_songs"));
+        playlistdirlabel.setText(I18.get("tool_prefs_playlists"));
+        coverdirlabel.setText(I18.get("tool_prefs_covers"));
+        songdirBrowse.setText(I18.get("tool_prefs_browse"));
+        playlistdirBrowse.setText(I18.get("tool_prefs_browse"));
+        coverdirBrowse.setText(I18.get("tool_prefs_browse"));
+        updateOptionPaneButtons();
+        syncLanguageSelector();
+        repaint();
+    }
+
+    private void syncLanguageSelector() {
+        updatingLanguageSelector = true;
+        try {
+            String currentLanguage = UiLanguageSupport.resolveStartupLanguage(prop.getProperty("yass-language"), java.util.Locale.getDefault());
+            languageSelector.setSelectedItem(UiLanguageSupport.findLanguageOption(currentLanguage));
+        } finally {
+            updatingLanguageSelector = false;
+        }
+    }
+
+    private void updateOptionPaneButtons() {
+        okOptionText = I18.get("screen_selectcontrol_ok");
+        cancelOptionText = I18.get("screen_selectcontrol_cancel");
+        optionPane.setOptions(new Object[]{okOptionText, cancelOptionText});
+        optionPane.setInitialValue(okOptionText);
     }
 
     /**

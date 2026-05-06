@@ -25,6 +25,17 @@ Yass kann FFmpeg automatisch herunterladen, oder du gibst einen vorhandenen Pfad
   <li>Unter Windows den Pfad zum <code>bin</code>-Ordner mit <code>ffmpeg.exe</code> angeben.</li>
 </ul>
 
+<h4>Python-Runtimes</h4>
+<p>Mehrere lokale Tools verwenden Python. Unter <b>Externe Tools &gt; Speicherorte</b> kannst du ein
+<b>Standard-Python-Executable</b> festlegen. Yass verwendet dieses als gemeinsamen Fallback für leichte Python-Helfer
+und als Bootstrap-Interpreter zum Erzeugen tool-spezifischer Umgebungen.</p>
+<ul>
+  <li>Wenn ein tool-spezifisches Python-Feld leer bleibt, fällt Yass auf das Standard-Python aus <b>Speicherorte</b> zurück.</li>
+  <li>Wenn du bei WhisperX oder audio-separator auf <b>Package aktualisieren</b> klickst und noch keine tool-spezifische Python-Runtime gesetzt ist,
+      erzeugt Yass automatisch eine eigene virtuelle Umgebung für dieses Tool und speichert dort den Python-Pfad.</li>
+  <li>So bleiben schwere Abhängigkeiten wie WhisperX und audio-separator isoliert, während kleinere Python-Helfer weiter das Standard-Python gemeinsam nutzen können.</li>
+</ul>
+
 <h4>yt-dlp</h4>
 <p>yt-dlp wird im Song-Erstellungs-Assistenten verwendet, um Audio von YouTube und anderen Plattformen herunterzuladen.</p>
 <ul>
@@ -38,7 +49,7 @@ und das Ergebnis heruntergeladen. Erfordert ein Konto und einen API-Token.</p>
 <ol>
   <li>Konto anlegen unter <code>https://mvsep.com</code> und API-Token aus dem Profil kopieren.</li>
   <li><b>Einstellungen &gt; Externe Tools &gt; MVSEP</b> öffnen und Token einfügen.</li>
-  <li>Separationsmodell (z.B. <i>BS-Roformer</i> für höchste Qualität) und Ausgabeformat wählen.</li>
+  <li>Separationsmodell wählen. Das <b>Vokalmodell</b> kann meist auf dem Standard bleiben, und das <b>Audioformat</b> legt das zurückgelieferte Stem-Format fest.</li>
   <li>Im Assistenten auf <b>Vocals separieren + transkribieren</b> klicken.</li>
   <li>Für bereits geöffnete Songs: <b>Bearbeiten &gt; Audio separieren</b>.</li>
 </ol>
@@ -55,15 +66,17 @@ Es unterstützt dieselben MDX-Net-, VR-Architecture- und Demucs-Modelle wie Ulti
     </ul>
   </li>
   <li><b>Einstellungen &gt; Externe Tools &gt; audio-separator</b> öffnen.</li>
-  <li>Python-Executable angeben (z.B. <code>python</code> oder vollständiger Pfad).</li>
-  <li>Modell auswählen. Empfehlung:
+  <li>Das Python-Executable für dieses Tool angeben oder leer lassen, damit das Standard-Python aus <b>Externe Tools &gt; Speicherorte</b> verwendet wird.</li>
+  <li>Wenn du <b>Package aktualisieren</b> bei leerem tool-spezifischen Python-Feld benutzt, erstellt Yass automatisch eine eigene virtuelle audio-separator-Umgebung und trägt sie dort ein.</li>
+  <li>Modell auswählen. Bekannte Modelle werden mit lesbarem Namen angezeigt; unbekannte Modelle erscheinen mit ihrem Dateinamen. Empfehlung:
     <ul>
-      <li><code>Kim_Vocal_2.onnx</code> — schnell, gute Qualität (Standard)</li>
-      <li><code>MDX23C-8KFFT-InstVoc_HQ.ckpt</code> — hohe Qualität</li>
-      <li><code>BS-Roformer-Viperx-1297.ckpt</code> — höchste Qualität, langsamer</li>
+      <li><code>Kim_Vocal_2.onnx</code> - schnell, gute Qualität (Standard)</li>
+      <li><code>MDX23C-8KFFT-InstVoc_HQ.ckpt</code> - hohe Qualität</li>
+      <li><code>BS-Roformer-Viperx-1297.ckpt</code> - höchste Qualität, langsamer</li>
     </ul>
   </li>
-  <li>Optional: Modell-Cache-Verzeichnis angeben, damit Modelle nicht erneut heruntergeladen werden.</li>
+  <li>Optional: Modell-Cache-Verzeichnis angeben. Dort speichert audio-separator heruntergeladene Modelle, damit sie nicht erneut geladen werden müssen.</li>
+  <li><b>Ausgabeformat</b> steuert das rohe Stem-Format, das audio-separator zuerst schreibt, bevor Yass die Dateien in dein konfiguriertes Zielformat konvertiert.</li>
   <li><b>Konfiguration testen</b> klicken, um die Einrichtung zu prüfen.</li>
   <li>Wenn der Systemtest erfolgreich war, wird die Schaltfläche <b>Vocals separieren + transkribieren</b>
       im Assistenten aktiviert. audio-separator hat Vorrang vor MVSEP, wenn beide konfiguriert sind.</li>
@@ -85,7 +98,9 @@ Erfordert einen OpenAI API-Schlüssel.</p>
   <li>Python 3.9 oder neuer installieren.</li>
   <li>WhisperX installieren: <code>pip install whisperx</code></li>
   <li><b>Einstellungen &gt; Externe Tools &gt; WhisperX</b> öffnen.</li>
-  <li>Python-Executable angeben, Aufrufmodus wählen (<i>python -m whisperx</i> empfohlen).</li>
+  <li>Das Python-Executable für WhisperX angeben oder leer lassen, damit das Standard-Python aus <b>Externe Tools &gt; Speicherorte</b> verwendet wird.</li>
+  <li>Wenn du <b>Package aktualisieren</b> bei leerem WhisperX-Python-Feld benutzt, erstellt Yass automatisch eine eigene virtuelle WhisperX-Umgebung und speichert diese Runtime.</li>
+  <li>Aufrufmodus wählen (<i>python -m whisperx</i> empfohlen).</li>
   <li>Modell (z.B. <i>large-v2</i>) und Gerät (<i>cpu</i> oder <i>cuda</i>) wählen.</li>
   <li><b>Konfiguration testen</b> klicken. Das Ergebnis wird gespeichert und aktiviert die
       <b>Vocals separieren + transkribieren</b>-Schaltfläche im Assistenten.</li>

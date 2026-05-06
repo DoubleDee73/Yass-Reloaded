@@ -167,6 +167,16 @@ public class YassSongList extends JTable {
             visitUsdb((String)editVisitUsdb.getValue("usdb"));
         }
     };
+    Action editCompareUsdb = new AbstractAction(I18.get("usdb_edit_compare")) {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            YassSong song = getFirstSelectedSong();
+            if (song == null) {
+                return;
+            }
+            actions.compareAndSubmitUsdbSongEdit(song.getDirectory() + File.separator + song.getFilename());
+        }
+    };
     Action createNewEdition = new AbstractAction(I18.get("lib_edition_set")) {
                 public void actionPerformed(ActionEvent e) {
                     newEdition();
@@ -220,6 +230,7 @@ public class YassSongList extends JTable {
     private final ActionListener actionTags;
     private JMenuItem separateAudioMenuItem;
     private JMenuItem createDuetMenuItem;
+    private JMenuItem compareUsdbMenuItem;
     private final JMenu languagePopup, genrePopup, editionPopup, sortbyPopup, tagsPopup;
     private String emptyString = I18.get("songlist_msg_empty");
     private boolean showErrors = false;
@@ -231,6 +242,7 @@ public class YassSongList extends JTable {
     private boolean moveArticles = true;
     private boolean renderLocked = true;
     private Vector<YassSong> allData = null;
+    private Map<String, Integer> artistTitleUsdbIndex = new HashMap<>();
     private boolean filterAll = false;
     private Hashtable<String, String> lyricsCache = null;
     private YassFileUtils fileUtils;
@@ -278,6 +290,8 @@ public class YassSongList extends JTable {
         JMenuItem visitUrl = new JMenuItem(editVisitUsdb);
         visitUrl.setName("visitUsdb");
         toggleVisitUrlVisibility(visitUrl);
+        compareUsdbMenuItem = new JMenuItem(editCompareUsdb);
+        compareUsdbMenuItem.setName("compareUsdb");
         combinedPopup.add(new JMenuItem(editArtist));
         getInputMap().put(KeyStroke.getKeyStroke("F2"), "editArtist");
         getActionMap().put("editArtist", editArtist);
@@ -324,7 +338,11 @@ public class YassSongList extends JTable {
             combinedPopup.addSeparator();
             combinedPopup.add(separateAudioMenuItem = new JMenuItem(separateAudio));
             combinedPopup.addSeparator();
+            combinedPopup.add(compareUsdbMenuItem);
             combinedPopup.add(visitUrl);
+        } else {
+            combinedPopup.addSeparator();
+            combinedPopup.add(compareUsdbMenuItem);
         }
         languagePopup = new JMenu(I18.get("lib_language"));
 
@@ -555,6 +573,8 @@ public class YassSongList extends JTable {
                                     JMenuItem item = (JMenuItem) element;
                                     if ("visitUsdb".equals(item.getName())) {
                                         toggleVisitUrlVisibility(item);
+                                    } else if ("compareUsdb".equals(item.getName())) {
+                                        toggleCompareUsdbVisibility(item);
                                     } else if (UltrastarHeaderTag.deprecatedTags(prop.getUsFormatVersion())
                                                           .contains(item.getName())) {
                                         item.setVisible(!prop.isUnityOrNewer());
@@ -913,6 +933,30 @@ public class YassSongList extends JTable {
                 visitUrl.setEnabled(false);
             }
         }
+    }
+
+    private void toggleCompareUsdbVisibility(JMenuItem compareUsdb) {
+        Vector<YassSong> selectedSongs = getSelectedSongs();
+        if (selectedSongs == null || selectedSongs.size() != 1) {
+            compareUsdb.setEnabled(false);
+            return;
+        }
+        YassSong song = selectedSongs.firstElement();
+        boolean loginPossible = actions.canDirectlyEditUsdbSongsCached() || actions.hasUsdbStoredUsername();
+        if (!loginPossible) {
+            compareUsdb.setEnabled(false);
+            return;
+        }
+        File directory = new File(song.getDirectory());
+        if (directory.exists()) {
+            UsdbSyncerMetaFileLoader loader = new UsdbSyncerMetaFileLoader(directory.getAbsolutePath());
+            UsdbSyncerMetaFile metaFile = loader.getMetaFile();
+            if (metaFile != null && metaFile.getSongId() > 0) {
+                compareUsdb.setEnabled(true);
+                return;
+            }
+        }
+        compareUsdb.setEnabled(StringUtils.isNotBlank(song.getArtist()) && StringUtils.isNotBlank(song.getTitle()));
     }
 
     private MenuListener tagsMenuListener() {
@@ -2755,6 +2799,10 @@ public class YassSongList extends JTable {
         if (fileUtils == null) {
             fileUtils = new YassFileUtils();
         }
+        if (!loaded) {
+            prefilter = null;
+            allData = null;
+        }
         actions.setLibraryLoaded(false);
         preventInteraction = true;
 
@@ -2846,9 +2894,8 @@ public class YassSongList extends JTable {
             actions.setLibraryLoaded(true);
             preventInteraction = false;
             loaded = true;
-            if (allData == null) {
-                allData = (Vector<YassSong>) sm.getData().clone();
-            }
+            allData = (Vector<YassSong>) sm.getData().clone();
+            rebuildLibraryMatchIndex();
             updateSelectionEdition();
         }
     }
@@ -3053,6 +3100,64 @@ public class YassSongList extends JTable {
         }
         ThumbnailerThread thumbnailer = new ThumbnailerThread(dir);
         thumbnailer.start();
+    }
+
+    public void upsertSongFromFile(File songFile, boolean reloadThumbnail) {
+        if (songFile == null || !songFile.isFile()) {
+            return;
+        }
+        File songDir = songFile.getParentFile();
+        if (songDir == null || !songDir.isDirectory()) {
+            return;
+        }
+        String directory = songDir.getAbsolutePath();
+        String folder = songDir.getName();
+        String songsRoot = prop.getProperty("song-directory");
+        if (StringUtils.isNotBlank(songsRoot)) {
+            try {
+                Path rootPath = Paths.get(songsRoot).toAbsolutePath().normalize();
+                Path songPath = songDir.toPath().toAbsolutePath().normalize();
+                if (songPath.startsWith(rootPath)) {
+                    Path relative = rootPath.relativize(songPath);
+                    folder = relative.toString().replace(File.separatorChar, File.separatorChar);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        Vector<YassSong> baseData = allData != null ? allData : sm.getData();
+        YassSong song = null;
+        for (YassSong candidate : baseData) {
+            if (directory.equals(candidate.getDirectory()) && songFile.getName().equals(candidate.getFilename())) {
+                song = candidate;
+                break;
+            }
+        }
+        boolean created = false;
+        if (song == null) {
+            song = new YassSong(directory, folder, songFile.getName(), "", "");
+            baseData.add(song);
+            created = true;
+        }
+
+        YassTable t = new YassTable();
+        t.init(prop);
+        loadSongDetails(song, t);
+        if (reloadThumbnail) {
+            cacheSongCover(prop.getProperty("songlist-imagecache"), song);
+        }
+        Collections.sort(baseData);
+        allData = (Vector<YassSong>) baseData.clone();
+        rebuildLibraryMatchIndex();
+        sm.setData(baseData);
+        storeCache();
+        updateSelectionEdition();
+        sm.fireTableDataChanged();
+        if (loaded) {
+            filter(null);
+        } else {
+            repaint();
+        }
     }
 
     /**
@@ -3790,6 +3895,17 @@ public class YassSongList extends JTable {
             if (!providedBy.equals(s.getProvidedBy())) {
                 changed = true;
                 s.setProvidedBy(providedBy);
+            }
+            int usdbSongId = 0;
+            try {
+                UsdbSyncerMetaFileLoader loader = new UsdbSyncerMetaFileLoader(s.getDirectory());
+                usdbSongId = loader.getMetaFile() != null ? loader.getMetaFile().getSongId() : 0;
+            } catch (RuntimeException ex) {
+                LOGGER.log(Level.WARNING, "Skipping broken USDB meta information for " + s.getDirectory(), ex);
+            }
+            if (usdbSongId != s.getUsdbSongId()) {
+                changed = true;
+                s.setUsdbSongId(usdbSongId);
             }
             if (showLyrics) {
                 String txt = t.getText().trim();
@@ -4893,6 +5009,39 @@ public class YassSongList extends JTable {
         return allData;
     }
 
+    public boolean hasSongInLibrary(String artist, String title) {
+        return findLibraryMatch(artist, title) != null || findSong(artist, title) != null;
+    }
+
+    public boolean hasSongWithUsdbInLibrary(String artist, String title) {
+        return getUsdbSongIdInLibrary(artist, title) > 0;
+    }
+
+    public String getMatchingSongFile(String artist, String title) {
+        YassSong match = findLibraryMatch(artist, title);
+        if (match == null) {
+            Vector<YassSong> hits = findSong(artist, title);
+            if (hits != null && !hits.isEmpty()) {
+                match = hits.firstElement();
+            }
+        }
+        if (match == null) {
+            return null;
+        }
+        return match.getDirectory() + File.separator + match.getFilename();
+    }
+
+    public int getUsdbSongIdInLibrary(String artist, String title) {
+        YassSong match = findLibraryMatch(artist, title);
+        if (match == null) {
+            Vector<YassSong> hits = findSong(artist, title);
+            if (hits != null && !hits.isEmpty()) {
+                match = hits.firstElement();
+            }
+        }
+        return match == null ? 0 : Math.max(0, match.getUsdbSongId());
+    }
+
     /**
      * Gets the preFilter attribute of the YassSongList object
      *
@@ -5096,6 +5245,79 @@ public class YassSongList extends JTable {
         return hits;
     }
 
+    private void rebuildLibraryMatchIndex() {
+        Map<String, Integer> index = new HashMap<>();
+        Vector<YassSong> data = getUnfilteredData();
+        if (data == null) {
+            artistTitleUsdbIndex = index;
+            return;
+        }
+        for (YassSong song : data) {
+            String key = toArtistTitleKey(song.getArtist(), song.getTitle());
+            if (StringUtils.isBlank(key)) {
+                continue;
+            }
+            index.merge(key, song.getUsdbSongId(), Math::max);
+        }
+        artistTitleUsdbIndex = index;
+    }
+
+    private String toArtistTitleKey(String artist, String title) {
+        String normalizedArtist = YassSearchNormalizer.normalizeForSearch(artist);
+        String normalizedTitle = YassSearchNormalizer.normalizeForSearch(title);
+        if (normalizedArtist.isEmpty() || normalizedTitle.isEmpty()) {
+            return "";
+        }
+        return normalizedArtist + "\u0000" + normalizedTitle;
+    }
+
+    private YassSong findLibraryMatch(String artist, String title) {
+        String key = toArtistTitleKey(artist, title);
+        if (StringUtils.isBlank(key)) {
+            return null;
+        }
+        Vector<YassSong> data = getUnfilteredData();
+        if (data == null || data.isEmpty()) {
+            return null;
+        }
+
+        String[] parts = key.split("\u0000", 2);
+        String normalizedArtist = parts.length > 0 ? parts[0] : "";
+        String normalizedTitle = parts.length > 1 ? parts[1] : "";
+        String relaxedTitle = relaxedTitleKey(normalizedTitle);
+
+        YassSong relaxedCandidate = null;
+        for (YassSong song : data) {
+            String songArtist = YassSearchNormalizer.normalizeForSearch(song.getArtist());
+            boolean artistMatches = StringUtils.equals(songArtist, normalizedArtist)
+                    || StringUtils.contains(songArtist, normalizedArtist)
+                    || StringUtils.contains(normalizedArtist, songArtist);
+            if (!artistMatches) {
+                continue;
+            }
+            String songTitle = YassSearchNormalizer.normalizeForSearch(song.getTitle());
+            if (StringUtils.equals(songTitle, normalizedTitle)) {
+                return song;
+            }
+            if (StringUtils.startsWith(songTitle, normalizedTitle) || StringUtils.startsWith(normalizedTitle, songTitle)) {
+                return song;
+            }
+            if (relaxedCandidate == null && StringUtils.equals(relaxedTitleKey(songTitle), relaxedTitle)) {
+                relaxedCandidate = song;
+            }
+        }
+        return relaxedCandidate;
+    }
+
+    private String relaxedTitleKey(String normalizedTitle) {
+        if (StringUtils.isBlank(normalizedTitle)) {
+            return "";
+        }
+        String relaxed = normalizedTitle.replaceAll("\\([^)]*\\)", " ");
+        relaxed = relaxed.replaceAll("\\[[^]]*\\]", " ");
+        return StringUtils.normalizeSpace(relaxed);
+    }
+
     /**
      * Description of the Method
      *
@@ -5245,6 +5467,7 @@ public class YassSongList extends JTable {
                 sm.getData().clear();
                 sm.getData().addAll(newdata);
                 allData = (Vector<YassSong>) sm.getData().clone();
+                rebuildLibraryMatchIndex();
                 sm.fireTableDataChanged();
             }
             updateSelectionEdition();

@@ -31,10 +31,9 @@ import javax.swing.text.html.HTMLDocument;
 import java.awt.*;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
+import java.io.File;
 import java.net.URL;
 import java.util.Locale;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Description of the Class
@@ -151,9 +150,9 @@ public class Tap extends JPanel {
         setCommentIfNotEmpty("CREATOR:", wizard.getValue("creator"));
         String youtubeUrl = wizard.getValue("youtube");
         if (StringUtils.isNotEmpty(youtubeUrl)) {
-            String videoId = extractVideoId(youtubeUrl);
+            String videoId = YouTube.extractYouTubeId(youtubeUrl);
             if (videoId != null) {
-                table.setCommentTag("v=" + videoId);
+                setCommentValue(determineWizardMediaCommentKey(), videoId);
             }
         }
         wizard.setValue("melodytable", table.getPlainText());
@@ -176,19 +175,32 @@ public class Tap extends JPanel {
         }
     }
 
-    private String extractVideoId(String url) {
-        if (url == null || url.trim().isEmpty()) {
-            return null;
+    private String determineWizardMediaCommentKey() {
+        String videoPath = wizard.getValue("video");
+        if (StringUtils.isBlank(videoPath)) {
+            return "v";
         }
-        String videoId = null;
-        // This regex should cover most common YouTube URL formats.
-        String pattern = "(?<=watch\\?v=|/videos/|embed\\/|youtu.be\\/|\\/v\\/|\\/e\\/|watch\\?v%3D|watch\\?feature=player_embedded&v=|%2Fvideos%2F|embed%2F|youtu.be%2F|%2Fv%2F)[^#\\&\\?\\n]*";
+        File videoFile = new File(videoPath);
+        if (!videoFile.exists() || (videoFile.isFile() && videoFile.length() < 1024L * 1024L)) {
+            return "a";
+        }
+        return "v";
+    }
 
-        Pattern compiledPattern = Pattern.compile(pattern);
-        Matcher matcher = compiledPattern.matcher(url);
-        if (matcher.find()) {
-            videoId = matcher.group();
+    private void setCommentValue(String key, String value) {
+        if (StringUtils.isBlank(key) || StringUtils.isBlank(value)) {
+            return;
         }
-        return videoId;
+        String existingComment = StringUtils.trimToEmpty(table.getCommentTag());
+        String regex = "(?:^|(?<=,))" + java.util.regex.Pattern.quote(key) + "=[^,]*";
+        String updatedComment;
+        if (StringUtils.isBlank(existingComment)) {
+            updatedComment = key + "=" + value;
+        } else if (existingComment.matches(".*" + regex + ".*")) {
+            updatedComment = existingComment.replaceAll(regex, key + "=" + value);
+        } else {
+            updatedComment = existingComment + "," + key + "=" + value;
+        }
+        table.setCommentTag(updatedComment);
     }
 }

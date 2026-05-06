@@ -48,7 +48,7 @@ public enum MvsepOutputFormat implements YassEnum {
                 return format;
             }
         }
-        return FLAC;
+        return M4A;
     }
 
     public String getApiValue() {

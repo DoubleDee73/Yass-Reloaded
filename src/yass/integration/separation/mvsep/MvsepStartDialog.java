@@ -92,10 +92,7 @@ public final class MvsepStartDialog {
             }
             // Restore saved model type
             String savedKey = request.getModelType();
-            MvsepFieldOption toSelect = StringUtils.isNotBlank(savedKey) ? field.findOption(savedKey) : null;
-            if (toSelect == null) {
-                toSelect = field.defaultOption();
-            }
+            MvsepFieldOption toSelect = field.preferredOption(savedKey);
             if (toSelect != null) {
                 modelTypeBox.setSelectedItem(toSelect);
             }

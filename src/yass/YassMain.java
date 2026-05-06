@@ -21,6 +21,7 @@ package yass;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 import yass.ffmpeg.FFMPEGLocator;
+import yass.ffmpeg.FfmpegPromptSupport;
 import yass.ffmpeg.FfmpegDownloader;
 import yass.logger.YassLogger;
 import yass.stats.YassStats;
@@ -66,6 +67,7 @@ public class YassMain extends JFrame {
     private JPanel groupsPanel, songPanel, playlistPanel, sheetInfoPanel;
     private JComponent editToolbar;
     private JSplitPane verticalSplit;
+    private boolean startupCanceled = false;
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
     public static void main(String[] argv) {
@@ -112,6 +114,11 @@ public class YassMain extends JFrame {
     
                 LOGGER.info("Starting...");
                 y.load();
+                if (y.startupCanceled) {
+                    result[0] = y;
+                    y.dispose();
+                    return;
+                }
                 if (y.refreshLibrary()) {
                     LOGGER.info("Song Library was refreshed...");
                 }
@@ -125,6 +132,14 @@ public class YassMain extends JFrame {
             throw new RuntimeException(e);
         }
         YassMain yassMain = (YassMain) result[0];
+        if (yassMain == null) {
+            System.exit(0);
+            return;
+        }
+        if (yassMain.startupCanceled) {
+            System.exit(0);
+            return;
+        }
         SplashFrame splashFrame = new SplashFrame();
         splashFrame.initNoteMap(yassMain.mp3, yassMain.sheet);
         splashFrame.setLocationRelativeTo(null);
@@ -364,10 +379,7 @@ public class YassMain extends JFrame {
     }
 
     private void initLanguage() {
-        String lang = prop.getProperty("yass-language");
-        if (lang == null || lang.equals("default")) {
-            lang = Locale.getDefault().getLanguage();
-        }
+        String lang = UiLanguageSupport.resolveStartupLanguage(prop.getProperty("yass-language"), Locale.getDefault());
         LOGGER.info("Setting Language: " + lang);
         I18.setLanguage(lang);
     }
@@ -397,8 +409,13 @@ public class YassMain extends JFrame {
     public void load() {
         String s = prop.getProperty("welcome");
         boolean store = false;
-        if (s != null && s.equals("true")) {
-            new YassLibOptions(prop, actions, songList, mp3);
+        boolean firstRunLibrarySetup = s != null && s.equals("true");
+        if (firstRunLibrarySetup) {
+            YassLibOptions libOptions = new YassLibOptions(prop, actions, songList, mp3);
+            if (!StartupFlowSupport.shouldContinueAfterLibrarySetup(true, libOptions.isConfirmed())) {
+                startupCanceled = true;
+                return;
+            }
             prop.setProperty("welcome", "false");
             store = true;
         }
@@ -410,6 +427,7 @@ public class YassMain extends JFrame {
         if (store) {
             prop.store();
         }
+        invalidateLegacySongCacheIfNeeded();
         if (edit) {
             if (!txtFiles.isEmpty()) {
                 actions.openFiles(txtFiles, false);
@@ -422,10 +440,30 @@ public class YassMain extends JFrame {
             return;
         }
         actions.setView(YassActions.VIEW_LIBRARY);
+        actions.autoLoginUsdbOnStartup();
 
         songList.load();
-        songList.filter(null);
+        actions.resetLibraryFiltersForStartup();
         songList.focusFirstVisible();
+    }
+
+    private void invalidateLegacySongCacheIfNeeded() {
+        String cacheVersion = prop.getProperty("songlist-cache-version");
+        String currentCacheVersion = "2026-04-16-startup-reset";
+        if (currentCacheVersion.equals(cacheVersion)) {
+            return;
+        }
+
+        String cacheName = prop.getProperty("songlist-cache");
+        if (StringUtils.isNotBlank(cacheName)) {
+            File cache = new File(cacheName);
+            if (cache.exists() && !cache.delete()) {
+                LOGGER.info("Warning: Cannot delete outdated songlist-cache: " + cache.getAbsolutePath());
+            }
+        }
+
+        prop.setProperty("songlist-cache-version", currentCacheVersion);
+        prop.store();
     }
 
     private boolean checkRefreshDirSetting(boolean store) {
@@ -477,16 +515,16 @@ public class YassMain extends JFrame {
         if (StringUtils.isEmpty(ffmpegPath)) {
             LOGGER.info("Could not find FFmpeg path in user.xml");
             // No ffmpeg path is configured in properties
-            FFMPEGLocator ffmpegLocator = FFMPEGLocator.getInstance();
-            store = store || validateFfmpeg(ffmpegLocator);
+            final FFMPEGLocator ffmpegLocator = FFMPEGLocator.getInstance();
+            store = StartupCheckSupport.accumulate(store, () -> validateFfmpeg(ffmpegLocator));
         } else {
             LOGGER.info("Using FFmpeg path " + ffmpegPath + " from user.xml");
             // ffmpeg path is configured in properties, checking, if it is valid
             FFMPEGLocator ffmpegLocator = FFMPEGLocator.getInstance(ffmpegPath);
             if (!validateFfmpeg(ffmpegLocator, true)) {
                 // seems to be invalid. Trying again, to check, if ffmpeg was configured in PATH environment
-                ffmpegLocator = FFMPEGLocator.getInstance();
-                store = store || validateFfmpeg(ffmpegLocator);
+                final FFMPEGLocator fallbackLocator = FFMPEGLocator.getInstance();
+                store = StartupCheckSupport.accumulate(store, () -> validateFfmpeg(fallbackLocator));
             }
         }
         return store;
@@ -500,11 +538,20 @@ public class YassMain extends JFrame {
     private boolean validateFfmpeg(FFMPEGLocator ffmpegLocator, boolean hideHint) {
         if (ffmpegLocator == null || ffmpegLocator.getFfmpeg() == null || ffmpegLocator.getFfprobe() == null) {
             if (!hideHint) {
+                LOGGER.info("FFmpeg missing. Prompting user for download or folder selection.");
                 String newPath = FfmpegDownloader.promptForFfmpegInstallation(this);
                 if (newPath != null) {
+                    LOGGER.info("FFmpeg path selected by user: " + newPath);
                     prop.setProperty("ffmpegPath", newPath);
                     // Re-validate with the new path
                     return validateFfmpeg(FFMPEGLocator.getInstance(newPath), true);
+                }
+                LOGGER.info("FFmpeg prompt returned no path. Continuing without FFmpeg.");
+                if (FfmpegPromptSupport.shouldShowPostPromptReminder(newPath)) {
+                    JOptionPane.showMessageDialog(this,
+                                                  "<html>" + I18.get("tool_prefs_ffmpeg") + "</html>",
+                                                  I18.get("tool_prefs_ffmpeg_title"),
+                                                  JOptionPane.WARNING_MESSAGE);
                 }
             }
             return false;

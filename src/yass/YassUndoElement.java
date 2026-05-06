@@ -32,16 +32,22 @@ public class YassUndoElement {
     public final int[] selectedRows;
     public final Point sheetViewPosition;
     public final double sheetBeatSize, bpm, gap, start, end, vgap;
+    public final boolean absolutePitchViewEnabled;
+    public final int absolutePitchWindowStart;
+    public final int absolutePitchWindowSpan;
     public final boolean isRelative, isSaved;
     public final int duetTrack, duetTrackCount;
     public final String duetTrackName;
     public final String[] duetSingerNames;
 
-    public YassUndoElement(Vector<YassRow> d, int[] r, Point p, double w, double b, double g, double s, double e, double vg, boolean rel, boolean saved, int duetTrack, String duetTrackName, int duetTrackCount, String[] duetSingerNames) {
+    public YassUndoElement(Vector<YassRow> d, int[] r, Point p, double w, boolean absolutePitchViewEnabled, int absolutePitchWindowStart, int absolutePitchWindowSpan, double b, double g, double s, double e, double vg, boolean rel, boolean saved, int duetTrack, String duetTrackName, int duetTrackCount, String[] duetSingerNames) {
         data = d;
         selectedRows = r;
         sheetViewPosition = new Point(p.x, p.y);
         sheetBeatSize = w;
+        this.absolutePitchViewEnabled = absolutePitchViewEnabled;
+        this.absolutePitchWindowStart = absolutePitchWindowStart;
+        this.absolutePitchWindowSpan = absolutePitchWindowSpan;
         bpm = b;
         gap = g;
         start = s;

@@ -27,7 +27,7 @@ import java.util.List;
 
 @Getter
 @Setter
-public class Release {
+public class Release implements MusicBrainzEntity {
     private String id;
     private String title;
     private String date;

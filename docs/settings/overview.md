@@ -32,6 +32,7 @@ This section defines the practical base environment for Yass Reloaded:
 - cover directory
 - import directory
 - fanart.tv API key
+- USDB user name
 - interface language
 
 Use this area when:
@@ -39,6 +40,7 @@ Use this area when:
 - you set up Yass Reloaded on a new machine
 - your library moved to a different folder
 - you want fanart.tv-based cover search to work
+- you want USDB-related library and compare actions to become available
 
 ### Groups (1) and Groups (2)
 
@@ -197,15 +199,20 @@ It includes:
 - song list cache
 - playlist cache
 - cover image cache
+- default Python executable
 - FFmpeg path
 - yt-dlp path
 - Aubio path
+- USDB Syncer path
 
 Use this page when:
 
+- multiple Python-based tools should share the same base interpreter
 - FFmpeg is not detected automatically
 - yt-dlp should be used from a custom location
 - Aubio is installed separately and should be picked up for pitch analysis
+- you want USDB search to use the local USDB Syncer database first
+- you want to refresh the local USDB song list from the Syncer installation
 
 ### MVSEP
 
@@ -215,12 +222,37 @@ Relevant settings include:
 
 - API token
 - separation model
-- model type where applicable
-- output format
+- Vocal Model where applicable
+- Audio Format
 - instrumental default preference
 - polling interval
 
+In most cases, the default Vocal Model is fine. Audio Format controls which file format MVSEP returns for the separated stems.
+
 If no API token is configured, MVSEP cannot be used even though the page is still visible.
+
+### USDB and Syncer-Related Behavior
+
+USDB-related features depend on a mix of stored settings and external tooling:
+
+- a configured USDB user name enables the USDB-related menu entries
+- stored credentials or browser-cookie login can be used for the login dialog
+- a configured USDB Syncer path enables database-backed song search and song-list refresh
+
+If the Syncer path is configured, Yass Reloaded prefers the local Syncer database for USDB search before falling back to the website.
+
+### Lyrics Sources
+
+Lyrics-related helper integrations currently come from different places:
+
+- LrcLib is used from the create-song wizard as an online lyrics source and does not need a dedicated API key
+- OpenAI and WhisperX live on the `Transcription` page because they generate transcript timing
+- subtitle-based and pasted lyrics workflows stay available even without any online integration
+
+This means not every lyrics workflow starts in the same settings page:
+
+- use the wizard plus LrcLib when you want existing lyrics quickly
+- use the transcription engines when you want word timestamps and note rebuilding or alignment
 
 ### audio-separator
 
@@ -236,6 +268,14 @@ Relevant settings include:
 - install/update button
 
 If Python is missing or the health check fails, the page still exists, but the useful actions are reduced. In particular, model discovery and updates depend on a working Python environment.
+
+Important behavior:
+
+- the `Python executable` on this page is the runtime for audio-separator itself
+- if it is left empty, Yass uses the `Default Python executable` from `Settings -> External Tools -> Locations`
+- if `Update package` is used while the field is empty, Yass creates a dedicated audio-separator virtual environment and writes that Python path back into the page automatically
+- `model directory` is an optional cache location for downloaded separation models
+- `output format` is the raw stem format written by audio-separator before Yass converts the result into the final configured target audio format
 
 ### Transcription
 
@@ -259,6 +299,9 @@ WhisperX section:
 
 Important behavior:
 
+- the WhisperX `Python executable` is the runtime for WhisperX itself
+- if it is left empty, Yass uses the `Default Python executable` from `Settings -> External Tools -> Locations`
+- if `Update package` is used while the field is empty, Yass creates a dedicated WhisperX virtual environment and writes that Python path back into the page automatically
 - if model, device, or compute type are set to `Auto`, Yass Reloaded can apply recommended runtime values after a health check
 - if you choose a manual value, Yass Reloaded should not silently overwrite it
 - the update button is only useful once a valid Python-based installation exists

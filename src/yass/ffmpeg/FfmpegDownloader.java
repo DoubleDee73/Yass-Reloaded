@@ -55,38 +55,46 @@ public class FfmpegDownloader {
      * @return The path to the selected FFmpeg directory, or null if the user cancels.
      */
     public static String promptForFfmpegInstallation(Component parent) {
-        if (!isInternetAvailable()) {
-            JOptionPane.showMessageDialog(parent,
-                    "<html>" + I18.get("ffmpeg_not_found_offline") + "</html>",
-                    I18.get("tool_prefs_ffmpeg_title"),
-                    JOptionPane.WARNING_MESSAGE);
-            return null;
-        }
-
-        Object[] options = {
-                I18.get("ffmpeg_button_download"),
-                I18.get("ffmpeg_button_select_folder"),
-                I18.get("button_cancel")
-        };
+        boolean internetAvailable = isInternetAvailable();
+        Object[] options = getDialogOptions(internetAvailable);
 
         int choice = JOptionPane.showOptionDialog(parent,
-                "<html>" + I18.get("ffmpeg_not_found_online") + "</html>",
+                "<html>" + (internetAvailable ? I18.get("ffmpeg_not_found_online") : I18.get("ffmpeg_not_found_offline")) + "</html>",
                 I18.get("tool_prefs_ffmpeg_title"),
                 JOptionPane.DEFAULT_OPTION,
-                JOptionPane.INFORMATION_MESSAGE,
+                internetAvailable ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE,
                 null,
                 options,
                 options[0]);
 
-        switch (choice) {
-            case 0: // Open Download Page
-                openDownloadPage();
-                return null; // User needs to download and then select manually
-            case 1: // Select Folder
-                return selectFfmpegFolder(parent);
-            default: // Cancel or closed dialog
-                return null;
+        if (internetAvailable && choice == 0) {
+            openDownloadPage();
+            return null;
         }
+
+        int selectFolderIndex = internetAvailable ? 1 : 0;
+        if (choice == selectFolderIndex) {
+            return selectFfmpegFolder(parent);
+        }
+        return null;
+    }
+
+    static Object[] getDialogOptions() {
+        return getDialogOptions(true);
+    }
+
+    static Object[] getDialogOptions(boolean internetAvailable) {
+        if (internetAvailable) {
+            return new Object[]{
+                    I18.get("ffmpeg_button_download"),
+                    I18.get("ffmpeg_button_select_folder"),
+                    I18.get("screen_selectcontrol_cancel")
+            };
+        }
+        return new Object[]{
+                I18.get("ffmpeg_button_select_folder"),
+                I18.get("screen_selectcontrol_cancel")
+        };
     }
 
     private static void openDownloadPage() {

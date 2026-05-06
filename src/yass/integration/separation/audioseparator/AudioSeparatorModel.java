@@ -29,6 +29,18 @@ public enum AudioSeparatorModel implements YassEnum {
         this.label = label;
     }
 
+    public static String displayLabelForValue(String value) {
+        if (value == null) {
+            return fromValue(null).getLabel();
+        }
+        for (AudioSeparatorModel model : values()) {
+            if (model.value.equalsIgnoreCase(value)) {
+                return model.label;
+            }
+        }
+        return value;
+    }
+
     public static AudioSeparatorModel fromValue(String value) {
         if (value == null) return VOCALS_MBR;
         for (AudioSeparatorModel m : values()) {

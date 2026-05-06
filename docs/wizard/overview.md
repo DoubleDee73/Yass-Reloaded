@@ -48,6 +48,18 @@ It is the central page when you create songs from text first.
 
 This page can also expose additional helper actions when the environment is ready, for example a combined separation-and-transcription flow.
 
+Important behavior:
+
+- when the lyrics page is shown for the first time, Yass Reloaded can ask for `Artist` and `Title` immediately
+- these suggested values are typically derived from YouTube metadata or the source filename
+- the values are then reused later for MusicBrainz lookup, LrcLib lookup, and song/file naming in the wizard flow
+
+If LrcLib is used from this page:
+
+- the previously confirmed artist/title values are reused automatically
+- Yass Reloaded can import either plain lyric text or already timed lyric lines when available
+- the result is meant as a lightweight lyrics source, not as a full replacement for every transcription workflow
+
 ### Lyrics for MIDI
 
 This step only matters in the MIDI-driven branch when lyrics are not already available in the MIDI-derived data.
@@ -93,6 +105,11 @@ Typical prerequisites:
 - at least one transcription backend is configured
 
 If these are not available, the feature may be disabled or not useful yet.
+
+The helper can also reuse earlier work:
+
+- if a previous wizard run already created usable separation or transcription data for the same source, Yass Reloaded can reuse that state instead of starting from zero again
+- if you finish the wizard without running separation first, Yass Reloaded can still offer separation once the new song opens in the editor
 
 ## When Steps Are Missing
 

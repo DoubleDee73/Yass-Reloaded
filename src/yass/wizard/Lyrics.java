@@ -26,6 +26,8 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import yass.*;
 import yass.analysis.SubtitleParser;
+import yass.alignment.TranscriptNoteRebuildService;
+import yass.integration.transcription.openai.OpenAiTranscriptionResult;
 
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -59,8 +61,11 @@ public class Lyrics extends JPanel {
     private JTextField subtitleFileField = null;
     private YassProperties yassProperties;
     private JLabel wizardStatusLabel = null;
+    private JButton searchLrcLibButton = null;
     private JButton pasteLyricsButton = null;
     private Map<Integer, String> subtitles = null;
+    private OpenAiTranscriptionResult transcriptionResult = null;
+    private boolean updatingLyricsProgrammatically = false;
 
     /**
      * Constructor for the Lyrics object
@@ -138,7 +143,12 @@ public class Lyrics extends JPanel {
         lyricsPanel.add(subtitlePanel, BorderLayout.NORTH);
 
         lyricsArea = new JTextArea(10, 20);
-        YassUtils.addChangeListener(lyricsArea, e -> determineLanguage());
+        YassUtils.addChangeListener(lyricsArea, e -> {
+            determineLanguage();
+            if (!updatingLyricsProgrammatically) {
+                transcriptionResult = null;
+            }
+        });
         lyricsPanel.add(new JScrollPane(lyricsArea), BorderLayout.CENTER);
 
         JPanel buttons = new JPanel(new BorderLayout(8, 0));
@@ -162,6 +172,10 @@ public class Lyrics extends JPanel {
         buttons.add(leftButtons, BorderLayout.WEST);
 
         JPanel rightButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+        searchLrcLibButton = new JButton(I18.get("create_lyrics_lrclib_search"));
+        searchLrcLibButton.setVisible(false);
+        searchLrcLibButton.setToolTipText(I18.get("create_lyrics_lrclib_search_tooltip"));
+        rightButtons.add(searchLrcLibButton);
         pasteLyricsButton = new JButton(I18.get("create_lyrics_paste"));
         pasteLyricsButton.setVisible(false);
         pasteLyricsButton.setToolTipText(I18.get("create_lyrics_paste_tooltip"));
@@ -222,6 +236,24 @@ public class Lyrics extends JPanel {
         pasteLyricsButton.setToolTipText(I18.get("create_lyrics_paste_tooltip"));
         pasteLyricsButton.setVisible(true);
     }
+
+    public void setSearchLrcLibAction(Action action) {
+        if (searchLrcLibButton == null) {
+            return;
+        }
+        if (action == null) {
+            searchLrcLibButton.setAction(null);
+            searchLrcLibButton.setText(I18.get("create_lyrics_lrclib_search"));
+            searchLrcLibButton.setVisible(false);
+            searchLrcLibButton.setToolTipText(I18.get("create_lyrics_lrclib_search_tooltip"));
+            return;
+        }
+        searchLrcLibButton.setAction(action);
+        searchLrcLibButton.setText(I18.get("create_lyrics_lrclib_search"));
+        searchLrcLibButton.setToolTipText(I18.get("create_lyrics_lrclib_search_tooltip"));
+        searchLrcLibButton.setVisible(true);
+    }
+
     private void determineLanguage() {
         if (language != null && StringUtils.isEmpty((String)language.getSelectedItem()) && 
                 lyricsArea.getDocument().getLength() > 0) {
@@ -235,6 +267,7 @@ public class Lyrics extends JPanel {
             if (subtitles != null && !subtitles.isEmpty()) {
                 subtitles = new HashMap<>();
             }
+            transcriptionResult = null;
             return;
         }
         java.io.File subtitleFile = new java.io.File(subtitlePath);
@@ -244,6 +277,7 @@ public class Lyrics extends JPanel {
                 return;
             }
             subtitles = SubtitleParser.parse(subtitleFile);
+            transcriptionResult = null;
             if (!subtitles.isEmpty()) {
                 String lyricsText = String.join("\n", subtitles.values());
                 setText(lyricsText);
@@ -270,11 +304,20 @@ public class Lyrics extends JPanel {
         if (s == null) {
             s = "";
         }
-        lyricsArea.setText(s);
+        updatingLyricsProgrammatically = true;
+        try {
+            lyricsArea.setText(s);
+        } finally {
+            updatingLyricsProgrammatically = false;
+        }
     }
 
     public void setSubtitles(Map<Integer, String> subtitles) {
         this.subtitles = subtitles;
+    }
+
+    public void setTranscriptionResult(OpenAiTranscriptionResult transcriptionResult) {
+        this.transcriptionResult = transcriptionResult;
     }
 
 
@@ -284,6 +327,12 @@ public class Lyrics extends JPanel {
      * @return The table value
      */
     public String getTable() {
+        if (transcriptionResult != null) {
+            return buildTableFromTranscriptionResult(yassProperties,
+                    wizard.getValue("language"),
+                    NumberUtils.toInt(wizard.getValue("bpm"), 300),
+                    transcriptionResult);
+        }
         StringWriter buffer = new StringWriter();
         PrintWriter outputStream = new PrintWriter(buffer);
 
@@ -307,7 +356,6 @@ public class Lyrics extends JPanel {
         outputStream.println("#TITLE:Unknown");
         outputStream.println("#ARTIST:Unknown");
         outputStream.println("#LANGUAGE:Unknown");
-        outputStream.println("#EDITION:Unknown");
         outputStream.println("#GENRE:Unknown");
         outputStream.println("#CREATOR:Unknown");
         outputStream.println("#MP3:Unknown");
@@ -322,6 +370,51 @@ public class Lyrics extends JPanel {
         }
         outputStream.println("E");
         return buffer.toString();
+    }
+
+    static String buildTableFromTranscriptionResult(YassProperties yassProperties,
+                                                    String language,
+                                                    int bpm,
+                                                    OpenAiTranscriptionResult transcriptionResult) {
+        YassTable table = new YassTable();
+        table.init(yassProperties);
+        table.setText("""
+#TITLE:Unknown
+#ARTIST:Unknown
+#LANGUAGE:Unknown
+#GENRE:Unknown
+#CREATOR:Unknown
+#MP3:Unknown
+#BPM:300
+#GAP:0
+: 0 4 0 test
+E
+""");
+
+        configureTranscriptHyphenator(yassProperties, table, language);
+        table.setBPM(Math.max(1, bpm));
+
+        new TranscriptNoteRebuildService().transcript(table, transcriptionResult);
+
+        StringWriter buffer = new StringWriter();
+        PrintWriter outputStream = new PrintWriter(buffer);
+        outputStream.println("#TITLE:Unknown");
+        outputStream.println("#ARTIST:Unknown");
+        outputStream.println("#LANGUAGE:Unknown");
+        outputStream.println("#GENRE:Unknown");
+        outputStream.println("#CREATOR:Unknown");
+        outputStream.println("#MP3:Unknown");
+        outputStream.println("#BPM:" + Math.max(1, bpm));
+        outputStream.println("#GAP:" + table.getGap());
+        outputStream.print(table.getPlainText());
+        return buffer.toString();
+    }
+
+    public static void configureTranscriptHyphenator(YassProperties yassProperties, YassTable table, String language) {
+        YassHyphenator hyphenator = new YassHyphenator("DE|EN|ES|FR|IT|PL|PT|RU|SV|TR|ZH");
+        hyphenator.setLanguage(new YassLanguageUtils().determineLanguageCode(language));
+        hyphenator.setYassProperties(yassProperties);
+        table.setHyphenator(hyphenator);
     }
 
     private Pair<Integer, List<String>> processSubtitles(YassUtils yassUtils) {

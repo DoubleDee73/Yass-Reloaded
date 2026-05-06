@@ -53,7 +53,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
 
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
-    private static final org.slf4j.Logger log = LoggerFactory.getLogger(UsdbSyncerMetaTagCreator.class);
+    private static final org.slf4j.Logger log = LoggerFactory.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private YassActions actions;
     private YassTable song;
 
@@ -222,11 +222,14 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         if (StringUtils.isBlank(key) || StringUtils.equalsIgnoreCase(key, "key")) {
             return;
         }
-        String[] values = !value.startsWith("-") ? value.split("-") : new String[0];
-        if (values.length == 2) {
+        String[] values = shouldSplitPrefillValue(key, value) ? value.split("-") : new String[0];
+        if (values.length == 2 && key.endsWith("-resize")) {
             putPrefilledValue(key + "-width", values[0], onlyIfAbsent);
             putPrefilledValue(key + "-height", values[1], onlyIfAbsent);
-        } else if (values.length == 4) {
+        } else if (values.length == 2 && "medley".equalsIgnoreCase(key)) {
+            putPrefilledValue("medleyStart", values[0], onlyIfAbsent);
+            putPrefilledValue("medleyEnd", values[1], onlyIfAbsent);
+        } else if (values.length == 4 && key.endsWith("-crop")) {
             putPrefilledValue(key + "-left", values[0], onlyIfAbsent);
             putPrefilledValue(key + "-top", values[1], onlyIfAbsent);
             putPrefilledValue(key + "-width", values[2], onlyIfAbsent);
@@ -239,6 +242,13 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         } else if ("co-rotate".equalsIgnoreCase(key)) {
             putPrefilledValue("co-rotation", value, onlyIfAbsent);
         }
+    }
+
+    private boolean shouldSplitPrefillValue(String key, String value) {
+        if (StringUtils.isBlank(key) || StringUtils.isBlank(value) || value.startsWith("-")) {
+            return false;
+        }
+        return key.endsWith("-crop") || key.endsWith("-resize") || "medley".equalsIgnoreCase(key);
     }
 
     private void putPrefilledValue(String key, String value, boolean onlyIfAbsent) {
@@ -409,6 +419,10 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     }
 
     private String determineImageLink(String url) {
+        return toSyncerImageLink(url);
+    }
+
+    public static String toSyncerImageLink(String url) {
         String trimmedUrl = StringUtils.trimToEmpty(url);
         String youTubeThumbnailUrl = resolveYouTubeThumbnailUrl(trimmedUrl);
         if (youTubeThumbnailUrl != null) {
@@ -427,7 +441,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         return trimmedUrl;
     }
 
-    private String determineVideoLink(String url) {
+    private static String determineVideoLink(String url) {
         String videoUrl;
         if (isYouTube(url.toLowerCase())) {
             videoUrl = extractYoutubeVideoIdFromUrl(url);
@@ -443,11 +457,11 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         }
     }
 
-    private boolean isYouTube(String text) {
+    private static boolean isYouTube(String text) {
         return text.contains("youtube.com/") || text.contains("youtu.be/") || text.startsWith("v=");
     }
 
-    private String extractYouTubeId(String value) {
+    private static String extractYouTubeId(String value) {
         String trimmed = StringUtils.trimToEmpty(value);
         if (trimmed.matches("[A-Za-z0-9_-]{11}")) {
             return trimmed;
@@ -464,7 +478,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         return null;
     }
 
-    private String resolveYouTubeThumbnailUrl(String value) {
+    private static String resolveYouTubeThumbnailUrl(String value) {
         String youTubeId = extractYouTubeId(value);
         if (StringUtils.isBlank(youTubeId)) {
             return null;
@@ -476,7 +490,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         return null;
     }
 
-    private String extractYoutubeVideoIdFromUrl(String url) {
+    private static String extractYoutubeVideoIdFromUrl(String url) {
         String pattern = "(?<=watch\\?v=|/videos/|embed/|youtu.be/|/v/|/e/|watch\\?v%3D|watch\\?feature=player_embedded&v=|%2Fvideos%2F|embed%2F|youtu.be%2F|%2Fv%2F)[^#&?\\n]*";
         Pattern compiledPattern = Pattern.compile(pattern);
         Matcher matcher = compiledPattern.matcher(url);
@@ -488,11 +502,11 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         return null;
     }
 
-    private boolean isVimeo(String url) {
+    private static boolean isVimeo(String url) {
         return url.contains("vimeo.com");
     }
 
-    private String extractVimeoVideoId(String vimeoUrl) {
+    private static String extractVimeoVideoId(String vimeoUrl) {
         // Regulärer Ausdruck, um die Video-ID zu extrahieren
         Pattern pattern = Pattern.compile(
                 "https?://(?:www\\.|player\\.)?vimeo.com/(?:channels/(?:\\w+/)?|groups/([^/]+)/videos/|album/(\\d+)/video/|video/|)(\\d+)(?:$|/|\\?)");
@@ -653,10 +667,6 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
                         coverUrl.setText(coUrl);
                     }
                 }
-                if (StringUtils.isNotEmpty(coUrl) && !YassUtils.isUrlReachable(coUrl)) {
-                    JOptionPane.showMessageDialog(null, I18.get("url_not_reachable"));
-                    return;
-                }
                 if (StringUtils.isEmpty(coUrl)) {
                     String resolvedVideoThumbnail = resolveYouTubeThumbnailUrl(videoUrl.getText());
                     if (resolvedVideoThumbnail != null) {
@@ -665,6 +675,10 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
                     }
                 }
                 if (StringUtils.isEmpty(coUrl)) {
+                    return;
+                }
+                String normalizedForDownload = normalizeImageDownloadUrl(coUrl);
+                if (StringUtils.isBlank(normalizedForDownload)) {
                     return;
                 }
                 if (coUrl.startsWith("https://i.ytimg.com") && coverResize.getValue() != null &&
@@ -689,13 +703,20 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
                     if (resize == 0 && ((Number) coverCropWidth.getValue()).intValue() == 0) {
                         resize = actions.getProperties().getIntProperty("cover-max-width");
                     }
-                    File file = downloadAndSaveFile(coverUrl.getText(),
+                    File file = downloadAndSaveFile(normalizedForDownload,
                                                     song.getDirFilename().replace(".txt", " [CO]"),
                                                     crop,
                                                     resize);
                     if (file != null && !file.getName().equalsIgnoreCase(song.getCover())) {
                         song.setCover(file.getName());
                         song.storeFile(song.getDirFilename());
+                        YassSong selectedSong = actions.getSongList().getFirstSelectedSong();
+                        if (selectedSong != null) {
+                            selectedSong.setCover(file.getName());
+                            actions.getSongList().cacheSongCover(actions.getProperties().getProperty("songlist-imagecache"), selectedSong);
+                            actions.getSongList().repaint();
+                            actions.refreshGroups();
+                        }
                         JOptionPane.showMessageDialog(null, I18.get("usdb_syncer_cover_saved").replace("%s", file.getName()), I18.get("usdb_syncer_cover"),
                                                       JOptionPane.PLAIN_MESSAGE);
                     }
@@ -706,20 +727,22 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
     }
 
     private File downloadAndSaveFile(String imageUrl, String destinationFile, int[] crop, int resize) {
-        URL url;
         File imageFile;
         try {
-            imageUrl = imageUrl.replace("images.fanart.tv", "assets.fanart.tv");
-            url = new URI(imageUrl).toURL();
+            String normalizedUrl = normalizeImageDownloadUrl(imageUrl);
+            if (StringUtils.isBlank(normalizedUrl)) {
+                return null;
+            }
+            URL url = new URI(normalizedUrl).toURL();
             BufferedImage image = ImageIO.read(url);
+            if (image == null) {
+                return null;
+            }
             if (crop != null) {
                 image = image.getSubimage(crop[0], crop[1], crop[2], crop[3]);
             }
             if (resize > 0 && image.getWidth() != resize) {
-                Image resultingImage = image.getScaledInstance(resize, resize, Image.SCALE_SMOOTH);
-                BufferedImage outputImage = new BufferedImage(resize, resize, BufferedImage.TYPE_INT_RGB);
-                outputImage.getGraphics().drawImage(resultingImage, 0, 0, null);
-                image = outputImage;
+                image = YassUtils.fitImageIntoSquare(image, resize, Color.WHITE, true);
             }
             imageFile = new File(destinationFile + ".jpg");
             if (imageFile.exists()) {
@@ -731,6 +754,35 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
             return null;
         }
         return imageFile;
+    }
+
+    private String normalizeImageDownloadUrl(String imageUrl) {
+        String source = StringUtils.trimToEmpty(toSyncerImageLink(imageUrl));
+        if (StringUtils.isBlank(source)) {
+            return null;
+        }
+        String normalized;
+        if (source.startsWith("//")) {
+            normalized = "https:" + source;
+        } else if (source.contains("://")) {
+            normalized = source;
+        } else if (source.contains("/")) {
+            normalized = "https://" + source;
+        } else {
+            normalized = "https://assets.fanart.tv/fanart/" + source;
+        }
+        normalized = normalized.replace("images.fanart.tv", "assets.fanart.tv");
+        try {
+            URI uri = new URI(normalized);
+            String host = StringUtils.trimToEmpty(uri.getHost());
+            String scheme = StringUtils.trimToEmpty(uri.getScheme()).toLowerCase(Locale.ROOT);
+            if (!("http".equals(scheme) || "https".equals(scheme)) || StringUtils.isBlank(host)) {
+                return null;
+            }
+            return uri.toString();
+        } catch (URISyntaxException ex) {
+            return null;
+        }
     }
 
     private int coverRotationContrastResizeLine(GridBagConstraints gbc, int line, JPanel main) {

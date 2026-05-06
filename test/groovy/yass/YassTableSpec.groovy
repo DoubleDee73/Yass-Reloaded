@@ -769,6 +769,7 @@ class YassTableSpec extends Specification {
         TILDE_SONG | 5      | 7      || ['One', '~', '~', '~.', '_', 'Te', '~', '~st', '_', 'Tes', '~', 't']
         TILDE_SONG | 9      | 11     || ['One', '~', '~', '~.', '_', 'T', '~', '~est', '_', 'Test', '~', '~']
     }
+
     private boolean verifyExpectation(YassTable yassTable, List<String> expectation) {
         int offset = 0
         YassRow yassRow = yassTable.getRowAt(offset)

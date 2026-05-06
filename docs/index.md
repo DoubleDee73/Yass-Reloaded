@@ -19,6 +19,11 @@ This site is the structured companion to the project wiki. It is meant to make t
 - [Keyboard Shortcuts](editor/keyboard-shortcuts.md)
 - [Wizard Overview](wizard/overview.md)
 
+## Tutorial Videos
+
+- English: [Yass Reloaded Tutorial](https://youtu.be/7sSvb6YL70Y)
+- German: [Yass Reloaded Tutorial (Deutsch)](https://youtu.be/IB4ik6cxEUY)
+
 ## Typical Workflows
 
 ### Create or Open a Song

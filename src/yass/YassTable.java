@@ -2308,11 +2308,15 @@ public class YassTable extends JTable {
         }
         YassUndoElement ue;
         if (sheet != null) {
-            ue = new YassUndoElement(c, getSelectedRows(), sheet.getViewPosition(), sheet.getBeatSize(), bpm, gap,
+            ue = new YassUndoElement(c, getSelectedRows(), sheet.getViewPosition(), sheet.getBeatSize(),
+                                     sheet.isAbsolutePitchViewEnabled(),
+                                     sheet.getAbsolutePitchWindowStart(),
+                                     sheet.getAbsolutePitchWindowSpan(),
+                                     bpm, gap,
                                      start, end, vgap, isRelative, saved, duetTrack, duetTrackName, duetTrackCount,
                                      duetSingerNames);
         } else {
-            ue = new YassUndoElement(c, getSelectedRows(), new Point(), 0, bpm, gap, start, end, vgap, isRelative,
+            ue = new YassUndoElement(c, getSelectedRows(), new Point(), 0, false, 0, 0, bpm, gap, start, end, vgap, isRelative,
                                      saved, duetTrack, duetTrackName, duetTrackCount, duetSingerNames);
         }
         undos.addElement(ue);
@@ -2390,7 +2394,7 @@ public class YassTable extends JTable {
             sheet.init();
             sheet.update();
             sheet.setBeatSize(undoElem.sheetBeatSize);
-            sheet.setViewPosition(undoElem.sheetViewPosition);
+            restoreSheetViewportFromUndo(undoElem);
             sheet.repaint();
         }
     }
@@ -2403,7 +2407,6 @@ public class YassTable extends JTable {
         redoMax++;
 
         YassUndoElement undoElem = undos.elementAt(undoPos);
-        YassUndoElement nextUndoElem = undos.elementAt(undoPos + 1);
 
         Vector<YassRow> c = (Vector<YassRow>) undoElem.data.clone();
         n = c.size();
@@ -2432,8 +2435,8 @@ public class YassTable extends JTable {
         sel.setValueIsAdjusting(true);
         sel.clearSelection();
         Rectangle rr = new Rectangle();
-        for (int i = 0; i < nextUndoElem.selectedRows.length; i++) {
-            int k = nextUndoElem.selectedRows[i];
+        for (int i = 0; i < undoElem.selectedRows.length; i++) {
+            int k = undoElem.selectedRows[i];
             rr.add(getCellRect(k, 0, true));
             sel.addSelectionInterval(k, k);
         }
@@ -2443,10 +2446,24 @@ public class YassTable extends JTable {
         if (sheet != null) {
             sheet.init();
             sheet.update();
-            sheet.setBeatSize(nextUndoElem.sheetBeatSize);
-            sheet.setViewPosition(nextUndoElem.sheetViewPosition);
+            sheet.setBeatSize(undoElem.sheetBeatSize);
+            restoreSheetViewportFromUndo(undoElem);
             sheet.repaint();
         }
+    }
+
+    private void restoreSheetViewportFromUndo(YassUndoElement undoElem) {
+        if (sheet == null || undoElem == null) {
+            return;
+        }
+        if (undoElem.absolutePitchViewEnabled && sheet.isAbsolutePitchViewEnabled()) {
+            sheet.setAbsolutePitchWindow(undoElem.absolutePitchWindowStart, undoElem.absolutePitchWindowSpan);
+            Point restoredView = undoElem.sheetViewPosition;
+            Point currentView = sheet.getViewPosition();
+            sheet.setViewPosition(new Point(restoredView.x, currentView.y));
+            return;
+        }
+        sheet.setViewPosition(undoElem.sheetViewPosition);
     }
 
     public synchronized boolean addRow(String s) {
@@ -4049,6 +4066,429 @@ public class YassTable extends JTable {
         prevBeat(true);
     }
 
+    public void extendSelectionDownToWordBoundary() {
+        int originalTailRow = getSelectionTailNoteRow();
+        if (originalTailRow < 0) {
+            return;
+        }
+
+        nextBeat(true);
+
+        int expandedTailRow = getSelectionTailNoteRow();
+        if (expandedTailRow < 0 || expandedTailRow == originalTailRow) {
+            return;
+        }
+
+        if (!isWordStartAtSelectionTail(expandedTailRow)) {
+            return;
+        }
+
+        int startRow = getSelectionModel().getMinSelectionIndex();
+        int endRow = findWordEndFromStart(expandedTailRow);
+        setRowSelectionInterval(startRow, endRow);
+        updatePlayerPosition();
+        adjustMultiSize();
+    }
+
+    public void extendSelectionDownToPageBreak() {
+        int tailRow = getSelectionTailNoteRow();
+        if (tailRow < 0) {
+            return;
+        }
+
+        int selectionStart = getSelectionModel().getMinSelectionIndex();
+        if (selectionStart < 0) {
+            selectionStart = tailRow;
+        }
+
+        int boundaryRow = findNextPageBreakOrEndRow(tailRow);
+        if (boundaryRow < 0) {
+            return;
+        }
+
+        YassRow boundary = getRowAt(boundaryRow);
+        if (boundary != null && boundary.isPageBreak() && isImmediatelyBeforeBoundary(tailRow, boundaryRow)) {
+            int nextNoteRow = findNextNoteAfter(boundaryRow);
+            if (nextNoteRow >= 0) {
+                int nextBoundaryRow = findNextPageBreakOrEndRow(nextNoteRow);
+                if (nextBoundaryRow >= 0) {
+                    boundaryRow = nextBoundaryRow;
+                }
+            }
+        }
+
+        setRowSelectionInterval(selectionStart, boundaryRow);
+        scrollSelectionToVisible(boundaryRow);
+        updatePlayerPosition();
+        adjustMultiSize();
+    }
+
+    public void extendSelectionUpToWordBoundary() {
+        int originalHeadRow = getSelectionHeadNoteRow();
+        if (originalHeadRow < 0) {
+            return;
+        }
+
+        prevBeat(true);
+
+        int expandedHeadRow = getSelectionHeadNoteRow();
+        if (expandedHeadRow < 0 || expandedHeadRow == originalHeadRow) {
+            return;
+        }
+
+        if (!isWordEndAtSelectionHead(expandedHeadRow)) {
+            return;
+        }
+
+        int endRow = getSelectionModel().getMaxSelectionIndex();
+        if (endRow < 0) {
+            endRow = expandedHeadRow;
+        }
+        int startRow = findWordStartFromEnd(expandedHeadRow);
+        setRowSelectionInterval(startRow, endRow);
+        scrollSelectionToVisible(startRow);
+        updatePlayerPosition();
+        adjustMultiSize();
+    }
+
+    public void extendSelectionUpToPageBreak() {
+        int headRow = getSelectionHeadNoteRow();
+        if (headRow < 0) {
+            return;
+        }
+
+        int selectionEnd = getSelectionModel().getMaxSelectionIndex();
+        if (selectionEnd < 0) {
+            selectionEnd = headRow;
+        }
+
+        int boundaryRow = findPreviousPageBreakRow(headRow);
+        if (boundaryRow < 0) {
+            return;
+        }
+
+        YassRow boundary = getRowAt(boundaryRow);
+        if (boundary != null && boundary.isPageBreak() && isImmediatelyAfterBoundary(headRow, boundaryRow)) {
+            int previousNoteRow = findPreviousNoteBefore(boundaryRow);
+            if (previousNoteRow >= 0) {
+                int previousBoundaryRow = findPreviousPageBreakRow(previousNoteRow);
+                if (previousBoundaryRow >= 0) {
+                    boundaryRow = previousBoundaryRow;
+                }
+            }
+        }
+
+        setRowSelectionInterval(boundaryRow, selectionEnd);
+        scrollSelectionToVisible(boundaryRow);
+        updatePlayerPosition();
+        adjustMultiSize();
+    }
+
+    private int getSelectionAnchorNoteRow() {
+        int leadSelectionIndex = getSelectionModel().getLeadSelectionIndex();
+        if (leadSelectionIndex >= 0) {
+            YassRow row = getRowAt(leadSelectionIndex);
+            if (row != null && row.isNote()) {
+                return leadSelectionIndex;
+            }
+        }
+
+        int anchorSelectionIndex = getSelectionModel().getAnchorSelectionIndex();
+        if (anchorSelectionIndex >= 0) {
+            YassRow row = getRowAt(anchorSelectionIndex);
+            if (row != null && row.isNote()) {
+                return anchorSelectionIndex;
+            }
+        }
+
+        int[] rows = getSelectedRows();
+        if (rows != null) {
+            for (int rowIndex : rows) {
+                YassRow row = getRowAt(rowIndex);
+                if (row != null && row.isNote()) {
+                    return rowIndex;
+                }
+            }
+        }
+
+        int selectedRow = getSelectedRow();
+        if (selectedRow >= 0) {
+            YassRow row = getRowAt(selectedRow);
+            if (row != null && row.isNote()) {
+                return selectedRow;
+            }
+        }
+
+        int fallbackRow = sheet != null ? sheet.nextElement() : -1;
+        if (fallbackRow >= 0) {
+            YassRow row = getRowAt(fallbackRow);
+            if (row != null && row.isNote()) {
+                return fallbackRow;
+            }
+        }
+
+        return -1;
+    }
+
+    private int getSelectionTailNoteRow() {
+        int leadSelectionIndex = getSelectionModel().getLeadSelectionIndex();
+        if (leadSelectionIndex >= 0) {
+            YassRow row = getRowAt(leadSelectionIndex);
+            if (row != null && row.isNote()) {
+                return leadSelectionIndex;
+            }
+        }
+
+        int[] rows = getSelectedRows();
+        if (rows != null) {
+            for (int i = rows.length - 1; i >= 0; i--) {
+                YassRow row = getRowAt(rows[i]);
+                if (row != null && row.isNote()) {
+                    return rows[i];
+                }
+            }
+        }
+
+        int selectedRow = getSelectedRow();
+        if (selectedRow >= 0) {
+            YassRow row = getRowAt(selectedRow);
+            if (row != null && row.isNote()) {
+                return selectedRow;
+            }
+        }
+
+        int fallbackRow = sheet != null ? sheet.nextElement() : -1;
+        if (fallbackRow >= 0) {
+            YassRow row = getRowAt(fallbackRow);
+            if (row != null && row.isNote()) {
+                return fallbackRow;
+            }
+        }
+
+        return -1;
+    }
+
+    private int getSelectionHeadNoteRow() {
+        int leadSelectionIndex = getSelectionModel().getLeadSelectionIndex();
+        if (leadSelectionIndex >= 0) {
+            YassRow row = getRowAt(leadSelectionIndex);
+            if (row != null && row.isNote()) {
+                return leadSelectionIndex;
+            }
+        }
+
+        int[] rows = getSelectedRows();
+        if (rows != null) {
+            for (int rowIndex : rows) {
+                YassRow row = getRowAt(rowIndex);
+                if (row != null && row.isNote()) {
+                    return rowIndex;
+                }
+            }
+        }
+
+        int selectedRow = getSelectedRow();
+        if (selectedRow >= 0) {
+            YassRow row = getRowAt(selectedRow);
+            if (row != null && row.isNote()) {
+                return selectedRow;
+            }
+        }
+
+        int fallbackRow = sheet != null ? sheet.nextElement() : -1;
+        if (fallbackRow >= 0) {
+            YassRow row = getRowAt(fallbackRow);
+            if (row != null && row.isNote()) {
+                return fallbackRow;
+            }
+        }
+
+        return -1;
+    }
+
+    private boolean isWordStartAtSelectionTail(int rowIndex) {
+        YassRow row = getRowAt(rowIndex);
+        if (row == null || !row.isNote()) {
+            return false;
+        }
+        if (!prop.isUncommonSpacingAfter()) {
+            return row.startsWithSpace();
+        }
+        int previousNoteRow = findPreviousNoteAcrossPages(rowIndex);
+        return previousNoteRow < 0 || getRowAt(previousNoteRow).endsWithSpace();
+    }
+
+    private boolean isWordEndAtSelectionHead(int rowIndex) {
+        YassRow row = getRowAt(rowIndex);
+        if (row == null || !row.isNote()) {
+            return false;
+        }
+        if (prop.isUncommonSpacingAfter()) {
+            return row.endsWithSpace();
+        }
+        int nextNoteRow = findNextNoteAcrossPages(rowIndex);
+        return nextNoteRow < 0 || getRowAt(nextNoteRow).startsWithSpace();
+    }
+
+    private int findWordEndFromStart(int rowIndex) {
+        int endRow = rowIndex;
+        if (prop.isUncommonSpacingAfter()) {
+            while (!getRowAt(endRow).endsWithSpace()) {
+                int nextNoteRow = findNextNoteInCurrentPage(endRow);
+                if (nextNoteRow < 0) {
+                    return endRow;
+                }
+                endRow = nextNoteRow;
+            }
+            return endRow;
+        }
+
+        while (true) {
+            int nextNoteRow = findNextNoteInCurrentPage(endRow);
+            if (nextNoteRow < 0 || getRowAt(nextNoteRow).startsWithSpace()) {
+                return endRow;
+            }
+            endRow = nextNoteRow;
+        }
+    }
+
+    private int findWordStartFromEnd(int rowIndex) {
+        int startRow = rowIndex;
+        if (prop.isUncommonSpacingAfter()) {
+            while (true) {
+                int previousNoteRow = findPreviousNoteInCurrentPage(startRow);
+                if (previousNoteRow < 0 || getRowAt(previousNoteRow).endsWithSpace()) {
+                    return startRow;
+                }
+                startRow = previousNoteRow;
+            }
+        }
+
+        while (true) {
+            YassRow currentRow = getRowAt(startRow);
+            if (currentRow.startsWithSpace()) {
+                return startRow;
+            }
+            int previousNoteRow = findPreviousNoteInCurrentPage(startRow);
+            if (previousNoteRow < 0) {
+                return startRow;
+            }
+            startRow = previousNoteRow;
+        }
+    }
+
+    private int findNextNoteAcrossPages(int rowIndex) {
+        for (int currentRow = rowIndex + 1; currentRow < getRowCount(); currentRow++) {
+            YassRow row = getRowAt(currentRow);
+            if (row != null && row.isNote()) {
+                return currentRow;
+            }
+        }
+        return -1;
+    }
+
+    private int findPreviousNoteAcrossPages(int rowIndex) {
+        for (int currentRow = rowIndex - 1; currentRow >= 0; currentRow--) {
+            YassRow row = getRowAt(currentRow);
+            if (row != null && row.isNote()) {
+                return currentRow;
+            }
+        }
+        return -1;
+    }
+
+    private int findNextPageBreakOrEndRow(int rowIndex) {
+        for (int currentRow = rowIndex + 1; currentRow < getRowCount(); currentRow++) {
+            YassRow row = getRowAt(currentRow);
+            if (row == null) {
+                continue;
+            }
+            if (row.isPageBreak() || row.isEnd()) {
+                return currentRow;
+            }
+        }
+        return -1;
+    }
+
+    private int findPreviousPageBreakRow(int rowIndex) {
+        for (int currentRow = rowIndex - 1; currentRow >= 0; currentRow--) {
+            YassRow row = getRowAt(currentRow);
+            if (row == null) {
+                continue;
+            }
+            if (row.isPageBreak()) {
+                return currentRow;
+            }
+        }
+        return 0;
+    }
+
+    private boolean isImmediatelyBeforeBoundary(int noteRow, int boundaryRow) {
+        for (int currentRow = noteRow + 1; currentRow < boundaryRow; currentRow++) {
+            YassRow row = getRowAt(currentRow);
+            if (row != null && row.isNote()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private int findNextNoteAfter(int rowIndex) {
+        return findNextNoteAcrossPages(rowIndex);
+    }
+
+    private boolean isImmediatelyAfterBoundary(int noteRow, int boundaryRow) {
+        for (int currentRow = boundaryRow + 1; currentRow < noteRow; currentRow++) {
+            YassRow row = getRowAt(currentRow);
+            if (row != null && row.isNote()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private int findPreviousNoteBefore(int rowIndex) {
+        return findPreviousNoteAcrossPages(rowIndex);
+    }
+
+    private int findPreviousNoteInCurrentPage(int rowIndex) {
+        for (int currentRow = rowIndex - 1; currentRow >= 0; currentRow--) {
+            YassRow row = getRowAt(currentRow);
+            if (row == null) {
+                continue;
+            }
+            if (row.isPageBreak()) {
+                return -1;
+            }
+            if (row.isNote()) {
+                return currentRow;
+            }
+        }
+        return -1;
+    }
+
+    private int findNextNoteInCurrentPage(int rowIndex) {
+        for (int currentRow = rowIndex + 1; currentRow < getRowCount(); currentRow++) {
+            YassRow row = getRowAt(currentRow);
+            if (row == null) {
+                continue;
+            }
+            if (row.isPageBreak() || row.isEnd()) {
+                return -1;
+            }
+            if (row.isNote()) {
+                return currentRow;
+            }
+        }
+        return -1;
+    }
+
+    private void scrollSelectionToVisible(int rowIndex) {
+        Rectangle rr = getCellRect(rowIndex, 0, true);
+        rr.add(getCellRect(rowIndex, 4, true));
+        scrollRectToVisible(rr);
+    }
+
     public void gotoGap() {
         YassRow r = tm.getCommentRow("GAP:");
         if (r == null) {
@@ -4394,6 +4834,7 @@ public class YassTable extends JTable {
             return;
         }
         AlignToMelodyContext effectiveContext = context == null ? AlignToMelodyContext.manual() : context;
+        boolean debugAlignToMelody = LOGGER.isLoggable(Level.FINE);
 
         Map<YassRow, Integer> prevalentPitches = new HashMap<>();
         for (YassRow row : rows) {
@@ -4409,6 +4850,16 @@ public class YassTable extends JTable {
                 effectiveContext.origin() == AlignToMelodyOrigin.CREATE_WIZARD
                         || effectiveContext.origin() == AlignToMelodyOrigin.RECORDING;
         int octaveBias = keepDetectedOctave || absolutePitchView ? 0 : determineSignificantOctaveBias(prevalentPitches.values());
+        if (debugAlignToMelody) {
+            LOGGER.fine(String.format(Locale.ROOT,
+                    "[AlignToMelody] start origin=%s notes=%d pitchFrames=%d absolutePitchView=%s keepDetectedOctave=%s octaveBias=%d",
+                    effectiveContext.origin(),
+                    rows.size(),
+                    pitchData.size(),
+                    absolutePitchView,
+                    keepDetectedOctave,
+                    octaveBias));
+        }
 
         // Build occupied-beat set from all rows in the table (beat..beat+length-1 inclusive)
         Set<Integer> occupiedBeats = new HashSet<>();
@@ -4431,8 +4882,18 @@ public class YassTable extends JTable {
             }
             Integer prevalentPitch = prevalentPitches.get(row);
             if (prevalentPitch == null) {
+                if (debugAlignToMelody) {
+                    LOGGER.fine(String.format(Locale.ROOT,
+                            "[AlignToMelody] skip row beat=%d length=%d text=\"%s\" reason=no prevalent pitch",
+                            row.getBeatInt(),
+                            row.getLengthInt(),
+                            row.getText()));
+                }
                 continue;
             }
+            int originalBeat = row.getBeatInt();
+            int originalLength = row.getLengthInt();
+            int originalHeight = row.getHeightInt();
             int alignedPitch;
             if (keepDetectedOctave) {
                 alignedPitch = prevalentPitch;
@@ -4440,7 +4901,15 @@ public class YassTable extends JTable {
                 // Keep align-to-melody output in sync with the visual pitch rendering
                 // (pitch lines are currently displayed one octave higher).
                 alignedPitch = prevalentPitch + octaveBias + ALIGN_TO_MELODY_RENDER_SHIFT_SEMITONES;
-                if (absolutePitchView) {
+                boolean samePitchClassDifferentOctave =
+                        Math.floorMod(alignedPitch - row.getHeightInt(), 12) == 0
+                                && alignedPitch != row.getHeightInt();
+                if (samePitchClassDifferentOctave) {
+                    // When the note already matches the detected tone class but sits in the
+                    // wrong octave, move it to the exact octave where the pitch lines were drawn.
+                    // This keeps manual align-to-melody visually consistent with the detected signal.
+                    alignedPitch = prevalentPitch + octaveBias + ALIGN_TO_MELODY_RENDER_SHIFT_SEMITONES;
+                } else if (absolutePitchView) {
                     // Absolute mode should still snap to the nearest pitch-line octave
                     // around the current note, but avoid large accidental shifts.
                     int snappedPitch = normalizePitchIntoWindow(alignedPitch, row.getHeightInt());
@@ -4468,23 +4937,113 @@ public class YassTable extends JTable {
 
             // Count voiced frames per beat across the note
             int[] framesPerBeat = new int[curLength];
+            int[] matchingFramesPerBeat = new int[curLength];
+            double[] energySumPerBeat = new double[curLength];
+            int[] energyFramesPerBeat = new int[curLength];
             for (PitchDetector.PitchData pd : pitchData) {
                 double frameMs = pd.time() * 1000.0;
                 for (int i = 0; i < curLength; i++) {
                     if (frameMs >= beatToMs(curBeat + i) && frameMs < beatToMs(curBeat + i + 1)) {
                         framesPerBeat[i]++;
+                        if (matchesAlignedPitch(pd.pitch(), alignedPitch)) {
+                            matchingFramesPerBeat[i]++;
+                        }
+                        if (Double.isFinite(pd.energy())) {
+                            energySumPerBeat[i] += pd.energy();
+                            energyFramesPerBeat[i]++;
+                        }
                         break;
                     }
                 }
             }
+            double[] avgEnergyPerBeat = computeAverageEnergyPerBeat(energySumPerBeat, energyFramesPerBeat);
             int totalFrames = 0;
             for (int f : framesPerBeat) totalFrames += f;
             // Minimum frames for a beat to count as active singing: 25% of average density
             double avgFramesPerBeat = curLength > 0 ? (double) totalFrames / curLength : 1.0;
             double minFramesThreshold = Math.max(1, avgFramesPerBeat * 0.25);
+            double strongTailFramesThreshold = determineStrongTailFramesThreshold(framesPerBeat,
+                                                                                 matchingFramesPerBeat,
+                                                                                 minFramesThreshold);
+            double strongTailEnergyThreshold = determineStrongTailEnergyThreshold(avgEnergyPerBeat,
+                                                                                  matchingFramesPerBeat);
+            boolean[] voicedBeats = computeVoicedBeats(framesPerBeat, avgEnergyPerBeat, minFramesThreshold,
+                                                       strongTailEnergyThreshold);
+            BeatRange leftToRightRange = determineLeftToRightVoicedRange(voicedBeats);
+            if (leftToRightRange != null
+                    && (leftToRightRange.startIndex() > 0 || leftToRightRange.endIndex() < framesPerBeat.length - 1)) {
+                if (debugAlignToMelody) {
+                    LOGGER.fine(String.format(Locale.ROOT,
+                            "[AlignToMelody] left-to-right window beat=%d..%d voiced=%s reason=stop after internal voice gap",
+                            curBeat + leftToRightRange.startIndex(),
+                            curBeat + leftToRightRange.endIndex(),
+                            Arrays.toString(voicedBeats)));
+                }
+                curBeat += leftToRightRange.startIndex();
+                curLength = leftToRightRange.endIndex() - leftToRightRange.startIndex() + 1;
+                framesPerBeat = Arrays.copyOfRange(framesPerBeat,
+                                                   leftToRightRange.startIndex(),
+                                                   leftToRightRange.endIndex() + 1);
+                matchingFramesPerBeat = Arrays.copyOfRange(matchingFramesPerBeat,
+                                                           leftToRightRange.startIndex(),
+                                                           leftToRightRange.endIndex() + 1);
+                avgEnergyPerBeat = Arrays.copyOfRange(avgEnergyPerBeat,
+                                                      leftToRightRange.startIndex(),
+                                                      leftToRightRange.endIndex() + 1);
+                totalFrames = 0;
+                for (int f : framesPerBeat) totalFrames += f;
+                avgFramesPerBeat = curLength > 0 ? (double) totalFrames / curLength : 1.0;
+                minFramesThreshold = Math.max(1, avgFramesPerBeat * 0.25);
+                strongTailFramesThreshold = determineStrongTailFramesThreshold(framesPerBeat,
+                                                                               matchingFramesPerBeat,
+                                                                               minFramesThreshold);
+                strongTailEnergyThreshold = determineStrongTailEnergyThreshold(avgEnergyPerBeat,
+                                                                               matchingFramesPerBeat);
+                voicedBeats = computeVoicedBeats(framesPerBeat, avgEnergyPerBeat, minFramesThreshold,
+                                                 strongTailEnergyThreshold);
+                changed = true;
+            }
+            if (debugAlignToMelody) {
+                LOGGER.fine(String.format(Locale.ROOT,
+                        "[AlignToMelody] row beat=%d length=%d text=\"%s\" prevalentPitch=%d alignedPitch=%d frames=%s matching=%s avgEnergy=%s minFrames=%.2f strongTailFrames=%.2f strongTailEnergy=%s",
+                        originalBeat,
+                        originalLength,
+                        row.getText(),
+                        prevalentPitch,
+                        alignedPitch,
+                        Arrays.toString(framesPerBeat),
+                        Arrays.toString(matchingFramesPerBeat),
+                        formatDoubleArray(avgEnergyPerBeat),
+                        minFramesThreshold,
+                        strongTailFramesThreshold,
+                        formatDouble(strongTailEnergyThreshold)));
+            }
 
             // Trim silent beats from the end (never shorten below 1 beat)
-            while (curLength > 1 && framesPerBeat[curLength - 1] < minFramesThreshold) {
+            while (curLength > 1 && !isStrongTrailingBeat(curLength - 1,
+                                                          framesPerBeat,
+                                                          matchingFramesPerBeat,
+                                                          avgEnergyPerBeat,
+                                                          minFramesThreshold,
+                                                          strongTailFramesThreshold,
+                                                          strongTailEnergyThreshold)) {
+                if (debugAlignToMelody) {
+                    int beatIndex = curLength - 1;
+                    LOGGER.fine(String.format(Locale.ROOT,
+                            "[AlignToMelody] trim-right beatIndex=%d beat=%d frames=%d matching=%d avgEnergy=%s reason=%s",
+                            beatIndex,
+                            curBeat + beatIndex,
+                            framesPerBeat[beatIndex],
+                            matchingFramesPerBeat[beatIndex],
+                            formatDouble(avgEnergyPerBeat[beatIndex]),
+                            describeTrailingBeatDecision(beatIndex,
+                                    framesPerBeat,
+                                    matchingFramesPerBeat,
+                                    avgEnergyPerBeat,
+                                    minFramesThreshold,
+                                    strongTailFramesThreshold,
+                                    strongTailEnergyThreshold)));
+                }
                 curLength--;
                 changed = true;
             }
@@ -4492,6 +5051,15 @@ public class YassTable extends JTable {
             // Trim silent beats from the start (never shorten below 1 beat)
             int trimmedFromStart = 0;
             while (curLength > 1 && framesPerBeat[trimmedFromStart] < minFramesThreshold) {
+                if (debugAlignToMelody) {
+                    LOGGER.fine(String.format(Locale.ROOT,
+                            "[AlignToMelody] trim-left beatIndex=%d beat=%d frames=%d matching=%d avgEnergy=%s reason=frames below min threshold",
+                            trimmedFromStart,
+                            curBeat,
+                            framesPerBeat[trimmedFromStart],
+                            matchingFramesPerBeat[trimmedFromStart],
+                            formatDouble(avgEnergyPerBeat[trimmedFromStart])));
+                }
                 trimmedFromStart++;
                 curBeat++;
                 curLength--;
@@ -4504,24 +5072,56 @@ public class YassTable extends JTable {
                 if (i < framesPerBeat.length) activeFrames += framesPerBeat[i];
             }
             double activeAvgPerBeat = curLength > 0 ? (double) activeFrames / curLength : 1.0;
-            double expandMinFrames  = Math.max(1, activeAvgPerBeat * 0.25);
+            double expandMinFrames  = Math.max(Math.max(1, activeAvgPerBeat * 0.25), strongTailFramesThreshold);
 
             // Extend right: expand into free beats where >= 50% of frames match prevalent pitch,
             // and the beat is not adjacent to the next occupied beat (keep 1-beat gap).
             int endBeat = curBeat + curLength;
             while (!occupiedBeats.contains(endBeat) && !occupiedBeats.contains(endBeat + 1)) {
+                double adjacentKeptEnergy = averageEnergyAt(avgEnergyPerBeat, trimmedFromStart + curLength - 1);
                 double beatStartMs = beatToMs(endBeat);
                 double beatEndMs   = beatToMs(endBeat + 1);
                 int matching = 0, total = 0;
+                double energySum = 0d;
+                int energyCount = 0;
                 for (PitchDetector.PitchData pd : pitchData) {
                     double frameMs = pd.time() * 1000.0;
                     if (frameMs >= beatStartMs && frameMs < beatEndMs) {
                         total++;
                         if (matchesAlignedPitch(pd.pitch(), alignedPitch)) matching++;
+                        if (Double.isFinite(pd.energy())) {
+                            energySum += pd.energy();
+                            energyCount++;
+                        }
                     }
                 }
-                if (total < expandMinFrames || matching < total * 0.5) {
+                double avgEnergy = energyCount > 0 ? energySum / energyCount : Double.NaN;
+                if (total < expandMinFrames
+                        || matching < total * 0.5
+                        || !passesEnergyThreshold(avgEnergy, strongTailEnergyThreshold)
+                        || !passesRelativeEdgeEnergyThreshold(avgEnergy, adjacentKeptEnergy)) {
+                    if (debugAlignToMelody) {
+                        LOGGER.fine(String.format(Locale.ROOT,
+                                "[AlignToMelody] stop-expand-right beat=%d total=%d matching=%d avgEnergy=%s adjacentKeptEnergy=%s expandMinFrames=%.2f strongTailEnergy=%s reason=%s",
+                                endBeat,
+                                total,
+                                matching,
+                                formatDouble(avgEnergy),
+                                formatDouble(adjacentKeptEnergy),
+                                expandMinFrames,
+                                formatDouble(strongTailEnergyThreshold),
+                                describeExpansionDecision(total, matching, avgEnergy, adjacentKeptEnergy, expandMinFrames, strongTailEnergyThreshold)));
+                    }
                     break;
+                }
+                if (debugAlignToMelody) {
+                    LOGGER.fine(String.format(Locale.ROOT,
+                            "[AlignToMelody] expand-right beat=%d total=%d matching=%d avgEnergy=%s adjacentKeptEnergy=%s",
+                            endBeat,
+                            total,
+                            matching,
+                            formatDouble(avgEnergy),
+                            formatDouble(adjacentKeptEnergy)));
                 }
                 curLength++;
                 endBeat++;
@@ -4531,18 +5131,50 @@ public class YassTable extends JTable {
             // Extend left: expand into free beats where >= 50% of frames match prevalent pitch,
             // and the beat is not adjacent to the previous occupied beat (keep 1-beat gap).
             while (curBeat > 0 && !occupiedBeats.contains(curBeat - 1) && !occupiedBeats.contains(curBeat - 2)) {
+                double adjacentKeptEnergy = averageEnergyAt(avgEnergyPerBeat, trimmedFromStart);
                 double beatStartMs = beatToMs(curBeat - 1);
                 double beatEndMs   = beatToMs(curBeat);
                 int matching = 0, total = 0;
+                double energySum = 0d;
+                int energyCount = 0;
                 for (PitchDetector.PitchData pd : pitchData) {
                     double frameMs = pd.time() * 1000.0;
                     if (frameMs >= beatStartMs && frameMs < beatEndMs) {
                         total++;
                         if (matchesAlignedPitch(pd.pitch(), alignedPitch)) matching++;
+                        if (Double.isFinite(pd.energy())) {
+                            energySum += pd.energy();
+                            energyCount++;
+                        }
                     }
                 }
-                if (total < expandMinFrames || matching < total * 0.5) {
+                double avgEnergy = energyCount > 0 ? energySum / energyCount : Double.NaN;
+                if (total < expandMinFrames
+                        || matching < total * 0.5
+                        || !passesEnergyThreshold(avgEnergy, strongTailEnergyThreshold)
+                        || !passesRelativeEdgeEnergyThreshold(avgEnergy, adjacentKeptEnergy)) {
+                    if (debugAlignToMelody) {
+                        LOGGER.fine(String.format(Locale.ROOT,
+                                "[AlignToMelody] stop-expand-left beat=%d total=%d matching=%d avgEnergy=%s adjacentKeptEnergy=%s expandMinFrames=%.2f strongTailEnergy=%s reason=%s",
+                                curBeat - 1,
+                                total,
+                                matching,
+                                formatDouble(avgEnergy),
+                                formatDouble(adjacentKeptEnergy),
+                                expandMinFrames,
+                                formatDouble(strongTailEnergyThreshold),
+                                describeExpansionDecision(total, matching, avgEnergy, adjacentKeptEnergy, expandMinFrames, strongTailEnergyThreshold)));
+                    }
                     break;
+                }
+                if (debugAlignToMelody) {
+                    LOGGER.fine(String.format(Locale.ROOT,
+                            "[AlignToMelody] expand-left beat=%d total=%d matching=%d avgEnergy=%s adjacentKeptEnergy=%s",
+                            curBeat - 1,
+                            total,
+                            matching,
+                            formatDouble(avgEnergy),
+                            formatDouble(adjacentKeptEnergy)));
                 }
                 curBeat--;
                 curLength++;
@@ -4558,10 +5190,212 @@ public class YassTable extends JTable {
             for (int b = curBeat; b < curBeat + curLength; b++) {
                 occupiedBeats.add(b);
             }
+            if (debugAlignToMelody) {
+                LOGGER.fine(String.format(Locale.ROOT,
+                        "[AlignToMelody] result beat=%d->%d length=%d->%d height=%d->%d text=\"%s\"",
+                        originalBeat,
+                        curBeat,
+                        originalLength,
+                        curLength,
+                        originalHeight,
+                        row.getHeightInt(),
+                        row.getText()));
+            }
         }
         if (changed) {
             tm.fireTableDataChanged();
         }
+    }
+
+    private double determineStrongTailFramesThreshold(int[] framesPerBeat,
+                                                      int[] matchingFramesPerBeat,
+                                                      double fallbackThreshold) {
+        List<Integer> strongBeatCounts = new ArrayList<>();
+        for (int i = 0; i < framesPerBeat.length; i++) {
+            int total = framesPerBeat[i];
+            int matching = matchingFramesPerBeat[i];
+            if (total <= 0) {
+                continue;
+            }
+            if (matching >= Math.max(1, (int) Math.ceil(total * 0.5))) {
+                strongBeatCounts.add(total);
+            }
+        }
+        if (strongBeatCounts.isEmpty()) {
+            for (int total : framesPerBeat) {
+                if (total > 0) {
+                    strongBeatCounts.add(total);
+                }
+            }
+        }
+        if (strongBeatCounts.isEmpty()) {
+            return fallbackThreshold;
+        }
+        strongBeatCounts.sort(Integer::compareTo);
+        double median = strongBeatCounts.get(strongBeatCounts.size() / 2);
+        return Math.max(fallbackThreshold, median * 0.5);
+    }
+
+    private double[] computeAverageEnergyPerBeat(double[] energySumPerBeat, int[] energyFramesPerBeat) {
+        double[] avgEnergyPerBeat = new double[energySumPerBeat.length];
+        for (int i = 0; i < energySumPerBeat.length; i++) {
+            avgEnergyPerBeat[i] = energyFramesPerBeat[i] > 0
+                    ? energySumPerBeat[i] / energyFramesPerBeat[i]
+                    : Double.NaN;
+        }
+        return avgEnergyPerBeat;
+    }
+
+    private boolean[] computeVoicedBeats(int[] framesPerBeat,
+                                         double[] avgEnergyPerBeat,
+                                         double minFramesThreshold,
+                                         double strongTailEnergyThreshold) {
+        boolean[] voicedBeats = new boolean[framesPerBeat.length];
+        for (int i = 0; i < framesPerBeat.length; i++) {
+            voicedBeats[i] = framesPerBeat[i] >= minFramesThreshold
+                    && passesEnergyThreshold(avgEnergyPerBeat[i], strongTailEnergyThreshold);
+        }
+        return voicedBeats;
+    }
+
+    private BeatRange determineLeftToRightVoicedRange(boolean[] voicedBeats) {
+        if (voicedBeats == null || voicedBeats.length == 0) {
+            return null;
+        }
+        int firstVoiced = -1;
+        int lastAccepted = -1;
+        int consecutiveGap = 0;
+        for (int i = 0; i < voicedBeats.length; i++) {
+            if (voicedBeats[i]) {
+                if (firstVoiced < 0) {
+                    firstVoiced = i;
+                }
+                lastAccepted = i;
+                consecutiveGap = 0;
+                continue;
+            }
+            if (firstVoiced < 0) {
+                continue;
+            }
+            consecutiveGap++;
+            if (consecutiveGap >= 2) {
+                break;
+            }
+        }
+        if (firstVoiced < 0 || lastAccepted < firstVoiced) {
+            return null;
+        }
+        return new BeatRange(firstVoiced, lastAccepted);
+    }
+
+    private double determineStrongTailEnergyThreshold(double[] avgEnergyPerBeat,
+                                                      int[] matchingFramesPerBeat) {
+        List<Double> strongBeatEnergies = new ArrayList<>();
+        for (int i = 0; i < avgEnergyPerBeat.length; i++) {
+            if (matchingFramesPerBeat[i] <= 0 || !Double.isFinite(avgEnergyPerBeat[i])) {
+                continue;
+            }
+            strongBeatEnergies.add(avgEnergyPerBeat[i]);
+        }
+        if (strongBeatEnergies.isEmpty()) {
+            return Double.NaN;
+        }
+        strongBeatEnergies.sort(Double::compareTo);
+        double median = strongBeatEnergies.get(strongBeatEnergies.size() / 2);
+        return median * 0.35d;
+    }
+
+    private boolean isStrongTrailingBeat(int beatIndex,
+                                         int[] framesPerBeat,
+                                         int[] matchingFramesPerBeat,
+                                         double[] avgEnergyPerBeat,
+                                         double minFramesThreshold,
+                                         double strongTailFramesThreshold,
+                                         double strongTailEnergyThreshold) {
+        int total = framesPerBeat[beatIndex];
+        if (total < minFramesThreshold || total < strongTailFramesThreshold) {
+            return false;
+        }
+        int matching = matchingFramesPerBeat[beatIndex];
+        return matching >= Math.max(1, (int) Math.ceil(total * 0.5))
+                && passesEnergyThreshold(avgEnergyPerBeat[beatIndex], strongTailEnergyThreshold);
+    }
+
+    private boolean passesEnergyThreshold(double avgEnergy, double threshold) {
+        return !Double.isFinite(threshold) || !Double.isFinite(avgEnergy) || avgEnergy >= threshold;
+    }
+
+    private boolean passesRelativeEdgeEnergyThreshold(double avgEnergy, double adjacentKeptEnergy) {
+        return !Double.isFinite(adjacentKeptEnergy)
+                || !Double.isFinite(avgEnergy)
+                || avgEnergy >= adjacentKeptEnergy * 0.4d;
+    }
+
+    private double averageEnergyAt(double[] avgEnergyPerBeat, int index) {
+        if (avgEnergyPerBeat == null || index < 0 || index >= avgEnergyPerBeat.length) {
+            return Double.NaN;
+        }
+        return avgEnergyPerBeat[index];
+    }
+
+    private String describeTrailingBeatDecision(int beatIndex,
+                                                int[] framesPerBeat,
+                                                int[] matchingFramesPerBeat,
+                                                double[] avgEnergyPerBeat,
+                                                double minFramesThreshold,
+                                                double strongTailFramesThreshold,
+                                                double strongTailEnergyThreshold) {
+        int total = framesPerBeat[beatIndex];
+        if (total < minFramesThreshold) {
+            return "frames below min threshold";
+        }
+        if (total < strongTailFramesThreshold) {
+            return "frames below strong tail threshold";
+        }
+        int matching = matchingFramesPerBeat[beatIndex];
+        if (matching < Math.max(1, (int) Math.ceil(total * 0.5))) {
+            return "matching pitch share below 50%";
+        }
+        if (!passesEnergyThreshold(avgEnergyPerBeat[beatIndex], strongTailEnergyThreshold)) {
+            return "energy below strong tail threshold";
+        }
+        return "kept";
+    }
+
+    private String describeExpansionDecision(int total,
+                                             int matching,
+                                             double avgEnergy,
+                                             double adjacentKeptEnergy,
+                                             double expandMinFrames,
+                                             double strongTailEnergyThreshold) {
+        if (total < expandMinFrames) {
+            return "frames below expand threshold";
+        }
+        if (matching < total * 0.5) {
+            return "matching pitch share below 50%";
+        }
+        if (!passesEnergyThreshold(avgEnergy, strongTailEnergyThreshold)) {
+            return "energy below strong tail threshold";
+        }
+        if (!passesRelativeEdgeEnergyThreshold(avgEnergy, adjacentKeptEnergy)) {
+            return "energy too weak relative to adjacent kept beat";
+        }
+        return "expanded";
+    }
+
+    private String formatDouble(double value) {
+        return Double.isFinite(value) ? String.format(Locale.ROOT, "%.4f", value) : "n/a";
+    }
+
+    private String formatDoubleArray(double[] values) {
+        StringJoiner joiner = new StringJoiner(", ", "[", "]");
+        for (double value : values) {
+            joiner.add(formatDouble(value));
+        }
+        return joiner.toString();
+    }
+
+    private record BeatRange(int startIndex, int endIndex) {
     }
 
     public enum AlignToMelodyOrigin {
@@ -5288,14 +6122,27 @@ public class YassTable extends JTable {
             startBeat = r.getBeatInt();
         }
         String[] lines = splitTextToLines(trstring, startBeat);
+        List<String[]> clipboardRows = new ArrayList<>();
+        for (String line : lines) {
+            if (StringUtils.isBlank(line)) {
+                continue;
+            }
+            String[] currentRow = line.split("\t", -1);
+            String type = currentRow.length > 0 ? StringUtils.trimToEmpty(currentRow[0]) : "";
+            String beat = currentRow.length > 1 ? StringUtils.trimToEmpty(currentRow[1]) : "";
+            if (StringUtils.isBlank(type) || !StringUtils.isNumeric(beat)) {
+                continue;
+            }
+            clipboardRows.add(currentRow);
+        }
         int num = 0;
-        if (startBeat >= 0) {
-            YassRow firstRowToAdd = new YassRow(lines[0]);
+        if (startBeat >= 0 && !clipboardRows.isEmpty()) {
+            YassRow firstRowToAdd = new YassRow(String.join("\t", clipboardRows.get(0)));
             YassRow lastRowToAdd;
-            int temp = -1;
+            int temp = clipboardRows.size() - 1;
             do {
-                lastRowToAdd = new YassRow(lines[lines.length + temp--]);
-            } while (!lastRowToAdd.isNote() && (lines.length + temp) > 1);
+                lastRowToAdd = new YassRow(String.join("\t", clipboardRows.get(temp--)));
+            } while (!lastRowToAdd.isNote() && temp >= 0);
             int offset = lastRowToAdd.getBeatInt() - firstRowToAdd.getBeatInt();
             int lastBeat;
             if (getSelectedRows().length <= 1) {
@@ -5318,8 +6165,7 @@ public class YassTable extends JTable {
             int currentBeat = 0;
             int lengthInt = 0;
             boolean hasPageBreak = false;
-            for (String line : lines) {
-                String[] currentRow = line.split("\t");
+            for (String[] currentRow : clipboardRows) {
                 String type = currentRow.length > 0 ? currentRow[0] : "";
                 String beat = currentRow.length > 1 ? currentRow[1] : "";
                 if (pasteBeat == -1) {
@@ -5750,16 +6596,6 @@ public class YassTable extends JTable {
         if (rows == null || rows.length < 1) {
             return;
         }
-        int firstDeletedNoteBeat = Integer.MAX_VALUE;
-        for (int selectedRow : rows) {
-            if (selectedRow < 0 || selectedRow >= n) {
-                continue;
-            }
-            YassRow selected = getRowAt(selectedRow);
-            if (selected != null && selected.isNote()) {
-                firstDeletedNoteBeat = Math.min(firstDeletedNoteBeat, selected.getBeatInt());
-            }
-        }
 
         int sel = -1;
         Arrays.sort(rows);
@@ -5827,9 +6663,7 @@ public class YassTable extends JTable {
                 sel = row - 1;
             }
         }
-        if (firstDeletedNoteBeat != Integer.MAX_VALUE) {
-            normalizePageBreaksAfterDeletedNotes(firstDeletedNoteBeat);
-        }
+        removeDanglingPageBreaksWithoutFollowingNotes();
         tm.fireTableDataChanged();
         if (sel >= 0) {
             setRowSelectionInterval(sel, sel);
@@ -5844,16 +6678,6 @@ public class YassTable extends JTable {
         int[] rows = getSelectedRows();
         if (rows == null || rows.length < 1) {
             return false;
-        }
-        int firstDeletedNoteBeat = Integer.MAX_VALUE;
-        for (int selectedRow : rows) {
-            if (selectedRow < 0 || selectedRow >= getRowCount()) {
-                continue;
-            }
-            YassRow selected = getRowAt(selectedRow);
-            if (selected != null && selected.isNote()) {
-                firstDeletedNoteBeat = Math.min(firstDeletedNoteBeat, selected.getBeatInt());
-            }
         }
         Arrays.sort(rows);
         for (int i = rows.length - 1; i >= 0; i--) {
@@ -5872,47 +6696,13 @@ public class YassTable extends JTable {
         else if (prev != null && (!prev.isNote()) && next != null && next.isPageBreak())
             tm.removeRowAt(rows[0]);
 
-        if (firstDeletedNoteBeat != Integer.MAX_VALUE) {
-            normalizePageBreaksAfterDeletedNotes(firstDeletedNoteBeat);
-        }
+        removeDanglingPageBreaksWithoutFollowingNotes();
         tm.fireTableDataChanged();
         if (next != null)
             setRowSelectionInterval(rows[0], rows[0]);
         updatePlayerPosition();
         zoomPage();
         return true;
-    }
-
-    private void normalizePageBreaksAfterDeletedNotes(int firstDeletedNoteBeat) {
-        if (firstDeletedNoteBeat == Integer.MAX_VALUE) {
-            return;
-        }
-
-        removePageBreakDirectlyBeforeNextNoteAtOrAfterBeat(firstDeletedNoteBeat);
-        removeDanglingPageBreaksWithoutFollowingNotes();
-        auto.autoCorrectAllPageBreaks(this, true);
-    }
-
-    private void removePageBreakDirectlyBeforeNextNoteAtOrAfterBeat(int beat) {
-        int rowCount = getRowCount();
-        for (int row = 0; row < rowCount; row++) {
-            YassRow current = getRowAt(row);
-            if (current == null || !current.isNote() || current.getBeatInt() < beat) {
-                continue;
-            }
-            int check = row - 1;
-            while (check >= 0) {
-                YassRow prev = getRowAt(check);
-                if (prev == null || !prev.isPageBreak()) {
-                    break;
-                }
-                tm.removeRowAt(check);
-                row--;
-                check--;
-                rowCount--;
-            }
-            break;
-        }
     }
 
     /**

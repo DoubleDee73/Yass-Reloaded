@@ -19,6 +19,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -26,7 +28,9 @@ import java.util.logging.Logger;
 
 public class WhisperXTranscriptionService {
     private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
-    private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(30);
+    private static final Duration PROCESS_TIMEOUT = Duration.ofMinutes(45);
+    private static final Duration IDLE_TIMEOUT = Duration.ofMinutes(5);
+    private static final Duration WAIT_POLL_INTERVAL = Duration.ofSeconds(2);
 
     private final YassProperties properties;
 
@@ -36,7 +40,7 @@ public class WhisperXTranscriptionService {
 
     public boolean isConfigured() {
         if (Boolean.parseBoolean(properties.getProperty("whisperx-use-module"))) {
-            return StringUtils.isNotBlank(properties.getProperty("whisperx-python"));
+            return PythonRuntimeSupport.hasToolPython(properties, "whisperx-python");
         }
         return StringUtils.isNotBlank(properties.getProperty("whisperx-command"));
     }
@@ -188,14 +192,12 @@ public class WhisperXTranscriptionService {
             if (progressListener != null) {
                 progressListener.accept("WhisperX command: " + String.join(" ", command));
             }
-            Process process = builder.start();
-            Thread stdoutThread = pumpStream(process.getInputStream(), stdout, progressListener, null);
-            Thread stderrThread = pumpStream(process.getErrorStream(), stderr, progressListener, "[stderr] ");
-            boolean finished = process.waitFor(PROCESS_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                throw new IOException("WhisperX did not finish within the expected time.");
-            }
+            Process process = startProcess(builder);
+            ProcessActivityTracker activityTracker = new ProcessActivityTracker();
+            Thread stdoutThread = pumpStream(process.getInputStream(), stdout, progressListener, null, activityTracker);
+            Thread stderrThread = pumpStream(process.getErrorStream(), stderr, progressListener, "[stderr] ", activityTracker);
+            long startedAtNanos = currentNanoTime();
+            waitForProcess(process, startedAtNanos, activityTracker);
             stdoutThread.join(TimeUnit.SECONDS.toMillis(2));
             stderrThread.join(TimeUnit.SECONDS.toMillis(2));
             return new ProcessOutput(stdout.toString(), stderr.toString(), process.exitValue());
@@ -203,6 +205,71 @@ public class WhisperXTranscriptionService {
             Thread.currentThread().interrupt();
             throw new IOException("WhisperX execution was interrupted.", ex);
         }
+    }
+
+    Process startProcess(ProcessBuilder builder) throws IOException {
+        return builder.start();
+    }
+
+    long currentNanoTime() {
+        return System.nanoTime();
+    }
+
+    Duration getProcessTimeout() {
+        return PROCESS_TIMEOUT;
+    }
+
+    Duration getIdleTimeout() {
+        return IDLE_TIMEOUT;
+    }
+
+    Duration getWaitPollInterval() {
+        return WAIT_POLL_INTERVAL;
+    }
+
+    private void waitForProcess(Process process, long startedAtNanos, ProcessActivityTracker activityTracker)
+            throws IOException, InterruptedException {
+        while (true) {
+            if (process.waitFor(getWaitPollInterval().toMillis(), TimeUnit.MILLISECONDS)) {
+                return;
+            }
+            TimeoutState timeoutState = evaluateTimeoutState(startedAtNanos, activityTracker.getLastActivityAtNanos());
+            if (timeoutState == TimeoutState.NONE) {
+                continue;
+            }
+            process.destroyForcibly();
+            throw new IOException(buildTimeoutMessage(timeoutState, activityTracker.getLastOutputLine()));
+        }
+    }
+
+    TimeoutState evaluateTimeoutState(long startedAtNanos, long lastActivityAtNanos) {
+        long nowNanos = currentNanoTime();
+        if (nowNanos - startedAtNanos >= getProcessTimeout().toNanos()) {
+            return TimeoutState.HARD_LIMIT;
+        }
+        if (nowNanos - lastActivityAtNanos >= getIdleTimeout().toNanos()) {
+            return TimeoutState.IDLE;
+        }
+        return TimeoutState.NONE;
+    }
+
+    String buildTimeoutMessage(TimeoutState timeoutState, String lastOutputLine) {
+        if (timeoutState == TimeoutState.HARD_LIMIT) {
+            return appendLastOutput("WhisperX exceeded the hard runtime limit of "
+                    + getProcessTimeout().toMinutes() + " minutes.", lastOutputLine);
+        }
+        if (timeoutState == TimeoutState.IDLE) {
+            return appendLastOutput("WhisperX produced no output for "
+                    + getIdleTimeout().toMinutes() + " minutes and was treated as stalled.", lastOutputLine);
+        }
+        return appendLastOutput("WhisperX did not finish within the expected time.", lastOutputLine);
+    }
+
+    private String appendLastOutput(String message, String lastOutputLine) {
+        if (StringUtils.isBlank(lastOutputLine)) {
+            return message;
+        }
+        return message + "\n\nLast WhisperX output:\n" + lastOutputLine;
     }
 
     private boolean shouldRetryWithCpuFallback(String stderr, String stdout) {
@@ -336,13 +403,15 @@ public class WhisperXTranscriptionService {
                     String word = getString(wordObject.get("word"));
                     Integer startMs = getMilliseconds(wordObject.get("start"));
                     Integer endMs = getMilliseconds(wordObject.get("end"));
+                    Double score = getDouble(wordObject.get("score"));
                     if (StringUtils.isBlank(word) || startMs == null || endMs == null) {
                         continue;
                     }
                     words.add(new OpenAiTranscriptWord(word,
                             LyricsAlignmentTokenizer.normalizeText(word),
                             startMs,
-                            Math.max(startMs, endMs)));
+                            Math.max(startMs, endMs),
+                            score));
                 }
             }
             segments.add(new OpenAiTranscriptSegment(
@@ -371,13 +440,15 @@ public class WhisperXTranscriptionService {
                 String word = getString(wordObject.get("word"));
                 Integer startMs = getMilliseconds(wordObject.get("start"));
                 Integer endMs = getMilliseconds(wordObject.get("end"));
+                Double score = getDouble(wordObject.get("score"));
                 if (StringUtils.isBlank(word) || startMs == null || endMs == null) {
                     continue;
                 }
                 words.add(new OpenAiTranscriptWord(word,
                         LyricsAlignmentTokenizer.normalizeText(word),
                         startMs,
-                        Math.max(startMs, endMs)));
+                        Math.max(startMs, endMs),
+                        score));
             }
         }
         return words;
@@ -398,11 +469,22 @@ public class WhisperXTranscriptionService {
         return element == null || element.isJsonNull() ? "" : element.getAsString();
     }
 
+    private Double getDouble(JsonElement element) {
+        if (element == null || element.isJsonNull()) {
+            return null;
+        }
+        try {
+            return element.getAsDouble();
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
     private List<String> buildCommand(WhisperXTranscriptionRequest request, boolean printProgress) {
         List<String> command = new ArrayList<>();
         boolean useModule = Boolean.parseBoolean(properties.getProperty("whisperx-use-module"));
         if (useModule) {
-            command.add(properties.getProperty("whisperx-python"));
+            command.add(PythonRuntimeSupport.resolveToolPython(properties, "whisperx-python"));
             command.add("-m");
             command.add("whisperx");
         } else {
@@ -553,7 +635,11 @@ public class WhisperXTranscriptionService {
                     .replace("\r", "<br>");
     }
 
-    private Thread pumpStream(InputStream inputStream, StringBuilder buffer, Consumer<String> progressListener, String prefix) {
+    private Thread pumpStream(InputStream inputStream,
+                              StringBuilder buffer,
+                              Consumer<String> progressListener,
+                              String prefix,
+                              ProcessActivityTracker activityTracker) {
         Thread thread = new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
                 String line;
@@ -564,6 +650,7 @@ public class WhisperXTranscriptionService {
                         }
                         buffer.append(line);
                     }
+                    activityTracker.recordOutput((prefix != null ? prefix : "") + line, currentNanoTime());
                     if (progressListener != null && StringUtils.isNotBlank(line)) {
                         progressListener.accept((prefix != null ? prefix : "") + line);
                     }
@@ -575,6 +662,32 @@ public class WhisperXTranscriptionService {
         thread.setDaemon(true);
         thread.start();
         return thread;
+    }
+
+    static final class ProcessActivityTracker {
+        private final AtomicLong lastActivityAtNanos = new AtomicLong(System.nanoTime());
+        private final AtomicReference<String> lastOutputLine = new AtomicReference<>("");
+
+        void recordOutput(String line, long nowNanos) {
+            lastActivityAtNanos.set(nowNanos);
+            if (StringUtils.isNotBlank(line)) {
+                lastOutputLine.set(line.trim());
+            }
+        }
+
+        long getLastActivityAtNanos() {
+            return lastActivityAtNanos.get();
+        }
+
+        String getLastOutputLine() {
+            return lastOutputLine.get();
+        }
+    }
+
+    enum TimeoutState {
+        NONE,
+        IDLE,
+        HARD_LIMIT
     }
 }
 

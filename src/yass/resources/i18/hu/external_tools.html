@@ -1,0 +1,124 @@
+<head>
+    <link rel="stylesheet" href="../stylesheet.css">
+</head>
+<body>
+
+<a href="help.html">Navigáció</a> -
+<a href="help1.html">Lejátszás</a> -
+<a href="help2.html">Hangjegyek</a> -
+<a href="help3.html">Dalszöveg</a> -
+<a href="help4.html">Dallista</a> -
+<a href="help5.html">Licensz</a> -
+Külső eszközök
+
+<h3>Külső eszközök</h3>
+
+<p>A Yass Reloaded több opcionális külső eszközzel is együttműködik a vokálszétválasztás és dalszöveg-transzkripció érdekében.
+Nyisd meg a <b>Beállítások &gt; Külső eszközök</b> menüt a konfiguráláshoz.</p>
+
+<h4>FFmpeg</h4>
+<p>Az FFmpeg szükséges az audiokonverzióhoz (AAC, OGG, OPUS stb.) és a vokálszétválasztási folyamathoz.
+A Yass automatikusan is letöltheti az FFmpeg-et, vagy megadhatsz egy meglévő telepítést itt:
+<b>Külső eszközök &gt; Helyek</b>.</p>
+<ul>
+  <li>Letöltés: <code>https://ffmpeg.org/download.html</code></li>
+  <li>Windows alatt a <code>ffmpeg.exe</code>-t tartalmazó <code>bin</code> mappát add meg.</li>
+</ul>
+
+<h4>Python futtatókörnyezetek</h4>
+<p>Több helyi eszköz Pythonra épül. A <b>Külső eszközök &gt; Helyek</b> alatt megadhatsz egy
+<b>alapértelmezett Python executable</b> értéket. A Yass ezt közös fallbackként használja a kisebb Python-segédekhez,
+valamint alap interpreterként a tool-specifikus környezetek létrehozásához.</p>
+<ul>
+  <li>Ha egy eszköz Python-mezője üres, a Yass a <b>Helyek</b> alatt beállított alapértelmezett Pythonra vált vissza.</li>
+  <li>Ha a WhisperX vagy audio-separator esetén az <b>Update package</b> gombra kattintasz üres tool-specifikus Python mező mellett,
+      a Yass automatikusan létrehoz egy dedikált virtuális környezetet, és elmenti annak Python útvonalát.</li>
+  <li>Így a nagy függőségek, például a WhisperX és az audio-separator elkülönülnek, miközben a kisebb Python-segédek továbbra is használhatják a közös alapértelmezett Pythont.</li>
+</ul>
+
+<h4>yt-dlp</h4>
+<p>A yt-dlp-t a dal-létrehozó varázsló használja hang letöltésére YouTube-ról és más platformokról.
+Nincs szükség API-kulcsra.</p>
+<ul>
+  <li>Telepítés: <code>pip install yt-dlp</code> vagy önálló bináris letöltése.</li>
+  <li>A kodeket, felbontást és hangformátumot a <b>Beállítások &gt; Varázsló &gt; yt-dlp</b> alatt állíthatod.</li>
+</ul>
+
+<h4>MVSEP (online vokálszétválasztás)</h4>
+<p>Az MVSEP egy felhőalapú vokálszétválasztó szolgáltatás. Feltölti az audiót az MVSEP API-ba,
+szétválasztja stemekre, majd letölti az eredményt. Fiók és API-token szükséges.</p>
+<ol>
+  <li>Regisztrálj a <code>https://mvsep.com</code> oldalon, és másold ki az API-tokenedet a profilodból.</li>
+  <li>Nyisd meg a <b>Beállítások &gt; Külső eszközök &gt; MVSEP</b> panelt, és illeszd be a tokent.</li>
+  <li>Válassz szétválasztási modellt. A <b>Vokálmodell</b> általában maradhat az alapértéken, az <b>Audioformátum</b> pedig a visszakapott stemek formátumát határozza meg.</li>
+  <li>A varázslóban kattints a <b>Separate Vocals + Transcribe</b> gombra a teljes folyamat futtatásához.</li>
+  <li>A szerkesztőben már megnyitott dalokhoz használd a <b>Szerkesztés &gt; Hang szétválasztása</b> menüt.</li>
+</ol>
+
+<h4>audio-separator (helyi vokálszétválasztás)</h4>
+<p>Az audio-separator előre betanított szétválasztó modelleket futtat helyben a gépeden, internet vagy API-kulcs nélkül.
+Ugyanazokat az MDX-Net, VR Architecture és Demucs modelleket támogatja, mint az Ultimate Vocal Remover (UVR).</p>
+<ol>
+  <li>Telepíts Python 3.9-et vagy újabbat.</li>
+  <li>Telepítsd az audio-separatort:
+    <ul>
+      <li>Csak CPU: <code>pip install audio-separator[cpu]</code></li>
+      <li>NVIDIA GPU: <code>pip install audio-separator[gpu]</code></li>
+    </ul>
+  </li>
+  <li>Nyisd meg a <b>Beállítások &gt; Külső eszközök &gt; audio-separator</b> panelt.</li>
+  <li>Add meg az eszköz Python executable értékét, vagy hagyd üresen, hogy a <b>Helyek</b> alatt megadott alapértelmezett Python legyen használva.</li>
+  <li>Ha üres tool-specifikus Python mezővel használod az <b>Update package</b> gombot, a Yass automatikusan létrehoz egy dedikált audio-separator virtuális környezetet, és kitölti a mezőt.</li>
+  <li>Válassz modellt. Az ismert modellek olvasható néven jelennek meg, az ismeretlenek pedig fájlnévként maradnak. Ajánlott modellek:
+    <ul>
+      <li><code>Kim_Vocal_2.onnx</code> - gyors, jó minőség (alapértelmezett)</li>
+      <li><code>MDX23C-8KFFT-InstVoc_HQ.ckpt</code> - magas minőség</li>
+      <li><code>UVR-MDX-NET-Inst_HQ_3.onnx</code> - alternatíva</li>
+      <li><code>BS-Roformer-Viperx-1297.ckpt</code> - legjobb minőség, lassabb</li>
+    </ul>
+  </li>
+  <li>Opcionálisan megadhatsz modell-gyorsítótár mappát. Ide kerülnek a letöltött modellek, így nem kell őket újra letölteni.</li>
+  <li>Az <b>Output format</b> azt a nyers formátumot szabályozza, amelyet az audio-separator először kiír, mielőtt a Yass a stemeket a beállított célformátumba konvertálja.</li>
+  <li>Kattints a <b>Test configuration</b> gombra a beállítás ellenőrzéséhez.</li>
+  <li>Sikeres ellenőrzés után a <b>Separate Vocals + Transcribe</b> gomb elérhetővé válik a varázslóban.
+      Ha az MVSEP és az audio-separator is be van állítva, az audio-separator élvez elsőbbséget.</li>
+</ol>
+
+<h4>OpenAI Whisper (felhős transzkripció)</h4>
+<p>Az OpenAI Whisper API időbélyeges szavakkal transzkribálja az audiót, majd az eredményt a szerkesztő hangjegyeire alkalmazza.
+OpenAI API-kulcs szükséges.</p>
+<ol>
+  <li>Szerezz API-kulcsot itt: <code>https://platform.openai.com/api-keys</code>.</li>
+  <li>Nyisd meg a <b>Beállítások &gt; Külső eszközök &gt; OpenAI</b> panelt, és add meg a kulcsot.</li>
+  <li>Válassz transzkripciós modellt (pl. <i>whisper-1</i>) és opcionálisan nyelvkódot.</li>
+  <li>A szerkesztőben használd a <b>Szerkesztés &gt; Align Notes (Transcription)</b> menüt az aktuális dal transzkripciójához és igazításához.</li>
+</ol>
+
+<h4>WhisperX (helyi transzkripció)</h4>
+<p>A WhisperX helyben futtat Whisper-alapú transzkripciót szó szintű időbélyegekkel. Nem igényel internetet vagy API-kulcsot.</p>
+<ol>
+  <li>Telepíts Python 3.9-et vagy újabbat.</li>
+  <li>Telepítsd a WhisperX-et: <code>pip install whisperx</code></li>
+  <li>Nyisd meg a <b>Beállítások &gt; Külső eszközök &gt; WhisperX</b> panelt.</li>
+  <li>Add meg a WhisperX Python executable értékét, vagy hagyd üresen, hogy a <b>Helyek</b> alatt megadott alapértelmezett Python legyen használva.</li>
+  <li>Ha üres WhisperX Python mezővel használod az <b>Update package</b> gombot, a Yass automatikusan létrehoz egy dedikált WhisperX virtuális környezetet, és elmenti annak runtime-ját.</li>
+  <li>Válaszd ki a hívási módot (<i>python -m whisperx</i> ajánlott).</li>
+  <li>Válassz modellt (pl. <i>large-v2</i>) és eszközt (<i>cpu</i> vagy <i>cuda</i>).</li>
+  <li>Kattints a <b>Test configuration</b> gombra az ellenőrzés futtatásához. Az eredmény mentésre kerül, és engedélyezi a
+      <b>Separate Vocals + Transcribe</b> gombot a varázslóban.</li>
+  <li>A szerkesztőben használd a <b>Szerkesztés &gt; Align Notes (Transcription)</b> menüt, majd válaszd a <i>WhisperX</i> lehetőséget.</li>
+</ol>
+
+<h4>Dal-létrehozó varázsló: teljes folyamat</h4>
+<p>A varázsló a teljes folyamatot automatikusan végig tudja futtatni:</p>
+<ol>
+  <li>Adj meg egy YouTube URL-t a <b>YouTube</b> oldalon, majd töltsd le az audiót.</li>
+  <li>A <b>Dalszöveg</b> oldalon kattints a <b>Separate Vocals + Transcribe</b> gombra.</li>
+  <li>A Yass WAV-vá alakítja az audiót, szétválasztja a vokálokat (audio-separator vagy MVSEP), majd transzkribálja őket (WhisperX).</li>
+  <li>A dalszöveg automatikusan kitöltődik. Folytatás előtt még javíthatod.</li>
+  <li>Fejezd be a varázslót, és a dal előre kitöltött időbélyegekkel jön létre a transzkripció alapján.</li>
+</ol>
+<p><b>Követelmények:</b> audio-separator (helyi, sikeres ellenőrzés) vagy MVSEP (beállított API-token),
+valamint WhisperX (sikeres ellenőrzés).</p>
+
+</body>

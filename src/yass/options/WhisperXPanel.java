@@ -24,6 +24,7 @@ import java.util.concurrent.CancellationException;
 import org.apache.commons.lang3.StringUtils;
 
 import yass.I18;
+import yass.PythonRuntimeSupport;
 import yass.integration.transcription.openai.OpenAiTranscriptionModel;
 import yass.integration.transcription.whisperx.WhisperXComputeType;
 import yass.integration.transcription.whisperx.WhisperXDevice;
@@ -63,6 +64,7 @@ public class WhisperXPanel extends OptionsPanel {
         addFullWidthComment(I18.get("options_external_tools_whisperx_comment"));
         addFullWidthComment(I18.get("options_external_tools_whisperx_mode_explainer"));
         addFile(I18.get("options_external_tools_whisperx_python"), "whisperx-python");
+        addFullWidthComment("Path to the Python runtime used for this tool. Leave empty to use the default Python under External Tools > Locations.");
         addBoolean(I18.get("options_external_tools_whisperx_use_module"),
                    "whisperx-use-module",
                    I18.get("options_external_tools_whisperx_use_module_value"));
@@ -130,10 +132,12 @@ public class WhisperXPanel extends OptionsPanel {
     }
 
     private void prefillDetectedPython() {
-        if (getProperty("whisperx-python") != null && !getProperty("whisperx-python").isBlank()) {
+        String configuredPython = getProperty("whisperx-python");
+        if (!PythonRuntimeSupport.shouldCanonicalizeToolPython(configuredPython)) {
             return;
         }
-        WhisperXHealthCheckService service = new WhisperXHealthCheckService("",
+        WhisperXHealthCheckService service = new WhisperXHealthCheckService(configuredPython,
+                                                                            getProperty(PythonRuntimeSupport.PROP_DEFAULT_PYTHON),
                                                                             Boolean.parseBoolean(getProperty("whisperx-use-module")),
                                                                             getProperty("whisperx-command"));
         String detectedPython = service.detectPythonExecutable();
@@ -198,6 +202,7 @@ public class WhisperXPanel extends OptionsPanel {
             @Override
             protected WhisperXHealthCheckResult doInBackground() {
                 WhisperXHealthCheckService service = new WhisperXHealthCheckService(getProperty("whisperx-python"),
+                                                                                   getProperty(PythonRuntimeSupport.PROP_DEFAULT_PYTHON),
                                                                                    Boolean.parseBoolean(getProperty("whisperx-use-module")),
                                                                                    getProperty("whisperx-command"),
                                                                                    getProperty("ffmpegPath"));
@@ -238,6 +243,7 @@ public class WhisperXPanel extends OptionsPanel {
         updateButton.setEnabled(false);
         statusArea.setText(I18.get("options_external_tools_whisperx_status_updating"));
         whisperXUpdateService = new WhisperXHealthCheckService(getProperty("whisperx-python"),
+                                                               getProperty(PythonRuntimeSupport.PROP_DEFAULT_PYTHON),
                                                                Boolean.parseBoolean(getProperty("whisperx-use-module")),
                                                                getProperty("whisperx-command"),
                                                                getProperty("ffmpegPath"));
@@ -269,6 +275,12 @@ public class WhisperXPanel extends OptionsPanel {
                     if (result.isCancelled()) {
                         statusArea.setText(I18.get("options_external_tools_whisperx_status_update_cancelled"));
                     } else if (result.isSuccess()) {
+                        if (StringUtils.isNotBlank(result.getPythonExecutable())) {
+                            setProperty("whisperx-python", result.getPythonExecutable());
+                            setProperty("whisperx-health-ok", "false");
+                            prop.setProperty("whisperx-health-ok", "false");
+                            prop.store();
+                        }
                         statusArea.setText(result.getMessage());
                     } else {
                         statusArea.setText(I18.get("options_external_tools_whisperx_status_update_failed")
@@ -315,7 +327,9 @@ public class WhisperXPanel extends OptionsPanel {
     }
 
     private boolean canRunWhisperXInstallOrUpdate() {
-        return whisperXPythonAvailable || isWhisperXHealthOk();
+        return whisperXPythonAvailable
+                || isWhisperXHealthOk()
+                || PythonRuntimeSupport.hasToolPython(prop, "whisperx-python");
     }
 
     private void applyRecommendedRuntimeSettings(WhisperXHealthCheckResult result) {

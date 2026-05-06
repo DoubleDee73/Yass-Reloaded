@@ -33,6 +33,27 @@ These are configured in:
 - `Settings -> External Tools -> Transcription`
 - `Settings -> External Tools -> audio-separator`
 
+They can also fall back to:
+
+- `Settings -> External Tools -> Locations -> Default Python executable`
+
+If the tool-specific Python field is empty and you use `Update package`, Yass can create a dedicated virtual environment for WhisperX or audio-separator automatically.
+
+## Where is USDB configured?
+
+USDB-related settings are split across two places:
+
+- `Settings -> Library -> Setup` for the USDB user name and account-oriented behavior
+- `Settings -> External Tools -> Locations` for the optional USDB Syncer path
+
+The Syncer path improves search and refresh workflows, but the direct live USDB integration can still work without it.
+
+## Does Yass Reloaded support LrcLib?
+
+Yes.
+
+LrcLib is available as an online lyrics source in the song creation wizard. It does not require a separate API key or its own settings page. When timed lyrics are available, Yass can use them as structured lyric input before or instead of a full transcription workflow.
+
 ## Is the GitHub Wiki still relevant?
 
 Yes. The wiki is still useful, especially for older notes and gradually evolving content. The GitHub Pages site is intended to become the better structured main documentation.

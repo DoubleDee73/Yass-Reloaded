@@ -61,6 +61,23 @@ class WhisperXHealthCheckServiceSpec extends Specification {
         invokePrivate(service, "resolveComputeType") == "int8"
     }
 
+    def "detectPythonExecutable resolves an absolute interpreter path"() {
+        when:
+        def detected = new WhisperXHealthCheckService("", true, "whisperx").detectPythonExecutable()
+
+        then:
+        detected
+        new File(detected).isAbsolute()
+        new File(detected).exists()
+    }
+
+    def "managed python executable points into dedicated whisperx venv"() {
+        expect:
+        WhisperXHealthCheckService.getManagedVenvDirectory().toString().contains(".yass")
+        WhisperXHealthCheckService.getManagedVenvDirectory().toString().contains("whisperx-venv")
+        WhisperXHealthCheckService.getManagedPythonExecutable().toString().contains("whisperx-venv")
+    }
+
     private static Object invokePrivate(Object instance, String methodName) {
         def method = instance.class.getDeclaredMethod(methodName)
         method.setAccessible(true)

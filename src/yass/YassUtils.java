@@ -37,6 +37,8 @@ import javax.swing.text.Document;
 import javax.swing.text.JTextComponent;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.awt.image.ConvolveOp;
+import java.awt.image.Kernel;
 import java.beans.PropertyChangeEvent;
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -764,6 +766,57 @@ public class YassUtils {
         return ret;
     }
 
+    public static BufferedImage fitImageIntoSquare(BufferedImage image, int targetSize, Color backgroundColor, boolean sharpen) {
+        if (image == null || targetSize <= 0) {
+            return image;
+        }
+        int sourceWidth = Math.max(1, image.getWidth());
+        int sourceHeight = Math.max(1, image.getHeight());
+        double scale = Math.min((double) targetSize / sourceWidth, (double) targetSize / sourceHeight);
+        scale = Math.min(scale, 1.0d);
+
+        int scaledWidth = Math.max(1, (int) Math.round(sourceWidth * scale));
+        int scaledHeight = Math.max(1, (int) Math.round(sourceHeight * scale));
+
+        BufferedImage scaled = (scaledWidth == sourceWidth && scaledHeight == sourceHeight)
+                ? image
+                : getScaledInstance(image, scaledWidth, scaledHeight);
+        if (sharpen && (scaledWidth < sourceWidth || scaledHeight < sourceHeight)) {
+            scaled = applyLightSharpen(scaled);
+        }
+
+        int type = backgroundColor == null ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB;
+        BufferedImage canvas = new BufferedImage(targetSize, targetSize, type);
+        Graphics2D graphics = canvas.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            if (backgroundColor != null) {
+                graphics.setColor(backgroundColor);
+                graphics.fillRect(0, 0, targetSize, targetSize);
+            }
+            int offsetX = (targetSize - scaledWidth) / 2;
+            int offsetY = (targetSize - scaledHeight) / 2;
+            graphics.drawImage(scaled, offsetX, offsetY, null);
+        } finally {
+            graphics.dispose();
+        }
+        return canvas;
+    }
+
+    private static BufferedImage applyLightSharpen(BufferedImage image) {
+        float[] kernelData = {
+                0f, -0.2f, 0f,
+                -0.2f, 1.8f, -0.2f,
+                0f, -0.2f, 0f
+        };
+        ConvolveOp operation = new ConvolveOp(new Kernel(3, 3, kernelData), ConvolveOp.EDGE_NO_OP, null);
+        BufferedImage destination = new BufferedImage(image.getWidth(), image.getHeight(), image.getType());
+        operation.filter(image, destination);
+        return destination;
+    }
+
     /**
      * Description of the Method
      *
@@ -1275,8 +1328,11 @@ public class YassUtils {
 
     public static boolean isUrlReachable(String urlString) {
         try {
-            urlString = urlString.replace("images.fanart.tv", "assets.fanart.tv");
-            URL url = new URL(urlString);
+            String normalizedUrl = normalizeImageUrlForReachability(urlString);
+            if (StringUtils.isBlank(normalizedUrl)) {
+                return false;
+            }
+            URL url = new URL(normalizedUrl);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("HEAD"); // oder "GET", wenn HEAD nicht unterstützt wird
             connection.setConnectTimeout(1000);
@@ -1286,6 +1342,24 @@ public class YassUtils {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private static String normalizeImageUrlForReachability(String value) {
+        String trimmed = StringUtils.trimToEmpty(value);
+        if (StringUtils.isBlank(trimmed)) {
+            return null;
+        }
+        String normalized;
+        if (trimmed.startsWith("//")) {
+            normalized = "https:" + trimmed;
+        } else if (trimmed.contains("://")) {
+            normalized = trimmed;
+        } else if (trimmed.contains("/")) {
+            normalized = "https://" + trimmed;
+        } else {
+            normalized = "https://assets.fanart.tv/fanart/" + trimmed;
+        }
+        return normalized.replace("images.fanart.tv", "assets.fanart.tv");
     }
 }
 

@@ -505,7 +505,11 @@ public class TranscriptTruthRewriteService {
         for (int i = 0; i < sourceWords.size(); i++) {
             OpenAiTranscriptWord src = sourceWords.get(i);
             String corrected = correctedWords[i];
-            result.add(new OpenAiTranscriptWord(corrected, LyricsAlignmentTokenizer.normalizeText(corrected), src.getStartMs(), src.getEndMs()));
+            result.add(new OpenAiTranscriptWord(corrected,
+                    LyricsAlignmentTokenizer.normalizeText(corrected),
+                    src.getStartMs(),
+                    src.getEndMs(),
+                    src.getScore()));
         }
         return result;
     }
@@ -532,7 +536,11 @@ public class TranscriptTruthRewriteService {
             int startMs = sourceWords.get(start).getStartMs();
             int endMs = sourceWords.get(end - 1).getEndMs();
             String corrected = correctedWords[corrIdx];
-            result.add(new OpenAiTranscriptWord(corrected, LyricsAlignmentTokenizer.normalizeText(corrected), startMs, endMs));
+            result.add(new OpenAiTranscriptWord(corrected,
+                    LyricsAlignmentTokenizer.normalizeText(corrected),
+                    startMs,
+                    endMs,
+                    null));
         }
         return result;
     }
@@ -558,7 +566,11 @@ public class TranscriptTruthRewriteService {
             int slotStartMs = src.getStartMs() + (int) Math.round((double) span * offsetInSlot / splitCount);
             int slotEndMs = src.getStartMs() + (int) Math.round((double) span * (offsetInSlot + 1) / splitCount);
             String corrected = correctedWords[corrIdx];
-            result.add(new OpenAiTranscriptWord(corrected, LyricsAlignmentTokenizer.normalizeText(corrected), slotStartMs, slotEndMs));
+            result.add(new OpenAiTranscriptWord(corrected,
+                    LyricsAlignmentTokenizer.normalizeText(corrected),
+                    slotStartMs,
+                    slotEndMs,
+                    src.getScore()));
         }
         return result;
     }

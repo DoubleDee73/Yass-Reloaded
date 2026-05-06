@@ -19,6 +19,7 @@
 
 package yass;
 
+import com.google.gson.JsonSyntaxException;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.ToNumberPolicy;
@@ -28,8 +29,14 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class UsdbSyncerMetaFileLoader {
+    private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+    private static final Set<String> REPORTED_INVALID_META_FILES = ConcurrentHashMap.newKeySet();
     private UsdbSyncerMetaFile metaFile;
     private String metaFilePath;
 
@@ -55,8 +62,13 @@ public class UsdbSyncerMetaFileLoader {
                 UsdbSyncerMetaFile metaFile;
                 try (JsonReader jsonReader = new JsonReader(new FileReader(usdb.getAbsolutePath()))) {
                     metaFile = json.fromJson(jsonReader, UsdbSyncerMetaFile.class);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
+                } catch (IOException | JsonSyntaxException | IllegalStateException e) {
+                    logInvalidMetaFile(usdb, e);
+                    continue;
+                }
+                if (metaFile == null) {
+                    logInvalidMetaFile(usdb, null);
+                    continue;
                 }
                 this.metaFile = metaFile;
                 this.metaFilePath = usdb.getAbsolutePath();
@@ -72,5 +84,18 @@ public class UsdbSyncerMetaFileLoader {
 
     public String getMetaFilePath() {
         return metaFilePath;
+    }
+
+    private void logInvalidMetaFile(File usdb, Exception exception) {
+        String path = usdb.getAbsolutePath();
+        if (!REPORTED_INVALID_META_FILES.add(path)) {
+            return;
+        }
+        String reason = exception == null
+                ? "empty or null JSON"
+                : ((exception.getMessage() == null || exception.getMessage().isBlank())
+                ? exception.getClass().getSimpleName()
+                : exception.getMessage());
+        LOGGER.log(Level.WARNING, "Skipping invalid USDB meta file: " + path + " (" + reason + ")");
     }
 }

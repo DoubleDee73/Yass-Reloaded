@@ -12,7 +12,7 @@
         pkgs = import nixpkgs { inherit system; };
         lib = pkgs.lib;
         pname = "yass-reloaded";
-        version = "2026.4";
+        version = "2026.5";
         runtimeLibs = with pkgs; [
           alsa-lib
           fontconfig

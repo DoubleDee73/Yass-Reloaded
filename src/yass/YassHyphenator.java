@@ -155,7 +155,7 @@ public class YassHyphenator {
         String[] splitWord = word.split("\u00AD");
         for (String current : splitWord) {
             temp.append(current);
-            if (!current.toUpperCase().matches("[QWRTYPSDFGHJKLZXCVBNM]+") ) {
+            if (!current.toUpperCase().matches("[QWRTPSDFGHJKLZXCVBNM]+") ) {
                 fixed.add(temp);
                 temp = new StringBuilder();
             }

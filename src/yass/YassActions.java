@@ -19,6 +19,8 @@
 
 package yass;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.nexes.wizard.Wizard;
 import lombok.Getter;
 import lombok.Setter;
@@ -33,11 +35,14 @@ import yass.analysis.PitchDetector;
 import yass.autocorrect.YassAutoCorrect;
 import yass.extras.UsdbSyncerMetaTagCreator;
 import yass.hyphenator.HyphenatorDictionary;
+import yass.input.*;
 import yass.integration.cover.fanart.FanartTvCoverCandidate;
 import yass.integration.cover.fanart.FanartTvCoverPickerDialog;
 import yass.integration.cover.fanart.FanartTvCoverSearchService;
 import yass.integration.separation.SeparationRequest;
 import yass.integration.separation.SeparationResult;
+import yass.integration.separation.SeparationPreference;
+import yass.integration.separation.SeparationService;
 import yass.integration.separation.audioseparator.AudioSeparatorSeparationService;
 import yass.integration.separation.mvsep.MvsepAccountInfo;
 import yass.integration.separation.mvsep.MvsepAlgorithmInfo;
@@ -54,9 +59,31 @@ import yass.musicalkey.MusicalKeyEnum;
 import yass.musicbrainz.MusicBrainz;
 import yass.musicbrainz.MusicBrainzInfo;
 import yass.renderer.YassSession;
+import yass.UsdbFile;
+import yass.usdb.UsdbClient;
+import yass.usdb.UsdbCookieBrowser;
+import yass.usdb.UsdbSongImportResult;
+import yass.usdb.UsdbSongImportService;
+import yass.usdb.UsdbCredentialStore;
+import yass.usdb.UsdbImportQueueService;
+import yass.usdb.UsdbLoginDialog;
+import yass.usdb.UsdbImportProgressListener;
+import yass.usdb.UsdbImportConflictChoice;
+import yass.usdb.UsdbMetaTagParser;
+import yass.usdb.UsdbPendingSongService;
+import yass.usdb.UsdbPythonCookieImporter;
+import yass.usdb.UsdbSearchDialog;
+import yass.usdb.UsdbSessionService;
+import yass.usdb.UsdbSongAddService;
+import yass.usdb.UsdbSongCommentService;
+import yass.usdb.UsdbSongEditDiffDialog;
+import yass.usdb.UsdbSongEditService;
+import yass.usdb.UsdbSongDetails;
+import yass.usdb.UsdbSongSummary;
+import yass.usdb.UsdbSyncerBridge;
 import yass.video.YassVideoDialog;
-import yass.wizard.ClipboardLyricsDiffDialog;
 import yass.wizard.CreateSongWizard;
+import yass.wizard.Lyrics;
 import yass.wizard.WizardTranscriptionState;
 
 import javax.imageio.ImageIO;
@@ -76,10 +103,13 @@ import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.MessageFormat;
@@ -87,6 +117,8 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -94,6 +126,8 @@ import java.util.stream.Collectors;
 @Getter
 @Setter
 public class YassActions implements DropTargetListener {
+    private static final Gson USDB_META_GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final int FANART_IMAGE_TIMEOUT_MS = 8000;
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public static final int FREESTYLE_NOTE = Integer.MIN_VALUE + 1;
@@ -160,6 +194,12 @@ public class YassActions implements DropTargetListener {
     private YassAutoCorrect auto = null;
     private CreateSongWizard activeWizard = null;
     private YassSongList songList = null;
+    private final UsdbSessionService usdbSessionService = new UsdbSessionService();
+    private final UsdbClient usdbClient = new UsdbClient(usdbSessionService);
+    private UsdbImportQueueService usdbImportQueueService;
+    private final UsdbCredentialStore usdbCredentialStore = new UsdbCredentialStore();
+    private UsdbSyncerBridge usdbSyncerBridge = null;
+    private final AtomicBoolean usdbLoginDialogOpen = new AtomicBoolean(false);
     private YassGroups groups = null;
     private JComboBox<String> groupsBox = null;
     private final Hashtable<String, ImageIcon> icons = new Hashtable<>();
@@ -207,6 +247,12 @@ public class YassActions implements DropTargetListener {
     public HyphenatorDictionary hyphenatorDictionary = null;
     private JSplitPane editorSplit;
     private KeyboardFocusManager kbdFocus = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+    private final EditorKeyBindingRegistry editorKeyBindingRegistry = new EditorKeyBindingRegistry();
+    private final KeySequenceTracker editorKeySequenceTracker = new KeySequenceTracker(350L);
+    private EditorKeyDispatcher editorKeyDispatcher;
+
+    private record EditorShortcutBinding(KeyStroke keyStroke, String actionKey, Action action, KeyStroke accelerator) {
+    }
 
     private enum SeparationJobState {
         MONITORING,
@@ -253,6 +299,456 @@ public class YassActions implements DropTargetListener {
     private boolean isFocusInSongHeader() {
         Component focusOwner = kbdFocus != null ? kbdFocus.getFocusOwner() : null;
         return focusOwner != null && songHeader != null && SwingUtilities.isDescendingFrom(focusOwner, songHeader);
+    }
+
+    private FocusArea determineEditorFocusArea() {
+        Component focusOwner = kbdFocus != null ? kbdFocus.getFocusOwner() : null;
+        if (focusOwner == null) {
+            return FocusArea.OTHER;
+        }
+        Window window = SwingUtilities.getWindowAncestor(focusOwner);
+        if (window instanceof JDialog) {
+            return FocusArea.DIALOG;
+        }
+        if (songHeader != null && SwingUtilities.isDescendingFrom(focusOwner, songHeader)) {
+            return FocusArea.SONG_HEADER;
+        }
+        if (lyrics != null && SwingUtilities.isDescendingFrom(focusOwner, lyrics)) {
+            return lyrics.isEditable() ? FocusArea.LYRICS_EDIT : FocusArea.LYRICS_VIEW;
+        }
+        if (sheet != null && SwingUtilities.isDescendingFrom(focusOwner, sheet)) {
+            return FocusArea.SHEET;
+        }
+        return FocusArea.OTHER;
+    }
+
+    private EditorInputContext buildEditorInputContext() {
+        int[] selectedRows = table != null ? table.getSelectedRows() : null;
+        int selectionCount = selectedRows == null ? 0 : selectedRows.length;
+        return new EditorInputContext(
+                determineEditorFocusArea(),
+                lyrics != null && lyrics.isEditable(),
+                isFocusInSongHeader(),
+                mp3 != null && mp3.isPlaying(),
+                isRecording(),
+                sheet != null && sheet.isAbsolutePitchViewEnabled(),
+                selectionCount > 0,
+                selectionCount > 1
+        );
+    }
+
+    private void initEditorKeyDispatcher() {
+        editorKeyDispatcher = new EditorKeyDispatcher(
+                () -> currentView == VIEW_EDIT,
+                this::buildEditorInputContext,
+                editorKeyBindingRegistry,
+                editorKeySequenceTracker
+        );
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(editorKeyDispatcher);
+    }
+
+    private EditorCommand createEditorCommand(String id, java.util.function.Consumer<EditorInputContext> executor) {
+        return new SimpleEditorCommand(id, context -> context.focusArea() != FocusArea.DIALOG, executor);
+    }
+
+    private void bindEditorPressCountShortcut(KeyStroke keyStroke,
+                                              int pressCount,
+                                              String id,
+                                              java.util.function.Consumer<EditorInputContext> executor) {
+        editorKeyBindingRegistry.bind(keyStroke, pressCount, createEditorCommand(id, executor));
+    }
+
+    private void importEditorBindings(InputMap inputMap, ActionMap actionMap) {
+        if (inputMap == null || actionMap == null) {
+            return;
+        }
+        KeyStroke[] keys = inputMap.allKeys();
+        if (keys == null) {
+            return;
+        }
+        for (KeyStroke key : keys) {
+            Object actionKey = inputMap.get(key);
+            if (actionKey == null) {
+                continue;
+            }
+            Action action = actionMap.get(actionKey);
+            if (action == null) {
+                continue;
+            }
+            editorKeyBindingRegistry.bind(key, createEditorCommand(String.valueOf(actionKey), ctx -> action.actionPerformed(null)));
+            inputMap.remove(key);
+        }
+    }
+
+    private void applyEditorShortcutBindings(InputMap im, ActionMap am, List<EditorShortcutBinding> bindings) {
+        for (EditorShortcutBinding binding : bindings) {
+            im.put(binding.keyStroke(), binding.actionKey());
+            am.put(binding.actionKey(), binding.action());
+            if (binding.accelerator() != null) {
+                binding.action().putValue(AbstractAction.ACCELERATOR_KEY, binding.accelerator());
+            }
+        }
+    }
+
+    private List<EditorShortcutBinding> getEditorGlobalShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0), "showHelp", showHelp,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F4, 0), "editLyrics", editLyrics,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_F4, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0), "editLyrics", editLyrics, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK), "saveTrack", saveTrack,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_S, 0), "saveTrack", saveTrack, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                                          "saveAll", saveAll,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0), "reloadAll", reloadAll,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK), "openFile", openFile,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
+                                          "openFolder", openFolder,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK), "gotoLibrary", gotoLibrary,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK))
+        );
+    }
+
+    private List<EditorShortcutBinding> getEditorPlaybackShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK), "recordSelection", recordSelection,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.CTRL_DOWN_MASK), "playSlower", playSlower,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), "playSelection", playSelection,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK),
+                                          "playSelectionWithMIDI", playSelectionWithMIDI,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_MASK),
+                                          "playSelectionWithMIDIAudio", playSelectionWithMIDIAudio,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                                          "addSpace", addSpace,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                                          "removeSpace", removeSpace,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_P, 0), "playPage", playPage,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_P, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.SHIFT_DOWN_MASK), "playPageWithMIDI", playPageWithMIDI,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK),
+                                          "playPageWithMIDIAudio", playPageWithMIDIAudio, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK),
+                                          "playPageWithMIDIAudio", playPageWithMIDIAudio,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_B, 0), "playBefore", playBefore,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_B, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_N, 0), "playNext", playNext,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_N, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_C, 0), "playFrozen", playFrozen,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_C, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK),
+                                          "playFrozenWithMIDI", playFrozenWithMIDI,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK),
+                                          "playFrozenWithMIDIAudio", playFrozenWithMIDIAudio,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "interruptPlay", interruptPlay,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0))
+        );
+    }
+
+    private List<EditorShortcutBinding> getEditorToggleShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_M, 0), "alignToMelody", alignToMelody,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_M, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_T, 0), "moveCursorDialog", moveCursorDialog,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_T, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.SHIFT_DOWN_MASK),
+                                          "moveRemainderDialog", moveRemainderDialog,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.CTRL_DOWN_MASK),
+                                          "autoCorrectPageBreaks", autoCorrectPageBreaks,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_B, InputEvent.CTRL_DOWN_MASK), "enableMidi", enableMidi,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_B, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK), "enableAudio", enableAudio,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_W, InputEvent.CTRL_DOWN_MASK), "enableClicks", enableClicks,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_W, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.ALT_MASK), "darkmode", darkmode,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                                          "toggleCase", toggleCase,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK))
+        );
+    }
+
+    private List<EditorShortcutBinding> getEditorNavigationShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT,
+                        InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
+                        "shiftLeftRemainder", shiftLeftRemainder,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_LEFT,
+                                InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT,
+                        InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
+                        "shiftRightRemainder", shiftRightRemainder,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT,
+                                InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
+                        "shiftLeft", shiftLeft,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.SHIFT_DOWN_MASK),
+                        "shiftLeft", shiftLeft, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
+                        "shiftRight", shiftRight,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.SHIFT_DOWN_MASK),
+                        "shiftRight", shiftRight, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK),
+                        "decHeight", decHeight,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                        "decHeightPlay", decHeightPlay, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "decHeightOctave", decHeightOctave,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN,
+                        InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "decHeightOctavePlay", decHeightOctavePlay,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DOWN,
+                                InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK),
+                        "incHeight", incHeight,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                        "incHeightPlay", incHeightPlay, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "incHeightOctave", incHeightOctave,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UP,
+                        InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "incHeightOctavePlay", incHeightOctavePlay,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_UP,
+                                InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK),
+                        "decLeft", decLeft,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK),
+                        "incLeft", incLeft,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.ALT_MASK),
+                        "decRight", decRight,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_MASK),
+                        "incRight", incRight,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke("pressed UP"), "prevPagePressed", prevPagePressed, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke("released UP"), "prevPageReleased", prevPageReleased, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0), "prevBeat", prevBeat, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "nextBeat", nextBeat, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke("pressed DOWN"), "nextPagePressed", nextPagePressed, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke("released DOWN"), "nextPageReleased", nextPageReleased, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK),
+                        "selectPrevBeat", selectPrevBeat,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK),
+                        "selectNextBeat", selectNextBeat,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0), "prevPage", prevPage,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0), "nextPage", nextPage,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK),
+                        "lessPages", lessPages,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK),
+                        "morePages", morePages,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "onePage", onePage,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_NUMPAD0, InputEvent.CTRL_DOWN_MASK),
+                        "onePage", onePage, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "allRemainingPages", allRemainingPages,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
+                        InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                        "viewAll", viewAll,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
+                                InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK))
+        );
+    }
+
+    private List<EditorShortcutBinding> getEditorClipboardShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK), "pasteRows", pasteRows,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "pasteNotes", pasteNotes,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_V,
+                        InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                        "pasteNoteHeights", pasteNoteHeights,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_V,
+                                InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_DOWN_MASK), "copyRows", copyRows,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK), "removeCopy", removeCopy,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "removeRows", removeRows,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, InputEvent.CTRL_DOWN_MASK),
+                        "removeRowsWithLyrics", removeRowsWithLyrics,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, 0), "removePageBreak", removePageBreak, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK), "insertNote", insertNote,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK), "insertNote", insertNote,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK))
+        );
+    }
+
+    private List<EditorShortcutBinding> getEditorNoteTypeShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_V, 0), "showCopiedRows", showCopiedRows,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_V, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK), "undo", undo,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK), "redo", redo,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0), "splitRows", splitRows,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, 0), "joinRows", joinRows,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.SHIFT_DOWN_MASK), "rollLeft", rollLeft,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_R, 0), "rollRight", rollRight,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_R, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_HOME, 0), "home", home, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_END, 0), "end", end, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_HOME, InputEvent.CTRL_DOWN_MASK), "first", first, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_END, InputEvent.CTRL_DOWN_MASK), "last", last, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_G, 0), "golden", golden,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_G, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F, 0), "freestyle", freestyle,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_F, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.SHIFT_DOWN_MASK), "rapgolden", rapgolden,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.SHIFT_DOWN_MASK), "rap", rap,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_N, InputEvent.SHIFT_DOWN_MASK), "standard", standard,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_N, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0), "addEndian", addEndian,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_CIRCUMFLEX, 0), "addEndian", addEndian, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke("~"), "addEndian", addEndian, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UNDERSCORE, InputEvent.SHIFT_DOWN_MASK), "minus", minus,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_UNDERSCORE, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.SHIFT_DOWN_MASK), "togglePreview", togglePreview,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_A, 0), "toggleMedleyStart", toggleMedleyStart,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_A, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.SHIFT_DOWN_MASK), "toggleMedleyEnd", toggleMedleyEnd,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_DOWN_MASK), "alignGrid", alignToGrid,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_9, 0), "decGap", decGap,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_9, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_0, 0), "incGap", incGap,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_0, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.SHIFT_DOWN_MASK), "decGap2", decGap2,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.SHIFT_DOWN_MASK), "incGap2", incGap2,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK), "decBpm", decBpm,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK), "incBpm", incBpm,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), "decBpm2", decBpm2,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), "incBpm2", incBpm2,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK), "selectLine", selectLine,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), "selectAll", selectAll,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "togglePageBreak", togglePageBreak,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_L, 0), "absolute", absolute,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_L, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_L, InputEvent.SHIFT_DOWN_MASK), "absolute", absolute, null),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.ALT_MASK), "fullscreen", fullscreen,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.ALT_MASK))
+        );
+    }
+
+    private List<EditorShortcutBinding> getEditorTrackShortcutBindings() {
+        return List.of(
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.CTRL_DOWN_MASK), "prevTrack", activatePrevTrack,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK), "nextTrack", activateNextTrack,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_1, InputEvent.CTRL_DOWN_MASK), "track1", activateTrack1,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_1, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_2, InputEvent.CTRL_DOWN_MASK), "track2", activateTrack2,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_2, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_3, InputEvent.CTRL_DOWN_MASK), "track3", activateTrack3,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_3, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_4, InputEvent.CTRL_DOWN_MASK), "track4", activateTrack4,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_4, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_5, InputEvent.CTRL_DOWN_MASK), "track5", activateTrack5,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_5, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_6, InputEvent.CTRL_DOWN_MASK), "track6", activateTrack6,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_6, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_7, InputEvent.CTRL_DOWN_MASK), "track7", activateTrack7,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_7, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_8, InputEvent.CTRL_DOWN_MASK), "track8", activateTrack8,
+                        KeyStroke.getKeyStroke(KeyEvent.VK_8, InputEvent.CTRL_DOWN_MASK))
+        );
+    }
+
+    private void applyPlaybackToggleProperties() {
+        if (prop == null) {
+            return;
+        }
+        boolean audioEnabled = prop.getBooleanProperty("play-audio-enabled");
+        boolean clicksEnabled = prop.getBooleanProperty("play-clicks-enabled");
+        boolean instrumentEnabled = prop.getBooleanProperty("play-instrument-enabled");
+
+        mp3.setAudioEnabled(audioEnabled);
+        mp3.setClicksEnabled(clicksEnabled);
+        mp3.setMIDIEnabled(instrumentEnabled);
+
+        if (mp3Button != null) {
+            mp3Button.setSelected(audioEnabled);
+        }
+        if (audioCBI != null) {
+            audioCBI.setState(audioEnabled);
+        }
+        if (clicksCBI != null) {
+            clicksCBI.setState(clicksEnabled);
+        }
+        if (midiButton != null) {
+            midiButton.setSelected(instrumentEnabled);
+        }
+        if (midiCBI != null) {
+            midiCBI.setState(instrumentEnabled);
+        }
+        sheet.setPaintHeights(instrumentEnabled);
+    }
+
+    private void storePlaybackToggleProperty(String key, boolean enabled) {
+        if (prop == null) {
+            return;
+        }
+        prop.setProperty(key, Boolean.toString(enabled));
+        prop.store();
     }
 
     private void logSaveActionState(String origin) {
@@ -924,7 +1420,8 @@ public class YassActions implements DropTargetListener {
                 }
                 File selectedFile = chooser.getSelectedFile();
                 String filename = selectedFile.getName();
-                if (currentFile != null && currentFile.equals(filename) && activeTable.getMP3().equals(filename)) {
+                String activeMp3 = activeTable.getMP3();
+                if (StringUtils.equals(currentFile, filename) && StringUtils.equals(activeMp3, filename)) {
                     return;
                 }
                 if (textField != null) {
@@ -2520,6 +3017,66 @@ public class YassActions implements DropTargetListener {
             table.nextBeat();
         }
     };
+
+    void triggerEditorSelectionPlaybackFromSheet() {
+        playSelection.actionPerformed(null);
+    }
+
+    void triggerEditorPagePlaybackFromSheet(boolean withMidi) {
+        if (withMidi) {
+            playPageWithMIDI.actionPerformed(null);
+            return;
+        }
+        playPage.actionPerformed(null);
+    }
+
+    void triggerEditorBeforePlaybackFromSheet(boolean withMidi) {
+        if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader()) {
+            return;
+        }
+        playSelectionBefore(withMidi ? 1 : 0);
+    }
+
+    void triggerEditorNextPlaybackFromSheet(boolean withMidi) {
+        if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader()) {
+            return;
+        }
+        playSelectionNext(withMidi ? 1 : 0);
+    }
+
+    void triggerEditorPrevBeatFromSheet() {
+        prevBeat.actionPerformed(null);
+    }
+
+    void triggerEditorNextBeatFromSheet() {
+        nextBeat.actionPerformed(null);
+    }
+
+    void triggerEditorPrevPageFromSheet() {
+        prevPage.actionPerformed(null);
+    }
+
+    void triggerEditorNextPageFromSheet() {
+        nextPage.actionPerformed(null);
+    }
+
+    void triggerEditorSlideLeftFromSheet(boolean fast) {
+        if (isFocusInSongHeader()) {
+            return;
+        }
+        sheet.slideLeft(fast ? 50 : 10);
+    }
+
+    void triggerEditorSlideRightFromSheet(boolean fast) {
+        if (isFocusInSongHeader()) {
+            return;
+        }
+        sheet.slideRight(fast ? 50 : 10);
+    }
+
+    void triggerEditorOnePageFromSheet() {
+        onePage.actionPerformed(null);
+    }
     private final Action selectPrevBeat = new AbstractAction(I18.get("edit_select_left")) {
         public void actionPerformed(ActionEvent e) {
             if (isFocusInSongHeader()) {
@@ -2534,6 +3091,38 @@ public class YassActions implements DropTargetListener {
                 return;
             }
             table.selectNextBeat();
+        }
+    };
+    private final Action selectCurrentWord = new AbstractAction("Select Current Word") {
+        public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
+            table.extendSelectionDownToWordBoundary();
+        }
+    };
+    private final Action selectCurrentWordUp = new AbstractAction("Select Current Word Up") {
+        public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
+            table.extendSelectionUpToWordBoundary();
+        }
+    };
+    private final Action selectToEndOfCurrentPage = new AbstractAction("Select To Page End") {
+        public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
+            table.extendSelectionDownToPageBreak();
+        }
+    };
+    private final Action selectToStartOfCurrentPage = new AbstractAction("Select To Page Start") {
+        public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
+            table.extendSelectionUpToPageBreak();
         }
     };
     private final Action autoCorrectPageBreaks = new AbstractAction(
@@ -2861,7 +3450,7 @@ public class YassActions implements DropTargetListener {
             interruptPlay();
             if (sheet != null && !isFocusInSongHeader()) {
                 boolean onoff = !sheet.isSnapshotShown();
-                if (e.getSource() != snapshotButton) {
+                if (e == null || e.getSource() != snapshotButton) {
                     snapshotButton.setSelected(onoff);
                 }
                 if (showCopyCBI != null) {
@@ -3269,21 +3858,29 @@ public class YassActions implements DropTargetListener {
                                                     :
                                                     (useWhisperX ? I18.get("edit_align_transcription_progress_whisperx")
                                                             : I18.get("edit_align_transcription_progress")));
+            JLabel outputLabel = new JLabel(" ");
+            outputLabel.setFont(outputLabel.getFont().deriveFont(Math.max(10f, outputLabel.getFont().getSize2D() - 1f)));
+            outputLabel.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createEtchedBorder(),
+                    BorderFactory.createEmptyBorder(6, 8, 6, 8)));
             JProgressBar progress = new JProgressBar();
             progress.setIndeterminate(true);
             JPanel panel = new JPanel(new BorderLayout(0, 8));
             panel.add(new JLabel("<html>" + (useWhisperX ? I18.get("edit_align_transcription_hint_whisperx")
                     : I18.get("edit_align_transcription_hint")) + "</html>"), BorderLayout.NORTH);
-            panel.add(statusLabel, BorderLayout.CENTER);
+            JPanel centerPanel = new JPanel(new GridLayout(2, 1, 0, 6));
+            centerPanel.add(statusLabel);
+            centerPanel.add(outputLabel);
+            panel.add(centerPanel, BorderLayout.CENTER);
             panel.add(progress, BorderLayout.SOUTH);
 
             JDialog progressDialog = new JDialog(getFrame(tab), I18.get("edit_align_transcription"), true);
             progressDialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
             progressDialog.getContentPane().add(panel);
-            progressDialog.setSize(560, 170);
+            progressDialog.setSize(680, 210);
             progressDialog.setLocationRelativeTo(getFrame(tab));
 
-            SwingWorker<OpenAiTranscriptionResult, Void> worker =
+            SwingWorker<OpenAiTranscriptionResult, String> worker =
                     new SwingWorker<>() {
                         @Override
                         protected OpenAiTranscriptionResult doInBackground() throws Exception {
@@ -3292,11 +3889,21 @@ public class YassActions implements DropTargetListener {
                                         ?
                                         whisperXService.loadCachedTranscription((WhisperXTranscriptionRequest) request,
                                                                                 table)
-                                        : whisperXService.transcribe((WhisperXTranscriptionRequest) request, table);
+                                        : whisperXService.transcribe((WhisperXTranscriptionRequest) request, table,
+                                        message -> publish(message));
                             }
                             return useCachedTranscription
                                     ? openAiService.loadCachedTranscription((OpenAiTranscriptionRequest) request, table)
                                     : openAiService.transcribe((OpenAiTranscriptionRequest) request, table);
+                        }
+
+                        @Override
+                        protected void process(java.util.List<String> chunks) {
+                            if (chunks.isEmpty()) {
+                                return;
+                            }
+                            String latest = chunks.get(chunks.size() - 1);
+                            outputLabel.setText(formatWhisperXProgressLine(latest));
                         }
 
                         @Override
@@ -3320,33 +3927,10 @@ public class YassActions implements DropTargetListener {
 
                                 String summary;
                                 if (rebuildFromTranscript) {
-                                    OpenAiTranscriptionResult rebuildTranscript = result;
-                                    String currentLyrics = normalizeEditorLyrics(table.getPageStructuredLyrics());
-                                    if (StringUtils.isNotBlank(currentLyrics)) {
-                                        TranscriptTruthRewriteService rewriteService =
-                                        new TranscriptTruthRewriteService();
-                                        OpenAiTranscriptionResult alignedTranscript =
-                                        rewriteService.alignToReferenceLines(
-                                                result, currentLyrics);
-                                        ClipboardLyricsDiffDialog dialog = new ClipboardLyricsDiffDialog(getFrame(tab),
-                                                                                                         normalizeEditorLyrics(
-                                                                                                                 alignedTranscript.getTranscriptText()),
-                                                                                                         currentLyrics);
-                                        ClipboardLyricsDiffDialog.Result diffResult = dialog.showDialog();
-                                        if (diffResult == null) {
-                                            return;
-                                        }
-                                        OpenAiTranscriptionResult structuredTranscript = rewriteService.rewrite(result,
-                                                                                                                normalizeEditorLyrics(
-                                                                                                                        diffResult.transcriptText()));
-                                        rebuildTranscript = rewriteService.applyLyricsToStructuredTranscript(
-                                                structuredTranscript,
-                                                normalizeEditorLyrics(diffResult.clipboardText()));
-                                    }
                                     TranscriptRebuildResult rebuildResult =
-                                            new TranscriptNoteRebuildService().transcript(table, rebuildTranscript);
-                                    summary = (useWhisperX ? whisperXService.buildSummary(rebuildTranscript) :
-                                            openAiService.buildSummary(rebuildTranscript))
+                                            new TranscriptNoteRebuildService().transcript(table, result);
+                                    summary = (useWhisperX ? whisperXService.buildSummary(result) :
+                                            openAiService.buildSummary(result))
                                             .replace("</html>", "<br><br>"
                                                     + MessageFormat.format(
                                                     I18.get("edit_align_transcription_rebuild_summary"),
@@ -3418,6 +4002,19 @@ public class YassActions implements DropTargetListener {
                                           I18.get("edit_align_transcription"),
                                           JOptionPane.WARNING_MESSAGE);
         }
+    }
+
+    private String formatWhisperXProgressLine(String value) {
+        if (StringUtils.isBlank(value)) {
+            return " ";
+        }
+        String escaped = value.replace("&", "&amp;")
+                              .replace("<", "&lt;")
+                              .replace(">", "&gt;");
+        if (escaped.length() > 220) {
+            escaped = escaped.substring(0, 217) + "...";
+        }
+        return "<html><b>Latest output:</b> " + escaped + "</html>";
     }
 
     public void startSeparateAudioForCurrentSong() {
@@ -3516,6 +4113,7 @@ public class YassActions implements DropTargetListener {
 
             OpenAiTranscriptionResult transcriptionResult =
                     applyCorrectedLyricsToTranscript(state.getTranscriptionResult(), correctedLyrics);
+            Lyrics.configureTranscriptHyphenator(prop, createdTable, createdTable.getLanguage());
             new TranscriptNoteRebuildService().transcript(createdTable, transcriptionResult);
             copyWizardSeparationFiles(destinationDir, createdTable, state);
             copyWizardTranscriptCache(destinationDir, state);
@@ -3620,9 +4218,59 @@ public class YassActions implements DropTargetListener {
                                .replace("\r", "<br>") + "</html>";
     }
 
+    static boolean shouldOfferSeparationAfterWizard(WizardTranscriptionState state) {
+        return state == null || state.getSeparationResult() == null;
+    }
+
     private void maybeStartSeparationAfterCreateSong() {
-        if (hasMvsepApiToken()) {
-            SwingUtilities.invokeLater(this::startSeparateAudioForCurrentSong);
+        if (!hasConfiguredSeparation() || table == null) {
+            return;
+        }
+        int option = JOptionPane.showConfirmDialog(tab,
+                                                   I18.get("create_song_open_separation_prompt"),
+                                                   I18.get("create_song_open_separation_title"),
+                                                   JOptionPane.YES_NO_OPTION,
+                                                   JOptionPane.QUESTION_MESSAGE);
+        if (option != JOptionPane.YES_OPTION) {
+            return;
+        }
+        SwingUtilities.invokeLater(this::startPreferredSeparationForCurrentSong);
+    }
+
+    private void startPreferredSeparationForCurrentSong() {
+        SeparationPreference preference = SeparationPreference.fromValue(prop.getProperty("separation-preference"));
+        boolean mvsepConfigured = hasMvsepApiToken();
+        boolean audioSepConfigured = hasConfiguredLocalSeparation();
+
+        switch (preference) {
+            case ONLINE_FIRST -> {
+                if (mvsepConfigured) {
+                    startSeparateAudioForCurrentSong();
+                    return;
+                }
+                if (audioSepConfigured) {
+                    startLocalSeparateAudioForCurrentSong();
+                }
+            }
+            case MVSEP_ONLY -> {
+                if (mvsepConfigured) {
+                    startSeparateAudioForCurrentSong();
+                }
+            }
+            case AUDIO_SEP_ONLY -> {
+                if (audioSepConfigured) {
+                    startLocalSeparateAudioForCurrentSong();
+                }
+            }
+            default -> {
+                if (audioSepConfigured) {
+                    startLocalSeparateAudioForCurrentSong();
+                    return;
+                }
+                if (mvsepConfigured) {
+                    startSeparateAudioForCurrentSong();
+                }
+            }
         }
     }
 
@@ -3947,14 +4595,14 @@ public class YassActions implements DropTargetListener {
     };
     private final Action enableAudio = new AbstractAction(I18.get("edit_audio_toggle")) {
         public void actionPerformed(ActionEvent e) {
-            if (e.getSource() != mp3Button) {
+            if (e == null || e.getSource() != mp3Button) {
                 mp3Button.setSelected(!mp3Button.isSelected());
-            } else {
-                mp3.setAudioEnabled(mp3Button.isSelected());
             }
+            mp3.setAudioEnabled(mp3Button.isSelected());
             if (audioCBI != null) {
                 audioCBI.setState(mp3Button.isSelected());
             }
+            storePlaybackToggleProperty("play-audio-enabled", mp3Button.isSelected());
         }
     };
     private final Action toggleCase = new AbstractAction(I18.get("edit_toggle_case")) {
@@ -3969,6 +4617,7 @@ public class YassActions implements DropTargetListener {
             if (clicksCBI != null) {
                 clicksCBI.setState(mp3.isClicksEnabled());
             }
+            storePlaybackToggleProperty("play-clicks-enabled", mp3.isClicksEnabled());
         }
     };
     private final Action alignToGrid = new AbstractAction(I18.get("edit_align_to_grid")) {
@@ -3991,7 +4640,7 @@ public class YassActions implements DropTargetListener {
     private JCheckBoxMenuItem midiCBI = null;
     private final Action enableMidi = new AbstractAction(I18.get("edit_midi_toggle")) {
         public void actionPerformed(ActionEvent e) {
-            enableMidi(e.getSource() != midiButton);
+            enableMidi(e == null || e.getSource() != midiButton);
         }
     };
 
@@ -4006,6 +4655,7 @@ public class YassActions implements DropTargetListener {
         if (midiCBI != null) {
             midiCBI.setState(midiButton.isSelected());
         }
+        storePlaybackToggleProperty("play-instrument-enabled", midiButton.isSelected());
         if (sheet.isAbsolutePitchViewEnabled()) {
             LOGGER.finest("[AbsolutePitchView] enableMidi selected=" + midiButton.isSelected()
                                 + " paintHeightsBefore=" + sheet.isPaintHeights()
@@ -4154,6 +4804,7 @@ public class YassActions implements DropTargetListener {
 
         // setDropTarget(sheet);
         registerEditorActions(sheet);
+        initEditorKeyDispatcher();
         PropertyChangeListener plis = e -> {
             String p = e.getPropertyName();
             if (p.equals("play")) {
@@ -4741,6 +5392,44 @@ public class YassActions implements DropTargetListener {
         return songList;
     }
 
+    public UsdbClient getUsdbClient() {
+        return usdbClient;
+    }
+
+    public UsdbSessionService.UsdbSessionInfo getUsdbSessionInfo() {
+        try {
+            return usdbSessionService.getSessionInfo();
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO, "USDB session info could not be determined", ex);
+            return UsdbSessionService.UsdbSessionInfo.loggedOut();
+        }
+    }
+
+    public boolean canDirectlyEditUsdbSongs() {
+        return getUsdbSessionInfo().directEditAllowed();
+    }
+
+    public boolean canDirectlyEditUsdbSongsCached() {
+        return usdbSessionService.getCachedSessionInfo().directEditAllowed();
+    }
+
+    public synchronized UsdbImportQueueService getUsdbImportQueueService() {
+        if (usdbImportQueueService == null) {
+            usdbImportQueueService = new UsdbImportQueueService(this);
+        }
+        return usdbImportQueueService;
+    }
+
+    public boolean hasConfiguredSeparation() {
+        return hasMvsepApiToken() || hasConfiguredLocalSeparation();
+    }
+
+    private boolean hasConfiguredLocalSeparation() {
+        return StringUtils.isNotBlank(prop.getProperty(AudioSeparatorSeparationService.PROP_PYTHON))
+                && Boolean.parseBoolean(StringUtils.defaultIfBlank(
+                prop.getProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK), "false"));
+    }
+
     public void setSongList(YassSongList s) {
         songList = s;
         songList.setOpenAction(openSongFromLibrary);
@@ -4759,11 +5448,17 @@ public class YassActions implements DropTargetListener {
                 groups.refreshCounters();
             }
         });
+        songList.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                updateLibrarySelectionDependentActions();
+            }
+        });
         // setDropTarget(songList);
     }
 
     public void init(YassProperties p) {
         prop = p;
+        usdbSyncerBridge = new UsdbSyncerBridge(prop);
 
         loadColors();
         loadKeys();
@@ -4787,6 +5482,7 @@ public class YassActions implements DropTargetListener {
 
         boolean useWav = prop.getProperty("use-sample").equals("true");
         mp3.useWav(useWav);
+        applyPlaybackToggleProperties();
 
         auto = new YassAutoCorrect();
         auto.init(prop);
@@ -5145,6 +5841,14 @@ public class YassActions implements DropTargetListener {
                 getClass().getResource("/yass/resources/toolbarButtonGraphics/general/Information24.gif")));
         icons.put("createSyncerTagsIcon",
                   new ImageIcon(getClass().getResource("/yass/resources/img/usdb_syncer_icon.png")));
+        icons.put("usdbBrowserIcon",
+                  new ImageIcon(getClass().getResource("/yass/resources/img/usdb_browser_icon.png")));
+        icons.put("usdbBrowser16Icon",
+                  new ImageIcon(getClass().getResource("/yass/resources/img/usdb_browser_icon_24.png")));
+        icons.put("usdbBrowser24Icon",
+                  new ImageIcon(getClass().getResource("/yass/resources/img/usdb_browser_icon_24.png")));
+        icons.put("usdbCompare16Icon",
+                  new ImageIcon(getClass().getResource("/yass/resources/img/usdb_compare_icon_24.png")));
         icons.put("quantize16Icon", new ImageIcon(getClass().getResource("/yass/resources/img/quantize_16.png")));
         icons.put("quantize24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/quantize_24.png")));
         icons.put("createDuetIcon", new ImageIcon(getClass().getResource("/yass/resources/img/create_duet.png")));
@@ -5163,6 +5867,8 @@ public class YassActions implements DropTargetListener {
         detailLibrary.putValue(AbstractAction.SMALL_ICON, getIcon("notiles16Icon"));
         showSongInfoBackground.putValue(AbstractAction.SMALL_ICON, getIcon("empty16Icon"));
         createSyncerTags.putValue(AbstractAction.SMALL_ICON, getResizedIcon("createSyncerTagsIcon", 16));
+        searchUsdb.putValue(AbstractAction.SMALL_ICON, getResizedIcon("usdbBrowser16Icon", 16));
+        compareUsdb.putValue(AbstractAction.SMALL_ICON, getResizedIcon("usdbCompare16Icon", 16));
         editHyphenations.putValue(AbstractAction.SMALL_ICON, getIcon("hyphenate24Icon"));
         queryMusicBrainz.putValue(AbstractAction.SMALL_ICON, getResizedIcon("MusicBrainzIcon", 16));
         searchFanartTvCover.putValue(AbstractAction.SMALL_ICON, getResizedIcon("fanartTvIcon", 16));
@@ -5301,9 +6007,8 @@ public class YassActions implements DropTargetListener {
         menu.addSeparator();
         menu.add(midiCBI = new JCheckBoxMenuItem(enableMidi));
         menu.add(audioCBI = new JCheckBoxMenuItem(enableAudio));
-        audioCBI.setState(true);
         menu.add(clicksCBI = new JCheckBoxMenuItem(enableClicks));
-        clicksCBI.setState(true);
+        applyPlaybackToggleProperties();
 //        menu.add(micCBI = new JCheckBoxMenuItem(enableMic));
 //        micCBI.setState(true);
 
@@ -5406,6 +6111,7 @@ public class YassActions implements DropTargetListener {
         menu.add(separateAudio);
         menu.add(separateAudioLocal);
         menu.add(queryMusicBrainz);
+        menu.add(compareUsdb);
         menu.add(suggestGoldenNotes);
         menu.add(showOptions);
 
@@ -5520,7 +6226,11 @@ public class YassActions implements DropTargetListener {
         menu.add(createSyncerTags);
         menu.add(searchFanartTvCover);
         menu.add(editHyphenations);
-        menu.add(alignNotesWithTranscription);
+        if (hasUsdbStoredUsername()) {
+            menu.addSeparator();
+            menu.add(searchUsdb);
+            menu.add(compareUsdb);
+        }
         menu.addSeparator();
         menu.add(showOptions);
         menuBar.add(menu);
@@ -5594,8 +6304,8 @@ public class YassActions implements DropTargetListener {
         mp3Button.setIcon(getIcon("mute24Icon"));
         mp3Button.setSelectedIcon(getIcon("nomute24Icon"));
         mp3Button.setFocusable(false);
-        mp3Button.setSelected(true);
         mp3Button.setOpaque(false);
+        applyPlaybackToggleProperties();
 
         videoButton = new JToggleButton();
         t.add(videoButton = new JToggleButton());
@@ -5975,6 +6685,24 @@ public class YassActions implements DropTargetListener {
         filterEditor.setText(I18.get("tool_lib_find_empty"));
         filterEditor.setForeground(Color.gray);
         songInfo.setBold(null);
+    }
+
+    public void resetLibraryFiltersForStartup() {
+        if (songList == null) {
+            return;
+        }
+        if (filterEditor != null) {
+            clearFilter();
+        }
+        if (groups != null) {
+            groups.setIgnoreChange(true);
+            if (groups.getRowCount() > 0) {
+                groups.setRowSelectionInterval(0, 0);
+            }
+            groups.setIgnoreChange(false);
+        }
+        songList.setPreFilter(null);
+        songList.filter(null);
     }
 
     public void createFilterBox() {
@@ -6468,6 +7196,15 @@ public class YassActions implements DropTargetListener {
         bgToggle.setIcon(getIcon("empty24Icon"));
         // detailToggle.setSelectedIcon(getIcon("tiles24Icon"));
         bgToggle.setFocusable(false);
+
+        t.addSeparator();
+
+        t.add(b = new JButton());
+        b.setAction(createSyncerTags);
+        b.setToolTipText(b.getText());
+        b.setText("");
+        b.setIcon(getResizedIcon("createSyncerTagsIcon", 24));
+        b.setFocusable(false);
         return t;
     }
 
@@ -6487,6 +7224,13 @@ public class YassActions implements DropTargetListener {
 
         JButton b;
         t.add(Box.createHorizontalGlue());
+
+        t.add(b = new JButton());
+        b.setAction(searchUsdb);
+        b.setToolTipText(b.getText());
+        b.setText("");
+        b.setIcon(getIcon("usdbBrowser24Icon"));
+        b.setFocusable(false);
 
         t.add(filterEditor);
         t.add(b = new JButton());
@@ -6985,6 +7729,7 @@ public class YassActions implements DropTargetListener {
         if (filter != null) {
             filter.setEnabled(b);
         }
+        updateLibrarySelectionDependentActions();
     }
 
     public void updateActions() {
@@ -7134,6 +7879,7 @@ public class YassActions implements DropTargetListener {
         removeEnd.setEnabled(isOpened);
         removeVideoGap.setEnabled(isOpened);
         openVideo.setEnabled(isOpened);
+        updateLibrarySelectionDependentActions();
     }
 
     public boolean hasAnyTranscriptionEngine() {
@@ -7373,6 +8119,7 @@ public class YassActions implements DropTargetListener {
     }
 
     private void updateSongInfo(Action a) {
+        updateLibrarySelectionDependentActions();
         songInfoToggle.setSelected(false);
         filterAll.setSelected(false);
         detailToggle.setSelected(false);
@@ -7450,6 +8197,7 @@ public class YassActions implements DropTargetListener {
         }
 
         songInfo.repaint();
+        updateLibrarySelectionDependentActions();
     }
 
 
@@ -8831,7 +9579,13 @@ public class YassActions implements DropTargetListener {
                     clampUntappedNotesAfterLastTap(completedSelection, processedTapNotes, 3);
                 }
                 if (completedSelection != null) {
-                    table.setRowSelectionInterval(completedSelection.getLeft(), completedSelection.getRight());
+                    int rowCount = table.getRowCount();
+                    if (rowCount > 0) {
+                        int selectionStart = Math.max(0, Math.min(rowCount - 1, completedSelection.getLeft()));
+                        int selectionEnd = Math.max(selectionStart,
+                                Math.min(rowCount - 1, completedSelection.getRight()));
+                        table.setRowSelectionInterval(selectionStart, selectionEnd);
+                    }
                     if (!postRecordingPitchData.isEmpty()) {
                         int selectionStart = Math.max(0, completedSelection.getLeft());
                         int selectionEnd = Math.min(table.getRowCount() - 1,
@@ -9550,14 +10304,32 @@ public class YassActions implements DropTargetListener {
 
         File file;
         if (table.getDirMP3() != null) {
-            file = new File(table.getDirMP3());
+            String playbackPath = table.getDirMP3();
+            file = new File(playbackPath);
             if (!file.exists()) {
                 selectAudioFile.actionPerformed(null);
+                playbackPath = table.getDirMP3();
+                file = StringUtils.isNotBlank(playbackPath) ? new File(playbackPath) : null;
             }
+            String waveformPath = null;
             if (prop.getBooleanProperty("debug-waveform") && StringUtils.isNotEmpty(table.getVocals())) {
-                mp3.openMP3(table.getDir() + File.separator + table.getVocals());
+                waveformPath = table.getDir() + File.separator + table.getVocals();
+                if (!new File(waveformPath).exists()) {
+                    waveformPath = null;
+                }
+            }
+            String resolvedPlaybackPath = StringUtils.defaultIfBlank(waveformPath, playbackPath);
+            if (StringUtils.isBlank(resolvedPlaybackPath) || file == null || !file.exists()) {
+                file = new File(table.getDirFilename());
+                mp3.emptyMp3(table);
             } else {
-                mp3.openMP3(table.getDirMP3());
+                try {
+                    mp3.openMP3(resolvedPlaybackPath);
+                } catch (Exception ex) {
+                    LOGGER.log(Level.WARNING, "Could not open audio for editor: " + resolvedPlaybackPath, ex);
+                    file = new File(table.getDirFilename());
+                    mp3.emptyMp3(table);
+                }
             }
         } else {
             file = new File(table.getDirFilename());
@@ -10464,7 +11236,7 @@ public class YassActions implements DropTargetListener {
                 if (starteditor) {
                     songList.gotoSong(table);
                     openFiles(file, false);
-                    if (!wizardAssetsApplied) {
+                    if (shouldOfferSeparationAfterWizard(wiz.getWizardTranscriptionState())) {
                         maybeStartSeparationAfterCreateSong();
                     }
                 }
@@ -10474,7 +11246,7 @@ public class YassActions implements DropTargetListener {
             if (file != null && starteditor) {
                 songList.gotoSong(table);
                 openFiles(file, false);
-                if (!wizardAssetsApplied) {
+                if (shouldOfferSeparationAfterWizard(wiz.getWizardTranscriptionState())) {
                     maybeStartSeparationAfterCreateSong();
                 }
                 return file;
@@ -10702,282 +11474,9 @@ public class YassActions implements DropTargetListener {
     public void registerEditorActions(JComponent c) {
         InputMap im = c.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
         ActionMap am = c.getActionMap();
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0), "showHelp");
-        am.put("showHelp", showHelp);
-        showHelp.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F4, 0), "editLyrics");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F2, 0), "editLyrics");
-        editLyrics.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F4, 0));
-        am.put("editLyrics", editLyrics);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK), "saveTrack");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_S, 0), "saveTrack");
-        saveTrack.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK));
-        am.put("saveTrack", saveTrack);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "saveAll");
-        saveAll.putValue(AbstractAction.ACCELERATOR_KEY,
-                         KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
-        am.put("saveAll", saveAll);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0), "reloadAll");
-        reloadAll.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0));
-        am.put("reloadAll", reloadAll);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK), "openFile");
-        am.put("openFile", openFile);
-        openFile.putValue(AbstractAction.ACCELERATOR_KEY,
-                          KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK), "openFolder");
-        am.put("openFolder", openFolder);
-        openFolder.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK), "openFolder");
-        am.put("openFolder", openFolder);
-        openFolderFromLibrary.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_E,
-                                                                                              InputEvent.CTRL_DOWN_MASK |
-                                                                                                      InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK), "gotoLibrary");
-        am.put("gotoLibrary", gotoLibrary);
-        gotoLibrary.putValue(AbstractAction.ACCELERATOR_KEY,
-                             KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT,
-                                      InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
-               "shiftLeftRemainder");
-        am.put("shiftLeftRemainder", shiftLeftRemainder);
-        shiftLeftRemainder.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_LEFT,
-                                                                                           InputEvent.SHIFT_DOWN_MASK |
-                                                                                                   InputEvent.CTRL_DOWN_MASK |
-                                                                                                   InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT,
-                                      InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
-               "shiftRightRemainder");
-        am.put("shiftRightRemainder", shiftRightRemainder);
-        shiftRightRemainder.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT,
-                                                                                            InputEvent.SHIFT_DOWN_MASK |
-                                                                                                    InputEvent.CTRL_DOWN_MASK |
-                                                                                                    InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK), "shiftLeft");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.SHIFT_DOWN_MASK), "shiftLeft");
-        am.put("shiftLeft", shiftLeft);
-        shiftLeft.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
-               "shiftRight");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.SHIFT_DOWN_MASK), "shiftRight");
-        am.put("shiftRight", shiftRight);
-        shiftRight.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK), "decHeight");
-        am.put("decHeight", decHeight);
-        decHeight.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
-               "decHeightPlay");
-        am.put("decHeightPlay", decHeightPlay);
-        incHeight.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "decHeightOctave");
-        am.put("decHeightOctave", decHeightOctave);
-        decHeightOctave.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DOWN,
-                                                                                        InputEvent.CTRL_DOWN_MASK |
-                                                                                                InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK |
-                InputEvent.SHIFT_DOWN_MASK), "decHeightOctavePlay");
-        am.put("decHeightOctavePlay", decHeightOctavePlay);
-        decHeightOctavePlay.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DOWN,
-                                                                                            InputEvent.ALT_DOWN_MASK |
-                                                                                                    InputEvent.CTRL_DOWN_MASK |
-                                                                                                    InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK), "incHeight");
-        am.put("incHeight", incHeight);
-        incHeight.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP,
-                                                                                  InputEvent.CTRL_DOWN_MASK |
-                                                                                          InputEvent.ALT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
-               "incHeightPlay");
-        am.put("incHeightPlay", incHeightPlay);
-        incHeight.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "incHeightOctave");
-        am.put("incHeightOctave", incHeightOctave);
-        incHeightOctave.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP,
-                                                                                        InputEvent.CTRL_DOWN_MASK |
-                                                                                                InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK |
-                InputEvent.SHIFT_DOWN_MASK), "incHeightOctavePlay");
-        am.put("incHeightOctavePlay", incHeightOctavePlay);
-        incHeightOctavePlay.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP,
-                                                                                            InputEvent.ALT_DOWN_MASK |
-                                                                                                    InputEvent.CTRL_DOWN_MASK |
-                                                                                                    InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK), "decLeft");
-        am.put("decLeft", decLeft);
-        decLeft.putValue(AbstractAction.ACCELERATOR_KEY,
-                         KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK), "incLeft");
-        am.put("incLeft", incLeft);
-        incLeft.putValue(AbstractAction.ACCELERATOR_KEY,
-                         KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.ALT_MASK), "decRight");
-        am.put("decRight", decRight);
-        decRight.putValue(AbstractAction.ACCELERATOR_KEY,
-                          KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_MASK), "incRight");
-        am.put("incRight", incRight);
-        incRight.putValue(AbstractAction.ACCELERATOR_KEY,
-                          KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke("pressed UP"), "prevPagePressed");
-        im.put(KeyStroke.getKeyStroke("released UP"), "prevPageReleased");
-        am.put("prevPage", prevPage);
-        am.put("prevPagePressed", prevPagePressed);
-        am.put("prevPageReleased", prevPageReleased);
-        prevPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0), "prevBeat");
-        am.put("prevBeat", prevBeat);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "nextBeat");
-        am.put("nextBeat", nextBeat);
-
-        im.put(KeyStroke.getKeyStroke("pressed DOWN"), "nextPagePressed");
-        im.put(KeyStroke.getKeyStroke("released DOWN"), "nextPageReleased");
-        am.put("nextPagePressed", nextPagePressed);
-        am.put("nextPageReleased", nextPageReleased);
-        am.put("nextPage", nextPage);
-        nextPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK), "selectPrevBeat");
-        am.put("selectPrevBeat", selectPrevBeat);
-        selectPrevBeat.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK), "selectNextBeat");
-        am.put("selectNextBeat", selectNextBeat);
-        selectNextBeat.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0), "prevPage");
-        prevPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0), "nextPage");
-        nextPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK), "lessPages");
-        am.put("lessPages", lessPages);
-        lessPages.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK), "morePages");
-        am.put("morePages", morePages);
-        morePages.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "onePage");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_NUMPAD0, InputEvent.CTRL_DOWN_MASK), "onePage");
-        am.put("onePage", onePage);
-        onePage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_UP,
-                                                                                InputEvent.CTRL_DOWN_MASK |
-                                                                                        InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "allRemainingPages");
-        am.put("allRemainingPages", allRemainingPages);
-        allRemainingPages.putValue(AbstractAction.ACCELERATOR_KEY,
-                                   KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
-                                                          InputEvent.CTRL_DOWN_MASK |
-                                                                  InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
-                                      InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK |
-                                              InputEvent.ALT_DOWN_MASK),
-               "viewAll");
-        am.put("viewAll", viewAll);
-        viewAll.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PAGE_DOWN,
-                                                                                InputEvent.CTRL_DOWN_MASK |
-                                                                                        InputEvent.SHIFT_DOWN_MASK |
-                                                                                        InputEvent.ALT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK), "pasteRows");
-        am.put("pasteRows", pasteRows);
-        pasteRows.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "pasteNotes");
-        am.put("pasteNotes", pasteNotes);
-        pasteNotes.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_V,
-                                                                                   InputEvent.CTRL_DOWN_MASK |
-                                                                                           InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK |
-                InputEvent.ALT_DOWN_MASK), "pasteNoteHeights");
-        am.put("pasteNoteHeights", pasteNoteHeights);
-        pasteNoteHeights.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_V,
-                                                                                         InputEvent.CTRL_DOWN_MASK |
-                                                                                                 InputEvent.SHIFT_DOWN_MASK |
-                                                                                                 InputEvent.ALT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_DOWN_MASK), "copyRows");
-        am.put("copyRows", copyRows);
-        copyRows.putValue(AbstractAction.ACCELERATOR_KEY,
-                          KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK), "removeCopy");
-        am.put("removeCopy", removeCopy);
-        removeCopy.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "togglePageBreak");
-        am.put("togglePageBreak", togglePageBreak);
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, 0), "removePageBreak");
-        am.put("removePageBreak", removePageBreak);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "removeRows");
-        am.put("removeRows", removeRows);
-        removeRows.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, InputEvent.CTRL_DOWN_MASK), "removeRowsWithLyrics");
-        am.put("removeRowsWithLyrics", removeRowsWithLyrics);
-        removeRowsWithLyrics.putValue(AbstractAction.ACCELERATOR_KEY,
-                                      KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_L, 0), "absolute");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_L, InputEvent.SHIFT_DOWN_MASK), "absolute");
-        am.put("absolute", absolute);
-        absolute.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_L, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.ALT_MASK), "fullscreen");
-        am.put("fullscreen", fullscreen);
-        fullscreen.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.ALT_MASK));
+        applyEditorShortcutBindings(im, am, getEditorGlobalShortcutBindings());
+        applyEditorShortcutBindings(im, am, getEditorNavigationShortcutBindings());
+        applyEditorShortcutBindings(im, am, getEditorClipboardShortcutBindings());
 
         // im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F12, // InputEvent.SHIFT_DOWN_MASK), // "playAll");
         // am.put("playAll", playAll);
@@ -10989,342 +11488,1441 @@ public class YassActions implements DropTargetListener {
         // playAllFromHere.putValue(AbstractAction.ACCELERATOR_KEY, // KeyStroke.getKeyStroke(KeyEvent.VK_F12, 0));
 
         // am.put("recordAll", recordAll);
+        applyEditorShortcutBindings(im, am, getEditorPlaybackShortcutBindings());
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK), "recordSelection");
-        am.put("recordSelection", recordSelection);
-        recordSelection.putValue(AbstractAction.ACCELERATOR_KEY,
-                                 KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK));
+        applyEditorShortcutBindings(im, am, getEditorToggleShortcutBindings());
+        applyEditorShortcutBindings(im, am, getEditorNoteTypeShortcutBindings());
+        applyEditorShortcutBindings(im, am, getEditorTrackShortcutBindings());
 
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.CTRL_DOWN_MASK), "playSlower");
-        am.put("playSlower", playSlower);
-        playSlower.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), "playSelection");
-        am.put("playSelection", playSelection);
-        playSelection.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK), "playSelectionWithMIDI");
-        am.put("playSelectionWithMIDI", playSelectionWithMIDI);
-        playSelectionWithMIDI.putValue(AbstractAction.ACCELERATOR_KEY,
-                                       KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_MASK),
-               "playSelectionWithMIDIAudio");
-        am.put("playSelectionWithMIDIAudio", playSelectionWithMIDIAudio);
-        playSelectionWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE,
-                                                                                                   InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
-               "addSpace");
-        am.put("addSpace", addSpace);
-        addSpace.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_SPACE,
-                                                                                 InputEvent.CTRL_DOWN_MASK |
-                                                                                         InputEvent.ALT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
-               "removeSpace");
-        am.put("removeSpace", removeSpace);
-        removeSpace.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE,
-                                                                                    InputEvent.CTRL_DOWN_MASK |
-                                                                                            InputEvent.ALT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, 0), "playPage");
-        am.put("playPage", playPage);
-        playPage.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_P, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.SHIFT_DOWN_MASK), "playPageWithMIDI");
-        am.put("playPageWithMIDI", playPageWithMIDI);
-        playPageWithMIDI.putValue(AbstractAction.ACCELERATOR_KEY,
-                                  KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK),
-               "playPageWithMIDIAudio");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK), "playPageWithMIDIAudio");
-        am.put("playPageWithMIDIAudio", playPageWithMIDIAudio);
-        playPageWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY,
-                                       KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK), "playPageWithMIDIAudio");
-        am.put("playPageWithMIDIAudio", playPageWithMIDIAudio);
-        playPageWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY,
-                                       KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_B, 0), "playBefore");
-        am.put("playNext", playBefore);
-        playBefore.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_B, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_N, 0), "playNext");
-        am.put("playNext", playNext);
-        playNext.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_N, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_V, 0), "showCopiedRows");
-        am.put("showCopiedRows", showCopiedRows);
-        showCopiedRows.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_V, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_C, 0), "playFrozen");
-        am.put("playFrozen", playFrozen);
-        playFrozen.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_C, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK), "playFrozenWithMIDI");
-        am.put("playFrozenWithMIDI", playFrozenWithMIDI);
-        playFrozenWithMIDI.putValue(AbstractAction.ACCELERATOR_KEY,
-                                    KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK),
-               "playFrozenWithMIDIAudio");
-        am.put("playFrozenWithMIDIAudio", playFrozenWithMIDIAudio);
-        playFrozenWithMIDIAudio.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_C,
-                                                                                                InputEvent.SHIFT_DOWN_MASK |
-                                                                                                        InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_B, InputEvent.CTRL_DOWN_MASK), "enableMidi");
-        am.put("enableMidi", enableMidi);
-        enableMidi.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_B, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK), "enableAudio");
-        am.put("enableAudio", enableAudio);
-        enableAudio.putValue(AbstractAction.ACCELERATOR_KEY,
-                             KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_W, InputEvent.CTRL_DOWN_MASK), "enableClicks");
-        am.put("enableClicks", enableClicks);
-        enableClicks.putValue(AbstractAction.ACCELERATOR_KEY,
-                              KeyStroke.getKeyStroke(KeyEvent.VK_W, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "interruptPlay");
-        am.put("interruptPlay", interruptPlay);
-        interruptPlay.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK), "undo");
-        am.put("undo", undo);
-        undo.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK), "redo");
-        am.put("redo", redo);
-        redo.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0), "splitRows");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, 0), "joinRows");
-        am.put("splitRows", splitRows);
-        am.put("joinRows", joinRows);
-        splitRows.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0));
-        joinRows.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.SHIFT_DOWN_MASK), "rollLeft");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_R, 0), "rollRight");
-        am.put("rollLeft", rollLeft);
-        am.put("rollRight", rollRight);
-        rollLeft.putValue(AbstractAction.ACCELERATOR_KEY,
-                          KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.SHIFT_DOWN_MASK));
-        rollRight.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_R, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_HOME, 0), "home");
-        am.put("home", home);
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_END, 0), "end");
-        am.put("end", end);
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_HOME, InputEvent.CTRL_DOWN_MASK), "first");
-        am.put("first", first);
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_END, InputEvent.CTRL_DOWN_MASK), "last");
-        am.put("last", last);
-
-        /*
-         * im.put(KeyStroke.getKeyStroke(KeyEvent.VK_L , InputEvent.CTRL_DOWN_MASK), * "lock"); am.put("lock",
-         * enableHyphenKeys);
-         * enableHyphenKeys.putValue(AbstractAction.ACCELERATOR_KEY, * KeyStroke.getKeyStroke(KeyEvent.VK_L,
-         * InputEvent.CTRL_DOWN_MASK));
-         */
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_G, 0), "golden");
-        am.put("golden", golden);
-        golden.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_G, 0));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F, 0), "freestyle");
-        am.put("freestyle", freestyle);
-        freestyle.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.SHIFT_DOWN_MASK), "rapgolden");
-        am.put("rapgolden", rapgolden);
-        rapgolden.putValue(AbstractAction.ACCELERATOR_KEY,
-                           KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.SHIFT_DOWN_MASK));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.SHIFT_DOWN_MASK), "rap");
-        am.put("rap", rap);
-        rap.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_N, InputEvent.SHIFT_DOWN_MASK), "standard");
-        am.put("standard", standard);
-        standard.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_N, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0), "addEndian");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_CIRCUMFLEX, 0), "addEndian");
-        im.put(KeyStroke.getKeyStroke("~"), "addEndian");
-        am.put("addEndian", addEndian);
-        addEndian.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UNDERSCORE, InputEvent.SHIFT_DOWN_MASK), "minus");
-        am.put("minus", minus);
-        minus.putValue(AbstractAction.ACCELERATOR_KEY,
-                       KeyStroke.getKeyStroke(KeyEvent.VK_UNDERSCORE, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.SHIFT_DOWN_MASK), "togglePreview");
-        am.put("togglePreview", togglePreview);
-        togglePreview.putValue(AbstractAction.ACCELERATOR_KEY,
-                               KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.SHIFT_DOWN_MASK));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, 0), "toggleMedleyStart");
-        am.put("toggleMedleyStart", toggleMedleyStart);
-        toggleMedleyStart.putValue(AbstractAction.ACCELERATOR_KEY,
-                                   KeyStroke.getKeyStroke(KeyEvent.VK_A, 0));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.SHIFT_DOWN_MASK), "toggleMedleyEnd");
-        am.put("toggleMedleyEnd", toggleMedleyEnd);
-        toggleMedleyEnd.putValue(AbstractAction.ACCELERATOR_KEY,
-                                 KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.SHIFT_DOWN_MASK));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_DOWN_MASK), "alignGrid");
-        am.put("alignGrid", alignToGrid);
-        alignToGrid.putValue(AbstractAction.ACCELERATOR_KEY,
-                             KeyStroke.getKeyStroke(KeyEvent.VK_G, InputEvent.CTRL_DOWN_MASK));
-
-        // umlaute not working
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_9, 0), "decGap");
-        am.put("decGap", decGap);
-        decGap.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_9, 0));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_0, 0), "incGap");
-        am.put("incGap", incGap);
-        incGap.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_0, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.SHIFT_DOWN_MASK), "decGap2");
-        am.put("decGap2", decGap2);
-        decGap2.putValue(AbstractAction.ACCELERATOR_KEY,
-                         KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.SHIFT_DOWN_MASK));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.SHIFT_DOWN_MASK), "incGap2");
-        am.put("incGap2", incGap2);
-        incGap2.putValue(AbstractAction.ACCELERATOR_KEY,
-                         KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK), "decBpm");
-        am.put("decBpm", decBpm);
-        decGap.putValue(AbstractAction.ACCELERATOR_KEY,
-                        KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK), "incBpm");
-        am.put("incBpm", incBpm);
-        incGap.putValue(AbstractAction.ACCELERATOR_KEY,
-                        KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "decBpm2");
-        am.put("decBpm2", decBpm2);
-        decGap2.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_MINUS,
-                                                                                InputEvent.CTRL_DOWN_MASK |
-                                                                                        InputEvent.SHIFT_DOWN_MASK));
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "incBpm2");
-        am.put("incBpm2", incBpm2);
-        incGap2.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_PLUS,
-                                                                                InputEvent.CTRL_DOWN_MASK |
-                                                                                        InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK), "selectLine");
-        am.put("selectLine", selectLine);
-        selectLine.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "selectAll");
-        am.put("selectAll", selectAll);
-        selectAll.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_A,
-                                                                                  InputEvent.CTRL_DOWN_MASK |
-                                                                                          InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "togglePageBreak");
-        am.put("togglePageBreak", togglePageBreak);
-        togglePageBreak.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_T, 0), "moveCursorDialog");
-        am.put("moveCursorDialog", moveCursorDialog);
-        moveCursorDialog.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_T, 0));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.SHIFT_DOWN_MASK), "moveRemainderDialog");
-        am.put("moveRemainderDialog", moveRemainderDialog);
-        moveRemainderDialog.putValue(AbstractAction.ACCELERATOR_KEY,
-                                     KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.SHIFT_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.CTRL_DOWN_MASK), "autoCorrectPageBreaks");
-        am.put("autoCorrectPageBreaks", autoCorrectPageBreaks);
-        autoCorrectPageBreaks.putValue(AbstractAction.ACCELERATOR_KEY,
-                                       KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK), "insertNote");
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK), "insertNote");
-        am.put("insertNote", insertNote);
-        insertNote.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK));
-        insertNote.putValue(AbstractAction.ACCELERATOR_KEY,
-                            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.CTRL_DOWN_MASK), "prevTrack");
-        am.put("prevTrack", activatePrevTrack);
-        activatePrevTrack.putValue(AbstractAction.ACCELERATOR_KEY,
-                                   KeyStroke.getKeyStroke(KeyEvent.VK_9, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK), "nextTrack");
-        am.put("nextTrack", activateNextTrack);
-        activateNextTrack.putValue(AbstractAction.ACCELERATOR_KEY,
-                                   KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_1, InputEvent.CTRL_DOWN_MASK), "track1");
-        am.put("track1", activateTrack1);
-        activateTrack1.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_1, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_2, InputEvent.CTRL_DOWN_MASK), "track2");
-        am.put("track2", activateTrack2);
-        activateTrack2.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_2, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_3, InputEvent.CTRL_DOWN_MASK), "track3");
-        am.put("track3", activateTrack3);
-        activateTrack3.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_3, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_4, InputEvent.CTRL_DOWN_MASK), "track4");
-        am.put("track4", activateTrack4);
-        activateTrack4.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_4, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_5, InputEvent.CTRL_DOWN_MASK), "track5");
-        am.put("track5", activateTrack5);
-        activateTrack5.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_5, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_6, InputEvent.CTRL_DOWN_MASK), "track6");
-        am.put("track6", activateTrack6);
-        activateTrack6.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_6, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_7, InputEvent.CTRL_DOWN_MASK), "track7");
-        am.put("track7", activateTrack7);
-        activateTrack7.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_7, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_8, InputEvent.CTRL_DOWN_MASK), "track8");
-        am.put("track8", activateTrack8);
-        activateTrack8.putValue(AbstractAction.ACCELERATOR_KEY,
-                                KeyStroke.getKeyStroke(KeyEvent.VK_8, InputEvent.CTRL_DOWN_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.ALT_MASK), "darkmode");
-        am.put("darkmode", darkmode);
-        darkmode.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.ALT_MASK));
-
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
-               "toggleCase");
-        am.put("toggleCase", toggleCase);
-        enableAudio.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(KeyEvent.VK_U,
-                                                                                    InputEvent.CTRL_DOWN_MASK |
-                                                                                            InputEvent.SHIFT_DOWN_MASK));
+        importEditorBindings(im, am);
+        bindEditorPressCountShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK),
+                2,
+                "selectCurrentWordUp",
+                ctx -> selectCurrentWordUp.actionPerformed(null));
+        bindEditorPressCountShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK),
+                3,
+                "selectToStartOfCurrentPage",
+                ctx -> selectToStartOfCurrentPage.actionPerformed(null));
+        bindEditorPressCountShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK),
+                2,
+                "selectCurrentWord",
+                ctx -> selectCurrentWord.actionPerformed(null));
+        bindEditorPressCountShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK),
+                3,
+                "selectToEndOfCurrentPage",
+                ctx -> selectToEndOfCurrentPage.actionPerformed(null));
     }
 
 
     public JFrame createOwnerFrame() {
         return new OwnerFrame();
+    }
+
+    public boolean loginToUsdb(String username, char[] password) {
+        try {
+            return usdbSessionService.login(username, password);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(getFrame(tab),
+                                          StringUtils.defaultIfBlank(ex.getMessage(), ex.toString()),
+                                          I18.get("lib_usdb_login"),
+                                          JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+    }
+
+    public boolean isUsdbCredentialStoreAvailable() {
+        return usdbCredentialStore.isAvailable();
+    }
+
+    public UsdbCookieBrowser getUsdbCookieBrowser() {
+        return UsdbCookieBrowser.fromProperty(prop.getProperty("usdb-cookie-browser"));
+    }
+
+    public void setUsdbCookieBrowser(UsdbCookieBrowser browser) {
+        prop.setProperty("usdb-cookie-browser", (browser == null ? UsdbCookieBrowser.NONE : browser).name());
+        prop.store();
+    }
+
+    public String loginToUsdbWithBrowserCookies(UsdbCookieBrowser browser) {
+        try {
+            return usdbSessionService.useBrowserCookies(browser);
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO, "USDB browser-cookie login failed for " + browser, ex);
+            if (browser == UsdbCookieBrowser.CHROME || browser == UsdbCookieBrowser.EDGE) {
+                return loginToUsdbWithPythonBrowserCookies(browser);
+            }
+            return null;
+        }
+    }
+
+    private String loginToUsdbWithPythonBrowserCookies(UsdbCookieBrowser browser) {
+        UsdbPythonCookieImporter importer = new UsdbPythonCookieImporter(
+                prop.getProperty(PythonRuntimeSupport.PROP_DEFAULT_PYTHON),
+                prop.getProperty("whisperx-python"),
+                prop.getProperty("audiosep-python"));
+        UsdbPythonCookieImporter.PythonCommand python = importer.detectPython();
+        if (python == null) {
+            LOGGER.info("USDB Python browser-cookie fallback skipped because no Python executable was found.");
+            return null;
+        }
+        if (!importer.hasBrowserCookie3(python)) {
+            int choice = JOptionPane.showConfirmDialog(getFrame(tab),
+                                                       I18.get("lib_usdb_cookie_python_install")
+                                                               .replace("{0}", browser.toString())
+                                                               .replace("{1}", python.display()),
+                                                       I18.get("lib_usdb_cookie_python_install_title"),
+                                                       JOptionPane.YES_NO_OPTION,
+                                                       JOptionPane.QUESTION_MESSAGE);
+            if (choice != JOptionPane.YES_OPTION) {
+                return null;
+            }
+            if (!importer.installBrowserCookie3(python) || !importer.hasBrowserCookie3(python)) {
+                JOptionPane.showMessageDialog(getFrame(tab),
+                                              I18.get("lib_usdb_cookie_python_install_failed"),
+                                              I18.get("lib_usdb_cookie_python_install_title"),
+                                              JOptionPane.WARNING_MESSAGE);
+                return null;
+            }
+        }
+        try {
+            return usdbSessionService.useImportedCookies(importer.loadCookies(browser, python));
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO, "USDB Python browser-cookie fallback failed for " + browser, ex);
+            return null;
+        }
+    }
+
+    public String getUsdbCredentialStoreName() {
+        return usdbCredentialStore.getStorageTypeName().orElse("");
+    }
+
+    public boolean isUsdbSyncerConfigured() {
+        return usdbSyncerBridge != null && usdbSyncerBridge.isConfigured();
+    }
+
+    public int refreshUsdbSyncerSongList() throws IOException {
+        if (usdbSyncerBridge == null) {
+            throw new IOException("USDB Syncer is not initialized.");
+        }
+        try {
+            return usdbSyncerBridge.refreshSongList();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("USDB Syncer refresh interrupted.", ex);
+        }
+    }
+
+    public String getUsdbStoredUsername() {
+        return StringUtils.trimToEmpty(prop.getProperty("usdb-username"));
+    }
+
+    public boolean shouldRememberUsdbPassword() {
+        return prop.getBooleanProperty("usdb-remember-password");
+    }
+
+    public boolean shouldAutoLoginUsdbOnStartup() {
+        return shouldRememberUsdbPassword() && getUsdbCookieBrowser() == UsdbCookieBrowser.FIREFOX;
+    }
+
+    public boolean hasUsdbStoredUsername() {
+        return StringUtils.isNotBlank(getUsdbStoredUsername());
+    }
+
+    public void autoLoginUsdbOnStartup() {
+        if (!shouldAutoLoginUsdbOnStartup()) {
+            return;
+        }
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() {
+                try {
+                    if (StringUtils.isNotBlank(usdbSessionService.getLoggedInUser())) {
+                        return null;
+                    }
+                    String cookieUser = loginToUsdbWithBrowserCookies(UsdbCookieBrowser.FIREFOX);
+                    if (StringUtils.isNotBlank(cookieUser)) {
+                        return null;
+                    }
+                    String username = getUsdbStoredUsername();
+                    char[] password = loadUsdbStoredPassword(username);
+                    if (StringUtils.isNotBlank(username) && password != null && password.length > 0) {
+                        try {
+                            loginToUsdb(username, password);
+                        } finally {
+                            Arrays.fill(password, '\0');
+                        }
+                    }
+                } catch (Exception ex) {
+                    LOGGER.log(Level.INFO, "USDB startup auto-login failed", ex);
+                }
+                return null;
+            }
+        };
+        worker.execute();
+    }
+
+    public char[] loadUsdbStoredPassword(String username) {
+        return usdbCredentialStore.loadPassword(username).orElse(null);
+    }
+
+    public void updateUsdbStoredCredentials(String username, char[] password, boolean rememberPassword) {
+        String trimmedUsername = StringUtils.trimToEmpty(username);
+        if (StringUtils.isNotBlank(trimmedUsername)) {
+            prop.setProperty("usdb-username", trimmedUsername);
+        } else {
+            prop.remove("usdb-username");
+        }
+        prop.setProperty("usdb-remember-password", Boolean.toString(rememberPassword));
+        try {
+            if (rememberPassword && StringUtils.isNotBlank(trimmedUsername) && password != null && password.length > 0) {
+                usdbCredentialStore.savePassword(trimmedUsername, password);
+            } else if (StringUtils.isNotBlank(trimmedUsername)) {
+                usdbCredentialStore.deletePassword(trimmedUsername);
+            }
+        } catch (UsdbCredentialStore.UsdbCredentialStoreException ex) {
+            JOptionPane.showMessageDialog(getFrame(tab),
+                                          StringUtils.defaultIfBlank(ex.getMessage(), ex.toString()),
+                                          I18.get("lib_usdb_login"),
+                                          JOptionPane.WARNING_MESSAGE);
+        }
+        prop.store();
+    }
+
+    public String getUsdbLoggedInUser() {
+        try {
+            return usdbSessionService.getLoggedInUser();
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO, "USDB login state could not be determined", ex);
+            return null;
+        }
+    }
+
+    public List<UsdbSongSummary> searchUsdbSongs(String artist, String title) throws IOException {
+        String trimmedArtist = StringUtils.trimToEmpty(artist);
+        String trimmedTitle = StringUtils.trimToEmpty(title);
+        boolean singleQueryMode = StringUtils.isNotBlank(trimmedArtist)
+                && StringUtils.isNotBlank(trimmedTitle)
+                && StringUtils.equalsIgnoreCase(trimmedArtist, trimmedTitle);
+        LOGGER.info("USDB search requested artist='" + trimmedArtist + "' title='" + trimmedTitle
+                + "' singleQueryMode=" + singleQueryMode);
+        if (usdbSyncerBridge != null && usdbSyncerBridge.isConfigured()) {
+            try {
+                List<UsdbSongSummary> localResults = usdbSyncerBridge.searchSongs(trimmedArtist, trimmedTitle, 500);
+                LOGGER.info("USDB search Syncer results=" + localResults.size()
+                        + " for artist='" + trimmedArtist + "' title='" + trimmedTitle + "'");
+                if (!localResults.isEmpty()) {
+                    return localResults;
+                }
+            } catch (IOException ex) {
+                LOGGER.log(Level.INFO, "USDB Syncer DB query failed; falling back to USDB website search.", ex);
+            }
+        } else {
+            LOGGER.info("USDB search Syncer not configured; using website search directly.");
+        }
+        try {
+            ensureUsdbLoggedIn();
+            if (!singleQueryMode) {
+                LOGGER.info("USDB search using combined website query.");
+                List<UsdbSongSummary> combinedResults = usdbClient.searchSongs(trimmedArtist, trimmedTitle);
+                if (!combinedResults.isEmpty()) {
+                    return combinedResults;
+                }
+                if (StringUtils.isNotBlank(trimmedArtist) && StringUtils.isNotBlank(trimmedTitle)) {
+                    LOGGER.info("USDB search combined website query returned 0 results; retrying with split queries.");
+                    LinkedHashMap<Integer, UsdbSongSummary> merged = new LinkedHashMap<>();
+                    for (UsdbSongSummary song : usdbClient.searchSongs(trimmedArtist, "")) {
+                        merged.put(song.songId(), song);
+                    }
+                    for (UsdbSongSummary song : usdbClient.searchSongs("", trimmedTitle)) {
+                        merged.put(song.songId(), song);
+                    }
+                    return new ArrayList<>(merged.values());
+                }
+                return combinedResults;
+            }
+            LOGGER.info("USDB search using split website query.");
+            LinkedHashMap<Integer, UsdbSongSummary> merged = new LinkedHashMap<>();
+            for (UsdbSongSummary song : usdbClient.searchSongs(trimmedArtist, "")) {
+                merged.put(song.songId(), song);
+            }
+            for (UsdbSongSummary song : usdbClient.searchSongs("", trimmedTitle)) {
+                merged.put(song.songId(), song);
+            }
+            return new ArrayList<>(merged.values());
+        } catch (IOException ex) {
+            throw ex;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("USDB search interrupted.", ex);
+        }
+    }
+
+    public UsdbSongDetails getUsdbSongDetails(int songId) throws IOException {
+        try {
+            ensureUsdbLoggedIn();
+            return usdbClient.getSongDetails(songId);
+        } catch (IOException ex) {
+            throw ex;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("USDB details request interrupted.", ex);
+        }
+    }
+
+    public void importUsdbSong(UsdbSongSummary summary) throws IOException {
+        importUsdbSong(summary, null);
+    }
+
+    public void importUsdbSong(UsdbSongSummary summary, Consumer<String> statusConsumer) throws IOException {
+        try {
+            ensureUsdbLoggedIn();
+            if (cancelOpen()) {
+                return;
+            }
+            UsdbSongImportService importService = new UsdbSongImportService(prop, usdbClient);
+            UsdbSongImportResult result = importService.importSong(getFrame(tab), summary, statusConsumer);
+            if (result == null) {
+                return;
+            }
+            refreshLibrary();
+        } catch (IOException ex) {
+            throw ex;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("USDB import interrupted.", ex);
+        }
+    }
+
+    public void enqueueUsdbSongImport(UsdbSongSummary summary,
+                                      boolean separateAfterImport,
+                                      UsdbImportConflictChoice conflictChoice) throws IOException {
+        try {
+            ensureUsdbLoggedIn();
+            getUsdbImportQueueService().enqueue(summary, separateAfterImport, conflictChoice);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("USDB import queue interrupted.", ex);
+        }
+    }
+
+    public void refreshImportedSongInLibrary(File songFile, boolean reloadThumbnail) {
+        if (songFile == null || songList == null || !songFile.isFile()) {
+            return;
+        }
+        String filterText = getCurrentLibraryFilterText();
+        Runnable task = () -> {
+            songList.upsertSongFromFile(songFile, reloadThumbnail);
+            reapplyLibraryFilter(filterText);
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            task.run();
+            return;
+        }
+        try {
+            SwingUtilities.invokeAndWait(task);
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Could not refresh imported song in library: " + songFile.getAbsolutePath(), ex);
+        }
+    }
+
+    private String getCurrentLibraryFilterText() {
+        if (filterEditor == null) {
+            return "";
+        }
+        String text = StringUtils.trimToEmpty(filterEditor.getText());
+        if (StringUtils.equals(text, I18.get("tool_lib_find_empty"))) {
+            return "";
+        }
+        return text;
+    }
+
+    private void reapplyLibraryFilter(String filterText) {
+        if (songList == null || currentView != VIEW_LIBRARY) {
+            return;
+        }
+        String text = StringUtils.trimToEmpty(filterText);
+        songList.filterLyrics(filterAll != null && filterAll.isSelected());
+        songInfo.setBold(text);
+        songList.filter(StringUtils.isBlank(text) ? null : text);
+    }
+
+    public void runQuietLocalSeparationForSongFile(String songFile, Consumer<String> statusConsumer) throws Exception {
+        if (StringUtils.isBlank(songFile)) {
+            return;
+        }
+        File songTextFile = new File(songFile);
+        if (!songTextFile.isFile()) {
+            throw new IOException("Song file not found: " + songFile);
+        }
+        YassTable localTable = new YassTable();
+        localTable.init(prop);
+        localTable.removeAllRows();
+        if (!localTable.loadFile(songFile)) {
+            throw new IOException("Song file could not be loaded: " + songFile);
+        }
+        SeparationResult result = runPreferredQuietSeparation(localTable, statusConsumer);
+        File vocalsFile = result.getVocalsFile();
+        if (vocalsFile != null) {
+            localTable.setVocals(vocalsFile.getName());
+        }
+        File preferredInstrumental = result.getPreferredInstrumentalFile(prop.getProperty("mvsep-instrumental-default"));
+        if (preferredInstrumental != null) {
+            localTable.setInstrumental(preferredInstrumental.getName());
+        }
+        localTable.storeFile(songFile);
+    }
+
+    private SeparationResult runPreferredQuietSeparation(YassTable table, Consumer<String> statusConsumer) throws Exception {
+        SeparationPreference preference = SeparationPreference.fromValue(prop.getProperty("separation-preference"));
+        boolean mvsepConfigured = hasMvsepApiToken();
+        boolean audioSepConfigured = hasConfiguredLocalSeparation();
+        List<SeparationService> candidates = new ArrayList<>();
+
+        switch (preference) {
+            case ONLINE_FIRST -> {
+                if (mvsepConfigured) {
+                    candidates.add(new MvsepSeparationService(prop));
+                }
+                if (audioSepConfigured) {
+                    candidates.add(new AudioSeparatorSeparationService(prop));
+                }
+            }
+            case MVSEP_ONLY -> {
+                if (mvsepConfigured) {
+                    candidates.add(new MvsepSeparationService(prop));
+                }
+            }
+            case AUDIO_SEP_ONLY -> {
+                if (audioSepConfigured) {
+                    candidates.add(new AudioSeparatorSeparationService(prop));
+                }
+            }
+            default -> {
+                if (audioSepConfigured) {
+                    candidates.add(new AudioSeparatorSeparationService(prop));
+                }
+                if (mvsepConfigured) {
+                    candidates.add(new MvsepSeparationService(prop));
+                }
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            throw new IOException(I18.get("create_lyrics_separate_transcribe_requires_mvsep"));
+        }
+
+        Exception lastFailure = null;
+        for (int i = 0; i < candidates.size(); i++) {
+            SeparationService candidate = candidates.get(i);
+            String engineName = candidate instanceof MvsepSeparationService ? "MVSEP" : "audio-separator";
+            if (statusConsumer != null) {
+                statusConsumer.accept("Audio-Separation: starting " + engineName + "...");
+            }
+            try {
+                SeparationRequest request = candidate.createRequest(table);
+                return candidate.startSeparation(request, status -> {
+                    if (statusConsumer != null && StringUtils.isNotBlank(status)) {
+                        statusConsumer.accept(status);
+                    }
+                });
+            } catch (Exception ex) {
+                lastFailure = ex;
+                LOGGER.log(Level.WARNING, "Quiet separation failed with " + engineName, ex);
+                boolean hasFallback = i + 1 < candidates.size();
+                if (statusConsumer != null) {
+                    statusConsumer.accept(hasFallback
+                            ? "Audio-Separation: " + engineName + " failed, trying fallback..."
+                            : "Audio-Separation: " + engineName + " failed.");
+                }
+            }
+        }
+        throw lastFailure != null ? lastFailure : new IOException("Audio separation failed.");
+    }
+
+    public void openUsdbSongInBrowser(int songId) {
+        openUsdbPageInBrowser("index.php?link=detail&id=" + songId, I18.get("lib_visit_usdb"));
+    }
+
+    public void openUsdbPageInBrowser(String relativePath) {
+        openUsdbPageInBrowser(relativePath, I18.get("lib_visit_usdb"));
+    }
+
+    private void openUsdbPageInBrowser(String relativePath, String dialogTitle) {
+        try {
+            String target = StringUtils.defaultIfBlank(relativePath, "");
+            if (!StringUtils.startsWithIgnoreCase(target, "http://")
+                    && !StringUtils.startsWithIgnoreCase(target, "https://")) {
+                target = "https://usdb.animux.de/" + StringUtils.removeStart(target, "/");
+            }
+            Desktop.getDesktop().browse(new URI(target));
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(getFrame(tab),
+                                          StringUtils.defaultIfBlank(ex.getMessage(), ex.toString()),
+                                          dialogTitle,
+                                          JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    public void compareAndSubmitUsdbSongEdit(String songFile) {
+        compareAndSubmitUsdbSongEdit(songFile, null);
+    }
+
+    public void compareAndSubmitUsdbSongEdit(String songFile, Integer forcedUsdbSongId) {
+        if (StringUtils.isBlank(songFile)) {
+            return;
+        }
+        SwingWorker<UsdbEditComparisonContext, Void> worker = new SwingWorker<>() {
+            @Override
+            protected UsdbEditComparisonContext doInBackground() throws Exception {
+                ensureUsdbLoggedIn();
+                if (!canDirectlyEditUsdbSongs()) {
+                    throw new IOException(I18.get("usdb_edit_not_allowed"));
+                }
+                Path songPath = Path.of(songFile);
+                Path songDirectory = songPath.getParent();
+                if (songDirectory == null) {
+                    throw new IOException("Song directory could not be determined.");
+                }
+                YassTable lookupTable = loadSongTableFromFile(songPath);
+                if (lookupTable == null) {
+                    throw new IOException("Song file could not be loaded.");
+                }
+                String localTxt = Files.readString(songPath, StandardCharsets.UTF_8)
+                        .replace("\r\n", "\n")
+                        .replace('\r', '\n');
+                int usdbSongId = forcedUsdbSongId != null && forcedUsdbSongId > 0
+                        ? forcedUsdbSongId
+                        : resolveUsdbSongIdForSongEdit(songPath, lookupTable);
+                if (usdbSongId <= 0) {
+                    int pendingSongId = resolvePendingUsdbSongIdForSongEdit(songPath, lookupTable);
+                    throw new UsdbCompareSearchRequiredException(songFile,
+                            StringUtils.trimToEmpty(lookupTable.getArtist()),
+                            StringUtils.trimToEmpty(lookupTable.getTitle()),
+                            pendingSongId);
+                }
+                UsdbSongEditService service = new UsdbSongEditService(usdbSessionService);
+                UsdbSongEditService.UsdbEditableSong editableSong = service.loadEditableSong(usdbSongId);
+                MergedUsdbEditText mergedLocalTxt = mergeUsdbAndLocalSongText(editableSong.remoteTxt(), localTxt);
+                return new UsdbEditComparisonContext(editableSong, songFile, localTxt, mergedLocalTxt);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    UsdbEditComparisonContext context = get();
+                    String songName = StringUtils.defaultIfBlank(context.editableSong().title(), Path.of(songFile).getFileName().toString());
+                    UsdbSongEditDiffDialog dialog = new UsdbSongEditDiffDialog(getFrame(tab),
+                            songName,
+                            context.editableSong().remoteTxt(),
+                            context.mergedText().text(),
+                            context.mergedText().appendedLineIndexes(),
+                            context.mergedText().appendedTags());
+                    UsdbSongEditDiffDialog.Result result = dialog.showDialog();
+                    if (result == null) {
+                        return;
+                    }
+                    if (result.action() == UsdbSongEditDiffDialog.Action.SAVE_LOCAL) {
+                        saveUsdbEditLocally(context.songFile(), context.editableSong().songId(), context.originalLocalText(), result.submittedText());
+                    } else {
+                        submitUsdbSongEdit(context.songFile(), context.editableSong(), result.submittedText());
+                    }
+                } catch (Exception ex) {
+                    Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                    if (root instanceof UsdbCompareSearchRequiredException required) {
+                        if (required.pendingSongId() > 0) {
+                            reviewPendingUsdbSong(required.songFile(), required.pendingSongId());
+                            return;
+                        }
+                        openCompareUsdbSearchDialog(required.songFile(), required.artist(), required.title());
+                        return;
+                    }
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            StringUtils.defaultIfBlank(root.getMessage(), root.toString()),
+                            I18.get("usdb_edit_compare"),
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void submitUsdbSongEdit(String songFile, UsdbSongEditService.UsdbEditableSong editableSong, String submittedText) {
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                ensureUsdbLoggedIn();
+                if (!canDirectlyEditUsdbSongs()) {
+                    throw new IOException(I18.get("usdb_edit_not_allowed"));
+                }
+                UsdbSongEditService service = new UsdbSongEditService(usdbSessionService);
+                service.submitSongUpdate(editableSong, submittedText);
+                ensureUsdbMetaFileExists(songFile, editableSong.songId());
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    get();
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            I18.get("usdb_edit_submit_success"),
+                            I18.get("usdb_edit_compare"),
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            StringUtils.defaultIfBlank(root.getMessage(), root.toString()),
+                            I18.get("usdb_edit_submit"),
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    public void reviewPendingUsdbSong(String songFile, int pendingSongId) {
+        if (StringUtils.isBlank(songFile) || pendingSongId <= 0) {
+            return;
+        }
+        SwingWorker<UsdbPendingComparisonContext, Void> worker = new SwingWorker<>() {
+            @Override
+            protected UsdbPendingComparisonContext doInBackground() throws Exception {
+                return loadPendingComparisonContext(songFile, pendingSongId);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    UsdbPendingComparisonContext context = get();
+                    String songName = StringUtils.defaultIfBlank(context.pendingSong().title(), Path.of(songFile).getFileName().toString());
+                    UsdbSongEditDiffDialog dialog = new UsdbSongEditDiffDialog(getFrame(tab),
+                            songName,
+                            context.pendingSong().remoteTxt(),
+                            context.mergedText().text(),
+                            context.mergedText().appendedLineIndexes(),
+                            context.mergedText().appendedTags(),
+                            context.pendingSong().submitSongId() > 0);
+                    dialog.setActionHandler((action, submittedText, sourceDialog) ->
+                            handlePendingDialogAction(context.songFile(), context.pendingSong().songId(), action, submittedText, sourceDialog));
+                    UsdbSongEditDiffDialog.Result result = dialog.showDialog();
+                    if (result == null) {
+                        return;
+                    }
+                } catch (Exception ex) {
+                    Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            StringUtils.defaultIfBlank(root.getMessage(), root.toString()),
+                            I18.get("usdb_edit_compare"),
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private UsdbPendingComparisonContext loadPendingComparisonContext(String songFile, int pendingSongId) throws Exception {
+        ensureUsdbLoggedIn();
+        Path songPath = Path.of(songFile);
+        String localTxt = Files.readString(songPath, StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+        UsdbPendingSongService service = new UsdbPendingSongService(usdbSessionService);
+        UsdbPendingSongService.PendingSong pendingSong = service.loadPendingSong(pendingSongId);
+        MergedUsdbEditText mergedLocalTxt = mergeUsdbAndLocalSongText(pendingSong.remoteTxt(), localTxt);
+        return new UsdbPendingComparisonContext(pendingSong, songFile, localTxt, mergedLocalTxt);
+    }
+
+    private UsdbPendingComparisonContext completePendingVerificationAndFinalize(String songFile,
+                                                                               UsdbPendingSongService.PendingSong pendingSong,
+                                                                               String submittedText) throws Exception {
+        ensureUsdbLoggedIn();
+        LOGGER.info("USDB pending verification finalize start for songFile=" + songFile
+                + ", pendingSongId=" + pendingSong.songId());
+        UsdbPendingSongService pendingService = new UsdbPendingSongService(usdbSessionService);
+        pendingService.submitPendingSongUpdate(pendingSong, submittedText);
+        pendingService.completeVerification(pendingSong);
+
+        int finalSongId = resolvePublishedUsdbSongIdForSongFile(songFile, 5, 1000L);
+        LOGGER.info("USDB pending verification finalize resolved finalSongId=" + finalSongId
+                + " for songFile=" + songFile);
+        if (finalSongId > 0) {
+            ensureUsdbMetaFileExists(songFile, finalSongId);
+            updatePublishedSongMediaInputs(songFile, finalSongId);
+        }
+        return new UsdbPendingComparisonContext(
+                new UsdbPendingSongService.PendingSong(finalSongId, "", "", "", Map.of(), 0),
+                songFile,
+                "",
+                new MergedUsdbEditText("", "", List.of(), List.of()));
+    }
+
+    private int resolvePublishedUsdbSongIdForSongFile(String songFile, int attempts, long delayMillis)
+            throws IOException, InterruptedException {
+        Path songPath = Path.of(songFile);
+        YassTable lookupTable = loadSongTableFromFile(songPath);
+        if (lookupTable == null) {
+            return 0;
+        }
+        String artist = StringUtils.trimToEmpty(lookupTable.getArtist());
+        String title = StringUtils.trimToEmpty(lookupTable.getTitle());
+        if (StringUtils.isBlank(artist) || StringUtils.isBlank(title)) {
+            return 0;
+        }
+        int maxAttempts = Math.max(1, attempts);
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            int songId = findPublishedUsdbSongIdByArtistTitle(artist, title);
+            if (songId > 0) {
+                return songId;
+            }
+            if (attempt + 1 < maxAttempts && delayMillis > 0) {
+                Thread.sleep(delayMillis);
+            }
+        }
+        return 0;
+    }
+
+    private int findPublishedUsdbSongIdByArtistTitle(String artist, String title) throws IOException {
+        LOGGER.info("USDB final publish lookup artist='" + artist + "' title='" + title + "'");
+        List<UsdbSongSummary> results = searchUsdbSongs(artist, title);
+        LOGGER.info("USDB final publish lookup results=" + results.size()
+                + " for artist='" + artist + "' title='" + title + "'");
+        String normalizedArtist = YassSearchNormalizer.normalizeForSearch(artist);
+        String normalizedTitle = YassSearchNormalizer.normalizeForSearch(title);
+        for (UsdbSongSummary song : results) {
+            if (StringUtils.equals(YassSearchNormalizer.normalizeForSearch(song.artist()), normalizedArtist)
+                    && StringUtils.equals(YassSearchNormalizer.normalizeForSearch(song.title()), normalizedTitle)) {
+                LOGGER.info("USDB final publish lookup matched songId=" + song.songId()
+                        + " artist='" + song.artist() + "' title='" + song.title() + "'");
+                return song.songId();
+            }
+        }
+        LOGGER.info("USDB final publish lookup found no exact match for artist='" + artist + "' title='" + title + "'");
+        return 0;
+    }
+
+    private void updatePublishedSongMediaInputs(String songFile, int usdbSongId) throws IOException, InterruptedException {
+        if (StringUtils.isBlank(songFile) || usdbSongId <= 0) {
+            return;
+        }
+        YassTable table = loadSongTableFromFile(Path.of(songFile));
+        if (table == null) {
+            return;
+        }
+        UsdbMetaTagParser.UsdbParsedMetaTags parsedMetaTags = UsdbMetaTagParser.parse(table.getVideo());
+        String coverUrl = parsedMetaTags.get("co");
+        String youtubeId = StringUtils.firstNonBlank(parsedMetaTags.get("v"), parsedMetaTags.get("a"));
+        LOGGER.info("USDB final publish media follow-up for songId=" + usdbSongId
+                + ", coverUrl=" + StringUtils.defaultIfBlank(coverUrl, "<empty>")
+                + ", youtubeId=" + StringUtils.defaultIfBlank(youtubeId, "<empty>"));
+        UsdbSongEditService editService = new UsdbSongEditService(usdbSessionService);
+        UsdbSongEditService.UsdbEditableSong editableSong = editService.loadEditableSong(usdbSongId);
+        boolean mediaUpdated = editService.submitSongMediaInputsIfMissing(editableSong, coverUrl, "");
+        boolean commentUpdated = new UsdbSongCommentService(usdbSessionService).submitYoutubeCommentIfMissing(usdbSongId, youtubeId);
+        LOGGER.info("USDB final publish media follow-up finished for songId=" + usdbSongId
+                + ", mediaUpdated=" + mediaUpdated + ", commentUpdated=" + commentUpdated);
+    }
+
+    private void handlePendingDialogAction(String songFile,
+                                           int pendingSongId,
+                                           UsdbSongEditDiffDialog.Action action,
+                                           String submittedText,
+                                           UsdbSongEditDiffDialog dialog) {
+        dialog.setBusy(true);
+        SwingWorker<UsdbPendingComparisonContext, Void> worker = new SwingWorker<>() {
+            @Override
+            protected UsdbPendingComparisonContext doInBackground() throws Exception {
+                UsdbPendingComparisonContext context = loadPendingComparisonContext(songFile, pendingSongId);
+                if (action == UsdbSongEditDiffDialog.Action.SAVE_LOCAL) {
+                    saveUsdbEditLocally(context.songFile(), 0, context.originalLocalText(), submittedText, false);
+                    return loadPendingComparisonContext(songFile, pendingSongId);
+                }
+                if (action == UsdbSongEditDiffDialog.Action.COMPLETE_VERIFICATION) {
+                    return completePendingVerificationAndFinalize(context.songFile(), context.pendingSong(), submittedText);
+                }
+                UsdbPendingSongService service = new UsdbPendingSongService(usdbSessionService);
+                service.submitPendingSongUpdate(context.pendingSong(), submittedText);
+                return loadPendingComparisonContext(songFile, pendingSongId);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    UsdbPendingComparisonContext refreshed = get();
+                    if (action == UsdbSongEditDiffDialog.Action.COMPLETE_VERIFICATION) {
+                        String successMessage = I18.get("usdb_pending_complete_verification_success");
+                        if (refreshed != null && refreshed.pendingSong().songId() > 0) {
+                            successMessage += " (ID: " + refreshed.pendingSong().songId() + ")";
+                        }
+                        JOptionPane.showMessageDialog(getFrame(tab),
+                                successMessage,
+                                I18.get("usdb_edit_compare"),
+                                JOptionPane.INFORMATION_MESSAGE);
+                        dialog.dispose();
+                        return;
+                    }
+                    if (refreshed != null) {
+                        dialog.reloadTexts(refreshed.pendingSong().remoteTxt(),
+                                refreshed.mergedText().text(),
+                                refreshed.mergedText().appendedLineIndexes(),
+                                refreshed.mergedText().appendedTags());
+                    }
+                } catch (Exception ex) {
+                    Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            StringUtils.defaultIfBlank(root.getMessage(), root.toString()),
+                            action == UsdbSongEditDiffDialog.Action.COMPLETE_VERIFICATION
+                                    ? I18.get("usdb_pending_complete_verification")
+                                    : I18.get("usdb_edit_submit"),
+                            JOptionPane.ERROR_MESSAGE);
+                } finally {
+                    if (dialog.isDisplayable()) {
+                        dialog.setBusy(false);
+                    }
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void completePendingUsdbVerification(String songFile,
+                                                 UsdbPendingSongService.PendingSong pendingSong,
+                                                 String submittedText) {
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                ensureUsdbLoggedIn();
+                UsdbPendingSongService service = new UsdbPendingSongService(usdbSessionService);
+                service.submitPendingSongUpdate(pendingSong, submittedText);
+                service.completeVerification(pendingSong);
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    get();
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            I18.get("usdb_pending_complete_verification_success"),
+                            I18.get("usdb_edit_compare"),
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            StringUtils.defaultIfBlank(root.getMessage(), root.toString()),
+                            I18.get("usdb_pending_complete_verification"),
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void submitPendingUsdbSongEdit(String songFile,
+                                           UsdbPendingSongService.PendingSong pendingSong,
+                                           String submittedText) {
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                ensureUsdbLoggedIn();
+                UsdbPendingSongService service = new UsdbPendingSongService(usdbSessionService);
+                service.submitPendingSongUpdate(pendingSong, submittedText);
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    get();
+                    reviewPendingUsdbSong(songFile, pendingSong.songId());
+                } catch (Exception ex) {
+                    Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            StringUtils.defaultIfBlank(root.getMessage(), root.toString()),
+                            I18.get("usdb_edit_submit"),
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void saveUsdbEditLocally(String songFile, int usdbSongId, String originalLocalText, String submittedText) throws IOException {
+        saveUsdbEditLocally(songFile, usdbSongId, originalLocalText, submittedText, true);
+    }
+
+    private void saveUsdbEditLocally(String songFile,
+                                     int usdbSongId,
+                                     String originalLocalText,
+                                     String submittedText,
+                                     boolean showSuccessMessage) throws IOException {
+        List<String> originalLines = splitSongTextLines(originalLocalText);
+        List<String> submittedLines = splitSongTextLines(submittedText);
+        int originalBodyIndex = firstBodyLineIndex(originalLines);
+        int submittedBodyIndex = firstBodyLineIndex(submittedLines);
+
+        List<String> mergedLocal = new ArrayList<>();
+        Set<String> writtenTags = new LinkedHashSet<>();
+        for (int i = 0; i < originalBodyIndex; i++) {
+            String originalLine = originalLines.get(i);
+            String tag = extractHeaderTag(originalLine);
+            if (StringUtils.isNotBlank(tag) && isLocallyOverwritableUsdbEditTag(tag)) {
+                String replacement = findHeaderLineByTag(submittedLines, submittedBodyIndex, tag);
+                if (StringUtils.isNotBlank(replacement)) {
+                    mergedLocal.add(replacement);
+                    writtenTags.add(tag);
+                    continue;
+                }
+            }
+            mergedLocal.add(originalLine);
+            if (StringUtils.isNotBlank(tag)) {
+                writtenTags.add(tag);
+            }
+        }
+
+        for (int i = 0; i < submittedBodyIndex; i++) {
+            String submittedLine = submittedLines.get(i);
+            String tag = extractHeaderTag(submittedLine);
+            if (StringUtils.isNotBlank(tag) && isLocallyOverwritableUsdbEditTag(tag) && !writtenTags.contains(tag)) {
+                mergedLocal.add(submittedLine);
+                writtenTags.add(tag);
+            }
+        }
+
+        for (int i = submittedBodyIndex; i < submittedLines.size(); i++) {
+            mergedLocal.add(submittedLines.get(i));
+        }
+
+        Files.writeString(Path.of(songFile), String.join("\n", mergedLocal), StandardCharsets.UTF_8);
+        ensureUsdbMetaFileExists(songFile, usdbSongId);
+        refreshImportedSongInLibrary(new File(songFile), true);
+        if (showSuccessMessage) {
+            JOptionPane.showMessageDialog(getFrame(tab),
+                    I18.get("usdb_edit_save_local_success"),
+                    I18.get("usdb_edit_compare"),
+                    JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    private boolean isLocallyOverwritableUsdbEditTag(String tag) {
+        return switch (StringUtils.upperCase(tag)) {
+            case "GAP", "BPM", "VIDEOGAP", "YEAR", "GENRE", "START", "END", "LANGUAGE", "EDITION", "ALBUM", "CREATOR" -> true;
+            default -> false;
+        };
+    }
+
+    private String findHeaderLineByTag(List<String> lines, int bodyIndex, String tag) {
+        for (int i = 0; i < bodyIndex; i++) {
+            String line = lines.get(i);
+            if (StringUtils.equals(extractHeaderTag(line), tag)) {
+                return line;
+            }
+        }
+        return "";
+    }
+
+    private void ensureUsdbMetaFileExists(String songFile, int usdbSongId) throws IOException {
+        if (StringUtils.isBlank(songFile) || usdbSongId <= 0) {
+            return;
+        }
+        Path songPath = Path.of(songFile);
+        Path songDirectory = songPath.getParent();
+        if (songDirectory == null || !Files.isDirectory(songDirectory)) {
+            return;
+        }
+
+        List<Path> usdbFiles;
+        try (var files = Files.list(songDirectory)) {
+            usdbFiles = files
+                    .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".usdb"))
+                    .collect(Collectors.toList());
+        }
+
+        if (!usdbFiles.isEmpty()) {
+            boolean updatedAny = false;
+            for (Path usdbFile : usdbFiles) {
+                updatedAny |= updateUsdbMetaFile(usdbFile, songPath, usdbSongId);
+            }
+            if (updatedAny) {
+                return;
+            }
+        }
+
+        UsdbSyncerMetaFile metaFile = new UsdbSyncerMetaFile();
+        metaFile.setSongId(usdbSongId);
+        metaFile.setPinned(false);
+        metaFile.setVersion(1);
+        metaFile.setTxt(createUsdbMetaResource(songPath, "https://usdb.animux.de/?link=gettxt&id=" + usdbSongId));
+
+        Path targetFile = songDirectory.resolve(UUID.randomUUID().toString().replace("-", "") + ".usdb");
+        Files.writeString(targetFile, USDB_META_GSON.toJson(metaFile), StandardCharsets.UTF_8);
+    }
+
+    private boolean updateUsdbMetaFile(Path usdbFile, Path songPath, int usdbSongId) throws IOException {
+        if (usdbFile == null || !Files.exists(usdbFile)) {
+            return false;
+        }
+        try {
+            UsdbSyncerMetaFile metaFile = USDB_META_GSON.fromJson(Files.readString(usdbFile, StandardCharsets.UTF_8), UsdbSyncerMetaFile.class);
+            if (metaFile == null) {
+                return false;
+            }
+            metaFile.setSongId(usdbSongId);
+            metaFile.setTxt(createUsdbMetaResource(songPath, "https://usdb.animux.de/?link=gettxt&id=" + usdbSongId));
+            if (metaFile.getVersion() <= 0) {
+                metaFile.setVersion(1);
+            }
+            Files.writeString(usdbFile, USDB_META_GSON.toJson(metaFile), StandardCharsets.UTF_8);
+            return true;
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    private UsdbFile createUsdbMetaResource(Path file, String resource) throws IOException {
+        if (file == null || !Files.exists(file) || StringUtils.isBlank(resource)) {
+            return null;
+        }
+        UsdbFile usdbFile = new UsdbFile();
+        usdbFile.setFname(file.getFileName().toString());
+        usdbFile.setResource(resource);
+        usdbFile.setMtime(java.math.BigDecimal.valueOf(Files.getLastModifiedTime(file).toMillis() * 1000L));
+        return usdbFile;
+    }
+
+    private record UsdbEditComparisonContext(UsdbSongEditService.UsdbEditableSong editableSong,
+                                             String songFile,
+                                             String originalLocalText,
+                                             MergedUsdbEditText mergedText) {
+    }
+
+    private record UsdbPendingComparisonContext(UsdbPendingSongService.PendingSong pendingSong,
+                                                String songFile,
+                                                String originalLocalText,
+                                                MergedUsdbEditText mergedText) {
+    }
+
+    private static final class UsdbCompareSearchRequiredException extends IOException {
+        private final String songFile;
+        private final String artist;
+        private final String title;
+        private final int pendingSongId;
+
+        private UsdbCompareSearchRequiredException(String songFile, String artist, String title, int pendingSongId) {
+            super(I18.get("usdb_edit_missing_meta"));
+            this.songFile = songFile;
+            this.artist = artist;
+            this.title = title;
+            this.pendingSongId = pendingSongId;
+        }
+
+        private String songFile() {
+            return songFile;
+        }
+
+        private String artist() {
+            return artist;
+        }
+
+        private String title() {
+            return title;
+        }
+
+        private int pendingSongId() {
+            return pendingSongId;
+        }
+    }
+
+    private MergedUsdbEditText mergeUsdbAndLocalSongText(String usdbText, String localText) {
+        List<String> remoteLines = splitSongTextLines(usdbText);
+        List<String> localLines = splitSongTextLines(localText);
+
+        int remoteBodyIndex = firstBodyLineIndex(remoteLines);
+        int localBodyIndex = firstBodyLineIndex(localLines);
+
+        Map<String, String> localHeaderByTag = new LinkedHashMap<>();
+        for (int i = 0; i < localBodyIndex; i++) {
+            String line = localLines.get(i);
+            String tag = extractHeaderTag(line);
+            if (StringUtils.isNotBlank(tag)) {
+                localHeaderByTag.put(tag, line);
+            }
+        }
+
+        List<String> displayedUsdb = new ArrayList<>();
+        List<String> merged = new ArrayList<>();
+        List<Integer> appendedLineIndexes = new ArrayList<>();
+        List<String> appendedTags = new ArrayList<>();
+        Set<String> remoteHeaderTags = new LinkedHashSet<>();
+        for (int i = 0; i < remoteBodyIndex; i++) {
+            String remoteLine = remoteLines.get(i);
+            String tag = extractHeaderTag(remoteLine);
+            if (StringUtils.equals(tag, "VIDEO")) {
+                String mergedVideoLine = mergeUsdbVideoLine(remoteLine, localHeaderByTag);
+                displayedUsdb.add(mergedVideoLine);
+                merged.add(mergedVideoLine);
+                remoteHeaderTags.add("VIDEO");
+                remoteHeaderTags.addAll(extractSyntheticUsdbVideoMetaTags(mergedVideoLine));
+                continue;
+            }
+            if (StringUtils.isNotBlank(tag)) {
+                remoteHeaderTags.add(tag);
+                displayedUsdb.add(remoteLine);
+                String localLine = localHeaderByTag.get(tag);
+                if (StringUtils.isNotBlank(localLine) && !isIgnoredLocalUsdbEditTag(tag)) {
+                    merged.add(localLine);
+                    continue;
+                }
+                if (isIgnoredLocalUsdbEditTag(tag)) {
+                    merged.add(remoteLine);
+                }
+                continue;
+            } else {
+                displayedUsdb.add(remoteLine);
+            }
+            merged.add(remoteLine);
+        }
+
+        for (int i = 0; i < localBodyIndex; i++) {
+            String line = localLines.get(i);
+            String tag = extractHeaderTag(line);
+            if (StringUtils.isBlank(tag) || isIgnoredLocalUsdbEditTag(tag) || remoteHeaderTags.contains(tag)) {
+                continue;
+            }
+            appendedLineIndexes.add(merged.size());
+            appendedTags.add(tag);
+            merged.add(line);
+        }
+
+        for (int i = remoteBodyIndex; i < remoteLines.size(); i++) {
+            displayedUsdb.add(remoteLines.get(i));
+        }
+        for (int i = localBodyIndex; i < localLines.size(); i++) {
+            merged.add(localLines.get(i));
+        }
+        return new MergedUsdbEditText(String.join("\n", displayedUsdb),
+                String.join("\n", merged),
+                appendedLineIndexes,
+                appendedTags);
+    }
+
+    private List<String> splitSongTextLines(String text) {
+        String normalized = StringUtils.defaultString(text).replace("\r\n", "\n").replace('\r', '\n');
+        return Arrays.asList(normalized.split("\n", -1));
+    }
+
+    private int resolveUsdbSongIdForSongEdit(Path songPath, YassTable lookupTable) throws IOException, InterruptedException {
+        Path songDirectory = songPath.getParent();
+        if (songDirectory != null) {
+            UsdbSyncerMetaFileLoader loader = new UsdbSyncerMetaFileLoader(songDirectory.toString());
+            UsdbSyncerMetaFile metaFile = loader.getMetaFile();
+            if (metaFile != null && metaFile.getSongId() > 0) {
+                return metaFile.getSongId();
+            }
+        }
+
+        if (lookupTable == null) {
+            return 0;
+        }
+        String artist = StringUtils.trimToEmpty(lookupTable.getArtist());
+        String title = StringUtils.trimToEmpty(lookupTable.getTitle());
+        if (StringUtils.isBlank(artist) || StringUtils.isBlank(title)) {
+            return 0;
+        }
+
+        List<UsdbSongSummary> results = searchUsdbSongs(artist, title);
+        for (UsdbSongSummary song : results) {
+            if (StringUtils.equals(YassSearchNormalizer.normalizeForSearch(song.artist()), YassSearchNormalizer.normalizeForSearch(artist))
+                    && StringUtils.equals(YassSearchNormalizer.normalizeForSearch(song.title()), YassSearchNormalizer.normalizeForSearch(title))) {
+                return song.songId();
+            }
+        }
+        return 0;
+    }
+
+    private int resolvePendingUsdbSongIdForSongEdit(Path songPath, YassTable lookupTable) throws IOException, InterruptedException {
+        if (lookupTable == null) {
+            return 0;
+        }
+        String artist = StringUtils.trimToEmpty(lookupTable.getArtist());
+        String title = StringUtils.trimToEmpty(lookupTable.getTitle());
+        if (StringUtils.isBlank(artist) || StringUtils.isBlank(title)) {
+            return 0;
+        }
+        UsdbSongAddService addService = new UsdbSongAddService(usdbSessionService);
+        return addService.findPendingSongId(artist, title);
+    }
+
+    private YassTable loadSongTableFromFile(Path songPath) {
+        if (songPath == null) {
+            return null;
+        }
+        YassTable lookupTable = new YassTable();
+        lookupTable.init(prop);
+        lookupTable.removeAllRows();
+        if (!lookupTable.loadFile(songPath.toString())) {
+            return null;
+        }
+        return lookupTable;
+    }
+
+    private void openCompareUsdbSearchDialog(String songFile, String artist, String title) {
+        LOGGER.info("Opening compare USDB search dialog for songFile=" + songFile
+                + ", artist='" + StringUtils.trimToEmpty(artist)
+                + "', title='" + StringUtils.trimToEmpty(title) + "'");
+        UsdbSearchDialog dialog = new UsdbSearchDialog(this,
+                new UsdbSearchDialog.CompareContext(songFile,
+                        StringUtils.trimToEmpty(artist),
+                        StringUtils.trimToEmpty(title)));
+        dialog.prefillFromSearchTerm(StringUtils.joinWith(" ",
+                StringUtils.trimToNull(artist),
+                StringUtils.trimToNull(title)));
+        dialog.runSearchNow();
+        dialog.setVisible(true);
+    }
+
+    public void openCreateSyncerTagsForSongFile(String songFile) throws IOException {
+        if (StringUtils.isBlank(songFile) || songList == null) {
+            return;
+        }
+        YassTable lookupTable = loadSongTableFromFile(Path.of(songFile));
+        if (lookupTable == null) {
+            throw new IOException("Song file could not be loaded.");
+        }
+        if (songList.gotoSong(lookupTable) == null) {
+            throw new IOException("Song could not be selected in the library.");
+        }
+        new UsdbSyncerMetaTagCreator(this);
+    }
+
+    public UsdbSongAddService.AddSongResult addSongToUsdb(String songFile) throws IOException {
+        if (StringUtils.isBlank(songFile)) {
+            throw new IOException("Song file missing.");
+        }
+        try {
+            LOGGER.info("USDB add-song requested for songFile=" + songFile);
+            ensureUsdbLoggedIn();
+            YassTable songTable = loadSongTableFromFile(Path.of(songFile));
+            if (songTable == null) {
+                throw new IOException("Song file could not be loaded.");
+            }
+            LOGGER.info("USDB add-song local song resolved artist='" + StringUtils.trimToEmpty(songTable.getArtist())
+                    + "' title='" + StringUtils.trimToEmpty(songTable.getTitle()) + "'");
+            UsdbSongAddService addService = new UsdbSongAddService(usdbSessionService);
+            UsdbSongAddService.AddSongResult result = addService.submitSong(new UsdbSongAddService.LocalSongData(
+                    StringUtils.trimToEmpty(songTable.getArtist()),
+                    StringUtils.trimToEmpty(songTable.getTitle()),
+                    Path.of(songFile)));
+            LOGGER.info("USDB add-song completed for songFile=" + songFile
+                    + " verifySongId=" + result.verifySongId()
+                    + " submitSongId=" + result.submitSongId());
+            return result;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("USDB add-song request interrupted.", ex);
+        }
+    }
+
+    private int firstBodyLineIndex(List<String> lines) {
+        for (int i = 0; i < lines.size(); i++) {
+            if (!StringUtils.trimToEmpty(lines.get(i)).startsWith("#")) {
+                return i;
+            }
+        }
+        return lines.size();
+    }
+
+    private String extractHeaderTag(String line) {
+        String trimmed = StringUtils.trimToEmpty(line);
+        if (!trimmed.startsWith("#")) {
+            return "";
+        }
+        int colon = trimmed.indexOf(':');
+        if (colon <= 1) {
+            return "";
+        }
+        return canonicalizeHeaderTag(trimmed.substring(1, colon));
+    }
+
+    private Set<String> extractSyntheticUsdbVideoMetaTags(String videoLine) {
+        Set<String> tags = new LinkedHashSet<>();
+        String line = StringUtils.trimToEmpty(videoLine);
+        if (!StringUtils.startsWithIgnoreCase(line, "#VIDEO:")) {
+            return tags;
+        }
+        UsdbMetaTagParser.UsdbParsedMetaTags parsed = UsdbMetaTagParser.parse(line.substring(7));
+        if (StringUtils.isNotBlank(parsed.get("preview"))) {
+            tags.add("PREVIEWSTART");
+        }
+        if (StringUtils.isNotBlank(parsed.get("medley"))
+                || StringUtils.isNotBlank(parsed.get("medley-start"))
+                || StringUtils.isNotBlank(parsed.get("medley-end"))) {
+            tags.add("MEDLEYSTARTBEAT");
+            tags.add("MEDLEYENDBEAT");
+        }
+        if (StringUtils.isNotBlank(parsed.get("p1"))) {
+            tags.add("DUETSINGERP1");
+        }
+        if (StringUtils.isNotBlank(parsed.get("p2"))) {
+            tags.add("DUETSINGERP2");
+        }
+        return tags;
+    }
+
+    private String mergeUsdbVideoLine(String remoteVideoLine, Map<String, String> localHeaderByTag) {
+        if (!StringUtils.startsWithIgnoreCase(StringUtils.trimToEmpty(remoteVideoLine), "#VIDEO:")) {
+            return remoteVideoLine;
+        }
+
+        LinkedHashMap<String, String> tags = parseVideoTagLine(remoteVideoLine.substring(7));
+        UsdbMetaTagParser.UsdbParsedMetaTags parsed = UsdbMetaTagParser.parse(remoteVideoLine.substring(7));
+
+        String previewStart = extractHeaderValue(localHeaderByTag.get("PREVIEWSTART"));
+        if (StringUtils.isBlank(parsed.get("preview")) && StringUtils.isNotBlank(previewStart)) {
+            tags.put("preview", previewStart);
+        }
+
+        String medleyStart = extractHeaderValue(localHeaderByTag.get("MEDLEYSTARTBEAT"));
+        String medleyEnd = extractHeaderValue(localHeaderByTag.get("MEDLEYENDBEAT"));
+        if (StringUtils.isBlank(parsed.get("medley"))
+                && StringUtils.isBlank(parsed.get("medley-start"))
+                && StringUtils.isBlank(parsed.get("medley-end"))
+                && StringUtils.isNotBlank(medleyStart)
+                && StringUtils.isNotBlank(medleyEnd)) {
+            tags.put("medley", medleyStart + "-" + medleyEnd);
+        }
+
+        String singer1 = firstNonBlankHeaderValue(localHeaderByTag, "DUETSINGERP1", "P1");
+        if (StringUtils.isBlank(parsed.get("p1")) && StringUtils.isNotBlank(singer1)) {
+            tags.put("p1", singer1);
+        }
+
+        String singer2 = firstNonBlankHeaderValue(localHeaderByTag, "DUETSINGERP2", "P2");
+        if (StringUtils.isBlank(parsed.get("p2")) && StringUtils.isNotBlank(singer2)) {
+            tags.put("p2", singer2);
+        }
+
+        return "#VIDEO:" + serializeVideoTagLine(tags);
+    }
+
+    private LinkedHashMap<String, String> parseVideoTagLine(String videoTagLine) {
+        LinkedHashMap<String, String> tags = new LinkedHashMap<>();
+        if (StringUtils.isBlank(videoTagLine)) {
+            return tags;
+        }
+        for (String rawPart : videoTagLine.split(",")) {
+            String part = StringUtils.trimToEmpty(rawPart);
+            if (StringUtils.isEmpty(part)) {
+                continue;
+            }
+            String[] keyValue = part.split("=", 2);
+            if (keyValue.length != 2) {
+                continue;
+            }
+            String key = StringUtils.trimToEmpty(keyValue[0]);
+            String value = StringUtils.trimToEmpty(keyValue[1]);
+            if (StringUtils.isEmpty(key)) {
+                continue;
+            }
+            tags.put(key, value);
+        }
+        return tags;
+    }
+
+    private String serializeVideoTagLine(LinkedHashMap<String, String> tags) {
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<String, String> entry : tags.entrySet()) {
+            if (StringUtils.isBlank(entry.getKey()) || StringUtils.isBlank(entry.getValue())) {
+                continue;
+            }
+            parts.add(entry.getKey() + "=" + entry.getValue());
+        }
+        return String.join(",", parts);
+    }
+
+    private String firstNonBlankHeaderValue(Map<String, String> localHeaderByTag, String... tags) {
+        for (String tag : tags) {
+            String value = extractHeaderValue(localHeaderByTag.get(tag));
+            if (StringUtils.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private String extractHeaderValue(String headerLine) {
+        String line = StringUtils.defaultString(headerLine);
+        int colon = line.indexOf(':');
+        if (colon < 0 || colon + 1 >= line.length()) {
+            return "";
+        }
+        return StringUtils.trimToEmpty(line.substring(colon + 1));
+    }
+
+    private String canonicalizeHeaderTag(String tag) {
+        String normalized = StringUtils.upperCase(StringUtils.trimToEmpty(tag));
+        return switch (normalized) {
+            case "P1" -> "DUETSINGERP1";
+            case "P2" -> "DUETSINGERP2";
+            default -> normalized;
+        };
+    }
+
+    private boolean isIgnoredLocalUsdbEditTag(String tag) {
+        return switch (StringUtils.upperCase(tag)) {
+            case "MP3", "AUDIO", "VOCALS", "INSTRUMENTAL", "COVER", "BACKGROUND", "COMMENT", "VERSION", "VIDEO" -> true;
+            default -> false;
+        };
+    }
+
+    private record MergedUsdbEditText(String displayedUsdbText,
+                                      String text,
+                                      List<Integer> appendedLineIndexes,
+                                      List<String> appendedTags) {
+    }
+
+    private void ensureUsdbLoggedIn() throws IOException, InterruptedException {
+        usdbSessionService.resetSessionInfoRetryLimit();
+        if (StringUtils.isNotBlank(usdbSessionService.getLoggedInUser())) {
+            return;
+        }
+        UsdbCookieBrowser browser = getUsdbCookieBrowser();
+        if (browser != null && browser != UsdbCookieBrowser.NONE) {
+            String cookieUser = loginToUsdbWithBrowserCookies(browser);
+            if (StringUtils.isNotBlank(cookieUser)) {
+                return;
+            }
+        }
+        if (!openUsdbLoginDialogOnce()) {
+            throw new IOException(I18.get("lib_usdb_login_required"));
+        }
+    }
+
+    private boolean openUsdbLoginDialogOnce() throws InterruptedException, IOException {
+        if (!usdbLoginDialogOpen.compareAndSet(false, true)) {
+            return false;
+        }
+        try {
+            if (SwingUtilities.isEventDispatchThread()) {
+                return new UsdbLoginDialog(this).showDialog();
+            }
+            final boolean[] success = new boolean[1];
+            final Exception[] failure = new Exception[1];
+            SwingUtilities.invokeAndWait(() -> {
+                try {
+                    success[0] = new UsdbLoginDialog(this).showDialog();
+                } catch (Exception ex) {
+                    failure[0] = ex;
+                }
+            });
+            if (failure[0] != null) {
+                throw new IOException("USDB login dialog could not be opened.", failure[0]);
+            }
+            return success[0];
+        } catch (java.lang.reflect.InvocationTargetException ex) {
+            throw new IOException("USDB login dialog could not be opened.", ex);
+        } finally {
+            usdbLoginDialogOpen.set(false);
+        }
     }
 
     private static class OptionPaneCloseAction extends AbstractAction {
@@ -11648,11 +13246,101 @@ public class YassActions implements DropTargetListener {
                 openEditor(false);
                 updateSheetProperties();
             } else if (currentView == VIEW_LIBRARY) {
-                YassSong s = songList.getFirstSelectedSong();
-                UsdbSyncerMetaTagCreator syncerTagDialog = new UsdbSyncerMetaTagCreator(YassActions.this);
+                if (songList == null || songList.getSelectedRows().length != 1) {
+                    return;
+                }
+                new UsdbSyncerMetaTagCreator(YassActions.this);
             }
         }
     };
+
+    public final Action compareUsdb = new AbstractAction(I18.get("usdb_edit_compare")) {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (currentView == VIEW_EDIT) {
+                if (table == null || StringUtils.isBlank(table.getDirFilename())) {
+                    return;
+                }
+                compareAndSubmitUsdbSongEdit(table.getDirFilename());
+                return;
+            }
+            if (currentView == VIEW_LIBRARY) {
+                if (songList == null || songList.getSelectedRows().length != 1) {
+                    return;
+                }
+                YassSong selectedSong = songList.getFirstSelectedSong();
+                if (selectedSong == null) {
+                    return;
+                }
+                compareAndSubmitUsdbSongEdit(selectedSong.getDirectory() + File.separator + selectedSong.getFilename());
+            }
+        }
+    };
+
+    public final Action searchUsdb = new AbstractAction(I18.get("lib_usdb_search")) {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            UsdbSearchDialog dialog = new UsdbSearchDialog(YassActions.this);
+            String searchTerm = getLibrarySearchTerm();
+            if (StringUtils.isNotBlank(searchTerm)) {
+                dialog.prefillFromSearchTerm(searchTerm);
+                if (StringUtils.isNotBlank(getUsdbLoggedInUser())) {
+                    dialog.runSearchNow();
+                }
+            }
+            dialog.setVisible(true);
+        }
+    };
+
+    private String getLibrarySearchTerm() {
+        if (currentView != VIEW_LIBRARY || filterEditor == null) {
+            return "";
+        }
+        String text = StringUtils.trimToEmpty(filterEditor.getText());
+        if (text.equals(I18.get("tool_lib_find_empty"))) {
+            return "";
+        }
+        return text;
+    }
+
+    private void updateLibrarySelectionDependentActions() {
+        boolean exactlyOneSelected = currentView == VIEW_LIBRARY
+                && songList != null
+                && songList.getSelectedRows().length == 1;
+        createSyncerTags.setEnabled(exactlyOneSelected);
+        if (currentView == VIEW_EDIT) {
+            compareUsdb.setEnabled(canCompareCurrentEditorSongWithUsdb());
+        } else {
+            compareUsdb.setEnabled(exactlyOneSelected);
+        }
+    }
+
+    private boolean canCompareCurrentEditorSongWithUsdb() {
+        if (table == null || StringUtils.isBlank(table.getDirFilename())) {
+            return false;
+        }
+        if (!(canDirectlyEditUsdbSongsCached() || hasUsdbStoredUsername())) {
+            return false;
+        }
+        String artist = StringUtils.trimToEmpty(table.getArtist());
+        String title = StringUtils.trimToEmpty(table.getTitle());
+        if (StringUtils.isBlank(artist) || StringUtils.isBlank(title)) {
+            return false;
+        }
+        try {
+            Path songPath = Path.of(table.getDirFilename());
+            Path songDirectory = songPath.getParent();
+            if (songDirectory != null) {
+                UsdbSyncerMetaFileLoader loader = new UsdbSyncerMetaFileLoader(songDirectory.toString());
+                UsdbSyncerMetaFile metaFile = loader.getMetaFile();
+                if (metaFile != null && metaFile.getSongId() > 0) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return true;
+    }
 
     public final Action searchFanartTvCover = new AbstractAction(I18.get("lib_search_fanarttv_cover")) {
         @Override
@@ -11736,6 +13424,7 @@ public class YassActions implements DropTargetListener {
         songList.loadSongDetails(selectedSong, songTable);
 
         String existingCover = StringUtils.trimToEmpty(songTable.getCover());
+        boolean hadCoverBefore = StringUtils.isNotBlank(existingCover);
         File songDirectory = new File(selectedSong.getDirectory());
         File existingCoverFile = StringUtils.isBlank(existingCover) ? null : new File(songDirectory, existingCover);
         boolean existingCoverExists = existingCoverFile != null && existingCoverFile.exists();
@@ -11770,12 +13459,36 @@ public class YassActions implements DropTargetListener {
         }
 
         File targetFile = new File(songDirectory, targetFileName);
-        downloadCoverImage(selectedCandidate.getImageUrl(), targetFile);
+        downloadCoverImage(selectedCandidate, targetFile);
         songTable.setCover(targetFileName);
+        if (!hadCoverBefore) {
+            addFanartTvCommentLinkIfAbsent(songTable, selectedCandidate.getImageUrl());
+        }
         songTable.storeFile(songTable.getDirFilename());
         selectedSong.setCover(targetFileName);
         songList.cacheSongCover(prop.getProperty("songlist-imagecache"), selectedSong);
         songList.repaint();
+    }
+
+    private void addFanartTvCommentLinkIfAbsent(YassTable songTable, String imageUrl) {
+        if (songTable == null || StringUtils.isBlank(imageUrl)) {
+            return;
+        }
+
+        String existingComment = StringUtils.trimToEmpty(songTable.getCommentTag());
+        if (existingComment.contains("co=")) {
+            return;
+        }
+
+        String syncerImageLink = UsdbSyncerMetaTagCreator.toSyncerImageLink(imageUrl);
+        if (StringUtils.isBlank(syncerImageLink)) {
+            return;
+        }
+
+        String updatedComment = StringUtils.isBlank(existingComment)
+                ? "co=" + syncerImageLink
+                : existingComment + ",co=" + syncerImageLink;
+        songTable.setCommentTag(updatedComment);
     }
 
     private String determineNextCoverFileName(YassSong song, File directory) {
@@ -11798,8 +13511,14 @@ public class YassActions implements DropTargetListener {
         }
     }
 
-    private void downloadCoverImage(String imageUrl, File targetFile) throws Exception {
-        BufferedImage image = ImageIO.read(new URI(imageUrl).toURL());
+    private void downloadCoverImage(FanartTvCoverCandidate candidate, File targetFile) throws Exception {
+        String imageUrl = candidate == null ? null : candidate.getImageUrl();
+        BufferedImage image = candidate == null ? null : candidate.getPreviewImage();
+        if (image == null) {
+            image = loadFanartImage(imageUrl);
+        } else {
+            LOGGER.info("fanart.tv download reusing already loaded preview image for URL: " + imageUrl);
+        }
         if (image == null) {
             throw new IOException("Could not load image");
         }
@@ -11819,6 +13538,36 @@ public class YassActions implements DropTargetListener {
             image = rgbImage;
         }
         ImageIO.write(image, format, targetFile);
+    }
+
+    private BufferedImage loadFanartImage(String imageUrl) throws Exception {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URI(imageUrl).toURL().openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(FANART_IMAGE_TIMEOUT_MS);
+            connection.setReadTimeout(FANART_IMAGE_TIMEOUT_MS);
+            connection.setRequestProperty("Accept", "image/webp,image/png,image/jpeg,image/*,*/*;q=0.8");
+            connection.setRequestProperty("User-Agent", "Yass Reloaded/" + VersionUtils.getVersion()
+                    + " ( https://github.com/DoubleDee73/Yass-Reloaded )");
+            int status = connection.getResponseCode();
+            String contentType = connection.getContentType();
+            LOGGER.info("fanart.tv download response status=" + status + ", contentType=" + contentType + ", url=" + imageUrl);
+            if (status < 200 || status >= 300) {
+                throw new IOException("Could not download image. HTTP status " + status);
+            }
+            try (InputStream inputStream = connection.getInputStream()) {
+                BufferedImage image = YassUtils.readImage(inputStream);
+                if (image == null) {
+                    throw new IOException("Could not decode image. Content-Type: " + contentType);
+                }
+                return image;
+            }
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
     }
 
     private void setWaitCursor(boolean wait) {
