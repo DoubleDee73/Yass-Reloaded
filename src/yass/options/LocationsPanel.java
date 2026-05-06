@@ -20,7 +20,9 @@ package yass.options;
 
 import org.apache.commons.lang3.StringUtils;
 import yass.I18;
+import yass.PythonRuntimeSupport;
 import yass.ffmpeg.FFMPEGLocator;
+import yass.integration.separation.audioseparator.AudioSeparatorHealthCheckService;
 
 import javax.swing.*;
 import java.io.File;
@@ -45,6 +47,7 @@ public class LocationsPanel extends OptionsPanel {
      * Gets the body attribute of the DirPanel object
      */
     public void addRows() {
+        setLabelWidth(180);
         // Pre-fill paths from environment if not already set by the user.
         prefillToolPaths();
 
@@ -60,12 +63,16 @@ public class LocationsPanel extends OptionsPanel {
         addComment(I18.get("options_locations_cache_comment"));
 
         addSeparator(I18.get("options_locations_tools"));
+        addFile("Default Python executable", PythonRuntimeSupport.PROP_DEFAULT_PYTHON);
+        addComment("Used for Python-based helpers and as fallback when a tool-specific Python runtime is empty.");
         addDirectory(I18.get("options_locations_ffmpeg"), "ffmpegPath");
         addComment(I18.get("options_locations_ffmpeg_comment"));
         addFile(I18.get("options_locations_ytdlp"), "ytdlpPath");
         addComment(I18.get("options_locations_ytdlp_comment"));
         addDirectory(I18.get("options_locations_aubio"), "aubioPath");
         addComment(I18.get("options_locations_aubio_comment"));
+        addDirectory(I18.get("options_locations_syncer"), "usdb-syncer-path");
+        addComment(I18.get("options_locations_syncer_comment"));
     }
 
     /**
@@ -74,6 +81,14 @@ public class LocationsPanel extends OptionsPanel {
      */
     private void prefillToolPaths() {
         LOGGER.info(OPTIONS_DEBUG + "LocationsPanel prefillToolPaths start");
+        String configuredPython = getProperty(PythonRuntimeSupport.PROP_DEFAULT_PYTHON);
+        if (PythonRuntimeSupport.shouldAutodetectDefaultPython(configuredPython)) {
+            String detectedPython = new AudioSeparatorHealthCheckService(configuredPython, "", getProperty("ffmpegPath")).detectPythonExecutable();
+            if (StringUtils.isNotBlank(detectedPython)) {
+                setProperty(PythonRuntimeSupport.PROP_DEFAULT_PYTHON, detectedPython);
+                LOGGER.info(OPTIONS_DEBUG + "Auto-detected default Python at " + detectedPython);
+            }
+        }
         if (StringUtils.isEmpty(getProperty("ffmpegPath"))) {
             String ffmpegPath = findExecutable("ffmpeg");
             if (ffmpegPath != null) {

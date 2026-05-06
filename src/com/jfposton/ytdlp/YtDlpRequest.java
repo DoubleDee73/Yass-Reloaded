@@ -1,7 +1,9 @@
 package com.jfposton.ytdlp;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
@@ -78,28 +80,23 @@ public class YtDlpRequest {
    * @return Command string
    */
   protected String buildOptions() {
+    return String.join(" ", buildArguments());
+  }
 
-    StringBuilder builder = new StringBuilder();
-
-    // Set Url
-    if (url != null) builder.append(url + " ");
-
-    // Build options strings
+  protected List<String> buildArguments() {
+    List<String> args = new ArrayList<>();
+    if (url != null) {
+      args.add(url);
+    }
     Iterator<Entry<String, String>> it = options.entrySet().iterator();
     while (it.hasNext()) {
       Entry<String, String> option = it.next();
-
-      String name = option.getKey();
+      args.add("--" + option.getKey());
       String value = option.getValue();
-
-      if (value == null) value = "";
-
-      String optionFormatted = String.format("--%s %s", name, value).trim();
-      builder.append(optionFormatted + " ");
-
-      it.remove();
+      if (value != null && !value.isEmpty()) {
+        args.add(value);
+      }
     }
-
-    return builder.toString().trim();
+    return args;
   }
 }

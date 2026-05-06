@@ -4,6 +4,11 @@
 # Yass Reloaded – Open-Source Karaoke Editor for UltraStar Songs
 Documentation: [https://doubledee73.github.io/Yass-Reloaded/](https://doubledee73.github.io/Yass-Reloaded/)
 
+## Tutorial Videos
+
+- English: [Yass Reloaded Tutorial](https://youtu.be/7sSvb6YL70Y)
+- German: [Yass Reloaded Tutorial (Deutsch)](https://youtu.be/IB4ik6cxEUY)
+
 ## What is Yass Reloaded?
 
 Yass Reloaded is a free, open-source karaoke editor for creating, editing, and maintaining UltraStar and UltraStar Deluxe song files.  

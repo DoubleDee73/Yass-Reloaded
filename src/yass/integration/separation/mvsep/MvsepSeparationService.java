@@ -38,6 +38,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.text.Normalizer;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -950,12 +951,33 @@ public class MvsepSeparationService implements SeparationService {
 
     private void writeFileField(DataOutputStream data, String boundary, String fieldName, File file) throws IOException {
         data.writeBytes("--" + boundary + "\r\n");
+        String safeFilename = sanitizeMultipartFilename(file.getName());
+        String encodedFilename = URLEncoder.encode(file.getName(), StandardCharsets.UTF_8)
+                                           .replace("+", "%20");
         data.writeBytes("Content-Disposition: form-data; name=\"" + fieldName + "\"; filename=\""
-                        + file.getName() + "\"\r\n");
+                        + safeFilename + "\"; filename*=UTF-8''" + encodedFilename + "\r\n");
         String contentType = StringUtils.defaultIfBlank(Files.probeContentType(file.toPath()), "application/octet-stream");
         data.writeBytes("Content-Type: " + contentType + "\r\n\r\n");
         Files.copy(file.toPath(), data);
         data.writeBytes("\r\n");
+    }
+
+    private String sanitizeMultipartFilename(String originalFilename) {
+        if (StringUtils.isBlank(originalFilename)) {
+            return "upload.bin";
+        }
+        String normalized = Normalizer.normalize(originalFilename, Normalizer.Form.NFKD);
+        StringBuilder safe = new StringBuilder(normalized.length());
+        for (int i = 0; i < normalized.length(); i++) {
+            char ch = normalized.charAt(i);
+            if (ch >= 32 && ch <= 126 && ch != '"' && ch != '\\' && ch != '\r' && ch != '\n') {
+                safe.append(ch);
+            } else {
+                safe.append('_');
+            }
+        }
+        String result = safe.toString().trim();
+        return StringUtils.isBlank(result) ? "upload.bin" : result;
     }
 
     private String encode(String value) {

@@ -20,12 +20,16 @@
 package yass.analysis;
 
 import org.apache.commons.lang3.StringUtils;
+import yass.titlecase.TitleCaseConverter;
+import yass.titlecase.PhrasalVerbManager;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -36,6 +40,7 @@ import java.util.logging.Logger;
 public class SubtitleParser {
 
     private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
+    private static final int MAX_ROLLING_CAPTION_GAP_MS = 400;
 
     /**
      * Parses a subtitle file (SRT or VTT) into a map of timestamps and text.
@@ -54,6 +59,8 @@ public class SubtitleParser {
 
         try (BufferedReader reader = new BufferedReader(new FileReader(subtitleFile))) {
             String line;
+            String previousCleanedText = null;
+            int previousEndMillis = -1;
             while ((line = reader.readLine()) != null) {
                 // Skip WEBVTT header, comments, and empty lines that separate cues
                 if (line.equals("WEBVTT") || line.startsWith("NOTE") || line.trim().isEmpty()) {
@@ -70,8 +77,9 @@ public class SubtitleParser {
 
                 // We should now be at a timestamp line
                 if (line.contains("-->")) {
-                    String timestamp = line.split("-->")[0].trim();
-                    int millis = parseTimestamp(timestamp);
+                    String[] range = line.split("-->", 2);
+                    int millis = parseTimestamp(range[0].trim());
+                    int endMillis = range.length > 1 ? parseTimestamp(extractEndTimestamp(range[1])) : -1;
                     if (millis == -1) {
                         LOGGER.warning("Skipping invalid timestamp line: " + line);
                         continue;
@@ -87,15 +95,27 @@ public class SubtitleParser {
 
                     String cleanedText = cleanText(textBuilder.toString());
                     if (!cleanedText.isEmpty()) {
-                        subtitles.put(millis, cleanedText);
+                        String incrementalText = collapseRollingCaption(previousCleanedText, previousEndMillis, millis, cleanedText);
+                        if (!incrementalText.isEmpty()) {
+                            subtitles.put(millis, incrementalText);
+                        }
+                        previousCleanedText = cleanedText;
+                        previousEndMillis = endMillis;
                     }
                 }
             }
+            normalizeSubtitleCasingIfNeeded(subtitles);
         } catch (IOException e) {
             LOGGER.log(Level.SEVERE, "Error reading subtitle file: " + subtitleFile.getAbsolutePath(), e);
         }
 
         return subtitles;
+    }
+
+    private static String extractEndTimestamp(String rawEndPart) {
+        String trimmed = StringUtils.trimToEmpty(rawEndPart);
+        int firstSpace = trimmed.indexOf(' ');
+        return firstSpace >= 0 ? trimmed.substring(0, firstSpace) : trimmed;
     }
 
     /**
@@ -167,13 +187,103 @@ public class SubtitleParser {
         // Remove CC hints like [Music] or (SOUND)
         text = text.replaceAll("[\\[\\(].*?[\\]\\)]", "");
         // Remove musical note character
-        text = text.replace("♪", "");
+        text = text.replace("\u266A", "");
         // Remove HTML-like tags e.g. <c.color> or <i>
         text = text.replaceAll("<.*?>", "");
         // Remove leading hyphens or other list-like markers that are sometimes used for different speakers
-        text = text.replaceAll("^[-–—]\\s*", "");
-        text = StringUtils.capitalize(text.toLowerCase());
+        text = text.replaceAll("^[-\u2013\u2014]\\s*", "");
         // Replace multiple spaces with a single space and trim
         return text.replaceAll("\\s+", " ").trim();
+    }
+
+    private static String collapseRollingCaption(String previousText,
+                                                 int previousEndMillis,
+                                                 int currentStartMillis,
+                                                 String currentText) {
+        if (StringUtils.isBlank(previousText) || StringUtils.isBlank(currentText)) {
+            return StringUtils.defaultString(currentText);
+        }
+        if (!isRollingCaptionContinuation(previousEndMillis, currentStartMillis)) {
+            return currentText;
+        }
+
+        List<String> previousTokens = tokenize(previousText);
+        List<String> currentTokens = tokenize(currentText);
+        if (previousTokens.isEmpty() || currentTokens.isEmpty()) {
+            return currentText;
+        }
+
+        int overlap = findTrailingLeadingTokenOverlap(previousTokens, currentTokens);
+        if (overlap <= 0) {
+            return currentText;
+        }
+        if (overlap >= currentTokens.size()) {
+            return "";
+        }
+        return String.join(" ", currentTokens.subList(overlap, currentTokens.size())).trim();
+    }
+
+    private static boolean isRollingCaptionContinuation(int previousEndMillis, int currentStartMillis) {
+        return previousEndMillis >= 0
+                && currentStartMillis >= 0
+                && Math.abs(currentStartMillis - previousEndMillis) <= MAX_ROLLING_CAPTION_GAP_MS;
+    }
+
+    private static List<String> tokenize(String text) {
+        List<String> tokens = new ArrayList<>();
+        for (String token : StringUtils.split(StringUtils.defaultString(text))) {
+            if (StringUtils.isNotBlank(token)) {
+                tokens.add(token);
+            }
+        }
+        return tokens;
+    }
+
+    private static int findTrailingLeadingTokenOverlap(List<String> previousTokens, List<String> currentTokens) {
+        int maxOverlap = Math.min(previousTokens.size(), currentTokens.size());
+        for (int overlap = maxOverlap; overlap > 0; overlap--) {
+            boolean matches = true;
+            for (int i = 0; i < overlap; i++) {
+                String previousToken = previousTokens.get(previousTokens.size() - overlap + i);
+                String currentToken = currentTokens.get(i);
+                if (!previousToken.equals(currentToken)) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                return overlap;
+            }
+        }
+        return 0;
+    }
+
+    private static void normalizeSubtitleCasingIfNeeded(Map<Integer, String> subtitles) {
+        if (subtitles.isEmpty() || !shouldNormalizeAllCaps(subtitles)) {
+            return;
+        }
+        PhrasalVerbManager.getInstance(null);
+        for (Map.Entry<Integer, String> entry : subtitles.entrySet()) {
+            entry.setValue(TitleCaseConverter.toApTitleCase(StringUtils.lowerCase(entry.getValue())));
+        }
+    }
+
+    private static boolean shouldNormalizeAllCaps(Map<Integer, String> subtitles) {
+        int uppercaseLetters = 0;
+        int lowercaseLetters = 0;
+        for (String value : subtitles.values()) {
+            for (char ch : StringUtils.defaultString(value).toCharArray()) {
+                if (Character.isUpperCase(ch)) {
+                    uppercaseLetters++;
+                } else if (Character.isLowerCase(ch)) {
+                    lowercaseLetters++;
+                }
+            }
+        }
+        int totalLetters = uppercaseLetters + lowercaseLetters;
+        if (totalLetters < 8) {
+            return false;
+        }
+        return lowercaseLetters == 0 || ((double) uppercaseLetters / totalLetters) >= 0.9d;
     }
 }

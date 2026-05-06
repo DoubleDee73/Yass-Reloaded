@@ -40,6 +40,7 @@ import java.util.Objects;
 import java.util.logging.Logger;
 
 public class MusicBrainz {
+    private static final int BROWSE_LIMIT = 100;
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
 
     public MusicBrainzInfo queryMusicBrainz(String artist, String title) throws Exception {
@@ -135,5 +136,97 @@ public class MusicBrainz {
                        .filter(StringUtils::isNotEmpty)
                        .map(StringUtils::capitalize)
                        .toList();
+    }
+
+    public String getReleaseGroupTitle(String releaseGroupId) {
+        if (StringUtils.isBlank(releaseGroupId)) {
+            return null;
+        }
+        try {
+            String urlStr = "https://musicbrainz.org/ws/2/release-group/" + releaseGroupId + "?fmt=json";
+            ReleaseGroup response = fetchFromMusicBrainz(urlStr, ReleaseGroup.class);
+            return response == null ? null : StringUtils.trimToNull(response.getTitle());
+        } catch (Exception e) {
+            LOGGER.fine("MusicBrainz release-group lookup failed for id=" + releaseGroupId + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    public String getReleaseTitle(String releaseId) {
+        if (StringUtils.isBlank(releaseId)) {
+            return null;
+        }
+        try {
+            String urlStr = "https://musicbrainz.org/ws/2/release/" + releaseId + "?fmt=json";
+            Release response = fetchFromMusicBrainz(urlStr, Release.class);
+            return response == null ? null : StringUtils.trimToNull(response.getTitle());
+        } catch (Exception e) {
+            LOGGER.fine("MusicBrainz release lookup failed for id=" + releaseId + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    public List<ReleaseGroup> getArtistReleaseGroups(String artistId) {
+        if (StringUtils.isBlank(artistId)) {
+            return List.of();
+        }
+        try {
+            return browseArtistReleaseGroups(artistId);
+        } catch (Exception e) {
+            LOGGER.fine("MusicBrainz artist release-group browse failed for artistId=" + artistId + ": " + e.getMessage());
+            return List.of();
+        }
+    }
+
+    public List<Release> getArtistReleases(String artistId) {
+        if (StringUtils.isBlank(artistId)) {
+            return List.of();
+        }
+        try {
+            return browseArtistReleases(artistId);
+        } catch (Exception e) {
+            LOGGER.fine("MusicBrainz artist release browse failed for artistId=" + artistId + ": " + e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<ReleaseGroup> browseArtistReleaseGroups(String artistId) throws Exception {
+        List<ReleaseGroup> releaseGroups = new java.util.ArrayList<>();
+        int offset = 0;
+        while (true) {
+            String urlStr = "https://musicbrainz.org/ws/2/release-group?artist=" + artistId
+                    + "&release-group-status=all&limit=" + BROWSE_LIMIT + "&offset=" + offset + "&fmt=json";
+            ReleaseGroupsResponse response = fetchFromMusicBrainz(urlStr, ReleaseGroupsResponse.class);
+            List<ReleaseGroup> page = response == null || response.getReleaseGroups() == null
+                    ? List.of()
+                    : response.getReleaseGroups();
+            releaseGroups.addAll(page);
+            int total = response == null ? 0 : response.getReleaseGroupCount();
+            if (response == null || page.size() < BROWSE_LIMIT || (total > 0 && releaseGroups.size() >= total)) {
+                break;
+            }
+            offset += page.size();
+        }
+        return releaseGroups;
+    }
+
+    private List<Release> browseArtistReleases(String artistId) throws Exception {
+        List<Release> releases = new java.util.ArrayList<>();
+        int offset = 0;
+        while (true) {
+            String urlStr = "https://musicbrainz.org/ws/2/release?artist=" + artistId
+                    + "&limit=" + BROWSE_LIMIT + "&offset=" + offset + "&fmt=json";
+            ReleasesResponse response = fetchFromMusicBrainz(urlStr, ReleasesResponse.class);
+            List<Release> page = response == null || response.getReleases() == null
+                    ? List.of()
+                    : response.getReleases();
+            releases.addAll(page);
+            int total = response == null ? 0 : response.getReleaseCount();
+            if (response == null || page.size() < BROWSE_LIMIT || (total > 0 && releases.size() >= total)) {
+                break;
+            }
+            offset += page.size();
+        }
+        return releases;
     }
 }

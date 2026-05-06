@@ -4,6 +4,8 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -15,12 +17,14 @@ public class WhisperXHealthCheckService {
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(15);
     private static final Duration WHISPERX_TIMEOUT = Duration.ofSeconds(45);
     private static final Duration UPDATE_TIMEOUT = Duration.ofMinutes(10);
+    static final Path MANAGED_VENV_DIR = Path.of(System.getProperty("user.home"), ".yass", "whisperx-venv");
 
     private static final int VRAM_LARGE_V3_MIB = 12288;
     private static final int VRAM_MEDIUM_MIB = 8192;
     private static final int VRAM_SMALL_CUDA_MIB = 6144;
 
     private final String configuredPythonExecutable;
+    private final String defaultPythonExecutable;
     private final boolean useModuleInvocation;
     private final String configuredWhisperXCommand;
     private final String configuredFfmpegPath;
@@ -34,10 +38,26 @@ public class WhisperXHealthCheckService {
     }
 
     public WhisperXHealthCheckService(String configuredPythonExecutable,
+                                      String defaultPythonExecutable,
+                                      boolean useModuleInvocation,
+                                      String configuredWhisperXCommand) {
+        this(configuredPythonExecutable, defaultPythonExecutable, useModuleInvocation, configuredWhisperXCommand, null);
+    }
+
+    public WhisperXHealthCheckService(String configuredPythonExecutable,
+                                      boolean useModuleInvocation,
+                                      String configuredWhisperXCommand,
+                                      String configuredFfmpegPath) {
+        this(configuredPythonExecutable, "", useModuleInvocation, configuredWhisperXCommand, configuredFfmpegPath);
+    }
+
+    public WhisperXHealthCheckService(String configuredPythonExecutable,
+                                      String defaultPythonExecutable,
                                       boolean useModuleInvocation,
                                       String configuredWhisperXCommand,
                                       String configuredFfmpegPath) {
         this.configuredPythonExecutable = StringUtils.trimToEmpty(configuredPythonExecutable);
+        this.defaultPythonExecutable = StringUtils.trimToEmpty(defaultPythonExecutable);
         this.useModuleInvocation = useModuleInvocation;
         this.configuredWhisperXCommand = StringUtils.defaultIfBlank(configuredWhisperXCommand, "whisperx").trim();
         this.configuredFfmpegPath = StringUtils.trimToNull(configuredFfmpegPath);
@@ -48,7 +68,26 @@ public class WhisperXHealthCheckService {
         if (!python.success || python.command.isEmpty()) {
             return "";
         }
-        return python.command.get(0);
+        String detected = python.command.get(0);
+        String resolved = resolvePythonExecutable(detected);
+        return StringUtils.defaultIfBlank(resolved, detected);
+    }
+
+    private String resolvePythonExecutable(String candidate) {
+        if (StringUtils.isBlank(candidate)) {
+            return "";
+        }
+        CommandResult result = runCommand(List.of(candidate,
+                "-c",
+                "import os, sys; print(os.path.realpath(sys.executable))"));
+        if (!result.success) {
+            return "";
+        }
+        return result.stdout.lines()
+                .map(StringUtils::trimToEmpty)
+                .filter(StringUtils::isNotBlank)
+                .findFirst()
+                .orElse("");
     }
 
     public WhisperXHealthCheckResult runHealthCheck() {
@@ -147,6 +186,28 @@ public class WhisperXHealthCheckService {
                     "Python was not found. Configure a Python executable first.");
         }
         String pythonExecutable = python.command.get(0);
+        Path managedPython = getManagedPythonExecutable();
+        if (configuredPythonExecutable.isBlank()) {
+            try {
+                Files.createDirectories(MANAGED_VENV_DIR.getParent());
+            } catch (IOException ex) {
+                return new PackageUpdateResult(false, "Could not prepare the managed WhisperX environment.\n" + ex.getMessage());
+            }
+            if (!Files.isRegularFile(managedPython)) {
+                if (outputListener != null) {
+                    outputListener.accept("Creating managed WhisperX environment...");
+                }
+                CommandResult createVenv = runCommand(List.of(pythonExecutable, "-m", "venv", MANAGED_VENV_DIR.toString()), UPDATE_TIMEOUT, outputListener);
+                if (updateCancelRequested) {
+                    return new PackageUpdateResult(false, "WhisperX update cancelled.", true);
+                }
+                if (!createVenv.success) {
+                    String createDetails = StringUtils.defaultIfBlank(createVenv.stderr, createVenv.stdout);
+                    return new PackageUpdateResult(false, "WhisperX environment creation failed.\n" + createDetails);
+                }
+            }
+            pythonExecutable = managedPython.toString();
+        }
         CommandResult update = runCommand(List.of(pythonExecutable,
                                                   "-m",
                                                   "pip",
@@ -157,7 +218,7 @@ public class WhisperXHealthCheckService {
             return new PackageUpdateResult(false, "WhisperX update cancelled.", true);
         }
         if (update.success) {
-            return new PackageUpdateResult(true, "WhisperX update completed successfully.");
+            return new PackageUpdateResult(true, "WhisperX update completed successfully.", false, pythonExecutable);
         }
         String details = StringUtils.defaultIfBlank(update.stderr, update.stdout);
         String message = "WhisperX update failed.";
@@ -296,6 +357,9 @@ public class WhisperXHealthCheckService {
         Set<String> candidates = new LinkedHashSet<>();
         if (StringUtils.isNotBlank(configuredPythonExecutable)) {
             candidates.add(configuredPythonExecutable);
+        }
+        if (StringUtils.isNotBlank(defaultPythonExecutable)) {
+            candidates.add(defaultPythonExecutable);
         }
 
         addEnvironmentCandidate(candidates, System.getenv("PYTHON"));
@@ -444,6 +508,16 @@ public class WhisperXHealthCheckService {
         return File.separatorChar == '\\';
     }
 
+    static Path getManagedVenvDirectory() {
+        return MANAGED_VENV_DIR;
+    }
+
+    static Path getManagedPythonExecutable() {
+        return File.separatorChar == '\\'
+                ? MANAGED_VENV_DIR.resolve("Scripts").resolve("python.exe")
+                : MANAGED_VENV_DIR.resolve("bin").resolve("python");
+    }
+
     public static final class WhisperXRuntimeRecommendation {
         private final String device;
         private final String computeType;
@@ -518,15 +592,21 @@ public class WhisperXHealthCheckService {
         private final boolean success;
         private final String message;
         private final boolean cancelled;
+        private final String pythonExecutable;
 
         public PackageUpdateResult(boolean success, String message) {
-            this(success, message, false);
+            this(success, message, false, null);
         }
 
         public PackageUpdateResult(boolean success, String message, boolean cancelled) {
+            this(success, message, cancelled, null);
+        }
+
+        public PackageUpdateResult(boolean success, String message, boolean cancelled, String pythonExecutable) {
             this.success = success;
             this.message = message;
             this.cancelled = cancelled;
+            this.pythonExecutable = pythonExecutable;
         }
 
         public boolean isSuccess() {
@@ -539,6 +619,10 @@ public class WhisperXHealthCheckService {
 
         public boolean isCancelled() {
             return cancelled;
+        }
+
+        public String getPythonExecutable() {
+            return pythonExecutable;
         }
     }
 }

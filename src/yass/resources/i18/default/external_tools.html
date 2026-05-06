@@ -25,6 +25,17 @@ Yass can auto-download FFmpeg, or you can point to an existing installation unde
   <li>On Windows, set the path to the <code>bin</code> folder containing <code>ffmpeg.exe</code>.</li>
 </ul>
 
+<h4>Python runtimes</h4>
+<p>Several local tools use Python. Under <b>External Tools &gt; Locations</b> you can set a
+<b>Default Python executable</b>. Yass uses this as the shared fallback for lightweight Python helpers
+and as the bootstrap interpreter for creating tool-specific environments.</p>
+<ul>
+  <li>If a tool-specific Python field is left empty, Yass falls back to the default Python from <b>Locations</b>.</li>
+  <li>If you click <b>Update package</b> for WhisperX or audio-separator and no tool-specific Python runtime is set yet,
+      Yass creates a dedicated virtual environment for that tool and stores the Python executable path there automatically.</li>
+  <li>This keeps heavyweight dependencies such as WhisperX and audio-separator isolated, while smaller Python helpers can still share the default Python.</li>
+</ul>
+
 <h4>yt-dlp</h4>
 <p>yt-dlp is used by the Create Song Wizard to download audio from YouTube and other platforms.
 No API key required.</p>
@@ -39,7 +50,7 @@ separates it into stems and downloads the result. Requires an account and API to
 <ol>
   <li>Register at <code>https://mvsep.com</code> and copy your API token from your profile.</li>
   <li>Open <b>Settings &gt; External Tools &gt; MVSEP</b> and paste the token.</li>
-  <li>Choose a separation model (e.g. <i>BS-Roformer</i> for highest quality) and output format.</li>
+  <li>Choose a separation model. The <b>Vocal Model</b> can usually stay on its default, and the <b>Audio Format</b> controls the returned stem format.</li>
   <li>In the Create Song Wizard, click <b>Separate Vocals + Transcribe</b> to run the full pipeline.</li>
   <li>For songs already open in the editor, use <b>Edit &gt; Separate Audio</b>.</li>
 </ol>
@@ -56,8 +67,9 @@ It supports the same MDX-Net, VR Architecture and Demucs models used by Ultimate
     </ul>
   </li>
   <li>Open <b>Settings &gt; External Tools &gt; audio-separator</b>.</li>
-  <li>Set the Python executable (e.g. <code>python</code> or full path).</li>
-  <li>Choose a model. Recommended models:
+  <li>Set the Python executable for this tool, or leave it empty to use the default Python from <b>External Tools &gt; Locations</b>.</li>
+  <li>If you use <b>Update package</b> with an empty tool-specific Python field, Yass creates a dedicated audio-separator virtual environment and fills the field automatically.</li>
+  <li>Choose a model. Yass shows known models with readable names; unknown ones fall back to the raw filename. Recommended models:
     <ul>
       <li><code>Kim_Vocal_2.onnx</code> — fast, good quality (default)</li>
       <li><code>MDX23C-8KFFT-InstVoc_HQ.ckpt</code> — high quality</li>
@@ -65,7 +77,8 @@ It supports the same MDX-Net, VR Architecture and Demucs models used by Ultimate
       <li><code>BS-Roformer-Viperx-1297.ckpt</code> — highest quality, slower</li>
     </ul>
   </li>
-  <li>Optionally set a model cache directory to avoid re-downloading models.</li>
+  <li>Optionally set a model cache directory. Downloaded model files are stored there so they can be reused without downloading them again.</li>
+  <li><b>Output format</b> controls the raw stem format written by audio-separator before Yass converts the files to your configured target audio format.</li>
   <li>Click <b>Test configuration</b> to verify the setup.</li>
   <li>When health check passes, the <b>Separate Vocals + Transcribe</b> button in the Create Song Wizard becomes available.
       audio-separator is preferred over MVSEP when both are configured.</li>
@@ -87,7 +100,9 @@ Requires an OpenAI API key.</p>
   <li>Install Python 3.9 or later.</li>
   <li>Install WhisperX: <code>pip install whisperx</code></li>
   <li>Open <b>Settings &gt; External Tools &gt; WhisperX</b>.</li>
-  <li>Set the Python executable and choose invocation mode (<i>python -m whisperx</i> recommended).</li>
+  <li>Set the Python executable for WhisperX, or leave it empty to use the default Python from <b>External Tools &gt; Locations</b>.</li>
+  <li>If you use <b>Update package</b> with an empty WhisperX Python field, Yass creates a dedicated WhisperX virtual environment and stores that runtime automatically.</li>
+  <li>Choose the invocation mode (<i>python -m whisperx</i> recommended).</li>
   <li>Select a model (e.g. <i>large-v2</i>) and your device (<i>cpu</i> or <i>cuda</i>).</li>
   <li>Click <b>Test configuration</b> to run the health check. The result is saved and used to enable the
       <b>Separate Vocals + Transcribe</b> button in the wizard.</li>

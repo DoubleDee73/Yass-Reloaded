@@ -28,20 +28,25 @@ import java.awt.*;
 public class DialogTools {
 
     public static JPanel createHeaderPanel(String title, int leftPadding) {
-        JPanel row = new JPanel();
-        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
-        JLabel la = new JLabel("<html><font color=gray>" + title);
-        la.setVerticalAlignment(JLabel.TOP);
-
-        la.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
-
+        JPanel row = new JPanel(new BorderLayout());
         JLabel spacer = new JLabel("");
-        //spacer.setSize(new Dimension(120, 10));
         spacer.setPreferredSize(new Dimension(leftPadding, 20));
-        //spacer.setMaximumSize(new Dimension(200, 20));
-        row.add(spacer);
-        row.add(la);
+        row.add(spacer, BorderLayout.WEST);
+        row.add(createWrappingCommentArea(title), BorderLayout.CENTER);
         return row;
+    }
+
+    public static JTextArea createWrappingCommentArea(String text) {
+        JTextArea area = new JTextArea(StringUtils.defaultString(text));
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setEditable(false);
+        area.setOpaque(false);
+        area.setFocusable(false);
+        area.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+        area.setForeground(Color.GRAY);
+        area.setColumns(28);
+        return area;
     }
     
     public static JPanel createTextfield(String label, int labelWidth, String text, DocumentListener listener,

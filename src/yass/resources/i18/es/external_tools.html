@@ -1,0 +1,124 @@
+<head>
+    <link rel="stylesheet" href="../stylesheet.css">
+</head>
+<body>
+
+<a href="help.html">Navegación</a> -
+<a href="help1.html">Reproducción</a> -
+<a href="help2.html">Notas</a> -
+<a href="help3.html">Letra</a> -
+<a href="help4.html">Biblioteca</a> -
+<a href="help5.html">Licencia</a> -
+Herramientas externas
+
+<h3>Herramientas externas</h3>
+
+<p>Yass Reloaded puede integrarse con varias herramientas externas opcionales para separación vocal y transcripción de letras.
+Abre <b>Configuración &gt; Herramientas externas</b> para configurarlas.</p>
+
+<h4>FFmpeg</h4>
+<p>FFmpeg es necesario para la conversión de audio (AAC, OGG, OPUS, etc.) y para el flujo de separación vocal.
+Yass puede descargar FFmpeg automáticamente, o puedes indicar una instalación existente en
+<b>Herramientas externas &gt; Ubicaciones</b>.</p>
+<ul>
+  <li>Descarga: <code>https://ffmpeg.org/download.html</code></li>
+  <li>En Windows, selecciona la carpeta <code>bin</code> que contiene <code>ffmpeg.exe</code>.</li>
+</ul>
+
+<h4>Entornos de Python</h4>
+<p>Varias herramientas locales usan Python. En <b>Herramientas externas &gt; Ubicaciones</b> puedes definir un
+<b>ejecutable Python predeterminado</b>. Yass lo usa como valor compartido para ayudantes pequeños basados en Python
+y como intérprete base para crear entornos específicos por herramienta.</p>
+<ul>
+  <li>Si el campo Python de una herramienta está vacío, Yass usa el Python predeterminado de <b>Ubicaciones</b>.</li>
+  <li>Si pulsas <b>Update package</b> para WhisperX o audio-separator sin haber definido todavía un Python específico,
+      Yass crea automáticamente un entorno virtual dedicado para esa herramienta y guarda allí la ruta del ejecutable.</li>
+  <li>Así, dependencias pesadas como WhisperX y audio-separator quedan aisladas, mientras que ayudantes más pequeños pueden compartir el Python predeterminado.</li>
+</ul>
+
+<h4>yt-dlp</h4>
+<p>yt-dlp se usa en el asistente de creación de canciones para descargar audio desde YouTube y otras plataformas.
+No requiere clave API.</p>
+<ul>
+  <li>Instalación: <code>pip install yt-dlp</code> o descarga el binario independiente.</li>
+  <li>Configura códec, resolución y formato de audio en <b>Configuración &gt; Asistente &gt; yt-dlp</b>.</li>
+</ul>
+
+<h4>MVSEP (separación vocal online)</h4>
+<p>MVSEP es un servicio en la nube para separación vocal. Sube tu audio a la API de MVSEP,
+lo separa en stems y descarga el resultado. Requiere una cuenta y un token API.</p>
+<ol>
+  <li>Regístrate en <code>https://mvsep.com</code> y copia tu token API desde tu perfil.</li>
+  <li>Abre <b>Configuración &gt; Herramientas externas &gt; MVSEP</b> y pega el token.</li>
+  <li>Elige un modelo de separación. El <b>Modelo vocal</b> normalmente puede quedarse en el valor predeterminado, y el <b>Formato de audio</b> define el formato de los stems devueltos.</li>
+  <li>En el asistente, pulsa <b>Separate Vocals + Transcribe</b> para ejecutar el flujo completo.</li>
+  <li>Para canciones ya abiertas en el editor, usa <b>Editar &gt; Separar audio</b>.</li>
+</ol>
+
+<h4>audio-separator (separación vocal local)</h4>
+<p>audio-separator ejecuta modelos de separación preentrenados localmente en tu equipo, sin internet ni clave API.
+Admite los mismos modelos MDX-Net, VR Architecture y Demucs usados por Ultimate Vocal Remover (UVR).</p>
+<ol>
+  <li>Instala Python 3.9 o posterior.</li>
+  <li>Instala audio-separator:
+    <ul>
+      <li>Solo CPU: <code>pip install audio-separator[cpu]</code></li>
+      <li>GPU NVIDIA: <code>pip install audio-separator[gpu]</code></li>
+    </ul>
+  </li>
+  <li>Abre <b>Configuración &gt; Herramientas externas &gt; audio-separator</b>.</li>
+  <li>Indica el ejecutable Python para esta herramienta, o déjalo vacío para usar el Python predeterminado de <b>Ubicaciones</b>.</li>
+  <li>Si usas <b>Update package</b> con el campo Python específico vacío, Yass crea un entorno virtual dedicado para audio-separator y lo rellena automáticamente.</li>
+  <li>Elige un modelo. Los modelos conocidos se muestran con nombres legibles; los desconocidos usan el nombre del archivo. Modelos recomendados:
+    <ul>
+      <li><code>Kim_Vocal_2.onnx</code> - rápido, buena calidad (predeterminado)</li>
+      <li><code>MDX23C-8KFFT-InstVoc_HQ.ckpt</code> - alta calidad</li>
+      <li><code>UVR-MDX-NET-Inst_HQ_3.onnx</code> - alternativa</li>
+      <li><code>BS-Roformer-Viperx-1297.ckpt</code> - máxima calidad, más lento</li>
+    </ul>
+  </li>
+  <li>Opcionalmente, define un directorio de caché de modelos. Allí se guardan los modelos descargados para no tener que volver a descargarlos.</li>
+  <li><b>Output format</b> controla el formato bruto que escribe audio-separator antes de que Yass convierta los stems al formato de audio final configurado.</li>
+  <li>Pulsa <b>Test configuration</b> para verificar la configuración.</li>
+  <li>Cuando la comprobación sea correcta, el botón <b>Separate Vocals + Transcribe</b> del asistente quedará disponible.
+      audio-separator tiene prioridad sobre MVSEP si ambos están configurados.</li>
+</ol>
+
+<h4>OpenAI Whisper (transcripción en la nube)</h4>
+<p>La API de OpenAI Whisper transcribe audio con marcas de tiempo por palabra y aplica el resultado a las notas del editor.
+Requiere una clave API de OpenAI.</p>
+<ol>
+  <li>Obtén una clave API en <code>https://platform.openai.com/api-keys</code>.</li>
+  <li>Abre <b>Configuración &gt; Herramientas externas &gt; OpenAI</b> e introduce la clave.</li>
+  <li>Elige un modelo de transcripción (por ejemplo <i>whisper-1</i>) y, opcionalmente, un código de idioma.</li>
+  <li>En el editor usa <b>Editar &gt; Align Notes (Transcription)</b> para transcribir y alinear la canción actual.</li>
+</ol>
+
+<h4>WhisperX (transcripción local)</h4>
+<p>WhisperX ejecuta transcripción basada en Whisper localmente con marcas de tiempo por palabra. No requiere internet ni clave API.</p>
+<ol>
+  <li>Instala Python 3.9 o posterior.</li>
+  <li>Instala WhisperX: <code>pip install whisperx</code></li>
+  <li>Abre <b>Configuración &gt; Herramientas externas &gt; WhisperX</b>.</li>
+  <li>Indica el ejecutable Python de WhisperX, o déjalo vacío para usar el Python predeterminado de <b>Ubicaciones</b>.</li>
+  <li>Si usas <b>Update package</b> con el campo Python de WhisperX vacío, Yass crea un entorno virtual dedicado y guarda esa runtime automáticamente.</li>
+  <li>Elige el modo de invocación (<i>python -m whisperx</i> recomendado).</li>
+  <li>Selecciona un modelo (por ejemplo <i>large-v2</i>) y tu dispositivo (<i>cpu</i> o <i>cuda</i>).</li>
+  <li>Pulsa <b>Test configuration</b> para ejecutar la comprobación. El resultado se guarda y habilita el botón
+      <b>Separate Vocals + Transcribe</b> del asistente.</li>
+  <li>En el editor, usa <b>Editar &gt; Align Notes (Transcription)</b> y selecciona <i>WhisperX</i>.</li>
+</ol>
+
+<h4>Asistente de creación: flujo completo</h4>
+<p>El asistente puede ejecutar automáticamente toda la cadena:</p>
+<ol>
+  <li>Introduce una URL de YouTube en la página <b>YouTube</b> y descarga el audio.</li>
+  <li>En la página <b>Letras</b>, pulsa <b>Separate Vocals + Transcribe</b>.</li>
+  <li>Yass convierte el audio a WAV, separa las voces (audio-separator o MVSEP) y las transcribe (WhisperX).</li>
+  <li>La letra se rellena automáticamente. Puedes corregirla antes de continuar.</li>
+  <li>Completa el asistente para crear la canción con marcas de tiempo precargadas desde la transcripción.</li>
+</ol>
+<p><b>Requisitos:</b> audio-separator (local, comprobación correcta) o MVSEP (token API configurado),
+y además WhisperX (comprobación correcta).</p>
+
+</body>

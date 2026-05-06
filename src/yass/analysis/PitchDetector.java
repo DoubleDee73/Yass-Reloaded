@@ -22,7 +22,11 @@ package yass.analysis;
 import yass.YassProperties;
 import yass.musicalkey.MusicalKeyEnum;
 
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -174,6 +178,7 @@ public class PitchDetector {
 
             int exitCode = process.waitFor();
             if (exitCode == 0) {
+                rawPitchData = attachFrameEnergy(analysisInputFile, rawPitchData);
                 LOGGER.info("Aubio pitch detection found " + rawPitchData.size() + " raw pitched frames.");
                 locallyNormalizedPitchData = normalizeRawPitchOctaves(rawPitchData);
                 viterbiPitchData = viterbiSmooth(locallyNormalizedPitchData, musicalKey);
@@ -197,6 +202,102 @@ public class PitchDetector {
                 LOGGER.finest("Could not delete temporary mono pitch file: " + monoTempFile.getAbsolutePath());
             }
         }
+    }
+
+    private static List<PitchData> attachFrameEnergy(File analysisInputFile, List<PitchData> rawPitchData) {
+        if (analysisInputFile == null || rawPitchData == null || rawPitchData.isEmpty()) {
+            return rawPitchData;
+        }
+        try {
+            Waveform waveform = loadWaveform(analysisInputFile);
+            if (waveform == null || waveform.samples().length == 0) {
+                return rawPitchData;
+            }
+            List<PitchData> withEnergy = new ArrayList<>(rawPitchData.size());
+            for (PitchData frame : rawPitchData) {
+                double energy = computeFrameEnergy(waveform, frame.time());
+                withEnergy.add(new PitchData(frame.time(), frame.pitch(), frame.noteName(), frame.rawFrequency(), energy));
+            }
+            return withEnergy;
+        } catch (Exception ex) {
+            LOGGER.log(Level.FINE, "Could not compute per-frame pitch energy. Continuing without it.", ex);
+            return rawPitchData;
+        }
+    }
+
+    private static double computeFrameEnergy(Waveform waveform, float timeSeconds) {
+        final double windowSeconds = 0.04d;
+        double[] samples = waveform.samples();
+        if (samples.length == 0) {
+            return Double.NaN;
+        }
+        int center = (int) Math.round(timeSeconds * waveform.sampleRate());
+        int halfWindow = Math.max(1, (int) Math.round(windowSeconds * waveform.sampleRate() / 2.0));
+        int start = Math.max(0, center - halfWindow);
+        int end = Math.min(samples.length, center + halfWindow);
+        if (end <= start) {
+            return Double.NaN;
+        }
+        double sumSquares = 0d;
+        for (int i = start; i < end; i++) {
+            double sample = samples[i];
+            sumSquares += sample * sample;
+        }
+        return Math.sqrt(sumSquares / (end - start));
+    }
+
+    private static Waveform loadWaveform(File audioFile) throws Exception {
+        try (AudioInputStream sourceStream = AudioSystem.getAudioInputStream(audioFile)) {
+            AudioFormat sourceFormat = sourceStream.getFormat();
+            AudioFormat pcmFormat = sourceFormat;
+            if (sourceFormat.getEncoding() != AudioFormat.Encoding.PCM_SIGNED
+                    || sourceFormat.getSampleSizeInBits() != 16) {
+                pcmFormat = new AudioFormat(AudioFormat.Encoding.PCM_SIGNED,
+                        sourceFormat.getSampleRate(),
+                        16,
+                        sourceFormat.getChannels(),
+                        sourceFormat.getChannels() * 2,
+                        sourceFormat.getSampleRate(),
+                        false);
+            }
+            try (AudioInputStream pcmStream = pcmFormat.equals(sourceFormat)
+                    ? sourceStream
+                    : AudioSystem.getAudioInputStream(pcmFormat, sourceStream)) {
+                byte[] bytes = readAllBytes(pcmStream);
+                return decodeWaveform(bytes, pcmFormat);
+            }
+        }
+    }
+
+    private static byte[] readAllBytes(AudioInputStream stream) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = stream.read(buffer)) >= 0) {
+            output.write(buffer, 0, read);
+        }
+        return output.toByteArray();
+    }
+
+    private static Waveform decodeWaveform(byte[] bytes, AudioFormat format) {
+        int channels = Math.max(1, format.getChannels());
+        int frameSize = Math.max(2, format.getFrameSize());
+        int totalFrames = bytes.length / frameSize;
+        double[] samples = new double[totalFrames];
+        boolean bigEndian = format.isBigEndian();
+        for (int frame = 0; frame < totalFrames; frame++) {
+            double mixed = 0d;
+            int frameOffset = frame * frameSize;
+            for (int channel = 0; channel < channels; channel++) {
+                int sampleOffset = frameOffset + channel * 2;
+                int low = bytes[sampleOffset] & 0xFF;
+                int high = bytes[sampleOffset + 1] & 0xFF;
+                short value = (short) (bigEndian ? ((low << 8) | high) : (low | (high << 8)));
+                mixed += value / 32768d;
+            }
+            samples[frame] = mixed / channels;
+        }
+        return new Waveform(samples, format.getSampleRate());
     }
 
     private static File createMonoAnalysisFile(File sourceWavFile, YassProperties properties) {
@@ -386,7 +487,7 @@ public class PitchDetector {
                 if (correctedMidiNote != currentMidiNote) {
                     int correctedPitch = correctedMidiNote - 60;
                     double correctedFreq = C4_FREQ * Math.pow(2.0, correctedPitch / 12.0);
-                    correctedData.add(new PitchData(pd.time(), correctedPitch, freqToNoteName(correctedFreq), correctedFreq));
+                    correctedData.add(new PitchData(pd.time(), correctedPitch, freqToNoteName(correctedFreq), correctedFreq, pd.energy()));
                     LOGGER.finest(String.format("Corrected octave for note at %.2fs from %d (MIDI %d) to %d (MIDI %d) in segment starting at %.2fms",
                                                 pd.time(), pd.pitch(), currentMidiNote, correctedPitch, correctedMidiNote, segment.get(0).time() * 1000));
                 } else {
@@ -469,7 +570,7 @@ public class PitchDetector {
                 normalized.add(current);
             } else {
                 double normalizedFreq = C4_FREQ * Math.pow(2.0, normalizedPitch / 12.0);
-                normalized.add(new PitchData(current.time(), normalizedPitch, freqToNoteName(normalizedFreq), normalizedFreq));
+                normalized.add(new PitchData(current.time(), normalizedPitch, freqToNoteName(normalizedFreq), normalizedFreq, current.energy()));
             }
         }
         return normalized;
@@ -596,7 +697,7 @@ public class PitchDetector {
                     result.add(original);
                 } else {
                     double smoothedFreq = C4_FREQ * Math.pow(2.0, smoothedPitch / 12.0);
-                    result.add(new PitchData(original.time(), smoothedPitch, freqToNoteName(smoothedFreq), smoothedFreq));
+                    result.add(new PitchData(original.time(), smoothedPitch, freqToNoteName(smoothedFreq), smoothedFreq, original.energy()));
                 }
             }
 
@@ -647,7 +748,7 @@ public class PitchDetector {
                 stabilizedData.add(current);
             } else {
                 double stabilizedFreq = C4_FREQ * Math.pow(2.0, stablePitch / 12.0);
-                stabilizedData.add(new PitchData(current.time(), stablePitch, freqToNoteName(stabilizedFreq), stabilizedFreq));
+                stabilizedData.add(new PitchData(current.time(), stablePitch, freqToNoteName(stabilizedFreq), stabilizedFreq, current.energy()));
             }
         }
 
@@ -737,7 +838,13 @@ public class PitchDetector {
      * @param time  The timestamp in seconds.
      * @param pitch The detected pitch in semitones relative to C4 (C4 = 0).
      */
-    public record PitchData(float time, int pitch, String noteName, double rawFrequency) {
+    public record PitchData(float time, int pitch, String noteName, double rawFrequency, double energy) {
+        public PitchData(float time, int pitch, String noteName, double rawFrequency) {
+            this(time, pitch, noteName, rawFrequency, Double.NaN);
+        }
+    }
+
+    private record Waveform(double[] samples, float sampleRate) {
     }
 
     public record TuningOffsetAnalysis(boolean available,

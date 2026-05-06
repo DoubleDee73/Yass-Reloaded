@@ -100,11 +100,12 @@ public class MP3 extends JPanel {
             if (data[0] == null || data[0].trim().isEmpty()) {
                 data[0] = "UnknownTitle";
             }
-            wizard.setValue("title", data[0]);
             if (data[1] == null || data[1].trim().isEmpty()) {
                 data[1] = "UnknownArtist";
             }
-            wizard.setValue("artist", data[1]);
+            Metadata resolved = resolveMetadata(wizard.getValue("artist"), wizard.getValue("title"), data[1], data[0]);
+            wizard.setValue("artist", resolved.getArtist());
+            wizard.setValue("title", resolved.getTitle());
             wizard.setValue("genre", data[2]);
         } else {
             wizard.setValue("title", "UnknownTitle");
@@ -127,6 +128,21 @@ public class MP3 extends JPanel {
         }
     
         wizard.setNextFinishButtonEnabled(true);
+    }
+
+    static Metadata resolveMetadata(String existingArtist, String existingTitle, String parsedArtist, String parsedTitle) {
+        String artist = hasMeaningfulMetadata(existingArtist) ? existingArtist : parsedArtist;
+        String title = hasMeaningfulMetadata(existingTitle) ? existingTitle : parsedTitle;
+        return new Metadata(
+                StringUtils.defaultIfBlank(artist, "UnknownArtist"),
+                StringUtils.defaultIfBlank(title, "UnknownTitle"));
+    }
+
+    private static boolean hasMeaningfulMetadata(String value) {
+        String normalized = StringUtils.trimToEmpty(value);
+        return StringUtils.isNotBlank(normalized)
+                && !"UnknownArtist".equalsIgnoreCase(normalized)
+                && !"UnknownTitle".equalsIgnoreCase(normalized);
     }
 
 
@@ -203,6 +219,24 @@ public class MP3 extends JPanel {
         filePanel.add("East", browse);
         content.add("South", filePanel);
         return content;
+    }
+
+    static final class Metadata {
+        private final String artist;
+        private final String title;
+
+        Metadata(String artist, String title) {
+            this.artist = artist;
+            this.title = title;
+        }
+
+        String getArtist() {
+            return artist;
+        }
+
+        String getTitle() {
+            return title;
+        }
     }
 }
 

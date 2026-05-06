@@ -193,6 +193,7 @@ public class YassProperties extends Properties {
         p.putIfAbsent("ffmpegPath", "");
         p.putIfAbsent("ytdlpPath", "");
         p.putIfAbsent("aubioPath", "");
+        p.putIfAbsent("usdb-syncer-path", "");
 
         p.putIfAbsent("yass-language", "default");
         p.putIfAbsent("yass-languages", "default|en|de|fr|hu|pl|es");
@@ -470,7 +471,7 @@ public class YassProperties extends Properties {
 
         p.putIfAbsent("debug-memory", "false");
         p.putIfAbsent("debug-score", "false");
-        p.putIfAbsent("debug-waveform", "false");
+        p.putIfAbsent("debug-waveform", "true");
 
         //piano
         p.putIfAbsent("piano-volume", "100");
@@ -486,11 +487,12 @@ public class YassProperties extends Properties {
         p.putIfAbsent("wizard-skip-midi", "USE_MIDI");
         p.putIfAbsent("mvsep-api-token", "");
         p.putIfAbsent("mvsep-model", "melband_roformer");
-        p.putIfAbsent("mvsep-output-format", "flac");
+        p.putIfAbsent("mvsep-output-format", "m4a");
         p.putIfAbsent("mvsep-instrumental-default", "instrumental");
         p.putIfAbsent("mvsep-poll-interval", "15");
         p.putIfAbsent("openai-api-key", "");
         p.putIfAbsent("fanarttv-api-key", "");
+        p.putIfAbsent("default-python", "");
         p.putIfAbsent("openai-model", "whisper-1");
         p.putIfAbsent("transcription-engine", "openai");
         p.putIfAbsent("whisperx-python", "");

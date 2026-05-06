@@ -54,6 +54,9 @@ public class YassErrors extends JPanel {
     private boolean preventTableUpdate = false;
     private YassTable table = null;
 
+    private record ErrorSelectionContext(int tableRow, int errorId, String messageKey) {
+    }
+
 
     /**
      * Constructor for the YassGeneral object
@@ -159,6 +162,7 @@ public class YassErrors extends JPanel {
                             int id = ((Integer) (v.elementAt(5))).intValue();
                             YassRow r = table.getRowAt(i);
                             String m = r.getMessage(id);
+                            ErrorSelectionContext selectionContext = new ErrorSelectionContext(i, id, m);
 
                             boolean changed = auto.autoCorrect(table, false, m);
                             if (changed) {
@@ -166,7 +170,8 @@ public class YassErrors extends JPanel {
                                 ((YassTableModel) table.getModel()).fireTableDataChanged();
                             }
 
-                            auto.checkData(table, false, true);
+                            actions.checkData(table, false, true);
+                            restoreErrorSelectionAfterCorrection(selectionContext);
 
                             SwingUtilities.invokeLater(
                                     new Runnable() {
@@ -195,13 +200,15 @@ public class YassErrors extends JPanel {
                             int id = ((Integer) (v.elementAt(5))).intValue();
                             YassRow r = table.getRowAt(i);
                             String m = r.getMessage(id);
+                            ErrorSelectionContext selectionContext = new ErrorSelectionContext(i, id, m);
 
                             boolean changed = auto.autoCorrect(table, true, m);
                             if (changed) {
                                 table.addUndo();
                                 ((YassTableModel) table.getModel()).fireTableDataChanged();
                             }
-                            auto.checkData(table, false, true);
+                            actions.checkData(table, false, true);
+                            restoreErrorSelectionAfterCorrection(selectionContext);
 
                             SwingUtilities.invokeLater(
                                     new Runnable() {
@@ -280,6 +287,7 @@ public class YassErrors extends JPanel {
             table.updatePlayerPosition();
             table.zoomPage();
             ensureAbsolutePitchViewCentered(i);
+            SwingUtilities.invokeLater(() -> ensureAbsolutePitchViewCentered(i));
         }
 
         YassRow r = table.getRowAt(i);
@@ -341,6 +349,74 @@ public class YassErrors extends JPanel {
         return -1;
     }
 
+    private void restoreErrorSelectionAfterCorrection(ErrorSelectionContext previousSelection) {
+        if (table == null || errTable.getRowCount() <= 0) {
+            return;
+        }
+
+        int selectedTableRow = table.getSelectedRow();
+        int targetErrorRow = findErrorRowForTableRow(selectedTableRow,
+                                                     previousSelection != null ? previousSelection.messageKey() : null);
+        if (targetErrorRow < 0 && previousSelection != null) {
+            targetErrorRow = findErrorRowForTableRow(previousSelection.tableRow(), previousSelection.messageKey());
+        }
+        if (targetErrorRow < 0) {
+            targetErrorRow = findErrorRowForTableRow(selectedTableRow, null);
+        }
+        if (targetErrorRow < 0 && previousSelection != null) {
+            targetErrorRow = findErrorRowForTableRow(previousSelection.tableRow(), null);
+        }
+        if (targetErrorRow < 0) {
+            return;
+        }
+
+        final int errorRow = targetErrorRow;
+        SwingUtilities.invokeLater(() -> selectErrorRow(errorRow));
+    }
+
+    private int findErrorRowForTableRow(int tableRow, String preferredMessageKey) {
+        if (tableRow < 0) {
+            return -1;
+        }
+
+        Vector<?> data = tm.getDataVector();
+        int firstMatch = -1;
+        for (int k = 0; k < data.size(); k++) {
+            Vector<?> v = (Vector<?>) data.elementAt(k);
+            int row = ((Integer) v.elementAt(3)).intValue();
+            if (row != tableRow) {
+                continue;
+            }
+            if (firstMatch < 0) {
+                firstMatch = k;
+            }
+            if (preferredMessageKey == null) {
+                continue;
+            }
+            int errorId = ((Integer) v.elementAt(5)).intValue();
+            YassRow yassRow = table.getRowAt(row);
+            if (yassRow == null || !yassRow.hasMessage()) {
+                continue;
+            }
+            String message = yassRow.getMessage(errorId);
+            if (preferredMessageKey.equals(message)) {
+                return k;
+            }
+        }
+        return firstMatch;
+    }
+
+    private void selectErrorRow(int errorRow) {
+        if (errorRow < 0 || errorRow >= errTable.getRowCount()) {
+            return;
+        }
+        preventTableUpdate(true);
+        errTable.setRowSelectionInterval(errorRow, errorRow);
+        Rectangle rr = errTable.getCellRect(errorRow, 0, true);
+        errTable.scrollRectToVisible(rr);
+        preventTableUpdate(false);
+    }
+
     /**
      * Description of the Method
      */
@@ -390,11 +466,7 @@ public class YassErrors extends JPanel {
             Vector<?> v = (Vector<?>) en.nextElement();
             int ii = ((Integer) (v.elementAt(3))).intValue();
             if (i == ii) {
-                preventTableUpdate(true);
-                errTable.setRowSelectionInterval(k, k);
-                Rectangle rr = errTable.getCellRect(k, 0, true);
-                errTable.scrollRectToVisible(rr);
-                preventTableUpdate(false);
+                selectErrorRow(k);
                 break;
             }
         }

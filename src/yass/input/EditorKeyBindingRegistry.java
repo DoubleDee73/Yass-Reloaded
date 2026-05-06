@@ -5,17 +5,35 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class EditorKeyBindingRegistry {
-    private final Map<KeyStroke, EditorCommand> singleKeys = new HashMap<>();
+    private final Map<KeyStroke, Map<Integer, EditorCommand>> bindings = new HashMap<>();
 
     public void bind(KeyStroke keyStroke, EditorCommand command) {
-        singleKeys.put(keyStroke, command);
+        bind(keyStroke, 1, command);
     }
 
-    public EditorCommand get(KeyStroke keyStroke) {
-        return singleKeys.get(keyStroke);
+    public void bind(KeyStroke keyStroke, int pressCount, EditorCommand command) {
+        bindings.computeIfAbsent(keyStroke, ignored -> new HashMap<>()).put(pressCount, command);
+    }
+
+    public EditorCommand get(KeyStroke keyStroke, int pressCount) {
+        Map<Integer, EditorCommand> commands = bindings.get(keyStroke);
+        if (commands == null) {
+            return null;
+        }
+        EditorCommand command = commands.get(pressCount);
+        if (command != null) {
+            return command;
+        }
+        int fallbackCount = 1;
+        for (Integer configuredCount : commands.keySet()) {
+            if (configuredCount <= pressCount && configuredCount > fallbackCount) {
+                fallbackCount = configuredCount;
+            }
+        }
+        return commands.get(fallbackCount);
     }
 
     public void clear() {
-        singleKeys.clear();
+        bindings.clear();
     }
 }

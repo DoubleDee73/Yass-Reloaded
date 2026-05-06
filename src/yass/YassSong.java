@@ -108,6 +108,7 @@ public class YassSong implements Cloneable, Comparable<Object> {
     private String[] messages = null;
     private float[] stats = null;
     private long timestamp = 0;
+    private int usdbSongId = 0;
     private ImageIcon icon = null;
     private boolean saved = true, opened = false, locked = false;
     private YassTable openedTable = null;
@@ -352,6 +353,7 @@ public class YassSong implements Cloneable, Comparable<Object> {
         openedTable = r.openedTable;
 
         timestamp = r.timestamp;
+        usdbSongId = r.usdbSongId;
     }
 
     /**
@@ -371,6 +373,10 @@ public class YassSong implements Cloneable, Comparable<Object> {
         }
         if (st.hasMoreTokens()) {
             setTimestamp(st.nextToken());
+        }
+        if (st.hasMoreTokens()) {
+            String usdbSongIdToken = st.nextToken();
+            setUsdbSongId(usdbSongIdToken);
         }
     }
 
@@ -1094,8 +1100,34 @@ public class YassSong implements Cloneable, Comparable<Object> {
             sb.append("\t");
         }
         sb.append(timestamp + "");
+        sb.append("\t");
+        sb.append(usdbSongId);
 
         return sb.toString();
+    }
+
+    public boolean hasUsdbMetaFile() {
+        return usdbSongId > 0;
+    }
+
+    public void setHasUsdbMetaFile(boolean hasUsdbMetaFile) {
+        this.usdbSongId = hasUsdbMetaFile ? 1 : 0;
+    }
+
+    public int getUsdbSongId() {
+        return usdbSongId;
+    }
+
+    public void setUsdbSongId(int usdbSongId) {
+        this.usdbSongId = Math.max(0, usdbSongId);
+    }
+
+    public void setUsdbSongId(String s) {
+        try {
+            usdbSongId = Math.max(0, Integer.parseInt(s));
+        } catch (Exception e) {
+            usdbSongId = 0;
+        }
     }
 
     /**

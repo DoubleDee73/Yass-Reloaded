@@ -18,6 +18,7 @@ import java.util.Optional;
 
 import org.apache.commons.lang3.StringUtils;
 
+import yass.PythonRuntimeSupport;
 import yass.YassProperties;
 import yass.YassTable;
 import yass.integration.separation.SeparationProgressListener;
@@ -48,7 +49,7 @@ public class AudioSeparatorSeparationService implements SeparationService {
 
     @Override
     public boolean isConfigured() {
-        return StringUtils.isNotBlank(properties.getProperty(PROP_PYTHON));
+        return PythonRuntimeSupport.hasToolPython(properties, PROP_PYTHON);
     }
 
     @Override
@@ -136,7 +137,7 @@ public class AudioSeparatorSeparationService implements SeparationService {
     }
 
     private List<String> buildCommand(File audioFile, File outputDir, String model, String outputFormat) {
-        String python = StringUtils.defaultIfBlank(properties.getProperty(PROP_PYTHON), "python");
+        String python = StringUtils.defaultIfBlank(PythonRuntimeSupport.resolveToolPython(properties, PROP_PYTHON), "python");
         String script = AudioSeparatorHealthCheckService.resolveAudioSeparatorScript(python);
         List<String> cmd = new ArrayList<>();
         cmd.add(script);

@@ -17,6 +17,18 @@ public class KeySequenceTracker {
         recent.addLast(new TimedStroke(stroke, nowMs));
     }
 
+    public int countRecentMatches(KeyStroke stroke, long nowMs) {
+        cleanup(nowMs);
+        int count = 0;
+        for (TimedStroke timedStroke : recent.reversed()) {
+            if (!timedStroke.stroke().equals(stroke)) {
+                break;
+            }
+            count++;
+        }
+        return count;
+    }
+
     public void clear() {
         recent.clear();
     }

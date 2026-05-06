@@ -134,6 +134,7 @@ public class YassOptions extends JDialog {
         main.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 0));
         panel.add("West", new JScrollPane(tree = new JTree(top)));
         panel.add("Center", scrollMain = new JScrollPane(main));
+        scrollMain.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
         tree.setRootVisible(false);
         tree.setShowsRootHandles(true);

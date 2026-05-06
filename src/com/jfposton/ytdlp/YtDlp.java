@@ -10,6 +10,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -63,8 +64,8 @@ public class YtDlp {
      */
     public static YtDlpResponse execute(YtDlpRequest request, DownloadProgressCallback callback)
             throws YtDlpException {
-
-        String command = buildCommand(request.buildOptions());
+        List<String> commandParts = buildCommandParts(request);
+        String command = String.join(" ", commandParts);
         String directory = request.getDirectory();
         Map<String, String> options = request.getOption();
 
@@ -75,9 +76,7 @@ public class YtDlp {
         StringBuilder errBuffer = new StringBuilder(); // stderr
         long startTime = System.nanoTime();
 
-        String[] split = command.split(" ");
-
-        ProcessBuilder processBuilder = new ProcessBuilder(split);
+        ProcessBuilder processBuilder = new ProcessBuilder(commandParts);
 
         // Define directory if one is passed
         if (directory != null) processBuilder.directory(new File(directory));
@@ -127,7 +126,7 @@ public class YtDlp {
      * @throws YtDlpException
      */
     public static void executeAsync(YtDlpRequest request, YtDlpCallback callback) throws YtDlpException {
-        String command = buildCommand(request.buildOptions());
+        List<String> commandParts = buildCommandParts(request);
         String directory = request.getDirectory();
 
         Process process;
@@ -135,8 +134,7 @@ public class YtDlp {
         StringBuilder outBuffer = new StringBuilder(); // stdout
         StringBuilder errBuffer = new StringBuilder(); // stderr
 
-        String[] split = command.split(" ");
-        ProcessBuilder processBuilder = new ProcessBuilder(split);
+        ProcessBuilder processBuilder = new ProcessBuilder(commandParts);
 
         if (directory != null) {
             processBuilder.directory(new File(directory));
@@ -329,6 +327,13 @@ public class YtDlp {
      */
     public static String getExecutablePath() {
         return executablePath;
+    }
+
+    private static List<String> buildCommandParts(YtDlpRequest request) {
+        List<String> parts = new ArrayList<>();
+        parts.add(executablePath);
+        parts.addAll(request.buildArguments());
+        return parts;
     }
 
     /**

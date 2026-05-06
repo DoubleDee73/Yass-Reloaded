@@ -170,6 +170,14 @@ public class YassVideoDialog extends JDialog {
 
         gapSpinner = new TimeSpinner(I18.get("tool_video_gap"), 0, 100000, TimeSpinner.NEGATIVE);
         leftControls.add(gapSpinner);
+        leftControls.add(Box.createHorizontalStrut(6));
+
+        JButton setStartHereButton = new JButton(yassActions.getIcon("bookmarks24Icon"));
+        setStartHereButton.setToolTipText(I18.get("tool_audio_start_here"));
+        setStartHereButton.setFocusable(false);
+        setStartHereButton.setPreferredSize(new Dimension(40, 30));
+        setStartHereButton.addActionListener(e -> yassActions.setStart(getCurrentAudioTimeMs()));
+        leftControls.add(setStartHereButton);
         controlsPanel.add(leftControls, BorderLayout.WEST);
 
         // Center: File and Button
@@ -1215,6 +1223,16 @@ public class YassVideoDialog extends JDialog {
         }
         double fraction = timeSlider.getValue() / 1000.0;
         return (int) (fraction * videoDurationSeconds * 1000);
+    }
+
+    public int getCurrentAudioTimeMs() {
+        double currentVideoSeconds = logicalPositionSeconds;
+        if (currentVideoSeconds <= 0 && videoDurationSeconds > 0) {
+            currentVideoSeconds = timeSlider.getValue() / 1000.0 * videoDurationSeconds;
+        }
+
+        double currentAudioSeconds = Math.max(0d, currentVideoSeconds - (videoGapMs / 1000.0));
+        return (int) Math.round(currentAudioSeconds * 1000d);
     }
 
     public void seekVideo(double seconds) {

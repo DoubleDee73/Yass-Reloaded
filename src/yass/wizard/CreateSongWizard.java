@@ -31,6 +31,12 @@ import yass.integration.separation.SeparationResult;
 import yass.integration.separation.SeparationService;
 import yass.integration.separation.audioseparator.AudioSeparatorSeparationService;
 import yass.integration.separation.mvsep.MvsepSeparationService;
+import yass.integration.lyrics.lrclib.LrcLibCandidate;
+import yass.integration.lyrics.lrclib.LrcLibQueryDialog;
+import yass.integration.lyrics.lrclib.LrcLibResultsDialog;
+import yass.integration.lyrics.lrclib.LrcLibSearchQuery;
+import yass.integration.lyrics.lrclib.LrcLibSearchResponse;
+import yass.integration.lyrics.lrclib.LrcLibSearchService;
 import yass.alignment.TranscriptTruthRewriteService;
 import yass.integration.transcription.TranscriptionEngine;
 import yass.integration.transcription.openai.OpenAiTranscriptionRequest;
@@ -44,11 +50,13 @@ import yass.musicbrainz.MusicBrainzInfo;
 import javax.swing.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
 import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -84,6 +92,7 @@ public class CreateSongWizard extends Wizard {
     private YassProperties yassProperties;
     private WizardTranscriptionState wizardTranscriptionState;
     private JButton separateAndTranscribeButton;
+    private boolean lyricsLrcLibPromptShown;
 
     /**
      * Constructor for the CreateSongWizard object
@@ -147,6 +156,12 @@ public class CreateSongWizard extends Wizard {
             public void aboutToDisplayPanel() {
                 setLyricsActionButtonsVisible(true);
                 if (lyrics != null) {
+                    lyrics.setSearchLrcLibAction(new AbstractAction(I18.get("create_lyrics_lrclib_search")) {
+                        @Override
+                        public void actionPerformed(java.awt.event.ActionEvent e) {
+                            startLrcLibSearchFromLyrics();
+                        }
+                    });
                     lyrics.setPasteLyricsAction(new AbstractAction(I18.get("create_lyrics_paste")) {
                         @Override
                         public void actionPerformed(java.awt.event.ActionEvent e) {
@@ -155,15 +170,22 @@ public class CreateSongWizard extends Wizard {
                     });
                 }
                 setValue("melodytable", "");
-                lyrics.setText(getValue("lyrics"));
-                lyrics.setSubtitleFile(getValue("subtitle"));
-                lyrics.refreshIntegrationAvailability();
+                if (wizardTranscriptionState != null && wizardTranscriptionState.getTranscriptionResult() != null) {
+                    applyWizardTranscriptionState(wizardTranscriptionState);
+                } else {
+                    lyrics.setTranscriptionResult(null);
+                    lyrics.setText(getValue("lyrics"));
+                    lyrics.setSubtitleFile(getValue("subtitle"));
+                    lyrics.refreshIntegrationAvailability();
+                }
+                maybePromptLrcLibSearchOnFirstLyricsDisplay();
             }
 
 
             public void aboutToHidePanel() {
                 setLyricsActionButtonsVisible(false);
                 if (lyrics != null) {
+                    lyrics.setSearchLrcLibAction(null);
                     lyrics.setPasteLyricsAction(null);
                 }
                 setValue("lyrics", lyrics.getText());
@@ -447,6 +469,10 @@ public class CreateSongWizard extends Wizard {
      * @return The cleaned title.
      */
     private String cleanTitle(String title) {
+        return cleanTitleStatic(title);
+    }
+
+    private static String cleanTitleStatic(String title) {
         if (StringUtils.isEmpty(title)) {
             return title;
         }
@@ -502,7 +528,8 @@ public class CreateSongWizard extends Wizard {
             return I18.get("create_lyrics_separate_transcribe_requires_audio");
         }
         boolean mvsepConfigured = StringUtils.isNotBlank(getProperty("mvsep-api-token"));
-        boolean audioSepConfigured = StringUtils.isNotBlank(getProperty(AudioSeparatorSeparationService.PROP_PYTHON))
+        boolean audioSepConfigured = StringUtils.isNotBlank(StringUtils.defaultIfBlank(getProperty(AudioSeparatorSeparationService.PROP_PYTHON),
+                                                                                      getProperty(PythonRuntimeSupport.PROP_DEFAULT_PYTHON)))
                 && Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK), "false"));
         if (!mvsepConfigured && !audioSepConfigured) {
             return I18.get("create_lyrics_separate_transcribe_requires_mvsep");
@@ -524,7 +551,8 @@ public class CreateSongWizard extends Wizard {
     private boolean hasWhisperXConfiguration() {
         boolean useModule = Boolean.parseBoolean(getProperty("whisperx-use-module"));
         return useModule
-                ? StringUtils.isNotBlank(getProperty("whisperx-python"))
+                ? StringUtils.isNotBlank(StringUtils.defaultIfBlank(getProperty("whisperx-python"),
+                                                                   getProperty(PythonRuntimeSupport.PROP_DEFAULT_PYTHON)))
                 : StringUtils.isNotBlank(getProperty("whisperx-command"));
     }
 
@@ -560,7 +588,8 @@ public class CreateSongWizard extends Wizard {
     }
 
     private SeparationService buildSeparationService() {
-        boolean audioSepConfigured = StringUtils.isNotBlank(getProperty(AudioSeparatorSeparationService.PROP_PYTHON))
+        boolean audioSepConfigured = StringUtils.isNotBlank(StringUtils.defaultIfBlank(getProperty(AudioSeparatorSeparationService.PROP_PYTHON),
+                                                                                      getProperty(PythonRuntimeSupport.PROP_DEFAULT_PYTHON)))
                 && Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK), "false"));
         boolean mvsepConfigured = StringUtils.isNotBlank(getProperty("mvsep-api-token"));
         SeparationPreference preference = SeparationPreference.fromValue(getProperty("separation-preference"));
@@ -650,8 +679,267 @@ public class CreateSongWizard extends Wizard {
         }
     }
 
+    private void startLrcLibSearchFromLyrics() {
+        LrcLibSearchQuery initialQuery = buildInitialLrcLibQuery();
+        persistSuggestedArtistAndTitle(initialQuery);
+        LrcLibSearchQuery query = new LrcLibSearchQuery(
+                StringUtils.trimToEmpty(getValue("artist")),
+                StringUtils.trimToEmpty(cleanTitle(getValue("title"))));
+        if (StringUtils.isNotBlank(query.artist()) && StringUtils.isNotBlank(query.title())) {
+            executeLrcLibSearch(query, false);
+            return;
+        }
+        promptForLrcLibSearch(initialQuery);
+    }
+
+    private void maybePromptLrcLibSearchOnFirstLyricsDisplay() {
+        if (lyricsLrcLibPromptShown) {
+            return;
+        }
+        lyricsLrcLibPromptShown = true;
+        LrcLibSearchQuery initialQuery = buildInitialLrcLibQuery();
+        persistSuggestedArtistAndTitle(initialQuery);
+        SwingUtilities.invokeLater(() -> promptForArtistAndTitle(initialQuery));
+    }
+
+    private void promptForArtistAndTitle(LrcLibSearchQuery initialQuery) {
+        LrcLibSearchQuery query = LrcLibQueryDialog.show(
+                getDialog(),
+                I18.get("create_lyrics_metadata_query_title"),
+                I18.get("create_lyrics_lrclib_artist"),
+                I18.get("create_lyrics_lrclib_title"),
+                I18.get("create_lyrics_metadata_query_required"),
+                initialQuery.artist(),
+                initialQuery.title());
+        if (query == null) {
+            return;
+        }
+        setValue("artist", query.artist());
+        setValue("title", query.title());
+    }
+
+    private void promptForLrcLibSearch(LrcLibSearchQuery initialQuery) {
+        LrcLibSearchQuery query = LrcLibQueryDialog.show(
+                getDialog(),
+                I18.get("create_lyrics_lrclib_query_title"),
+                I18.get("create_lyrics_lrclib_artist"),
+                I18.get("create_lyrics_lrclib_title"),
+                I18.get("create_lyrics_lrclib_query_required"),
+                initialQuery.artist(),
+                initialQuery.title());
+        if (query == null) {
+            return;
+        }
+
+        executeLrcLibSearch(query, false);
+    }
+
+    private void persistSuggestedArtistAndTitle(LrcLibSearchQuery query) {
+        if (query == null) {
+            return;
+        }
+        if (StringUtils.isBlank(getValue("artist")) && StringUtils.isNotBlank(query.artist())) {
+            setValue("artist", query.artist());
+        }
+        if (StringUtils.isBlank(getValue("title")) && StringUtils.isNotBlank(query.title())) {
+            setValue("title", query.title());
+        }
+    }
+
+    private void executeLrcLibSearch(LrcLibSearchQuery query, boolean allowInsecureTlsFallback) {
+        if (query == null) {
+            return;
+        }
+
+        setValue("artist", query.artist());
+        setValue("title", query.title());
+
+        JLabel progressLabel = new JLabel(I18.get("create_lyrics_lrclib_search_progress"));
+        progressLabel.setBorder(BorderFactory.createEmptyBorder(16, 20, 16, 20));
+        JDialog progressDialog = new JDialog(getDialog(), I18.get("create_lyrics_lrclib_search"), true);
+        progressDialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        progressDialog.getContentPane().add(progressLabel, BorderLayout.CENTER);
+        progressDialog.pack();
+        progressDialog.setLocationRelativeTo(getDialog());
+
+        SwingWorker<LrcLibSearchResponse, Void> worker = new SwingWorker<>() {
+            @Override
+            protected LrcLibSearchResponse doInBackground() throws Exception {
+                return new LrcLibSearchService().search(query.artist(), query.title(), allowInsecureTlsFallback);
+            }
+
+            @Override
+            protected void done() {
+                progressDialog.dispose();
+                try {
+                    LrcLibSearchResponse response = get();
+                    if (response == null || response.getCandidates().isEmpty()) {
+                        JOptionPane.showMessageDialog(getDialog(),
+                                I18.get("create_lyrics_lrclib_search_no_results"),
+                                I18.get("create_lyrics_lrclib_search"),
+                                JOptionPane.INFORMATION_MESSAGE);
+                        return;
+                    }
+
+                    LrcLibResultsDialog resultsDialog = new LrcLibResultsDialog(
+                            getDialog(),
+                            I18.get("create_lyrics_lrclib_results_title"),
+                            I18.get("create_lyrics_lrclib_apply"),
+                            I18.get("create_lyrics_lrclib_compare"),
+                            wizardTranscriptionState != null && wizardTranscriptionState.getTranscriptionResult() != null,
+                            response.getCandidates(),
+                            response.getPreferredCandidateId());
+                    LrcLibResultsDialog.Result dialogResult = resultsDialog.showDialog();
+                    if (dialogResult == null || dialogResult.candidate() == null) {
+                        return;
+                    }
+
+                    LrcLibCandidate selectedCandidate = dialogResult.candidate();
+                    if (dialogResult.compareWithTranscript()) {
+                        compareLrcLibLyricsWithTranscript(selectedCandidate);
+                        return;
+                    }
+
+                    OpenAiTranscriptionResult result = new LrcLibSearchService().toTranscriptionResult(selectedCandidate);
+                    wizardTranscriptionState = new WizardTranscriptionState(null, null, null, null, result);
+                    applyWizardTranscriptionState(wizardTranscriptionState);
+                    if (lyrics != null) {
+                        lyrics.setWizardStatusText(I18.get("create_lyrics_lrclib_status_ready"));
+                        lyrics.refreshIntegrationAvailability();
+                    }
+                } catch (ExecutionException ex) {
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    LOGGER.log(Level.INFO, "LRCLib search failed", cause);
+                    if (cause instanceof yass.integration.lyrics.lrclib.LrcLibCertificateException) {
+                        int decision = JOptionPane.showConfirmDialog(getDialog(),
+                                I18.get("create_lyrics_lrclib_insecure_prompt"),
+                                I18.get("create_lyrics_lrclib_search"),
+                                JOptionPane.YES_NO_OPTION,
+                                JOptionPane.WARNING_MESSAGE);
+                        if (decision == JOptionPane.YES_OPTION) {
+                            executeLrcLibSearch(query, true);
+                        }
+                        return;
+                    }
+                    JOptionPane.showMessageDialog(getDialog(),
+                            cause.getMessage(),
+                            I18.get("create_lyrics_lrclib_search"),
+                            JOptionPane.ERROR_MESSAGE);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+
+        worker.execute();
+        progressDialog.setVisible(true);
+    }
+
+    private LrcLibSearchQuery buildInitialLrcLibQuery() {
+        return resolveInitialLrcLibQuery(getValue("artist"),
+                                         getValue("title"),
+                                         getValue("filename"),
+                                         getValue("video"));
+    }
+
+    static LrcLibSearchQuery resolveInitialLrcLibQuery(String artistValue, String titleValue, String filename,
+                                                       String video) {
+        String artist = normalizeSuggestedMetadataPart(artistValue);
+        String title = normalizeSuggestedMetadataPart(cleanTitleStatic(titleValue));
+        if (StringUtils.isNotBlank(artist) && StringUtils.isNotBlank(title)) {
+            return new LrcLibSearchQuery(artist, title);
+        }
+
+        String path = StringUtils.firstNonBlank(filename, video);
+        if (StringUtils.isBlank(path)) {
+            return new LrcLibSearchQuery(artist, title);
+        }
+
+        String baseName = new File(path).getName();
+        int dot = baseName.lastIndexOf('.');
+        if (dot > 0) {
+            baseName = baseName.substring(0, dot);
+        }
+        String[] parts = baseName.split("\\s+-\\s+", 2);
+        if (parts.length == 2) {
+            if (StringUtils.isBlank(artist)) {
+                artist = normalizeSuggestedMetadataPart(parts[0]);
+            }
+            if (StringUtils.isBlank(title)) {
+                title = normalizeSuggestedMetadataPart(cleanTitleStatic(parts[1].trim()));
+            }
+        } else if (StringUtils.isBlank(title)) {
+            title = normalizeSuggestedMetadataPart(cleanTitleStatic(baseName.trim()));
+        }
+        return new LrcLibSearchQuery(artist, title);
+    }
+
+    private static String normalizeSuggestedMetadataPart(String value) {
+        String normalized = StringUtils.trimToEmpty(value);
+        if (StringUtils.isBlank(normalized)) {
+            return normalized;
+        }
+        String repaired = repairMojibake(normalized);
+        return StringUtils.trimToEmpty(repaired.replaceAll("\\s+", " "));
+    }
+
+    private static String repairMojibake(String value) {
+        String normalized = StringUtils.defaultString(value);
+        if (!looksLikeMojibake(normalized)) {
+            return normalized;
+        }
+        String repaired = new String(normalized.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
+        return looksLessBroken(repaired, normalized) ? repaired : normalized;
+    }
+
+    private static boolean looksLikeMojibake(String value) {
+        return value.contains("Ã") || value.contains("â€™") || value.contains("â€“")
+                || value.contains("â€œ") || value.contains("â€") || value.contains("Â");
+    }
+
+    private static boolean looksLessBroken(String repaired, String original) {
+        return weirdCharacterScore(repaired) < weirdCharacterScore(original);
+    }
+
+    private static int weirdCharacterScore(String value) {
+        int score = 0;
+        for (char c : value.toCharArray()) {
+            if (c == 'Ã' || c == 'â' || c == 'Â' || c == '�') {
+                score++;
+            }
+        }
+        return score;
+    }
+
     private void applyLyricsText(String text) {
         applyLyricsTexts(null, text);
+    }
+
+    private void compareLrcLibLyricsWithTranscript(LrcLibCandidate candidate) {
+        OpenAiTranscriptionResult transcriptionResult =
+                wizardTranscriptionState != null ? wizardTranscriptionState.getTranscriptionResult() : null;
+        if (candidate == null || transcriptionResult == null) {
+            return;
+        }
+        String plainLyrics = normalizeClipboardLyrics(candidate.getPlainLyrics());
+        if (StringUtils.isBlank(plainLyrics)) {
+            JOptionPane.showMessageDialog(getDialog(),
+                    I18.get("create_lyrics_paste_clipboard_empty"),
+                    I18.get("create_lyrics_lrclib_search"),
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        copyTextToClipboard(plainLyrics);
+        String transcriptText = normalizeClipboardLyrics(transcriptionResult.getTranscriptText());
+        ClipboardLyricsDiffDialog dialog = new ClipboardLyricsDiffDialog(getDialog(), transcriptText, plainLyrics);
+        ClipboardLyricsDiffDialog.Result diffResult = dialog.showDialog();
+        if (diffResult != null) {
+            applyLyricsTexts(diffResult.transcriptText(), diffResult.clipboardText());
+            if (lyrics != null) {
+                lyrics.setWizardStatusText(I18.get("create_lyrics_lrclib_compare_ready"));
+                lyrics.refreshIntegrationAvailability();
+            }
+        }
     }
 
     private void applyLyricsTexts(String transcriptStructureText, String finalLyricsText) {
@@ -692,6 +980,17 @@ public class CreateSongWizard extends Wizard {
         } catch (Exception ex) {
             LOGGER.log(Level.FINE, "Could not read clipboard lyrics", ex);
             return null;
+        }
+    }
+
+    private void copyTextToClipboard(String text) {
+        try {
+            Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            if (clipboard != null) {
+                clipboard.setContents(new StringSelection(StringUtils.defaultString(text)), null);
+            }
+        } catch (Exception ex) {
+            LOGGER.log(Level.FINE, "Could not write clipboard lyrics", ex);
         }
     }
 
@@ -739,6 +1038,11 @@ public class CreateSongWizard extends Wizard {
         statusLabel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createEtchedBorder(),
                 BorderFactory.createEmptyBorder(6, 8, 6, 8)));
+        JLabel latestOutputLabel = new JLabel(" ");
+        latestOutputLabel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createEtchedBorder(),
+                BorderFactory.createEmptyBorder(6, 8, 6, 8)));
+        latestOutputLabel.setFont(latestOutputLabel.getFont().deriveFont(Math.max(10f, latestOutputLabel.getFont().getSize2D() - 1f)));
         JTextArea statusHistory = new JTextArea(10, 68);
         statusHistory.setEditable(false);
         statusHistory.setLineWrap(true);
@@ -759,7 +1063,10 @@ public class CreateSongWizard extends Wizard {
         hintLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
 
         JPanel centerPanel = new JPanel(new BorderLayout(0, 8));
-        centerPanel.add(statusLabel, BorderLayout.NORTH);
+        JPanel statusPanel = new JPanel(new GridLayout(2, 1, 0, 6));
+        statusPanel.add(statusLabel);
+        statusPanel.add(latestOutputLabel);
+        centerPanel.add(statusPanel, BorderLayout.NORTH);
         centerPanel.add(statusScrollPane, BorderLayout.CENTER);
 
         JButton cancelButton = new JButton(I18.get("create_lyrics_separate_transcribe_cancel"));
@@ -890,6 +1197,7 @@ public class CreateSongWizard extends Wizard {
                 if (!chunks.isEmpty()) {
                     String latest = chunks.get(chunks.size() - 1);
                     statusLabel.setText(latest);
+                    latestOutputLabel.setText(formatWhisperXProgressLine(latest));
                     for (String chunk : chunks) {
                         if (StringUtils.isBlank(chunk)) {
                             continue;
@@ -959,23 +1267,38 @@ public class CreateSongWizard extends Wizard {
         return persistedState;
     }
 
+    private String formatWhisperXProgressLine(String value) {
+        if (StringUtils.isBlank(value)) {
+            return " ";
+        }
+        String escaped = value.replace("&", "&amp;")
+                              .replace("<", "&lt;")
+                              .replace(">", "&gt;");
+        if (escaped.length() > 220) {
+            escaped = escaped.substring(0, 217) + "...";
+        }
+        return "<html><b>Latest output:</b> " + escaped + "</html>";
+    }
+
     private void applyWizardTranscriptionState(WizardTranscriptionState state) {
         if (state == null || state.getTranscriptionResult() == null) {
+            if (lyrics != null) {
+                lyrics.setTranscriptionResult(null);
+            }
             return;
         }
         OpenAiTranscriptionResult result = state.getTranscriptionResult();
-        setValue("lyrics", result.getTranscriptText());
+        Map<Integer, String> subtitles = new yass.alignment.TranscriptNoteRebuildService().deriveDisplayPhrases(result);
+        String displayLyrics = subtitles.isEmpty()
+                ? result.getTranscriptText()
+                : String.join(System.lineSeparator(), subtitles.values());
+        setValue("lyrics", displayLyrics);
         if (lyrics != null) {
             // Build a subtitles map (ms → line text) from segments so that getTable()
             // can derive a correct #GAP and beat positions instead of defaulting to 0.
-            if (!result.getSegments().isEmpty()) {
-                Map<Integer, String> subtitles = new LinkedHashMap<>();
-                for (var segment : result.getSegments()) {
-                    subtitles.put(segment.getStartMs(), segment.getText().trim());
-                }
-                lyrics.setSubtitles(subtitles);
-            }
-            lyrics.setText(result.getTranscriptText());
+            lyrics.setSubtitles(subtitles);
+            lyrics.setTranscriptionResult(result);
+            lyrics.setText(displayLyrics);
             lyrics.setWizardStatusText(I18.get("create_lyrics_separate_transcribe_status_ready"));
             lyrics.refreshIntegrationAvailability();
         }

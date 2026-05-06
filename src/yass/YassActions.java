@@ -19,6 +19,8 @@
 
 package yass;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.nexes.wizard.Wizard;
 import lombok.Getter;
 import lombok.Setter;
@@ -39,6 +41,8 @@ import yass.integration.cover.fanart.FanartTvCoverPickerDialog;
 import yass.integration.cover.fanart.FanartTvCoverSearchService;
 import yass.integration.separation.SeparationRequest;
 import yass.integration.separation.SeparationResult;
+import yass.integration.separation.SeparationPreference;
+import yass.integration.separation.SeparationService;
 import yass.integration.separation.audioseparator.AudioSeparatorSeparationService;
 import yass.integration.separation.mvsep.MvsepAccountInfo;
 import yass.integration.separation.mvsep.MvsepAlgorithmInfo;
@@ -55,9 +59,31 @@ import yass.musicalkey.MusicalKeyEnum;
 import yass.musicbrainz.MusicBrainz;
 import yass.musicbrainz.MusicBrainzInfo;
 import yass.renderer.YassSession;
+import yass.UsdbFile;
+import yass.usdb.UsdbClient;
+import yass.usdb.UsdbCookieBrowser;
+import yass.usdb.UsdbSongImportResult;
+import yass.usdb.UsdbSongImportService;
+import yass.usdb.UsdbCredentialStore;
+import yass.usdb.UsdbImportQueueService;
+import yass.usdb.UsdbLoginDialog;
+import yass.usdb.UsdbImportProgressListener;
+import yass.usdb.UsdbImportConflictChoice;
+import yass.usdb.UsdbMetaTagParser;
+import yass.usdb.UsdbPendingSongService;
+import yass.usdb.UsdbPythonCookieImporter;
+import yass.usdb.UsdbSearchDialog;
+import yass.usdb.UsdbSessionService;
+import yass.usdb.UsdbSongAddService;
+import yass.usdb.UsdbSongCommentService;
+import yass.usdb.UsdbSongEditDiffDialog;
+import yass.usdb.UsdbSongEditService;
+import yass.usdb.UsdbSongDetails;
+import yass.usdb.UsdbSongSummary;
+import yass.usdb.UsdbSyncerBridge;
 import yass.video.YassVideoDialog;
-import yass.wizard.ClipboardLyricsDiffDialog;
 import yass.wizard.CreateSongWizard;
+import yass.wizard.Lyrics;
 import yass.wizard.WizardTranscriptionState;
 
 import javax.imageio.ImageIO;
@@ -77,10 +103,13 @@ import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.MessageFormat;
@@ -88,6 +117,8 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -95,6 +126,8 @@ import java.util.stream.Collectors;
 @Getter
 @Setter
 public class YassActions implements DropTargetListener {
+    private static final Gson USDB_META_GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final int FANART_IMAGE_TIMEOUT_MS = 8000;
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public static final int FREESTYLE_NOTE = Integer.MIN_VALUE + 1;
@@ -161,6 +194,12 @@ public class YassActions implements DropTargetListener {
     private YassAutoCorrect auto = null;
     private CreateSongWizard activeWizard = null;
     private YassSongList songList = null;
+    private final UsdbSessionService usdbSessionService = new UsdbSessionService();
+    private final UsdbClient usdbClient = new UsdbClient(usdbSessionService);
+    private UsdbImportQueueService usdbImportQueueService;
+    private final UsdbCredentialStore usdbCredentialStore = new UsdbCredentialStore();
+    private UsdbSyncerBridge usdbSyncerBridge = null;
+    private final AtomicBoolean usdbLoginDialogOpen = new AtomicBoolean(false);
     private YassGroups groups = null;
     private JComboBox<String> groupsBox = null;
     private final Hashtable<String, ImageIcon> icons = new Hashtable<>();
@@ -310,6 +349,13 @@ public class YassActions implements DropTargetListener {
 
     private EditorCommand createEditorCommand(String id, java.util.function.Consumer<EditorInputContext> executor) {
         return new SimpleEditorCommand(id, context -> context.focusArea() != FocusArea.DIALOG, executor);
+    }
+
+    private void bindEditorPressCountShortcut(KeyStroke keyStroke,
+                                              int pressCount,
+                                              String id,
+                                              java.util.function.Consumer<EditorInputContext> executor) {
+        editorKeyBindingRegistry.bind(keyStroke, pressCount, createEditorCommand(id, executor));
     }
 
     private void importEditorBindings(InputMap inputMap, ActionMap actionMap) {
@@ -1374,7 +1420,8 @@ public class YassActions implements DropTargetListener {
                 }
                 File selectedFile = chooser.getSelectedFile();
                 String filename = selectedFile.getName();
-                if (currentFile != null && currentFile.equals(filename) && activeTable.getMP3().equals(filename)) {
+                String activeMp3 = activeTable.getMP3();
+                if (StringUtils.equals(currentFile, filename) && StringUtils.equals(activeMp3, filename)) {
                     return;
                 }
                 if (textField != null) {
@@ -2970,6 +3017,66 @@ public class YassActions implements DropTargetListener {
             table.nextBeat();
         }
     };
+
+    void triggerEditorSelectionPlaybackFromSheet() {
+        playSelection.actionPerformed(null);
+    }
+
+    void triggerEditorPagePlaybackFromSheet(boolean withMidi) {
+        if (withMidi) {
+            playPageWithMIDI.actionPerformed(null);
+            return;
+        }
+        playPage.actionPerformed(null);
+    }
+
+    void triggerEditorBeforePlaybackFromSheet(boolean withMidi) {
+        if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader()) {
+            return;
+        }
+        playSelectionBefore(withMidi ? 1 : 0);
+    }
+
+    void triggerEditorNextPlaybackFromSheet(boolean withMidi) {
+        if (lyrics.isEditable() || songList.isEditing() || isFilterEditing() || isFocusInSongHeader()) {
+            return;
+        }
+        playSelectionNext(withMidi ? 1 : 0);
+    }
+
+    void triggerEditorPrevBeatFromSheet() {
+        prevBeat.actionPerformed(null);
+    }
+
+    void triggerEditorNextBeatFromSheet() {
+        nextBeat.actionPerformed(null);
+    }
+
+    void triggerEditorPrevPageFromSheet() {
+        prevPage.actionPerformed(null);
+    }
+
+    void triggerEditorNextPageFromSheet() {
+        nextPage.actionPerformed(null);
+    }
+
+    void triggerEditorSlideLeftFromSheet(boolean fast) {
+        if (isFocusInSongHeader()) {
+            return;
+        }
+        sheet.slideLeft(fast ? 50 : 10);
+    }
+
+    void triggerEditorSlideRightFromSheet(boolean fast) {
+        if (isFocusInSongHeader()) {
+            return;
+        }
+        sheet.slideRight(fast ? 50 : 10);
+    }
+
+    void triggerEditorOnePageFromSheet() {
+        onePage.actionPerformed(null);
+    }
     private final Action selectPrevBeat = new AbstractAction(I18.get("edit_select_left")) {
         public void actionPerformed(ActionEvent e) {
             if (isFocusInSongHeader()) {
@@ -2984,6 +3091,38 @@ public class YassActions implements DropTargetListener {
                 return;
             }
             table.selectNextBeat();
+        }
+    };
+    private final Action selectCurrentWord = new AbstractAction("Select Current Word") {
+        public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
+            table.extendSelectionDownToWordBoundary();
+        }
+    };
+    private final Action selectCurrentWordUp = new AbstractAction("Select Current Word Up") {
+        public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
+            table.extendSelectionUpToWordBoundary();
+        }
+    };
+    private final Action selectToEndOfCurrentPage = new AbstractAction("Select To Page End") {
+        public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
+            table.extendSelectionDownToPageBreak();
+        }
+    };
+    private final Action selectToStartOfCurrentPage = new AbstractAction("Select To Page Start") {
+        public void actionPerformed(ActionEvent e) {
+            if (isFocusInSongHeader()) {
+                return;
+            }
+            table.extendSelectionUpToPageBreak();
         }
     };
     private final Action autoCorrectPageBreaks = new AbstractAction(
@@ -3311,7 +3450,7 @@ public class YassActions implements DropTargetListener {
             interruptPlay();
             if (sheet != null && !isFocusInSongHeader()) {
                 boolean onoff = !sheet.isSnapshotShown();
-                if (e.getSource() != snapshotButton) {
+                if (e == null || e.getSource() != snapshotButton) {
                     snapshotButton.setSelected(onoff);
                 }
                 if (showCopyCBI != null) {
@@ -3719,21 +3858,29 @@ public class YassActions implements DropTargetListener {
                                                     :
                                                     (useWhisperX ? I18.get("edit_align_transcription_progress_whisperx")
                                                             : I18.get("edit_align_transcription_progress")));
+            JLabel outputLabel = new JLabel(" ");
+            outputLabel.setFont(outputLabel.getFont().deriveFont(Math.max(10f, outputLabel.getFont().getSize2D() - 1f)));
+            outputLabel.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createEtchedBorder(),
+                    BorderFactory.createEmptyBorder(6, 8, 6, 8)));
             JProgressBar progress = new JProgressBar();
             progress.setIndeterminate(true);
             JPanel panel = new JPanel(new BorderLayout(0, 8));
             panel.add(new JLabel("<html>" + (useWhisperX ? I18.get("edit_align_transcription_hint_whisperx")
                     : I18.get("edit_align_transcription_hint")) + "</html>"), BorderLayout.NORTH);
-            panel.add(statusLabel, BorderLayout.CENTER);
+            JPanel centerPanel = new JPanel(new GridLayout(2, 1, 0, 6));
+            centerPanel.add(statusLabel);
+            centerPanel.add(outputLabel);
+            panel.add(centerPanel, BorderLayout.CENTER);
             panel.add(progress, BorderLayout.SOUTH);
 
             JDialog progressDialog = new JDialog(getFrame(tab), I18.get("edit_align_transcription"), true);
             progressDialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
             progressDialog.getContentPane().add(panel);
-            progressDialog.setSize(560, 170);
+            progressDialog.setSize(680, 210);
             progressDialog.setLocationRelativeTo(getFrame(tab));
 
-            SwingWorker<OpenAiTranscriptionResult, Void> worker =
+            SwingWorker<OpenAiTranscriptionResult, String> worker =
                     new SwingWorker<>() {
                         @Override
                         protected OpenAiTranscriptionResult doInBackground() throws Exception {
@@ -3742,11 +3889,21 @@ public class YassActions implements DropTargetListener {
                                         ?
                                         whisperXService.loadCachedTranscription((WhisperXTranscriptionRequest) request,
                                                                                 table)
-                                        : whisperXService.transcribe((WhisperXTranscriptionRequest) request, table);
+                                        : whisperXService.transcribe((WhisperXTranscriptionRequest) request, table,
+                                        message -> publish(message));
                             }
                             return useCachedTranscription
                                     ? openAiService.loadCachedTranscription((OpenAiTranscriptionRequest) request, table)
                                     : openAiService.transcribe((OpenAiTranscriptionRequest) request, table);
+                        }
+
+                        @Override
+                        protected void process(java.util.List<String> chunks) {
+                            if (chunks.isEmpty()) {
+                                return;
+                            }
+                            String latest = chunks.get(chunks.size() - 1);
+                            outputLabel.setText(formatWhisperXProgressLine(latest));
                         }
 
                         @Override
@@ -3770,33 +3927,10 @@ public class YassActions implements DropTargetListener {
 
                                 String summary;
                                 if (rebuildFromTranscript) {
-                                    OpenAiTranscriptionResult rebuildTranscript = result;
-                                    String currentLyrics = normalizeEditorLyrics(table.getPageStructuredLyrics());
-                                    if (StringUtils.isNotBlank(currentLyrics)) {
-                                        TranscriptTruthRewriteService rewriteService =
-                                        new TranscriptTruthRewriteService();
-                                        OpenAiTranscriptionResult alignedTranscript =
-                                        rewriteService.alignToReferenceLines(
-                                                result, currentLyrics);
-                                        ClipboardLyricsDiffDialog dialog = new ClipboardLyricsDiffDialog(getFrame(tab),
-                                                                                                         normalizeEditorLyrics(
-                                                                                                                 alignedTranscript.getTranscriptText()),
-                                                                                                         currentLyrics);
-                                        ClipboardLyricsDiffDialog.Result diffResult = dialog.showDialog();
-                                        if (diffResult == null) {
-                                            return;
-                                        }
-                                        OpenAiTranscriptionResult structuredTranscript = rewriteService.rewrite(result,
-                                                                                                                normalizeEditorLyrics(
-                                                                                                                        diffResult.transcriptText()));
-                                        rebuildTranscript = rewriteService.applyLyricsToStructuredTranscript(
-                                                structuredTranscript,
-                                                normalizeEditorLyrics(diffResult.clipboardText()));
-                                    }
                                     TranscriptRebuildResult rebuildResult =
-                                            new TranscriptNoteRebuildService().transcript(table, rebuildTranscript);
-                                    summary = (useWhisperX ? whisperXService.buildSummary(rebuildTranscript) :
-                                            openAiService.buildSummary(rebuildTranscript))
+                                            new TranscriptNoteRebuildService().transcript(table, result);
+                                    summary = (useWhisperX ? whisperXService.buildSummary(result) :
+                                            openAiService.buildSummary(result))
                                             .replace("</html>", "<br><br>"
                                                     + MessageFormat.format(
                                                     I18.get("edit_align_transcription_rebuild_summary"),
@@ -3868,6 +4002,19 @@ public class YassActions implements DropTargetListener {
                                           I18.get("edit_align_transcription"),
                                           JOptionPane.WARNING_MESSAGE);
         }
+    }
+
+    private String formatWhisperXProgressLine(String value) {
+        if (StringUtils.isBlank(value)) {
+            return " ";
+        }
+        String escaped = value.replace("&", "&amp;")
+                              .replace("<", "&lt;")
+                              .replace(">", "&gt;");
+        if (escaped.length() > 220) {
+            escaped = escaped.substring(0, 217) + "...";
+        }
+        return "<html><b>Latest output:</b> " + escaped + "</html>";
     }
 
     public void startSeparateAudioForCurrentSong() {
@@ -3966,6 +4113,7 @@ public class YassActions implements DropTargetListener {
 
             OpenAiTranscriptionResult transcriptionResult =
                     applyCorrectedLyricsToTranscript(state.getTranscriptionResult(), correctedLyrics);
+            Lyrics.configureTranscriptHyphenator(prop, createdTable, createdTable.getLanguage());
             new TranscriptNoteRebuildService().transcript(createdTable, transcriptionResult);
             copyWizardSeparationFiles(destinationDir, createdTable, state);
             copyWizardTranscriptCache(destinationDir, state);
@@ -4070,9 +4218,59 @@ public class YassActions implements DropTargetListener {
                                .replace("\r", "<br>") + "</html>";
     }
 
+    static boolean shouldOfferSeparationAfterWizard(WizardTranscriptionState state) {
+        return state == null || state.getSeparationResult() == null;
+    }
+
     private void maybeStartSeparationAfterCreateSong() {
-        if (hasMvsepApiToken()) {
-            SwingUtilities.invokeLater(this::startSeparateAudioForCurrentSong);
+        if (!hasConfiguredSeparation() || table == null) {
+            return;
+        }
+        int option = JOptionPane.showConfirmDialog(tab,
+                                                   I18.get("create_song_open_separation_prompt"),
+                                                   I18.get("create_song_open_separation_title"),
+                                                   JOptionPane.YES_NO_OPTION,
+                                                   JOptionPane.QUESTION_MESSAGE);
+        if (option != JOptionPane.YES_OPTION) {
+            return;
+        }
+        SwingUtilities.invokeLater(this::startPreferredSeparationForCurrentSong);
+    }
+
+    private void startPreferredSeparationForCurrentSong() {
+        SeparationPreference preference = SeparationPreference.fromValue(prop.getProperty("separation-preference"));
+        boolean mvsepConfigured = hasMvsepApiToken();
+        boolean audioSepConfigured = hasConfiguredLocalSeparation();
+
+        switch (preference) {
+            case ONLINE_FIRST -> {
+                if (mvsepConfigured) {
+                    startSeparateAudioForCurrentSong();
+                    return;
+                }
+                if (audioSepConfigured) {
+                    startLocalSeparateAudioForCurrentSong();
+                }
+            }
+            case MVSEP_ONLY -> {
+                if (mvsepConfigured) {
+                    startSeparateAudioForCurrentSong();
+                }
+            }
+            case AUDIO_SEP_ONLY -> {
+                if (audioSepConfigured) {
+                    startLocalSeparateAudioForCurrentSong();
+                }
+            }
+            default -> {
+                if (audioSepConfigured) {
+                    startLocalSeparateAudioForCurrentSong();
+                    return;
+                }
+                if (mvsepConfigured) {
+                    startSeparateAudioForCurrentSong();
+                }
+            }
         }
     }
 
@@ -4397,7 +4595,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action enableAudio = new AbstractAction(I18.get("edit_audio_toggle")) {
         public void actionPerformed(ActionEvent e) {
-            if (e.getSource() != mp3Button) {
+            if (e == null || e.getSource() != mp3Button) {
                 mp3Button.setSelected(!mp3Button.isSelected());
             }
             mp3.setAudioEnabled(mp3Button.isSelected());
@@ -4442,7 +4640,7 @@ public class YassActions implements DropTargetListener {
     private JCheckBoxMenuItem midiCBI = null;
     private final Action enableMidi = new AbstractAction(I18.get("edit_midi_toggle")) {
         public void actionPerformed(ActionEvent e) {
-            enableMidi(e.getSource() != midiButton);
+            enableMidi(e == null || e.getSource() != midiButton);
         }
     };
 
@@ -5194,6 +5392,44 @@ public class YassActions implements DropTargetListener {
         return songList;
     }
 
+    public UsdbClient getUsdbClient() {
+        return usdbClient;
+    }
+
+    public UsdbSessionService.UsdbSessionInfo getUsdbSessionInfo() {
+        try {
+            return usdbSessionService.getSessionInfo();
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO, "USDB session info could not be determined", ex);
+            return UsdbSessionService.UsdbSessionInfo.loggedOut();
+        }
+    }
+
+    public boolean canDirectlyEditUsdbSongs() {
+        return getUsdbSessionInfo().directEditAllowed();
+    }
+
+    public boolean canDirectlyEditUsdbSongsCached() {
+        return usdbSessionService.getCachedSessionInfo().directEditAllowed();
+    }
+
+    public synchronized UsdbImportQueueService getUsdbImportQueueService() {
+        if (usdbImportQueueService == null) {
+            usdbImportQueueService = new UsdbImportQueueService(this);
+        }
+        return usdbImportQueueService;
+    }
+
+    public boolean hasConfiguredSeparation() {
+        return hasMvsepApiToken() || hasConfiguredLocalSeparation();
+    }
+
+    private boolean hasConfiguredLocalSeparation() {
+        return StringUtils.isNotBlank(prop.getProperty(AudioSeparatorSeparationService.PROP_PYTHON))
+                && Boolean.parseBoolean(StringUtils.defaultIfBlank(
+                prop.getProperty(AudioSeparatorSeparationService.PROP_HEALTH_OK), "false"));
+    }
+
     public void setSongList(YassSongList s) {
         songList = s;
         songList.setOpenAction(openSongFromLibrary);
@@ -5212,11 +5448,17 @@ public class YassActions implements DropTargetListener {
                 groups.refreshCounters();
             }
         });
+        songList.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                updateLibrarySelectionDependentActions();
+            }
+        });
         // setDropTarget(songList);
     }
 
     public void init(YassProperties p) {
         prop = p;
+        usdbSyncerBridge = new UsdbSyncerBridge(prop);
 
         loadColors();
         loadKeys();
@@ -5599,6 +5841,14 @@ public class YassActions implements DropTargetListener {
                 getClass().getResource("/yass/resources/toolbarButtonGraphics/general/Information24.gif")));
         icons.put("createSyncerTagsIcon",
                   new ImageIcon(getClass().getResource("/yass/resources/img/usdb_syncer_icon.png")));
+        icons.put("usdbBrowserIcon",
+                  new ImageIcon(getClass().getResource("/yass/resources/img/usdb_browser_icon.png")));
+        icons.put("usdbBrowser16Icon",
+                  new ImageIcon(getClass().getResource("/yass/resources/img/usdb_browser_icon_24.png")));
+        icons.put("usdbBrowser24Icon",
+                  new ImageIcon(getClass().getResource("/yass/resources/img/usdb_browser_icon_24.png")));
+        icons.put("usdbCompare16Icon",
+                  new ImageIcon(getClass().getResource("/yass/resources/img/usdb_compare_icon_24.png")));
         icons.put("quantize16Icon", new ImageIcon(getClass().getResource("/yass/resources/img/quantize_16.png")));
         icons.put("quantize24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/quantize_24.png")));
         icons.put("createDuetIcon", new ImageIcon(getClass().getResource("/yass/resources/img/create_duet.png")));
@@ -5617,6 +5867,8 @@ public class YassActions implements DropTargetListener {
         detailLibrary.putValue(AbstractAction.SMALL_ICON, getIcon("notiles16Icon"));
         showSongInfoBackground.putValue(AbstractAction.SMALL_ICON, getIcon("empty16Icon"));
         createSyncerTags.putValue(AbstractAction.SMALL_ICON, getResizedIcon("createSyncerTagsIcon", 16));
+        searchUsdb.putValue(AbstractAction.SMALL_ICON, getResizedIcon("usdbBrowser16Icon", 16));
+        compareUsdb.putValue(AbstractAction.SMALL_ICON, getResizedIcon("usdbCompare16Icon", 16));
         editHyphenations.putValue(AbstractAction.SMALL_ICON, getIcon("hyphenate24Icon"));
         queryMusicBrainz.putValue(AbstractAction.SMALL_ICON, getResizedIcon("MusicBrainzIcon", 16));
         searchFanartTvCover.putValue(AbstractAction.SMALL_ICON, getResizedIcon("fanartTvIcon", 16));
@@ -5859,6 +6111,7 @@ public class YassActions implements DropTargetListener {
         menu.add(separateAudio);
         menu.add(separateAudioLocal);
         menu.add(queryMusicBrainz);
+        menu.add(compareUsdb);
         menu.add(suggestGoldenNotes);
         menu.add(showOptions);
 
@@ -5973,7 +6226,11 @@ public class YassActions implements DropTargetListener {
         menu.add(createSyncerTags);
         menu.add(searchFanartTvCover);
         menu.add(editHyphenations);
-        menu.add(alignNotesWithTranscription);
+        if (hasUsdbStoredUsername()) {
+            menu.addSeparator();
+            menu.add(searchUsdb);
+            menu.add(compareUsdb);
+        }
         menu.addSeparator();
         menu.add(showOptions);
         menuBar.add(menu);
@@ -6428,6 +6685,24 @@ public class YassActions implements DropTargetListener {
         filterEditor.setText(I18.get("tool_lib_find_empty"));
         filterEditor.setForeground(Color.gray);
         songInfo.setBold(null);
+    }
+
+    public void resetLibraryFiltersForStartup() {
+        if (songList == null) {
+            return;
+        }
+        if (filterEditor != null) {
+            clearFilter();
+        }
+        if (groups != null) {
+            groups.setIgnoreChange(true);
+            if (groups.getRowCount() > 0) {
+                groups.setRowSelectionInterval(0, 0);
+            }
+            groups.setIgnoreChange(false);
+        }
+        songList.setPreFilter(null);
+        songList.filter(null);
     }
 
     public void createFilterBox() {
@@ -6921,6 +7196,15 @@ public class YassActions implements DropTargetListener {
         bgToggle.setIcon(getIcon("empty24Icon"));
         // detailToggle.setSelectedIcon(getIcon("tiles24Icon"));
         bgToggle.setFocusable(false);
+
+        t.addSeparator();
+
+        t.add(b = new JButton());
+        b.setAction(createSyncerTags);
+        b.setToolTipText(b.getText());
+        b.setText("");
+        b.setIcon(getResizedIcon("createSyncerTagsIcon", 24));
+        b.setFocusable(false);
         return t;
     }
 
@@ -6940,6 +7224,13 @@ public class YassActions implements DropTargetListener {
 
         JButton b;
         t.add(Box.createHorizontalGlue());
+
+        t.add(b = new JButton());
+        b.setAction(searchUsdb);
+        b.setToolTipText(b.getText());
+        b.setText("");
+        b.setIcon(getIcon("usdbBrowser24Icon"));
+        b.setFocusable(false);
 
         t.add(filterEditor);
         t.add(b = new JButton());
@@ -7438,6 +7729,7 @@ public class YassActions implements DropTargetListener {
         if (filter != null) {
             filter.setEnabled(b);
         }
+        updateLibrarySelectionDependentActions();
     }
 
     public void updateActions() {
@@ -7587,6 +7879,7 @@ public class YassActions implements DropTargetListener {
         removeEnd.setEnabled(isOpened);
         removeVideoGap.setEnabled(isOpened);
         openVideo.setEnabled(isOpened);
+        updateLibrarySelectionDependentActions();
     }
 
     public boolean hasAnyTranscriptionEngine() {
@@ -7826,6 +8119,7 @@ public class YassActions implements DropTargetListener {
     }
 
     private void updateSongInfo(Action a) {
+        updateLibrarySelectionDependentActions();
         songInfoToggle.setSelected(false);
         filterAll.setSelected(false);
         detailToggle.setSelected(false);
@@ -7903,6 +8197,7 @@ public class YassActions implements DropTargetListener {
         }
 
         songInfo.repaint();
+        updateLibrarySelectionDependentActions();
     }
 
 
@@ -9284,7 +9579,13 @@ public class YassActions implements DropTargetListener {
                     clampUntappedNotesAfterLastTap(completedSelection, processedTapNotes, 3);
                 }
                 if (completedSelection != null) {
-                    table.setRowSelectionInterval(completedSelection.getLeft(), completedSelection.getRight());
+                    int rowCount = table.getRowCount();
+                    if (rowCount > 0) {
+                        int selectionStart = Math.max(0, Math.min(rowCount - 1, completedSelection.getLeft()));
+                        int selectionEnd = Math.max(selectionStart,
+                                Math.min(rowCount - 1, completedSelection.getRight()));
+                        table.setRowSelectionInterval(selectionStart, selectionEnd);
+                    }
                     if (!postRecordingPitchData.isEmpty()) {
                         int selectionStart = Math.max(0, completedSelection.getLeft());
                         int selectionEnd = Math.min(table.getRowCount() - 1,
@@ -10003,14 +10304,32 @@ public class YassActions implements DropTargetListener {
 
         File file;
         if (table.getDirMP3() != null) {
-            file = new File(table.getDirMP3());
+            String playbackPath = table.getDirMP3();
+            file = new File(playbackPath);
             if (!file.exists()) {
                 selectAudioFile.actionPerformed(null);
+                playbackPath = table.getDirMP3();
+                file = StringUtils.isNotBlank(playbackPath) ? new File(playbackPath) : null;
             }
+            String waveformPath = null;
             if (prop.getBooleanProperty("debug-waveform") && StringUtils.isNotEmpty(table.getVocals())) {
-                mp3.openMP3(table.getDir() + File.separator + table.getVocals());
+                waveformPath = table.getDir() + File.separator + table.getVocals();
+                if (!new File(waveformPath).exists()) {
+                    waveformPath = null;
+                }
+            }
+            String resolvedPlaybackPath = StringUtils.defaultIfBlank(waveformPath, playbackPath);
+            if (StringUtils.isBlank(resolvedPlaybackPath) || file == null || !file.exists()) {
+                file = new File(table.getDirFilename());
+                mp3.emptyMp3(table);
             } else {
-                mp3.openMP3(table.getDirMP3());
+                try {
+                    mp3.openMP3(resolvedPlaybackPath);
+                } catch (Exception ex) {
+                    LOGGER.log(Level.WARNING, "Could not open audio for editor: " + resolvedPlaybackPath, ex);
+                    file = new File(table.getDirFilename());
+                    mp3.emptyMp3(table);
+                }
             }
         } else {
             file = new File(table.getDirFilename());
@@ -10917,7 +11236,7 @@ public class YassActions implements DropTargetListener {
                 if (starteditor) {
                     songList.gotoSong(table);
                     openFiles(file, false);
-                    if (!wizardAssetsApplied) {
+                    if (shouldOfferSeparationAfterWizard(wiz.getWizardTranscriptionState())) {
                         maybeStartSeparationAfterCreateSong();
                     }
                 }
@@ -10927,7 +11246,7 @@ public class YassActions implements DropTargetListener {
             if (file != null && starteditor) {
                 songList.gotoSong(table);
                 openFiles(file, false);
-                if (!wizardAssetsApplied) {
+                if (shouldOfferSeparationAfterWizard(wiz.getWizardTranscriptionState())) {
                     maybeStartSeparationAfterCreateSong();
                 }
                 return file;
@@ -11176,11 +11495,1434 @@ public class YassActions implements DropTargetListener {
         applyEditorShortcutBindings(im, am, getEditorTrackShortcutBindings());
 
         importEditorBindings(im, am);
+        bindEditorPressCountShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK),
+                2,
+                "selectCurrentWordUp",
+                ctx -> selectCurrentWordUp.actionPerformed(null));
+        bindEditorPressCountShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK),
+                3,
+                "selectToStartOfCurrentPage",
+                ctx -> selectToStartOfCurrentPage.actionPerformed(null));
+        bindEditorPressCountShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK),
+                2,
+                "selectCurrentWord",
+                ctx -> selectCurrentWord.actionPerformed(null));
+        bindEditorPressCountShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK),
+                3,
+                "selectToEndOfCurrentPage",
+                ctx -> selectToEndOfCurrentPage.actionPerformed(null));
     }
 
 
     public JFrame createOwnerFrame() {
         return new OwnerFrame();
+    }
+
+    public boolean loginToUsdb(String username, char[] password) {
+        try {
+            return usdbSessionService.login(username, password);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(getFrame(tab),
+                                          StringUtils.defaultIfBlank(ex.getMessage(), ex.toString()),
+                                          I18.get("lib_usdb_login"),
+                                          JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+    }
+
+    public boolean isUsdbCredentialStoreAvailable() {
+        return usdbCredentialStore.isAvailable();
+    }
+
+    public UsdbCookieBrowser getUsdbCookieBrowser() {
+        return UsdbCookieBrowser.fromProperty(prop.getProperty("usdb-cookie-browser"));
+    }
+
+    public void setUsdbCookieBrowser(UsdbCookieBrowser browser) {
+        prop.setProperty("usdb-cookie-browser", (browser == null ? UsdbCookieBrowser.NONE : browser).name());
+        prop.store();
+    }
+
+    public String loginToUsdbWithBrowserCookies(UsdbCookieBrowser browser) {
+        try {
+            return usdbSessionService.useBrowserCookies(browser);
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO, "USDB browser-cookie login failed for " + browser, ex);
+            if (browser == UsdbCookieBrowser.CHROME || browser == UsdbCookieBrowser.EDGE) {
+                return loginToUsdbWithPythonBrowserCookies(browser);
+            }
+            return null;
+        }
+    }
+
+    private String loginToUsdbWithPythonBrowserCookies(UsdbCookieBrowser browser) {
+        UsdbPythonCookieImporter importer = new UsdbPythonCookieImporter(
+                prop.getProperty(PythonRuntimeSupport.PROP_DEFAULT_PYTHON),
+                prop.getProperty("whisperx-python"),
+                prop.getProperty("audiosep-python"));
+        UsdbPythonCookieImporter.PythonCommand python = importer.detectPython();
+        if (python == null) {
+            LOGGER.info("USDB Python browser-cookie fallback skipped because no Python executable was found.");
+            return null;
+        }
+        if (!importer.hasBrowserCookie3(python)) {
+            int choice = JOptionPane.showConfirmDialog(getFrame(tab),
+                                                       I18.get("lib_usdb_cookie_python_install")
+                                                               .replace("{0}", browser.toString())
+                                                               .replace("{1}", python.display()),
+                                                       I18.get("lib_usdb_cookie_python_install_title"),
+                                                       JOptionPane.YES_NO_OPTION,
+                                                       JOptionPane.QUESTION_MESSAGE);
+            if (choice != JOptionPane.YES_OPTION) {
+                return null;
+            }
+            if (!importer.installBrowserCookie3(python) || !importer.hasBrowserCookie3(python)) {
+                JOptionPane.showMessageDialog(getFrame(tab),
+                                              I18.get("lib_usdb_cookie_python_install_failed"),
+                                              I18.get("lib_usdb_cookie_python_install_title"),
+                                              JOptionPane.WARNING_MESSAGE);
+                return null;
+            }
+        }
+        try {
+            return usdbSessionService.useImportedCookies(importer.loadCookies(browser, python));
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO, "USDB Python browser-cookie fallback failed for " + browser, ex);
+            return null;
+        }
+    }
+
+    public String getUsdbCredentialStoreName() {
+        return usdbCredentialStore.getStorageTypeName().orElse("");
+    }
+
+    public boolean isUsdbSyncerConfigured() {
+        return usdbSyncerBridge != null && usdbSyncerBridge.isConfigured();
+    }
+
+    public int refreshUsdbSyncerSongList() throws IOException {
+        if (usdbSyncerBridge == null) {
+            throw new IOException("USDB Syncer is not initialized.");
+        }
+        try {
+            return usdbSyncerBridge.refreshSongList();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("USDB Syncer refresh interrupted.", ex);
+        }
+    }
+
+    public String getUsdbStoredUsername() {
+        return StringUtils.trimToEmpty(prop.getProperty("usdb-username"));
+    }
+
+    public boolean shouldRememberUsdbPassword() {
+        return prop.getBooleanProperty("usdb-remember-password");
+    }
+
+    public boolean shouldAutoLoginUsdbOnStartup() {
+        return shouldRememberUsdbPassword() && getUsdbCookieBrowser() == UsdbCookieBrowser.FIREFOX;
+    }
+
+    public boolean hasUsdbStoredUsername() {
+        return StringUtils.isNotBlank(getUsdbStoredUsername());
+    }
+
+    public void autoLoginUsdbOnStartup() {
+        if (!shouldAutoLoginUsdbOnStartup()) {
+            return;
+        }
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() {
+                try {
+                    if (StringUtils.isNotBlank(usdbSessionService.getLoggedInUser())) {
+                        return null;
+                    }
+                    String cookieUser = loginToUsdbWithBrowserCookies(UsdbCookieBrowser.FIREFOX);
+                    if (StringUtils.isNotBlank(cookieUser)) {
+                        return null;
+                    }
+                    String username = getUsdbStoredUsername();
+                    char[] password = loadUsdbStoredPassword(username);
+                    if (StringUtils.isNotBlank(username) && password != null && password.length > 0) {
+                        try {
+                            loginToUsdb(username, password);
+                        } finally {
+                            Arrays.fill(password, '\0');
+                        }
+                    }
+                } catch (Exception ex) {
+                    LOGGER.log(Level.INFO, "USDB startup auto-login failed", ex);
+                }
+                return null;
+            }
+        };
+        worker.execute();
+    }
+
+    public char[] loadUsdbStoredPassword(String username) {
+        return usdbCredentialStore.loadPassword(username).orElse(null);
+    }
+
+    public void updateUsdbStoredCredentials(String username, char[] password, boolean rememberPassword) {
+        String trimmedUsername = StringUtils.trimToEmpty(username);
+        if (StringUtils.isNotBlank(trimmedUsername)) {
+            prop.setProperty("usdb-username", trimmedUsername);
+        } else {
+            prop.remove("usdb-username");
+        }
+        prop.setProperty("usdb-remember-password", Boolean.toString(rememberPassword));
+        try {
+            if (rememberPassword && StringUtils.isNotBlank(trimmedUsername) && password != null && password.length > 0) {
+                usdbCredentialStore.savePassword(trimmedUsername, password);
+            } else if (StringUtils.isNotBlank(trimmedUsername)) {
+                usdbCredentialStore.deletePassword(trimmedUsername);
+            }
+        } catch (UsdbCredentialStore.UsdbCredentialStoreException ex) {
+            JOptionPane.showMessageDialog(getFrame(tab),
+                                          StringUtils.defaultIfBlank(ex.getMessage(), ex.toString()),
+                                          I18.get("lib_usdb_login"),
+                                          JOptionPane.WARNING_MESSAGE);
+        }
+        prop.store();
+    }
+
+    public String getUsdbLoggedInUser() {
+        try {
+            return usdbSessionService.getLoggedInUser();
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO, "USDB login state could not be determined", ex);
+            return null;
+        }
+    }
+
+    public List<UsdbSongSummary> searchUsdbSongs(String artist, String title) throws IOException {
+        String trimmedArtist = StringUtils.trimToEmpty(artist);
+        String trimmedTitle = StringUtils.trimToEmpty(title);
+        boolean singleQueryMode = StringUtils.isNotBlank(trimmedArtist)
+                && StringUtils.isNotBlank(trimmedTitle)
+                && StringUtils.equalsIgnoreCase(trimmedArtist, trimmedTitle);
+        LOGGER.info("USDB search requested artist='" + trimmedArtist + "' title='" + trimmedTitle
+                + "' singleQueryMode=" + singleQueryMode);
+        if (usdbSyncerBridge != null && usdbSyncerBridge.isConfigured()) {
+            try {
+                List<UsdbSongSummary> localResults = usdbSyncerBridge.searchSongs(trimmedArtist, trimmedTitle, 500);
+                LOGGER.info("USDB search Syncer results=" + localResults.size()
+                        + " for artist='" + trimmedArtist + "' title='" + trimmedTitle + "'");
+                if (!localResults.isEmpty()) {
+                    return localResults;
+                }
+            } catch (IOException ex) {
+                LOGGER.log(Level.INFO, "USDB Syncer DB query failed; falling back to USDB website search.", ex);
+            }
+        } else {
+            LOGGER.info("USDB search Syncer not configured; using website search directly.");
+        }
+        try {
+            ensureUsdbLoggedIn();
+            if (!singleQueryMode) {
+                LOGGER.info("USDB search using combined website query.");
+                List<UsdbSongSummary> combinedResults = usdbClient.searchSongs(trimmedArtist, trimmedTitle);
+                if (!combinedResults.isEmpty()) {
+                    return combinedResults;
+                }
+                if (StringUtils.isNotBlank(trimmedArtist) && StringUtils.isNotBlank(trimmedTitle)) {
+                    LOGGER.info("USDB search combined website query returned 0 results; retrying with split queries.");
+                    LinkedHashMap<Integer, UsdbSongSummary> merged = new LinkedHashMap<>();
+                    for (UsdbSongSummary song : usdbClient.searchSongs(trimmedArtist, "")) {
+                        merged.put(song.songId(), song);
+                    }
+                    for (UsdbSongSummary song : usdbClient.searchSongs("", trimmedTitle)) {
+                        merged.put(song.songId(), song);
+                    }
+                    return new ArrayList<>(merged.values());
+                }
+                return combinedResults;
+            }
+            LOGGER.info("USDB search using split website query.");
+            LinkedHashMap<Integer, UsdbSongSummary> merged = new LinkedHashMap<>();
+            for (UsdbSongSummary song : usdbClient.searchSongs(trimmedArtist, "")) {
+                merged.put(song.songId(), song);
+            }
+            for (UsdbSongSummary song : usdbClient.searchSongs("", trimmedTitle)) {
+                merged.put(song.songId(), song);
+            }
+            return new ArrayList<>(merged.values());
+        } catch (IOException ex) {
+            throw ex;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("USDB search interrupted.", ex);
+        }
+    }
+
+    public UsdbSongDetails getUsdbSongDetails(int songId) throws IOException {
+        try {
+            ensureUsdbLoggedIn();
+            return usdbClient.getSongDetails(songId);
+        } catch (IOException ex) {
+            throw ex;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("USDB details request interrupted.", ex);
+        }
+    }
+
+    public void importUsdbSong(UsdbSongSummary summary) throws IOException {
+        importUsdbSong(summary, null);
+    }
+
+    public void importUsdbSong(UsdbSongSummary summary, Consumer<String> statusConsumer) throws IOException {
+        try {
+            ensureUsdbLoggedIn();
+            if (cancelOpen()) {
+                return;
+            }
+            UsdbSongImportService importService = new UsdbSongImportService(prop, usdbClient);
+            UsdbSongImportResult result = importService.importSong(getFrame(tab), summary, statusConsumer);
+            if (result == null) {
+                return;
+            }
+            refreshLibrary();
+        } catch (IOException ex) {
+            throw ex;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("USDB import interrupted.", ex);
+        }
+    }
+
+    public void enqueueUsdbSongImport(UsdbSongSummary summary,
+                                      boolean separateAfterImport,
+                                      UsdbImportConflictChoice conflictChoice) throws IOException {
+        try {
+            ensureUsdbLoggedIn();
+            getUsdbImportQueueService().enqueue(summary, separateAfterImport, conflictChoice);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("USDB import queue interrupted.", ex);
+        }
+    }
+
+    public void refreshImportedSongInLibrary(File songFile, boolean reloadThumbnail) {
+        if (songFile == null || songList == null || !songFile.isFile()) {
+            return;
+        }
+        String filterText = getCurrentLibraryFilterText();
+        Runnable task = () -> {
+            songList.upsertSongFromFile(songFile, reloadThumbnail);
+            reapplyLibraryFilter(filterText);
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            task.run();
+            return;
+        }
+        try {
+            SwingUtilities.invokeAndWait(task);
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Could not refresh imported song in library: " + songFile.getAbsolutePath(), ex);
+        }
+    }
+
+    private String getCurrentLibraryFilterText() {
+        if (filterEditor == null) {
+            return "";
+        }
+        String text = StringUtils.trimToEmpty(filterEditor.getText());
+        if (StringUtils.equals(text, I18.get("tool_lib_find_empty"))) {
+            return "";
+        }
+        return text;
+    }
+
+    private void reapplyLibraryFilter(String filterText) {
+        if (songList == null || currentView != VIEW_LIBRARY) {
+            return;
+        }
+        String text = StringUtils.trimToEmpty(filterText);
+        songList.filterLyrics(filterAll != null && filterAll.isSelected());
+        songInfo.setBold(text);
+        songList.filter(StringUtils.isBlank(text) ? null : text);
+    }
+
+    public void runQuietLocalSeparationForSongFile(String songFile, Consumer<String> statusConsumer) throws Exception {
+        if (StringUtils.isBlank(songFile)) {
+            return;
+        }
+        File songTextFile = new File(songFile);
+        if (!songTextFile.isFile()) {
+            throw new IOException("Song file not found: " + songFile);
+        }
+        YassTable localTable = new YassTable();
+        localTable.init(prop);
+        localTable.removeAllRows();
+        if (!localTable.loadFile(songFile)) {
+            throw new IOException("Song file could not be loaded: " + songFile);
+        }
+        SeparationResult result = runPreferredQuietSeparation(localTable, statusConsumer);
+        File vocalsFile = result.getVocalsFile();
+        if (vocalsFile != null) {
+            localTable.setVocals(vocalsFile.getName());
+        }
+        File preferredInstrumental = result.getPreferredInstrumentalFile(prop.getProperty("mvsep-instrumental-default"));
+        if (preferredInstrumental != null) {
+            localTable.setInstrumental(preferredInstrumental.getName());
+        }
+        localTable.storeFile(songFile);
+    }
+
+    private SeparationResult runPreferredQuietSeparation(YassTable table, Consumer<String> statusConsumer) throws Exception {
+        SeparationPreference preference = SeparationPreference.fromValue(prop.getProperty("separation-preference"));
+        boolean mvsepConfigured = hasMvsepApiToken();
+        boolean audioSepConfigured = hasConfiguredLocalSeparation();
+        List<SeparationService> candidates = new ArrayList<>();
+
+        switch (preference) {
+            case ONLINE_FIRST -> {
+                if (mvsepConfigured) {
+                    candidates.add(new MvsepSeparationService(prop));
+                }
+                if (audioSepConfigured) {
+                    candidates.add(new AudioSeparatorSeparationService(prop));
+                }
+            }
+            case MVSEP_ONLY -> {
+                if (mvsepConfigured) {
+                    candidates.add(new MvsepSeparationService(prop));
+                }
+            }
+            case AUDIO_SEP_ONLY -> {
+                if (audioSepConfigured) {
+                    candidates.add(new AudioSeparatorSeparationService(prop));
+                }
+            }
+            default -> {
+                if (audioSepConfigured) {
+                    candidates.add(new AudioSeparatorSeparationService(prop));
+                }
+                if (mvsepConfigured) {
+                    candidates.add(new MvsepSeparationService(prop));
+                }
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            throw new IOException(I18.get("create_lyrics_separate_transcribe_requires_mvsep"));
+        }
+
+        Exception lastFailure = null;
+        for (int i = 0; i < candidates.size(); i++) {
+            SeparationService candidate = candidates.get(i);
+            String engineName = candidate instanceof MvsepSeparationService ? "MVSEP" : "audio-separator";
+            if (statusConsumer != null) {
+                statusConsumer.accept("Audio-Separation: starting " + engineName + "...");
+            }
+            try {
+                SeparationRequest request = candidate.createRequest(table);
+                return candidate.startSeparation(request, status -> {
+                    if (statusConsumer != null && StringUtils.isNotBlank(status)) {
+                        statusConsumer.accept(status);
+                    }
+                });
+            } catch (Exception ex) {
+                lastFailure = ex;
+                LOGGER.log(Level.WARNING, "Quiet separation failed with " + engineName, ex);
+                boolean hasFallback = i + 1 < candidates.size();
+                if (statusConsumer != null) {
+                    statusConsumer.accept(hasFallback
+                            ? "Audio-Separation: " + engineName + " failed, trying fallback..."
+                            : "Audio-Separation: " + engineName + " failed.");
+                }
+            }
+        }
+        throw lastFailure != null ? lastFailure : new IOException("Audio separation failed.");
+    }
+
+    public void openUsdbSongInBrowser(int songId) {
+        openUsdbPageInBrowser("index.php?link=detail&id=" + songId, I18.get("lib_visit_usdb"));
+    }
+
+    public void openUsdbPageInBrowser(String relativePath) {
+        openUsdbPageInBrowser(relativePath, I18.get("lib_visit_usdb"));
+    }
+
+    private void openUsdbPageInBrowser(String relativePath, String dialogTitle) {
+        try {
+            String target = StringUtils.defaultIfBlank(relativePath, "");
+            if (!StringUtils.startsWithIgnoreCase(target, "http://")
+                    && !StringUtils.startsWithIgnoreCase(target, "https://")) {
+                target = "https://usdb.animux.de/" + StringUtils.removeStart(target, "/");
+            }
+            Desktop.getDesktop().browse(new URI(target));
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(getFrame(tab),
+                                          StringUtils.defaultIfBlank(ex.getMessage(), ex.toString()),
+                                          dialogTitle,
+                                          JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    public void compareAndSubmitUsdbSongEdit(String songFile) {
+        compareAndSubmitUsdbSongEdit(songFile, null);
+    }
+
+    public void compareAndSubmitUsdbSongEdit(String songFile, Integer forcedUsdbSongId) {
+        if (StringUtils.isBlank(songFile)) {
+            return;
+        }
+        SwingWorker<UsdbEditComparisonContext, Void> worker = new SwingWorker<>() {
+            @Override
+            protected UsdbEditComparisonContext doInBackground() throws Exception {
+                ensureUsdbLoggedIn();
+                if (!canDirectlyEditUsdbSongs()) {
+                    throw new IOException(I18.get("usdb_edit_not_allowed"));
+                }
+                Path songPath = Path.of(songFile);
+                Path songDirectory = songPath.getParent();
+                if (songDirectory == null) {
+                    throw new IOException("Song directory could not be determined.");
+                }
+                YassTable lookupTable = loadSongTableFromFile(songPath);
+                if (lookupTable == null) {
+                    throw new IOException("Song file could not be loaded.");
+                }
+                String localTxt = Files.readString(songPath, StandardCharsets.UTF_8)
+                        .replace("\r\n", "\n")
+                        .replace('\r', '\n');
+                int usdbSongId = forcedUsdbSongId != null && forcedUsdbSongId > 0
+                        ? forcedUsdbSongId
+                        : resolveUsdbSongIdForSongEdit(songPath, lookupTable);
+                if (usdbSongId <= 0) {
+                    int pendingSongId = resolvePendingUsdbSongIdForSongEdit(songPath, lookupTable);
+                    throw new UsdbCompareSearchRequiredException(songFile,
+                            StringUtils.trimToEmpty(lookupTable.getArtist()),
+                            StringUtils.trimToEmpty(lookupTable.getTitle()),
+                            pendingSongId);
+                }
+                UsdbSongEditService service = new UsdbSongEditService(usdbSessionService);
+                UsdbSongEditService.UsdbEditableSong editableSong = service.loadEditableSong(usdbSongId);
+                MergedUsdbEditText mergedLocalTxt = mergeUsdbAndLocalSongText(editableSong.remoteTxt(), localTxt);
+                return new UsdbEditComparisonContext(editableSong, songFile, localTxt, mergedLocalTxt);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    UsdbEditComparisonContext context = get();
+                    String songName = StringUtils.defaultIfBlank(context.editableSong().title(), Path.of(songFile).getFileName().toString());
+                    UsdbSongEditDiffDialog dialog = new UsdbSongEditDiffDialog(getFrame(tab),
+                            songName,
+                            context.editableSong().remoteTxt(),
+                            context.mergedText().text(),
+                            context.mergedText().appendedLineIndexes(),
+                            context.mergedText().appendedTags());
+                    UsdbSongEditDiffDialog.Result result = dialog.showDialog();
+                    if (result == null) {
+                        return;
+                    }
+                    if (result.action() == UsdbSongEditDiffDialog.Action.SAVE_LOCAL) {
+                        saveUsdbEditLocally(context.songFile(), context.editableSong().songId(), context.originalLocalText(), result.submittedText());
+                    } else {
+                        submitUsdbSongEdit(context.songFile(), context.editableSong(), result.submittedText());
+                    }
+                } catch (Exception ex) {
+                    Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                    if (root instanceof UsdbCompareSearchRequiredException required) {
+                        if (required.pendingSongId() > 0) {
+                            reviewPendingUsdbSong(required.songFile(), required.pendingSongId());
+                            return;
+                        }
+                        openCompareUsdbSearchDialog(required.songFile(), required.artist(), required.title());
+                        return;
+                    }
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            StringUtils.defaultIfBlank(root.getMessage(), root.toString()),
+                            I18.get("usdb_edit_compare"),
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void submitUsdbSongEdit(String songFile, UsdbSongEditService.UsdbEditableSong editableSong, String submittedText) {
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                ensureUsdbLoggedIn();
+                if (!canDirectlyEditUsdbSongs()) {
+                    throw new IOException(I18.get("usdb_edit_not_allowed"));
+                }
+                UsdbSongEditService service = new UsdbSongEditService(usdbSessionService);
+                service.submitSongUpdate(editableSong, submittedText);
+                ensureUsdbMetaFileExists(songFile, editableSong.songId());
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    get();
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            I18.get("usdb_edit_submit_success"),
+                            I18.get("usdb_edit_compare"),
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            StringUtils.defaultIfBlank(root.getMessage(), root.toString()),
+                            I18.get("usdb_edit_submit"),
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    public void reviewPendingUsdbSong(String songFile, int pendingSongId) {
+        if (StringUtils.isBlank(songFile) || pendingSongId <= 0) {
+            return;
+        }
+        SwingWorker<UsdbPendingComparisonContext, Void> worker = new SwingWorker<>() {
+            @Override
+            protected UsdbPendingComparisonContext doInBackground() throws Exception {
+                return loadPendingComparisonContext(songFile, pendingSongId);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    UsdbPendingComparisonContext context = get();
+                    String songName = StringUtils.defaultIfBlank(context.pendingSong().title(), Path.of(songFile).getFileName().toString());
+                    UsdbSongEditDiffDialog dialog = new UsdbSongEditDiffDialog(getFrame(tab),
+                            songName,
+                            context.pendingSong().remoteTxt(),
+                            context.mergedText().text(),
+                            context.mergedText().appendedLineIndexes(),
+                            context.mergedText().appendedTags(),
+                            context.pendingSong().submitSongId() > 0);
+                    dialog.setActionHandler((action, submittedText, sourceDialog) ->
+                            handlePendingDialogAction(context.songFile(), context.pendingSong().songId(), action, submittedText, sourceDialog));
+                    UsdbSongEditDiffDialog.Result result = dialog.showDialog();
+                    if (result == null) {
+                        return;
+                    }
+                } catch (Exception ex) {
+                    Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            StringUtils.defaultIfBlank(root.getMessage(), root.toString()),
+                            I18.get("usdb_edit_compare"),
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private UsdbPendingComparisonContext loadPendingComparisonContext(String songFile, int pendingSongId) throws Exception {
+        ensureUsdbLoggedIn();
+        Path songPath = Path.of(songFile);
+        String localTxt = Files.readString(songPath, StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
+        UsdbPendingSongService service = new UsdbPendingSongService(usdbSessionService);
+        UsdbPendingSongService.PendingSong pendingSong = service.loadPendingSong(pendingSongId);
+        MergedUsdbEditText mergedLocalTxt = mergeUsdbAndLocalSongText(pendingSong.remoteTxt(), localTxt);
+        return new UsdbPendingComparisonContext(pendingSong, songFile, localTxt, mergedLocalTxt);
+    }
+
+    private UsdbPendingComparisonContext completePendingVerificationAndFinalize(String songFile,
+                                                                               UsdbPendingSongService.PendingSong pendingSong,
+                                                                               String submittedText) throws Exception {
+        ensureUsdbLoggedIn();
+        LOGGER.info("USDB pending verification finalize start for songFile=" + songFile
+                + ", pendingSongId=" + pendingSong.songId());
+        UsdbPendingSongService pendingService = new UsdbPendingSongService(usdbSessionService);
+        pendingService.submitPendingSongUpdate(pendingSong, submittedText);
+        pendingService.completeVerification(pendingSong);
+
+        int finalSongId = resolvePublishedUsdbSongIdForSongFile(songFile, 5, 1000L);
+        LOGGER.info("USDB pending verification finalize resolved finalSongId=" + finalSongId
+                + " for songFile=" + songFile);
+        if (finalSongId > 0) {
+            ensureUsdbMetaFileExists(songFile, finalSongId);
+            updatePublishedSongMediaInputs(songFile, finalSongId);
+        }
+        return new UsdbPendingComparisonContext(
+                new UsdbPendingSongService.PendingSong(finalSongId, "", "", "", Map.of(), 0),
+                songFile,
+                "",
+                new MergedUsdbEditText("", "", List.of(), List.of()));
+    }
+
+    private int resolvePublishedUsdbSongIdForSongFile(String songFile, int attempts, long delayMillis)
+            throws IOException, InterruptedException {
+        Path songPath = Path.of(songFile);
+        YassTable lookupTable = loadSongTableFromFile(songPath);
+        if (lookupTable == null) {
+            return 0;
+        }
+        String artist = StringUtils.trimToEmpty(lookupTable.getArtist());
+        String title = StringUtils.trimToEmpty(lookupTable.getTitle());
+        if (StringUtils.isBlank(artist) || StringUtils.isBlank(title)) {
+            return 0;
+        }
+        int maxAttempts = Math.max(1, attempts);
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            int songId = findPublishedUsdbSongIdByArtistTitle(artist, title);
+            if (songId > 0) {
+                return songId;
+            }
+            if (attempt + 1 < maxAttempts && delayMillis > 0) {
+                Thread.sleep(delayMillis);
+            }
+        }
+        return 0;
+    }
+
+    private int findPublishedUsdbSongIdByArtistTitle(String artist, String title) throws IOException {
+        LOGGER.info("USDB final publish lookup artist='" + artist + "' title='" + title + "'");
+        List<UsdbSongSummary> results = searchUsdbSongs(artist, title);
+        LOGGER.info("USDB final publish lookup results=" + results.size()
+                + " for artist='" + artist + "' title='" + title + "'");
+        String normalizedArtist = YassSearchNormalizer.normalizeForSearch(artist);
+        String normalizedTitle = YassSearchNormalizer.normalizeForSearch(title);
+        for (UsdbSongSummary song : results) {
+            if (StringUtils.equals(YassSearchNormalizer.normalizeForSearch(song.artist()), normalizedArtist)
+                    && StringUtils.equals(YassSearchNormalizer.normalizeForSearch(song.title()), normalizedTitle)) {
+                LOGGER.info("USDB final publish lookup matched songId=" + song.songId()
+                        + " artist='" + song.artist() + "' title='" + song.title() + "'");
+                return song.songId();
+            }
+        }
+        LOGGER.info("USDB final publish lookup found no exact match for artist='" + artist + "' title='" + title + "'");
+        return 0;
+    }
+
+    private void updatePublishedSongMediaInputs(String songFile, int usdbSongId) throws IOException, InterruptedException {
+        if (StringUtils.isBlank(songFile) || usdbSongId <= 0) {
+            return;
+        }
+        YassTable table = loadSongTableFromFile(Path.of(songFile));
+        if (table == null) {
+            return;
+        }
+        UsdbMetaTagParser.UsdbParsedMetaTags parsedMetaTags = UsdbMetaTagParser.parse(table.getVideo());
+        String coverUrl = parsedMetaTags.get("co");
+        String youtubeId = StringUtils.firstNonBlank(parsedMetaTags.get("v"), parsedMetaTags.get("a"));
+        LOGGER.info("USDB final publish media follow-up for songId=" + usdbSongId
+                + ", coverUrl=" + StringUtils.defaultIfBlank(coverUrl, "<empty>")
+                + ", youtubeId=" + StringUtils.defaultIfBlank(youtubeId, "<empty>"));
+        UsdbSongEditService editService = new UsdbSongEditService(usdbSessionService);
+        UsdbSongEditService.UsdbEditableSong editableSong = editService.loadEditableSong(usdbSongId);
+        boolean mediaUpdated = editService.submitSongMediaInputsIfMissing(editableSong, coverUrl, "");
+        boolean commentUpdated = new UsdbSongCommentService(usdbSessionService).submitYoutubeCommentIfMissing(usdbSongId, youtubeId);
+        LOGGER.info("USDB final publish media follow-up finished for songId=" + usdbSongId
+                + ", mediaUpdated=" + mediaUpdated + ", commentUpdated=" + commentUpdated);
+    }
+
+    private void handlePendingDialogAction(String songFile,
+                                           int pendingSongId,
+                                           UsdbSongEditDiffDialog.Action action,
+                                           String submittedText,
+                                           UsdbSongEditDiffDialog dialog) {
+        dialog.setBusy(true);
+        SwingWorker<UsdbPendingComparisonContext, Void> worker = new SwingWorker<>() {
+            @Override
+            protected UsdbPendingComparisonContext doInBackground() throws Exception {
+                UsdbPendingComparisonContext context = loadPendingComparisonContext(songFile, pendingSongId);
+                if (action == UsdbSongEditDiffDialog.Action.SAVE_LOCAL) {
+                    saveUsdbEditLocally(context.songFile(), 0, context.originalLocalText(), submittedText, false);
+                    return loadPendingComparisonContext(songFile, pendingSongId);
+                }
+                if (action == UsdbSongEditDiffDialog.Action.COMPLETE_VERIFICATION) {
+                    return completePendingVerificationAndFinalize(context.songFile(), context.pendingSong(), submittedText);
+                }
+                UsdbPendingSongService service = new UsdbPendingSongService(usdbSessionService);
+                service.submitPendingSongUpdate(context.pendingSong(), submittedText);
+                return loadPendingComparisonContext(songFile, pendingSongId);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    UsdbPendingComparisonContext refreshed = get();
+                    if (action == UsdbSongEditDiffDialog.Action.COMPLETE_VERIFICATION) {
+                        String successMessage = I18.get("usdb_pending_complete_verification_success");
+                        if (refreshed != null && refreshed.pendingSong().songId() > 0) {
+                            successMessage += " (ID: " + refreshed.pendingSong().songId() + ")";
+                        }
+                        JOptionPane.showMessageDialog(getFrame(tab),
+                                successMessage,
+                                I18.get("usdb_edit_compare"),
+                                JOptionPane.INFORMATION_MESSAGE);
+                        dialog.dispose();
+                        return;
+                    }
+                    if (refreshed != null) {
+                        dialog.reloadTexts(refreshed.pendingSong().remoteTxt(),
+                                refreshed.mergedText().text(),
+                                refreshed.mergedText().appendedLineIndexes(),
+                                refreshed.mergedText().appendedTags());
+                    }
+                } catch (Exception ex) {
+                    Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            StringUtils.defaultIfBlank(root.getMessage(), root.toString()),
+                            action == UsdbSongEditDiffDialog.Action.COMPLETE_VERIFICATION
+                                    ? I18.get("usdb_pending_complete_verification")
+                                    : I18.get("usdb_edit_submit"),
+                            JOptionPane.ERROR_MESSAGE);
+                } finally {
+                    if (dialog.isDisplayable()) {
+                        dialog.setBusy(false);
+                    }
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void completePendingUsdbVerification(String songFile,
+                                                 UsdbPendingSongService.PendingSong pendingSong,
+                                                 String submittedText) {
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                ensureUsdbLoggedIn();
+                UsdbPendingSongService service = new UsdbPendingSongService(usdbSessionService);
+                service.submitPendingSongUpdate(pendingSong, submittedText);
+                service.completeVerification(pendingSong);
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    get();
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            I18.get("usdb_pending_complete_verification_success"),
+                            I18.get("usdb_edit_compare"),
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            StringUtils.defaultIfBlank(root.getMessage(), root.toString()),
+                            I18.get("usdb_pending_complete_verification"),
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void submitPendingUsdbSongEdit(String songFile,
+                                           UsdbPendingSongService.PendingSong pendingSong,
+                                           String submittedText) {
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                ensureUsdbLoggedIn();
+                UsdbPendingSongService service = new UsdbPendingSongService(usdbSessionService);
+                service.submitPendingSongUpdate(pendingSong, submittedText);
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    get();
+                    reviewPendingUsdbSong(songFile, pendingSong.songId());
+                } catch (Exception ex) {
+                    Throwable root = ex.getCause() != null ? ex.getCause() : ex;
+                    JOptionPane.showMessageDialog(getFrame(tab),
+                            StringUtils.defaultIfBlank(root.getMessage(), root.toString()),
+                            I18.get("usdb_edit_submit"),
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void saveUsdbEditLocally(String songFile, int usdbSongId, String originalLocalText, String submittedText) throws IOException {
+        saveUsdbEditLocally(songFile, usdbSongId, originalLocalText, submittedText, true);
+    }
+
+    private void saveUsdbEditLocally(String songFile,
+                                     int usdbSongId,
+                                     String originalLocalText,
+                                     String submittedText,
+                                     boolean showSuccessMessage) throws IOException {
+        List<String> originalLines = splitSongTextLines(originalLocalText);
+        List<String> submittedLines = splitSongTextLines(submittedText);
+        int originalBodyIndex = firstBodyLineIndex(originalLines);
+        int submittedBodyIndex = firstBodyLineIndex(submittedLines);
+
+        List<String> mergedLocal = new ArrayList<>();
+        Set<String> writtenTags = new LinkedHashSet<>();
+        for (int i = 0; i < originalBodyIndex; i++) {
+            String originalLine = originalLines.get(i);
+            String tag = extractHeaderTag(originalLine);
+            if (StringUtils.isNotBlank(tag) && isLocallyOverwritableUsdbEditTag(tag)) {
+                String replacement = findHeaderLineByTag(submittedLines, submittedBodyIndex, tag);
+                if (StringUtils.isNotBlank(replacement)) {
+                    mergedLocal.add(replacement);
+                    writtenTags.add(tag);
+                    continue;
+                }
+            }
+            mergedLocal.add(originalLine);
+            if (StringUtils.isNotBlank(tag)) {
+                writtenTags.add(tag);
+            }
+        }
+
+        for (int i = 0; i < submittedBodyIndex; i++) {
+            String submittedLine = submittedLines.get(i);
+            String tag = extractHeaderTag(submittedLine);
+            if (StringUtils.isNotBlank(tag) && isLocallyOverwritableUsdbEditTag(tag) && !writtenTags.contains(tag)) {
+                mergedLocal.add(submittedLine);
+                writtenTags.add(tag);
+            }
+        }
+
+        for (int i = submittedBodyIndex; i < submittedLines.size(); i++) {
+            mergedLocal.add(submittedLines.get(i));
+        }
+
+        Files.writeString(Path.of(songFile), String.join("\n", mergedLocal), StandardCharsets.UTF_8);
+        ensureUsdbMetaFileExists(songFile, usdbSongId);
+        refreshImportedSongInLibrary(new File(songFile), true);
+        if (showSuccessMessage) {
+            JOptionPane.showMessageDialog(getFrame(tab),
+                    I18.get("usdb_edit_save_local_success"),
+                    I18.get("usdb_edit_compare"),
+                    JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    private boolean isLocallyOverwritableUsdbEditTag(String tag) {
+        return switch (StringUtils.upperCase(tag)) {
+            case "GAP", "BPM", "VIDEOGAP", "YEAR", "GENRE", "START", "END", "LANGUAGE", "EDITION", "ALBUM", "CREATOR" -> true;
+            default -> false;
+        };
+    }
+
+    private String findHeaderLineByTag(List<String> lines, int bodyIndex, String tag) {
+        for (int i = 0; i < bodyIndex; i++) {
+            String line = lines.get(i);
+            if (StringUtils.equals(extractHeaderTag(line), tag)) {
+                return line;
+            }
+        }
+        return "";
+    }
+
+    private void ensureUsdbMetaFileExists(String songFile, int usdbSongId) throws IOException {
+        if (StringUtils.isBlank(songFile) || usdbSongId <= 0) {
+            return;
+        }
+        Path songPath = Path.of(songFile);
+        Path songDirectory = songPath.getParent();
+        if (songDirectory == null || !Files.isDirectory(songDirectory)) {
+            return;
+        }
+
+        List<Path> usdbFiles;
+        try (var files = Files.list(songDirectory)) {
+            usdbFiles = files
+                    .filter(path -> path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".usdb"))
+                    .collect(Collectors.toList());
+        }
+
+        if (!usdbFiles.isEmpty()) {
+            boolean updatedAny = false;
+            for (Path usdbFile : usdbFiles) {
+                updatedAny |= updateUsdbMetaFile(usdbFile, songPath, usdbSongId);
+            }
+            if (updatedAny) {
+                return;
+            }
+        }
+
+        UsdbSyncerMetaFile metaFile = new UsdbSyncerMetaFile();
+        metaFile.setSongId(usdbSongId);
+        metaFile.setPinned(false);
+        metaFile.setVersion(1);
+        metaFile.setTxt(createUsdbMetaResource(songPath, "https://usdb.animux.de/?link=gettxt&id=" + usdbSongId));
+
+        Path targetFile = songDirectory.resolve(UUID.randomUUID().toString().replace("-", "") + ".usdb");
+        Files.writeString(targetFile, USDB_META_GSON.toJson(metaFile), StandardCharsets.UTF_8);
+    }
+
+    private boolean updateUsdbMetaFile(Path usdbFile, Path songPath, int usdbSongId) throws IOException {
+        if (usdbFile == null || !Files.exists(usdbFile)) {
+            return false;
+        }
+        try {
+            UsdbSyncerMetaFile metaFile = USDB_META_GSON.fromJson(Files.readString(usdbFile, StandardCharsets.UTF_8), UsdbSyncerMetaFile.class);
+            if (metaFile == null) {
+                return false;
+            }
+            metaFile.setSongId(usdbSongId);
+            metaFile.setTxt(createUsdbMetaResource(songPath, "https://usdb.animux.de/?link=gettxt&id=" + usdbSongId));
+            if (metaFile.getVersion() <= 0) {
+                metaFile.setVersion(1);
+            }
+            Files.writeString(usdbFile, USDB_META_GSON.toJson(metaFile), StandardCharsets.UTF_8);
+            return true;
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    private UsdbFile createUsdbMetaResource(Path file, String resource) throws IOException {
+        if (file == null || !Files.exists(file) || StringUtils.isBlank(resource)) {
+            return null;
+        }
+        UsdbFile usdbFile = new UsdbFile();
+        usdbFile.setFname(file.getFileName().toString());
+        usdbFile.setResource(resource);
+        usdbFile.setMtime(java.math.BigDecimal.valueOf(Files.getLastModifiedTime(file).toMillis() * 1000L));
+        return usdbFile;
+    }
+
+    private record UsdbEditComparisonContext(UsdbSongEditService.UsdbEditableSong editableSong,
+                                             String songFile,
+                                             String originalLocalText,
+                                             MergedUsdbEditText mergedText) {
+    }
+
+    private record UsdbPendingComparisonContext(UsdbPendingSongService.PendingSong pendingSong,
+                                                String songFile,
+                                                String originalLocalText,
+                                                MergedUsdbEditText mergedText) {
+    }
+
+    private static final class UsdbCompareSearchRequiredException extends IOException {
+        private final String songFile;
+        private final String artist;
+        private final String title;
+        private final int pendingSongId;
+
+        private UsdbCompareSearchRequiredException(String songFile, String artist, String title, int pendingSongId) {
+            super(I18.get("usdb_edit_missing_meta"));
+            this.songFile = songFile;
+            this.artist = artist;
+            this.title = title;
+            this.pendingSongId = pendingSongId;
+        }
+
+        private String songFile() {
+            return songFile;
+        }
+
+        private String artist() {
+            return artist;
+        }
+
+        private String title() {
+            return title;
+        }
+
+        private int pendingSongId() {
+            return pendingSongId;
+        }
+    }
+
+    private MergedUsdbEditText mergeUsdbAndLocalSongText(String usdbText, String localText) {
+        List<String> remoteLines = splitSongTextLines(usdbText);
+        List<String> localLines = splitSongTextLines(localText);
+
+        int remoteBodyIndex = firstBodyLineIndex(remoteLines);
+        int localBodyIndex = firstBodyLineIndex(localLines);
+
+        Map<String, String> localHeaderByTag = new LinkedHashMap<>();
+        for (int i = 0; i < localBodyIndex; i++) {
+            String line = localLines.get(i);
+            String tag = extractHeaderTag(line);
+            if (StringUtils.isNotBlank(tag)) {
+                localHeaderByTag.put(tag, line);
+            }
+        }
+
+        List<String> displayedUsdb = new ArrayList<>();
+        List<String> merged = new ArrayList<>();
+        List<Integer> appendedLineIndexes = new ArrayList<>();
+        List<String> appendedTags = new ArrayList<>();
+        Set<String> remoteHeaderTags = new LinkedHashSet<>();
+        for (int i = 0; i < remoteBodyIndex; i++) {
+            String remoteLine = remoteLines.get(i);
+            String tag = extractHeaderTag(remoteLine);
+            if (StringUtils.equals(tag, "VIDEO")) {
+                String mergedVideoLine = mergeUsdbVideoLine(remoteLine, localHeaderByTag);
+                displayedUsdb.add(mergedVideoLine);
+                merged.add(mergedVideoLine);
+                remoteHeaderTags.add("VIDEO");
+                remoteHeaderTags.addAll(extractSyntheticUsdbVideoMetaTags(mergedVideoLine));
+                continue;
+            }
+            if (StringUtils.isNotBlank(tag)) {
+                remoteHeaderTags.add(tag);
+                displayedUsdb.add(remoteLine);
+                String localLine = localHeaderByTag.get(tag);
+                if (StringUtils.isNotBlank(localLine) && !isIgnoredLocalUsdbEditTag(tag)) {
+                    merged.add(localLine);
+                    continue;
+                }
+                if (isIgnoredLocalUsdbEditTag(tag)) {
+                    merged.add(remoteLine);
+                }
+                continue;
+            } else {
+                displayedUsdb.add(remoteLine);
+            }
+            merged.add(remoteLine);
+        }
+
+        for (int i = 0; i < localBodyIndex; i++) {
+            String line = localLines.get(i);
+            String tag = extractHeaderTag(line);
+            if (StringUtils.isBlank(tag) || isIgnoredLocalUsdbEditTag(tag) || remoteHeaderTags.contains(tag)) {
+                continue;
+            }
+            appendedLineIndexes.add(merged.size());
+            appendedTags.add(tag);
+            merged.add(line);
+        }
+
+        for (int i = remoteBodyIndex; i < remoteLines.size(); i++) {
+            displayedUsdb.add(remoteLines.get(i));
+        }
+        for (int i = localBodyIndex; i < localLines.size(); i++) {
+            merged.add(localLines.get(i));
+        }
+        return new MergedUsdbEditText(String.join("\n", displayedUsdb),
+                String.join("\n", merged),
+                appendedLineIndexes,
+                appendedTags);
+    }
+
+    private List<String> splitSongTextLines(String text) {
+        String normalized = StringUtils.defaultString(text).replace("\r\n", "\n").replace('\r', '\n');
+        return Arrays.asList(normalized.split("\n", -1));
+    }
+
+    private int resolveUsdbSongIdForSongEdit(Path songPath, YassTable lookupTable) throws IOException, InterruptedException {
+        Path songDirectory = songPath.getParent();
+        if (songDirectory != null) {
+            UsdbSyncerMetaFileLoader loader = new UsdbSyncerMetaFileLoader(songDirectory.toString());
+            UsdbSyncerMetaFile metaFile = loader.getMetaFile();
+            if (metaFile != null && metaFile.getSongId() > 0) {
+                return metaFile.getSongId();
+            }
+        }
+
+        if (lookupTable == null) {
+            return 0;
+        }
+        String artist = StringUtils.trimToEmpty(lookupTable.getArtist());
+        String title = StringUtils.trimToEmpty(lookupTable.getTitle());
+        if (StringUtils.isBlank(artist) || StringUtils.isBlank(title)) {
+            return 0;
+        }
+
+        List<UsdbSongSummary> results = searchUsdbSongs(artist, title);
+        for (UsdbSongSummary song : results) {
+            if (StringUtils.equals(YassSearchNormalizer.normalizeForSearch(song.artist()), YassSearchNormalizer.normalizeForSearch(artist))
+                    && StringUtils.equals(YassSearchNormalizer.normalizeForSearch(song.title()), YassSearchNormalizer.normalizeForSearch(title))) {
+                return song.songId();
+            }
+        }
+        return 0;
+    }
+
+    private int resolvePendingUsdbSongIdForSongEdit(Path songPath, YassTable lookupTable) throws IOException, InterruptedException {
+        if (lookupTable == null) {
+            return 0;
+        }
+        String artist = StringUtils.trimToEmpty(lookupTable.getArtist());
+        String title = StringUtils.trimToEmpty(lookupTable.getTitle());
+        if (StringUtils.isBlank(artist) || StringUtils.isBlank(title)) {
+            return 0;
+        }
+        UsdbSongAddService addService = new UsdbSongAddService(usdbSessionService);
+        return addService.findPendingSongId(artist, title);
+    }
+
+    private YassTable loadSongTableFromFile(Path songPath) {
+        if (songPath == null) {
+            return null;
+        }
+        YassTable lookupTable = new YassTable();
+        lookupTable.init(prop);
+        lookupTable.removeAllRows();
+        if (!lookupTable.loadFile(songPath.toString())) {
+            return null;
+        }
+        return lookupTable;
+    }
+
+    private void openCompareUsdbSearchDialog(String songFile, String artist, String title) {
+        LOGGER.info("Opening compare USDB search dialog for songFile=" + songFile
+                + ", artist='" + StringUtils.trimToEmpty(artist)
+                + "', title='" + StringUtils.trimToEmpty(title) + "'");
+        UsdbSearchDialog dialog = new UsdbSearchDialog(this,
+                new UsdbSearchDialog.CompareContext(songFile,
+                        StringUtils.trimToEmpty(artist),
+                        StringUtils.trimToEmpty(title)));
+        dialog.prefillFromSearchTerm(StringUtils.joinWith(" ",
+                StringUtils.trimToNull(artist),
+                StringUtils.trimToNull(title)));
+        dialog.runSearchNow();
+        dialog.setVisible(true);
+    }
+
+    public void openCreateSyncerTagsForSongFile(String songFile) throws IOException {
+        if (StringUtils.isBlank(songFile) || songList == null) {
+            return;
+        }
+        YassTable lookupTable = loadSongTableFromFile(Path.of(songFile));
+        if (lookupTable == null) {
+            throw new IOException("Song file could not be loaded.");
+        }
+        if (songList.gotoSong(lookupTable) == null) {
+            throw new IOException("Song could not be selected in the library.");
+        }
+        new UsdbSyncerMetaTagCreator(this);
+    }
+
+    public UsdbSongAddService.AddSongResult addSongToUsdb(String songFile) throws IOException {
+        if (StringUtils.isBlank(songFile)) {
+            throw new IOException("Song file missing.");
+        }
+        try {
+            LOGGER.info("USDB add-song requested for songFile=" + songFile);
+            ensureUsdbLoggedIn();
+            YassTable songTable = loadSongTableFromFile(Path.of(songFile));
+            if (songTable == null) {
+                throw new IOException("Song file could not be loaded.");
+            }
+            LOGGER.info("USDB add-song local song resolved artist='" + StringUtils.trimToEmpty(songTable.getArtist())
+                    + "' title='" + StringUtils.trimToEmpty(songTable.getTitle()) + "'");
+            UsdbSongAddService addService = new UsdbSongAddService(usdbSessionService);
+            UsdbSongAddService.AddSongResult result = addService.submitSong(new UsdbSongAddService.LocalSongData(
+                    StringUtils.trimToEmpty(songTable.getArtist()),
+                    StringUtils.trimToEmpty(songTable.getTitle()),
+                    Path.of(songFile)));
+            LOGGER.info("USDB add-song completed for songFile=" + songFile
+                    + " verifySongId=" + result.verifySongId()
+                    + " submitSongId=" + result.submitSongId());
+            return result;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException("USDB add-song request interrupted.", ex);
+        }
+    }
+
+    private int firstBodyLineIndex(List<String> lines) {
+        for (int i = 0; i < lines.size(); i++) {
+            if (!StringUtils.trimToEmpty(lines.get(i)).startsWith("#")) {
+                return i;
+            }
+        }
+        return lines.size();
+    }
+
+    private String extractHeaderTag(String line) {
+        String trimmed = StringUtils.trimToEmpty(line);
+        if (!trimmed.startsWith("#")) {
+            return "";
+        }
+        int colon = trimmed.indexOf(':');
+        if (colon <= 1) {
+            return "";
+        }
+        return canonicalizeHeaderTag(trimmed.substring(1, colon));
+    }
+
+    private Set<String> extractSyntheticUsdbVideoMetaTags(String videoLine) {
+        Set<String> tags = new LinkedHashSet<>();
+        String line = StringUtils.trimToEmpty(videoLine);
+        if (!StringUtils.startsWithIgnoreCase(line, "#VIDEO:")) {
+            return tags;
+        }
+        UsdbMetaTagParser.UsdbParsedMetaTags parsed = UsdbMetaTagParser.parse(line.substring(7));
+        if (StringUtils.isNotBlank(parsed.get("preview"))) {
+            tags.add("PREVIEWSTART");
+        }
+        if (StringUtils.isNotBlank(parsed.get("medley"))
+                || StringUtils.isNotBlank(parsed.get("medley-start"))
+                || StringUtils.isNotBlank(parsed.get("medley-end"))) {
+            tags.add("MEDLEYSTARTBEAT");
+            tags.add("MEDLEYENDBEAT");
+        }
+        if (StringUtils.isNotBlank(parsed.get("p1"))) {
+            tags.add("DUETSINGERP1");
+        }
+        if (StringUtils.isNotBlank(parsed.get("p2"))) {
+            tags.add("DUETSINGERP2");
+        }
+        return tags;
+    }
+
+    private String mergeUsdbVideoLine(String remoteVideoLine, Map<String, String> localHeaderByTag) {
+        if (!StringUtils.startsWithIgnoreCase(StringUtils.trimToEmpty(remoteVideoLine), "#VIDEO:")) {
+            return remoteVideoLine;
+        }
+
+        LinkedHashMap<String, String> tags = parseVideoTagLine(remoteVideoLine.substring(7));
+        UsdbMetaTagParser.UsdbParsedMetaTags parsed = UsdbMetaTagParser.parse(remoteVideoLine.substring(7));
+
+        String previewStart = extractHeaderValue(localHeaderByTag.get("PREVIEWSTART"));
+        if (StringUtils.isBlank(parsed.get("preview")) && StringUtils.isNotBlank(previewStart)) {
+            tags.put("preview", previewStart);
+        }
+
+        String medleyStart = extractHeaderValue(localHeaderByTag.get("MEDLEYSTARTBEAT"));
+        String medleyEnd = extractHeaderValue(localHeaderByTag.get("MEDLEYENDBEAT"));
+        if (StringUtils.isBlank(parsed.get("medley"))
+                && StringUtils.isBlank(parsed.get("medley-start"))
+                && StringUtils.isBlank(parsed.get("medley-end"))
+                && StringUtils.isNotBlank(medleyStart)
+                && StringUtils.isNotBlank(medleyEnd)) {
+            tags.put("medley", medleyStart + "-" + medleyEnd);
+        }
+
+        String singer1 = firstNonBlankHeaderValue(localHeaderByTag, "DUETSINGERP1", "P1");
+        if (StringUtils.isBlank(parsed.get("p1")) && StringUtils.isNotBlank(singer1)) {
+            tags.put("p1", singer1);
+        }
+
+        String singer2 = firstNonBlankHeaderValue(localHeaderByTag, "DUETSINGERP2", "P2");
+        if (StringUtils.isBlank(parsed.get("p2")) && StringUtils.isNotBlank(singer2)) {
+            tags.put("p2", singer2);
+        }
+
+        return "#VIDEO:" + serializeVideoTagLine(tags);
+    }
+
+    private LinkedHashMap<String, String> parseVideoTagLine(String videoTagLine) {
+        LinkedHashMap<String, String> tags = new LinkedHashMap<>();
+        if (StringUtils.isBlank(videoTagLine)) {
+            return tags;
+        }
+        for (String rawPart : videoTagLine.split(",")) {
+            String part = StringUtils.trimToEmpty(rawPart);
+            if (StringUtils.isEmpty(part)) {
+                continue;
+            }
+            String[] keyValue = part.split("=", 2);
+            if (keyValue.length != 2) {
+                continue;
+            }
+            String key = StringUtils.trimToEmpty(keyValue[0]);
+            String value = StringUtils.trimToEmpty(keyValue[1]);
+            if (StringUtils.isEmpty(key)) {
+                continue;
+            }
+            tags.put(key, value);
+        }
+        return tags;
+    }
+
+    private String serializeVideoTagLine(LinkedHashMap<String, String> tags) {
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<String, String> entry : tags.entrySet()) {
+            if (StringUtils.isBlank(entry.getKey()) || StringUtils.isBlank(entry.getValue())) {
+                continue;
+            }
+            parts.add(entry.getKey() + "=" + entry.getValue());
+        }
+        return String.join(",", parts);
+    }
+
+    private String firstNonBlankHeaderValue(Map<String, String> localHeaderByTag, String... tags) {
+        for (String tag : tags) {
+            String value = extractHeaderValue(localHeaderByTag.get(tag));
+            if (StringUtils.isNotBlank(value)) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private String extractHeaderValue(String headerLine) {
+        String line = StringUtils.defaultString(headerLine);
+        int colon = line.indexOf(':');
+        if (colon < 0 || colon + 1 >= line.length()) {
+            return "";
+        }
+        return StringUtils.trimToEmpty(line.substring(colon + 1));
+    }
+
+    private String canonicalizeHeaderTag(String tag) {
+        String normalized = StringUtils.upperCase(StringUtils.trimToEmpty(tag));
+        return switch (normalized) {
+            case "P1" -> "DUETSINGERP1";
+            case "P2" -> "DUETSINGERP2";
+            default -> normalized;
+        };
+    }
+
+    private boolean isIgnoredLocalUsdbEditTag(String tag) {
+        return switch (StringUtils.upperCase(tag)) {
+            case "MP3", "AUDIO", "VOCALS", "INSTRUMENTAL", "COVER", "BACKGROUND", "COMMENT", "VERSION", "VIDEO" -> true;
+            default -> false;
+        };
+    }
+
+    private record MergedUsdbEditText(String displayedUsdbText,
+                                      String text,
+                                      List<Integer> appendedLineIndexes,
+                                      List<String> appendedTags) {
+    }
+
+    private void ensureUsdbLoggedIn() throws IOException, InterruptedException {
+        usdbSessionService.resetSessionInfoRetryLimit();
+        if (StringUtils.isNotBlank(usdbSessionService.getLoggedInUser())) {
+            return;
+        }
+        UsdbCookieBrowser browser = getUsdbCookieBrowser();
+        if (browser != null && browser != UsdbCookieBrowser.NONE) {
+            String cookieUser = loginToUsdbWithBrowserCookies(browser);
+            if (StringUtils.isNotBlank(cookieUser)) {
+                return;
+            }
+        }
+        if (!openUsdbLoginDialogOnce()) {
+            throw new IOException(I18.get("lib_usdb_login_required"));
+        }
+    }
+
+    private boolean openUsdbLoginDialogOnce() throws InterruptedException, IOException {
+        if (!usdbLoginDialogOpen.compareAndSet(false, true)) {
+            return false;
+        }
+        try {
+            if (SwingUtilities.isEventDispatchThread()) {
+                return new UsdbLoginDialog(this).showDialog();
+            }
+            final boolean[] success = new boolean[1];
+            final Exception[] failure = new Exception[1];
+            SwingUtilities.invokeAndWait(() -> {
+                try {
+                    success[0] = new UsdbLoginDialog(this).showDialog();
+                } catch (Exception ex) {
+                    failure[0] = ex;
+                }
+            });
+            if (failure[0] != null) {
+                throw new IOException("USDB login dialog could not be opened.", failure[0]);
+            }
+            return success[0];
+        } catch (java.lang.reflect.InvocationTargetException ex) {
+            throw new IOException("USDB login dialog could not be opened.", ex);
+        } finally {
+            usdbLoginDialogOpen.set(false);
+        }
     }
 
     private static class OptionPaneCloseAction extends AbstractAction {
@@ -11504,11 +13246,101 @@ public class YassActions implements DropTargetListener {
                 openEditor(false);
                 updateSheetProperties();
             } else if (currentView == VIEW_LIBRARY) {
-                YassSong s = songList.getFirstSelectedSong();
-                UsdbSyncerMetaTagCreator syncerTagDialog = new UsdbSyncerMetaTagCreator(YassActions.this);
+                if (songList == null || songList.getSelectedRows().length != 1) {
+                    return;
+                }
+                new UsdbSyncerMetaTagCreator(YassActions.this);
             }
         }
     };
+
+    public final Action compareUsdb = new AbstractAction(I18.get("usdb_edit_compare")) {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (currentView == VIEW_EDIT) {
+                if (table == null || StringUtils.isBlank(table.getDirFilename())) {
+                    return;
+                }
+                compareAndSubmitUsdbSongEdit(table.getDirFilename());
+                return;
+            }
+            if (currentView == VIEW_LIBRARY) {
+                if (songList == null || songList.getSelectedRows().length != 1) {
+                    return;
+                }
+                YassSong selectedSong = songList.getFirstSelectedSong();
+                if (selectedSong == null) {
+                    return;
+                }
+                compareAndSubmitUsdbSongEdit(selectedSong.getDirectory() + File.separator + selectedSong.getFilename());
+            }
+        }
+    };
+
+    public final Action searchUsdb = new AbstractAction(I18.get("lib_usdb_search")) {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            UsdbSearchDialog dialog = new UsdbSearchDialog(YassActions.this);
+            String searchTerm = getLibrarySearchTerm();
+            if (StringUtils.isNotBlank(searchTerm)) {
+                dialog.prefillFromSearchTerm(searchTerm);
+                if (StringUtils.isNotBlank(getUsdbLoggedInUser())) {
+                    dialog.runSearchNow();
+                }
+            }
+            dialog.setVisible(true);
+        }
+    };
+
+    private String getLibrarySearchTerm() {
+        if (currentView != VIEW_LIBRARY || filterEditor == null) {
+            return "";
+        }
+        String text = StringUtils.trimToEmpty(filterEditor.getText());
+        if (text.equals(I18.get("tool_lib_find_empty"))) {
+            return "";
+        }
+        return text;
+    }
+
+    private void updateLibrarySelectionDependentActions() {
+        boolean exactlyOneSelected = currentView == VIEW_LIBRARY
+                && songList != null
+                && songList.getSelectedRows().length == 1;
+        createSyncerTags.setEnabled(exactlyOneSelected);
+        if (currentView == VIEW_EDIT) {
+            compareUsdb.setEnabled(canCompareCurrentEditorSongWithUsdb());
+        } else {
+            compareUsdb.setEnabled(exactlyOneSelected);
+        }
+    }
+
+    private boolean canCompareCurrentEditorSongWithUsdb() {
+        if (table == null || StringUtils.isBlank(table.getDirFilename())) {
+            return false;
+        }
+        if (!(canDirectlyEditUsdbSongsCached() || hasUsdbStoredUsername())) {
+            return false;
+        }
+        String artist = StringUtils.trimToEmpty(table.getArtist());
+        String title = StringUtils.trimToEmpty(table.getTitle());
+        if (StringUtils.isBlank(artist) || StringUtils.isBlank(title)) {
+            return false;
+        }
+        try {
+            Path songPath = Path.of(table.getDirFilename());
+            Path songDirectory = songPath.getParent();
+            if (songDirectory != null) {
+                UsdbSyncerMetaFileLoader loader = new UsdbSyncerMetaFileLoader(songDirectory.toString());
+                UsdbSyncerMetaFile metaFile = loader.getMetaFile();
+                if (metaFile != null && metaFile.getSongId() > 0) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return true;
+    }
 
     public final Action searchFanartTvCover = new AbstractAction(I18.get("lib_search_fanarttv_cover")) {
         @Override
@@ -11592,6 +13424,7 @@ public class YassActions implements DropTargetListener {
         songList.loadSongDetails(selectedSong, songTable);
 
         String existingCover = StringUtils.trimToEmpty(songTable.getCover());
+        boolean hadCoverBefore = StringUtils.isNotBlank(existingCover);
         File songDirectory = new File(selectedSong.getDirectory());
         File existingCoverFile = StringUtils.isBlank(existingCover) ? null : new File(songDirectory, existingCover);
         boolean existingCoverExists = existingCoverFile != null && existingCoverFile.exists();
@@ -11626,12 +13459,36 @@ public class YassActions implements DropTargetListener {
         }
 
         File targetFile = new File(songDirectory, targetFileName);
-        downloadCoverImage(selectedCandidate.getImageUrl(), targetFile);
+        downloadCoverImage(selectedCandidate, targetFile);
         songTable.setCover(targetFileName);
+        if (!hadCoverBefore) {
+            addFanartTvCommentLinkIfAbsent(songTable, selectedCandidate.getImageUrl());
+        }
         songTable.storeFile(songTable.getDirFilename());
         selectedSong.setCover(targetFileName);
         songList.cacheSongCover(prop.getProperty("songlist-imagecache"), selectedSong);
         songList.repaint();
+    }
+
+    private void addFanartTvCommentLinkIfAbsent(YassTable songTable, String imageUrl) {
+        if (songTable == null || StringUtils.isBlank(imageUrl)) {
+            return;
+        }
+
+        String existingComment = StringUtils.trimToEmpty(songTable.getCommentTag());
+        if (existingComment.contains("co=")) {
+            return;
+        }
+
+        String syncerImageLink = UsdbSyncerMetaTagCreator.toSyncerImageLink(imageUrl);
+        if (StringUtils.isBlank(syncerImageLink)) {
+            return;
+        }
+
+        String updatedComment = StringUtils.isBlank(existingComment)
+                ? "co=" + syncerImageLink
+                : existingComment + ",co=" + syncerImageLink;
+        songTable.setCommentTag(updatedComment);
     }
 
     private String determineNextCoverFileName(YassSong song, File directory) {
@@ -11654,8 +13511,14 @@ public class YassActions implements DropTargetListener {
         }
     }
 
-    private void downloadCoverImage(String imageUrl, File targetFile) throws Exception {
-        BufferedImage image = ImageIO.read(new URI(imageUrl).toURL());
+    private void downloadCoverImage(FanartTvCoverCandidate candidate, File targetFile) throws Exception {
+        String imageUrl = candidate == null ? null : candidate.getImageUrl();
+        BufferedImage image = candidate == null ? null : candidate.getPreviewImage();
+        if (image == null) {
+            image = loadFanartImage(imageUrl);
+        } else {
+            LOGGER.info("fanart.tv download reusing already loaded preview image for URL: " + imageUrl);
+        }
         if (image == null) {
             throw new IOException("Could not load image");
         }
@@ -11675,6 +13538,36 @@ public class YassActions implements DropTargetListener {
             image = rgbImage;
         }
         ImageIO.write(image, format, targetFile);
+    }
+
+    private BufferedImage loadFanartImage(String imageUrl) throws Exception {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URI(imageUrl).toURL().openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(FANART_IMAGE_TIMEOUT_MS);
+            connection.setReadTimeout(FANART_IMAGE_TIMEOUT_MS);
+            connection.setRequestProperty("Accept", "image/webp,image/png,image/jpeg,image/*,*/*;q=0.8");
+            connection.setRequestProperty("User-Agent", "Yass Reloaded/" + VersionUtils.getVersion()
+                    + " ( https://github.com/DoubleDee73/Yass-Reloaded )");
+            int status = connection.getResponseCode();
+            String contentType = connection.getContentType();
+            LOGGER.info("fanart.tv download response status=" + status + ", contentType=" + contentType + ", url=" + imageUrl);
+            if (status < 200 || status >= 300) {
+                throw new IOException("Could not download image. HTTP status " + status);
+            }
+            try (InputStream inputStream = connection.getInputStream()) {
+                BufferedImage image = YassUtils.readImage(inputStream);
+                if (image == null) {
+                    throw new IOException("Could not decode image. Content-Type: " + contentType);
+                }
+                return image;
+            }
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
     }
 
     private void setWaitCursor(boolean wait) {

@@ -7,9 +7,13 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
@@ -18,32 +22,64 @@ public class AudioSeparatorHealthCheckService {
     private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration UPDATE_TIMEOUT = Duration.ofMinutes(10);
+    static final Path MANAGED_VENV_DIR = Path.of(System.getProperty("user.home"), ".yass", "audio-separator-venv");
 
     private final String configuredPythonExecutable;
+    private final String defaultPythonExecutable;
     private final String configuredFfmpegPath;
     private volatile Process activeUpdateProcess;
     private volatile boolean updateCancelRequested;
 
     public AudioSeparatorHealthCheckService(String configuredPythonExecutable, String configuredFfmpegPath) {
+        this(configuredPythonExecutable, "", configuredFfmpegPath);
+    }
+
+    public AudioSeparatorHealthCheckService(String configuredPythonExecutable,
+                                            String defaultPythonExecutable,
+                                            String configuredFfmpegPath) {
         this.configuredPythonExecutable = StringUtils.trimToEmpty(configuredPythonExecutable);
+        this.defaultPythonExecutable = StringUtils.trimToEmpty(defaultPythonExecutable);
         this.configuredFfmpegPath = StringUtils.trimToNull(configuredFfmpegPath);
     }
 
     public String detectPythonExecutable() {
         for (String candidate : List.of(
                 StringUtils.trimToEmpty(configuredPythonExecutable),
+                StringUtils.trimToEmpty(defaultPythonExecutable),
                 "python", "python3", "python.exe", "python3.exe")) {
             if (candidate.isBlank()) continue;
             CommandResult result = run(List.of(candidate, "--version"));
             if (result.success && result.output.toLowerCase().contains("python")) {
-                return candidate;
+                String resolvedExecutable = resolvePythonExecutable(candidate);
+                return StringUtils.defaultIfBlank(resolvedExecutable, candidate);
             }
         }
         return "";
     }
 
+    private String resolvePythonExecutable(String candidate) {
+        if (StringUtils.isBlank(candidate)) {
+            return "";
+        }
+        CommandResult result = run(List.of(candidate,
+                "-c",
+                "import os, sys; print(os.path.realpath(sys.executable))"));
+        if (!result.success) {
+            return "";
+        }
+        String resolved = StringUtils.trimToEmpty(result.output);
+        if (resolved.contains("\n")) {
+            resolved = resolved.lines()
+                    .map(StringUtils::trimToEmpty)
+                    .filter(StringUtils::isNotBlank)
+                    .findFirst()
+                    .orElse("");
+        }
+        return resolved;
+    }
+
     public AudioSeparatorHealthCheckResult runHealthCheck() {
-        String pythonCmd = configuredPythonExecutable.isBlank() ? detectPythonExecutable() : configuredPythonExecutable;
+        String pythonCmd = resolvePythonExecutable();
         if (pythonCmd.isBlank()) {
             return new AudioSeparatorHealthCheckResult(
                     false, null, null, false, null,
@@ -93,11 +129,33 @@ public class AudioSeparatorHealthCheckService {
     }
 
     public PackageUpdateResult updateAudioSeparatorPackage(Consumer<String> outputListener) {
-        String pythonCmd = configuredPythonExecutable.isBlank() ? detectPythonExecutable() : configuredPythonExecutable;
-        if (pythonCmd.isBlank()) {
+        String bootstrapPython = resolvePythonExecutable();
+        if (bootstrapPython.isBlank()) {
             return new PackageUpdateResult(false, "Python was not found. Configure a Python executable first.");
         }
-        CommandResult update = run(List.of(pythonCmd,
+        Path managedPython = getManagedPythonExecutable();
+        try {
+            Files.createDirectories(MANAGED_VENV_DIR.getParent());
+        } catch (IOException ex) {
+            return new PackageUpdateResult(false, "Could not prepare the managed audio-separator environment.\n" + ex.getMessage());
+        }
+        if (!Files.isRegularFile(managedPython)) {
+            if (outputListener != null) {
+                outputListener.accept("Creating managed audio-separator environment...");
+            }
+            CommandResult createVenv = run(List.of(bootstrapPython, "-m", "venv", MANAGED_VENV_DIR.toString()), UPDATE_TIMEOUT, outputListener);
+            if (updateCancelRequested) {
+                return new PackageUpdateResult(false, "audio-separator update cancelled.", true);
+            }
+            if (!createVenv.success) {
+                String details = StringUtils.defaultIfBlank(createVenv.output, "No output.");
+                return new PackageUpdateResult(false, "audio-separator environment creation failed.\n" + details);
+            }
+        }
+        if (outputListener != null) {
+            outputListener.accept("Updating local audio-separator installation...");
+        }
+        CommandResult update = run(List.of(managedPython.toString(),
                                            "-m",
                                            "pip",
                                            "install",
@@ -107,7 +165,10 @@ public class AudioSeparatorHealthCheckService {
             return new PackageUpdateResult(false, "audio-separator update cancelled.", true);
         }
         if (update.success) {
-            return new PackageUpdateResult(true, "audio-separator update completed successfully.");
+            return new PackageUpdateResult(true,
+                    "audio-separator update completed successfully.",
+                    false,
+                    managedPython.toString());
         }
         String details = StringUtils.defaultIfBlank(update.output, "No output.");
         return new PackageUpdateResult(false, "audio-separator update failed.\n" + details);
@@ -137,6 +198,9 @@ public class AudioSeparatorHealthCheckService {
      * Returns an empty list if audio-separator is not available or the command fails.
      */
     public List<String> listModels(String pythonExecutable) {
+        if (StringUtils.isBlank(pythonExecutable)) {
+            pythonExecutable = resolvePythonExecutable();
+        }
         String scriptCmd = resolveAudioSeparatorScript(pythonExecutable);
         CommandResult result = run(List.of(scriptCmd, "--list_models"));
         if (!result.success || result.output.isBlank()) {
@@ -167,30 +231,93 @@ public class AudioSeparatorHealthCheckService {
 
     /**
      * Resolves the audio-separator console script path from the Python executable.
-     * pip installs it at Scripts/audio-separator.exe (Windows) or bin/audio-separator (Unix)
-     * next to the Python executable. Falls back to "audio-separator" on PATH.
+     * It checks interpreter-local and user script directories first, then falls back to PATH.
      */
     public static String resolveAudioSeparatorScript(String pythonExecutable) {
-        if (StringUtils.isNotBlank(pythonExecutable)) {
-            File pyFile = new File(pythonExecutable);
-            if (pyFile.isFile()) {
-                File scriptsDir = new File(pyFile.getParentFile(), "Scripts"); // Windows venv/system
-                File scriptWin = new File(scriptsDir, "audio-separator.exe");
-                if (scriptWin.isFile()) {
-                    return scriptWin.getAbsolutePath();
-                }
-                File scriptWinNoExt = new File(scriptsDir, "audio-separator");
-                if (scriptWinNoExt.isFile()) {
-                    return scriptWinNoExt.getAbsolutePath();
-                }
-                File binDir = new File(pyFile.getParentFile(), "bin"); // Unix venv
-                File scriptUnix = new File(binDir, "audio-separator");
-                if (scriptUnix.isFile()) {
-                    return scriptUnix.getAbsolutePath();
-                }
+        for (File directory : resolveCandidateScriptDirectories(pythonExecutable)) {
+            String resolved = findAudioSeparatorScriptIn(directory);
+            if (resolved != null) {
+                return resolved;
             }
         }
         return "audio-separator"; // fall back to PATH
+    }
+
+    static List<File> candidateScriptDirectories(String pythonExecutable, String sysconfigScriptsPath, String userBasePath) {
+        Set<File> candidates = new LinkedHashSet<>();
+        if (StringUtils.isNotBlank(pythonExecutable)) {
+            File pyFile = new File(pythonExecutable);
+            if (pyFile.isFile() && pyFile.getParentFile() != null) {
+                candidates.add(new File(pyFile.getParentFile(), "Scripts"));
+                candidates.add(new File(pyFile.getParentFile(), "bin"));
+            }
+        }
+        if (StringUtils.isNotBlank(sysconfigScriptsPath)) {
+            candidates.add(new File(sysconfigScriptsPath));
+        }
+        if (StringUtils.isNotBlank(userBasePath)) {
+            File userBase = new File(userBasePath);
+            candidates.add(new File(userBase, "Scripts"));
+            candidates.add(new File(userBase, "bin"));
+            if (isWindowsPath(userBasePath)) {
+                String versionDirName = extractWindowsPythonVersionDirName(pythonExecutable);
+                if (versionDirName != null) {
+                    candidates.add(new File(new File(userBase, versionDirName), "Scripts"));
+                }
+            }
+        }
+        return new ArrayList<>(candidates);
+    }
+
+    private static List<File> resolveCandidateScriptDirectories(String pythonExecutable) {
+        String sysconfigScriptsPath = null;
+        String userBasePath = null;
+        if (StringUtils.isNotBlank(pythonExecutable)) {
+            AudioSeparatorHealthCheckService service = new AudioSeparatorHealthCheckService(pythonExecutable, null);
+            sysconfigScriptsPath = service.queryPythonValue(pythonExecutable,
+                    "import sysconfig; print(sysconfig.get_path('scripts') or '')");
+            userBasePath = service.queryPythonValue(pythonExecutable,
+                    "import site; print(site.getuserbase() or '')");
+        }
+        return candidateScriptDirectories(pythonExecutable, sysconfigScriptsPath, userBasePath);
+    }
+
+    private static String findAudioSeparatorScriptIn(File directory) {
+        if (directory == null) {
+            return null;
+        }
+        for (String name : List.of("audio-separator.exe", "audio-separator")) {
+            File candidate = new File(directory, name);
+            if (candidate.isFile()) {
+                return candidate.getAbsolutePath();
+            }
+        }
+        return null;
+    }
+
+    private String queryPythonValue(String pythonExecutable, String script) {
+        CommandResult result = run(List.of(pythonExecutable, "-c", script));
+        if (!result.success) {
+            return null;
+        }
+        return result.output.lines()
+                .map(StringUtils::trimToEmpty)
+                .filter(StringUtils::isNotBlank)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static boolean isWindowsPath(String path) {
+        return path != null && path.matches("^[A-Za-z]:.*");
+    }
+
+    private static String extractWindowsPythonVersionDirName(String pythonExecutable) {
+        if (StringUtils.isBlank(pythonExecutable)) {
+            return null;
+        }
+        File pythonFile = new File(pythonExecutable);
+        File parent = pythonFile.getParentFile();
+        return parent != null ? parent.getName() : null;
     }
 
     private boolean checkFfmpeg() {
@@ -281,21 +408,50 @@ public class AudioSeparatorHealthCheckService {
                 && "-U".equalsIgnoreCase(command.get(4));
     }
 
+    static Path getManagedVenvDirectory() {
+        return MANAGED_VENV_DIR;
+    }
+
+    static Path getManagedPythonExecutable() {
+        return isWindows() ? MANAGED_VENV_DIR.resolve("Scripts").resolve("python.exe")
+                           : MANAGED_VENV_DIR.resolve("bin").resolve("python");
+    }
+
+    private static boolean isWindows() {
+        return File.separatorChar == '\\';
+    }
+
+    private String resolvePythonExecutable() {
+        if (StringUtils.isNotBlank(configuredPythonExecutable)) {
+            return configuredPythonExecutable;
+        }
+        if (StringUtils.isNotBlank(defaultPythonExecutable)) {
+            return defaultPythonExecutable;
+        }
+        return detectPythonExecutable();
+    }
+
     private record CommandResult(boolean success, String output) {}
 
     public static final class PackageUpdateResult {
         private final boolean success;
         private final String message;
         private final boolean cancelled;
+        private final String pythonExecutable;
 
         public PackageUpdateResult(boolean success, String message) {
-            this(success, message, false);
+            this(success, message, false, null);
         }
 
         public PackageUpdateResult(boolean success, String message, boolean cancelled) {
+            this(success, message, cancelled, null);
+        }
+
+        public PackageUpdateResult(boolean success, String message, boolean cancelled, String pythonExecutable) {
             this.success = success;
             this.message = message;
             this.cancelled = cancelled;
+            this.pythonExecutable = pythonExecutable;
         }
 
         public boolean isSuccess() {
@@ -308,6 +464,10 @@ public class AudioSeparatorHealthCheckService {
 
         public boolean isCancelled() {
             return cancelled;
+        }
+
+        public String getPythonExecutable() {
+            return pythonExecutable;
         }
     }
 }

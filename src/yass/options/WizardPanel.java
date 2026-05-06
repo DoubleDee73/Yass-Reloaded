@@ -20,6 +20,7 @@ package yass.options;
 
 import org.apache.commons.lang3.StringUtils;
 import yass.I18;
+import yass.PythonRuntimeSupport;
 import yass.YassEnum;
 import yass.integration.separation.SeparationPreference;
 import yass.integration.transcription.TranscriptionEngine;
@@ -52,11 +53,13 @@ public class WizardPanel extends OptionsPanel {
         addSectionHeader(I18.get("options_wizard_defaults_engine_preferences"));
 
         boolean mvsepConfigured = StringUtils.isNotBlank(getProperty("mvsep-api-token"));
-        boolean audioSepConfigured = StringUtils.isNotBlank(getProperty("audiosep-python"))
+        boolean audioSepConfigured = StringUtils.isNotBlank(StringUtils.defaultIfBlank(getProperty("audiosep-python"),
+                                                                                      getProperty(PythonRuntimeSupport.PROP_DEFAULT_PYTHON)))
                 && Boolean.parseBoolean(StringUtils.defaultIfBlank(getProperty("audiosep-health-ok"), "false"));
         boolean openAiConfigured = StringUtils.isNotBlank(getProperty("openai-api-key"));
         boolean whisperXConfigured = Boolean.parseBoolean(getProperty("whisperx-use-module"))
-                ? StringUtils.isNotBlank(getProperty("whisperx-python"))
+                ? StringUtils.isNotBlank(StringUtils.defaultIfBlank(getProperty("whisperx-python"),
+                                                                   getProperty(PythonRuntimeSupport.PROP_DEFAULT_PYTHON)))
                 : StringUtils.isNotBlank(getProperty("whisperx-command"));
 
         // Separation: LOCAL_FIRST, ONLINE_FIRST, MVSEP_ONLY, AUDIO_SEP_ONLY

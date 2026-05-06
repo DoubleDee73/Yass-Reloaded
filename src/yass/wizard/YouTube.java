@@ -25,8 +25,14 @@ import java.awt.BorderLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.Serial;
 import java.net.URL;
+import java.text.MessageFormat;
+import java.nio.file.Files;
+import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -45,9 +51,12 @@ import org.apache.commons.lang3.StringUtils;
 
 import com.jfposton.ytdlp.YtDlp;
 import com.jfposton.ytdlp.YtDlpCallback;
+import com.jfposton.ytdlp.YtDlpException;
 import com.jfposton.ytdlp.YtDlpRequest;
 
 import yass.I18;
+import yass.YassProperties;
+import yass.YtDlpSupport;
 import yass.analysis.BpmDetector;
 import yass.options.YtDlpPanel;
 
@@ -63,6 +72,45 @@ public class YouTube extends JPanel {
     private int fallbackLevel = 0; // 0=Strict, 1=Relaxed Codec, 2=Best
     private File discoveredManualSubtitleFile = null;
     private File discoveredAutoSubtitleFile = null;
+    private TempWizardAssets pendingDownloadAssets = new TempWizardAssets();
+    private DownloadReuseMode pendingDownloadMode = DownloadReuseMode.REDOWNLOAD_ALL;
+
+    private enum DownloadReuseMode {
+        REUSE_EXISTING,
+        DOWNLOAD_MISSING_ONLY,
+        REDOWNLOAD_ALL
+    }
+
+    private enum SubtitleKind {
+        MANUAL,
+        AUTO
+    }
+
+    private static final class TempWizardAssets {
+        private File audioFile;
+        private File videoFile;
+        private File manualSubtitleFile;
+        private File autoSubtitleFile;
+        private String derivedArtist;
+        private String derivedTitle;
+
+        private boolean hasAny() {
+            return audioFile != null || videoFile != null || manualSubtitleFile != null || autoSubtitleFile != null;
+        }
+
+        private boolean hasAudio() {
+            return audioFile != null && audioFile.isFile();
+        }
+
+        private boolean hasVideo() {
+            return videoFile != null && videoFile.isFile();
+        }
+
+        private boolean hasAnySubtitle() {
+            return (manualSubtitleFile != null && manualSubtitleFile.isFile())
+                    || (autoSubtitleFile != null && autoSubtitleFile.isFile());
+        }
+    }
 
     public YouTube(CreateSongWizard wizard) {
         this.wizard = wizard;
@@ -122,72 +170,37 @@ public class YouTube extends JPanel {
         }
         discoveredManualSubtitleFile = null;
         discoveredAutoSubtitleFile = null;
-        File existing = findExistingDownloadByYouTubeId();
-        if (existing != null) {
-            int reuse = JOptionPane.showConfirmDialog(SwingUtilities.getWindowAncestor(this),
-                    I18.get("create_youtube_reuse_download_prompt"),
-                    I18.get("create_title"),
-                    JOptionPane.YES_NO_OPTION,
-                    JOptionPane.QUESTION_MESSAGE);
-            if (reuse == JOptionPane.YES_OPTION) {
-                wizard.setValue("filename", existing.getAbsolutePath());
+        String youTubeId = extractYouTubeId(getYouTubeUrl());
+        TempWizardAssets existingAssets = normalizeTempAssetNames(detectExistingAssets(youTubeId), youTubeId);
+        applyStoredMetadata(youTubeId, existingAssets);
+        if (existingAssets.hasAny()) {
+            DownloadReuseMode mode = promptReuseMode(existingAssets);
+            if (mode == null) {
                 return;
             }
+            if (mode == DownloadReuseMode.REUSE_EXISTING) {
+                applyAssetsToWizard(existingAssets);
+                detectBpmForAudio(existingAssets.audioFile, null);
+                return;
+            }
+            if (mode == DownloadReuseMode.DOWNLOAD_MISSING_ONLY
+                    && existingAssets.hasAudio()
+                    && existingAssets.hasVideo()
+                    && existingAssets.hasAnySubtitle()) {
+                applyAssetsToWizard(existingAssets);
+                detectBpmForAudio(existingAssets.audioFile, null);
+                return;
+            }
+            if (mode == DownloadReuseMode.REDOWNLOAD_ALL) {
+                deleteExistingAssets(existingAssets);
+                existingAssets = new TempWizardAssets();
+            }
+            fallbackLevel = 0;
+            startDownload(new DownloadSplashFrame(SwingUtilities.getWindowAncestor(this)), existingAssets, mode);
+            return;
         }
         fallbackLevel = 0;
-        startDownload(new DownloadSplashFrame(SwingUtilities.getWindowAncestor(this)));
-    }
-
-    private File findExistingDownloadByYouTubeId() {
-        String youTubeId = extractYouTubeId(getYouTubeUrl());
-        if (StringUtils.isBlank(youTubeId)) {
-            return null;
-        }
-        File tempDir = new File(wizard.getProperty("temp-dir"));
-        if (!tempDir.isDirectory()) {
-            return null;
-        }
-        File[] matches = tempDir.listFiles(f -> f.isFile() && f.getName().contains(youTubeId));
-        if (matches == null || matches.length == 0) {
-            return null;
-        }
-        // Prefer audio-only stream file (pre-extraction intermediate)
-        for (File f : matches) {
-            if (f.getName().contains(".v_none.")) {
-                return f;
-            }
-        }
-        // Prefer files with known audio-only extensions (e.g. opus, mp3 after extraction)
-        for (File f : matches) {
-            String ext = f.getName().contains(".") ? f.getName().substring(f.getName().lastIndexOf('.') + 1).toLowerCase() : "";
-            if (AUDIO_EXTENSIONS.contains(ext)) {
-                return f;
-            }
-        }
-        return matches[0];
-    }
-
-    private File findBestAudioFileByYouTubeId() {
-        String youTubeId = extractYouTubeId(getYouTubeUrl());
-        if (StringUtils.isBlank(youTubeId)) {
-            return null;
-        }
-        File tempDir = new File(wizard.getProperty("temp-dir"));
-        if (!tempDir.isDirectory()) {
-            return null;
-        }
-        File[] matches = tempDir.listFiles(f -> f.isFile() && f.getName().contains(youTubeId));
-        if (matches == null || matches.length == 0) {
-            return null;
-        }
-        // Prefer files with known audio-only extensions
-        for (File f : matches) {
-            String ext = f.getName().contains(".") ? f.getName().substring(f.getName().lastIndexOf('.') + 1).toLowerCase() : "";
-            if (AUDIO_EXTENSIONS.contains(ext)) {
-                return f;
-            }
-        }
-        return null;
+        startDownload(new DownloadSplashFrame(SwingUtilities.getWindowAncestor(this)), existingAssets, DownloadReuseMode.REDOWNLOAD_ALL);
     }
 
     static String extractYouTubeId(String url) {
@@ -198,12 +211,26 @@ public class YouTube extends JPanel {
         Matcher m = Pattern.compile("(?:v=|youtu\\.be/|/shorts/)([A-Za-z0-9_-]{11})").matcher(url);
         return m.find() ? m.group(1) : null;
     }
-    private void startDownload(DownloadSplashFrame splash) {
+    private void startDownload(DownloadSplashFrame splash, TempWizardAssets existingAssets, DownloadReuseMode mode) {
+        if (!ensureYtDlpExecutableAvailable()) {
+            return;
+        }
+        pendingDownloadAssets = existingAssets != null ? existingAssets : new TempWizardAssets();
+        pendingDownloadMode = mode != null ? mode : DownloadReuseMode.REDOWNLOAD_ALL;
         new Thread(() -> {
             try {
-                YtDlpRequest request = buildYtDlpRequest();
+                YtDlpRequest request = buildYtDlpRequest(pendingDownloadAssets, pendingDownloadMode);
+                if (request == null) {
+                    SwingUtilities.invokeLater(() -> {
+                        applyAssetsToWizard(normalizeTempAssetNames(detectExistingAssets(extractYouTubeId(getYouTubeUrl())),
+                                extractYouTubeId(getYouTubeUrl())));
+                        splash.enableCloseButton();
+                        splash.dispose();
+                    });
+                    return;
+                }
                 YtDlpCallback callback = createYtDlpCallback(splash, request.getDirectory());
-                YtDlp.executeAsync(request, callback);
+                executeYtDlpWithFallback(request, callback);
             } catch (Exception ex) {
                 SwingUtilities.invokeLater(() -> {
                     splash.appendText("An error occurred: " + ex.getMessage());
@@ -217,65 +244,88 @@ public class YouTube extends JPanel {
         }
     }
 
-    private YtDlpRequest buildYtDlpRequest() {
+    private boolean ensureYtDlpExecutableAvailable() {
+        try {
+            YtDlpSupport.ensureExecutableAvailable(wizard.getYassProperties());
+            String configuredPath = StringUtils.trimToNull(wizard.getYassProperties().getProperty("ytdlpPath"));
+            if (StringUtils.isNotBlank(configuredPath)) {
+                LOGGER.info("Using configured yt-dlp executable: " + configuredPath);
+            }
+            return true;
+        } catch (IOException ex) {
+            String configuredPath = StringUtils.trimToNull(wizard.getYassProperties().getProperty("ytdlpPath"));
+            String message = StringUtils.isNotBlank(configuredPath)
+                    ? MessageFormat.format(I18.get("create_youtube_ytdlp_configured_missing"), configuredPath)
+                    : I18.get("create_youtube_ytdlp_not_available");
+            LOGGER.warning("yt-dlp is not executable in current environment: " + ex.getMessage());
+            JOptionPane.showMessageDialog(
+                    this,
+                    message,
+                    I18.get("create_youtube_ytdlp_error_title"),
+                    JOptionPane.WARNING_MESSAGE);
+        }
+        return false;
+    }
+
+    private void executeYtDlpWithFallback(YtDlpRequest request, YtDlpCallback callback) throws Exception {
+        try {
+            YtDlp.executeAsync(request, callback);
+        } catch (Exception ex) {
+            throw ex;
+        }
+    }
+
+    private YtDlpRequest buildYtDlpRequest(TempWizardAssets existingAssets, DownloadReuseMode mode) {
         File tempDir = new File(wizard.getProperty("temp-dir"));
         if (!tempDir.exists()) {
             tempDir.mkdirs();
         }
+        String youTubeId = extractYouTubeId(getYouTubeUrl());
+        boolean needAudio = mode != DownloadReuseMode.DOWNLOAD_MISSING_ONLY || !existingAssets.hasAudio();
+        boolean needVideo = mode != DownloadReuseMode.DOWNLOAD_MISSING_ONLY || !existingAssets.hasVideo();
+        boolean needSubtitles = mode != DownloadReuseMode.DOWNLOAD_MISSING_ONLY || !existingAssets.hasAnySubtitle();
+        if (!needAudio && !needVideo && !needSubtitles) {
+            return null;
+        }
 
         YtDlpRequest request = new YtDlpRequest(getYouTubeUrl().trim());
         request.setDirectory(tempDir.getAbsolutePath());
-        request.setOption("output", "%(title)s.%(id)s.v_%(vcodec)s.a_%(acodec)s.%(ext)s");
+        request.setOption("output", buildTempOutputTemplate(youTubeId));
 
-        if (fallbackLevel == 2) {
-            LOGGER.info("Using fallback format 'best'");
-            request.setOption("format", "best");
+        if (needAudio && needVideo) {
+            if (fallbackLevel == 2) {
+                LOGGER.info("Using fallback format 'best'");
+                request.setOption("format", "best");
+            } else {
+                request.setOption("format", YtDlpSupport.buildCombinedVideoFormatString(wizard.getYassProperties(),
+                                                                                        fallbackLevel == 0));
+            }
+        } else if (needAudio) {
+            request.setOption("format", "bestaudio");
+        } else if (needVideo) {
+            request.setOption("format", YtDlpSupport.buildVideoOnlyFormatString(wizard.getYassProperties(),
+                                                                                fallbackLevel == 0));
         } else {
-            request.setOption("format", buildVideoFormatString());
+            request.setOption("skip-download");
         }
 
         String audioFormat = wizard.getProperty(YtDlpPanel.YTDLP_AUDIO_FORMAT);
-        if (StringUtils.isNotEmpty(audioFormat)) {
-            request.setOption("extract-audio");
-            request.setOption("audio-format", audioFormat);
+        if (needAudio && StringUtils.isNotEmpty(audioFormat)) {
+            YtDlpSupport.applyAudioExtractionOptions(request, wizard.getYassProperties());
         }
 
-        String ffmpegPath = wizard.getYassProperties().getProperty("ffmpegPath");
-        if (StringUtils.isNotEmpty(ffmpegPath)) {
-            request.setOption("ffmpeg-location", ffmpegPath);
-        }
+        YtDlpSupport.applyCommonOptions(request, wizard.getYassProperties());
 
-        request.setOption("write-subs");
-        if (wizard.getLyrics() != null && StringUtils.isNotEmpty(wizard.getProperty("language"))) {
-            request.setOption("sub-lang", wizard.getProperty("language"));
+        if (needSubtitles) {
+            request.setOption("write-subs");
+            if (wizard.getLyrics() != null && StringUtils.isNotEmpty(wizard.getProperty("language"))) {
+                request.setOption("sub-lang", wizard.getProperty("language"));
+            }
+            request.setOption("write-auto-subs");
         }
-        request.setOption("write-auto-subs");
         request.setOption("ignore-errors");
 
         return request;
-    }
-
-    private String buildVideoFormatString() {
-        String videoCodec = wizard.getProperty(YtDlpPanel.YTDLP_VIDEO_CODEC);
-        String videoResolution = wizard.getProperty(YtDlpPanel.YTDLP_VIDEO_RESOLUTION);
-        StringBuilder ytDlpArgs = new StringBuilder("bestvideo");
-
-        // Level 0: Use Codec if set
-        if (fallbackLevel == 0 && StringUtils.isNotEmpty(videoCodec)) {
-            ytDlpArgs.append(videoCodec);
-        }
-
-        // Level 0 & 1: Use Resolution if set
-        if (StringUtils.isNotEmpty(videoResolution)) {
-            ytDlpArgs.append(videoResolution);
-        }
-
-        ytDlpArgs.append(",bestaudio");
-        String audioBitrate = wizard.getProperty(YtDlpPanel.YTDLP_AUDIO_BITRATE);
-        if (StringUtils.isNotEmpty(audioBitrate)) {
-            ytDlpArgs.append("[abr<=").append(audioBitrate.replace("k", "000")).append("]");
-        }
-        return ytDlpArgs.toString();
     }
 
     private YtDlpCallback createYtDlpCallback(DownloadSplashFrame splash, String tempDirPath) {
@@ -328,18 +378,9 @@ public class YouTube extends JPanel {
 
     private void handleDownloadSuccess(DownloadSplashFrame splash) {
         LOGGER.info("yt-dlp process finished successfully.");
-        renameDownloadedFiles();
-        applyPreferredSubtitleSelection();
-
-        // If filename wasn't set (e.g. yt-dlp skipped ExtractAudio because format already matched),
-        // scan the temp dir and pick the best audio file by YouTube ID.
-        if (StringUtils.isEmpty(wizard.getValue("filename"))) {
-            File audioFile = findBestAudioFileByYouTubeId();
-            if (audioFile != null) {
-                LOGGER.info("Auto-resolved filename from temp dir: " + audioFile.getAbsolutePath());
-                wizard.setValue("filename", audioFile.getAbsolutePath());
-            }
-        }
+        String youTubeId = extractYouTubeId(getYouTubeUrl());
+        TempWizardAssets assets = normalizeTempAssetNames(detectExistingAssets(youTubeId), youTubeId);
+        applyAssetsToWizard(assets);
 
         String autoGenerated = wizard.getValue("subtitles-auto-generated");
         if ("true".equals(autoGenerated)) {
@@ -348,7 +389,7 @@ public class YouTube extends JPanel {
             splash.appendText("Using manual subtitles");
         }
 
-        detectBpm(splash);
+        detectBpmForAudio(assets.audioFile, splash);
     }
 
     private void handleDownloadFailure(int exitCode, String error, DownloadSplashFrame splash) {
@@ -360,14 +401,14 @@ public class YouTube extends JPanel {
 
             LOGGER.warning(msg);
             splash.appendText(msg);
-            startDownload(splash);
+            startDownload(splash, pendingDownloadAssets, pendingDownloadMode);
             return;
         }
 
         // If ffmpeg was not found for merging but the media files were already downloaded,
         // treat this as a success — the files exist and the merge error is a false failure.
         if (error != null && error.contains("ffprobe and ffmpeg not found")
-                && findExistingDownloadByYouTubeId() != null) {
+                && detectExistingAssets(extractYouTubeId(getYouTubeUrl())).hasAny()) {
             LOGGER.warning("ffmpeg not found for merging, but media files already exist. Treating as success.");
             handleDownloadSuccess(splash);
             splash.enableCloseButton();
@@ -385,11 +426,11 @@ public class YouTube extends JPanel {
         splash.enableCloseButton();
     }
 
-    private void detectBpm(DownloadSplashFrame splash) {
-        String audioPath = wizard.getValue("filename");
-        if (StringUtils.isEmpty(audioPath)) {
+    private void detectBpmForAudio(File audioFile, DownloadSplashFrame splash) {
+        if (audioFile == null || !audioFile.isFile()) {
             return;
         }
+        String audioPath = audioFile.getAbsolutePath();
 
         String currentBpmStr = wizard.getValue("bpm");
         boolean shouldDetect = true;
@@ -406,11 +447,15 @@ public class YouTube extends JPanel {
 
         if (shouldDetect) {
             LOGGER.info("Found audio file for BPM detection: " + audioPath);
-            splash.appendText("Analyzing audio to detect BPM...");
+            if (splash != null) {
+                splash.appendText("Analyzing audio to detect BPM...");
+            }
             BpmDetector.detectBpm(audioPath, bpm -> {
                 String bpmString = String.format(java.util.Locale.US, "%.2f", bpm);
                 wizard.setValue("bpm", bpmString);
-                splash.appendText("Successfully detected BPM: " + bpmString);
+                if (splash != null) {
+                    splash.appendText("Successfully detected BPM: " + bpmString);
+                }
             }, wizard.getYassProperties());
         }
     }
@@ -418,9 +463,11 @@ public class YouTube extends JPanel {
     private void parseYtDlpOutput(String line, File tempDir) {
         if (line.contains("[ExtractAudio] Destination:")) {
             String relativePath = line.substring(line.indexOf(":") + 2).trim();
+            maybeSeedArtistAndTitleFromPath(relativePath);
             wizard.setValue("filename", new File(tempDir, relativePath).getAbsolutePath());
         } else if (line.contains("[info] Writing video automatic subtitles to:")) {
             String relativePath = line.substring(line.indexOf(":") + 2).trim();
+            maybeSeedArtistAndTitleFromPath(relativePath);
             discoveredAutoSubtitleFile = new File(tempDir, relativePath);
             if (discoveredManualSubtitleFile == null) {
                 wizard.setValue("subtitle", discoveredAutoSubtitleFile.getAbsolutePath());
@@ -428,11 +475,13 @@ public class YouTube extends JPanel {
             }
         } else if (line.contains("[info] Writing video subtitles to:")) {
             String relativePath = line.substring(line.indexOf(":") + 2).trim();
+            maybeSeedArtistAndTitleFromPath(relativePath);
             discoveredManualSubtitleFile = new File(tempDir, relativePath);
             wizard.setValue("subtitle", discoveredManualSubtitleFile.getAbsolutePath());
             wizard.setValue("subtitles-auto-generated", "false");
         } else if (line.contains("[download] Destination:")) {
             String relativePath = line.substring(line.indexOf(":") + 2).trim();
+            maybeSeedArtistAndTitleFromPath(relativePath);
             File downloadedFile = new File(tempDir, relativePath);
             if (relativePath.contains(".a_none.")) {
                 // This is the video-only file.
@@ -454,72 +503,409 @@ public class YouTube extends JPanel {
         }
     }
 
-    private void renameDownloadedFiles() {
-        // We need to read the values before we start modifying them, as renameFile updates them.
-        String videoPath = wizard.getValue("video");
-        String audioPath = wizard.getValue("filename");
-        String subtitlePath = wizard.getValue("subtitle");
-
-        renameFile(videoPath);
-        renameFile(audioPath);
-        renameFile(subtitlePath);
+    private TempWizardAssets detectExistingAssets(String youTubeId) {
+        TempWizardAssets assets = new TempWizardAssets();
+        if (StringUtils.isBlank(youTubeId)) {
+            return assets;
+        }
+        File tempDir = new File(wizard.getProperty("temp-dir"));
+        if (!tempDir.isDirectory()) {
+            return assets;
+        }
+        File[] matches = tempDir.listFiles(f -> f.isFile() && !f.getName().endsWith(".part") && f.getName().contains(youTubeId));
+        if (matches == null) {
+            return assets;
+        }
+        for (File file : matches) {
+            maybeDeriveArtistAndTitleFromFile(file, assets, youTubeId);
+            if (isSubtitleFile(file)) {
+                if (isAutoSubtitleFile(file)) {
+                    if (assets.autoSubtitleFile == null) {
+                        assets.autoSubtitleFile = file;
+                    }
+                } else if (assets.manualSubtitleFile == null) {
+                    assets.manualSubtitleFile = file;
+                }
+                continue;
+            }
+            if (isAudioFile(file)) {
+                if (assets.audioFile == null || preferAudioCandidate(file, assets.audioFile)) {
+                    assets.audioFile = file;
+                }
+                continue;
+            }
+            if (isVideoFile(file)) {
+                if (assets.videoFile == null || preferVideoCandidate(file, assets.videoFile)) {
+                    assets.videoFile = file;
+                }
+            }
+        }
+        return assets;
     }
 
-    private void renameFile(String oldPath) {
-        if (StringUtils.isEmpty(oldPath)) {
-            return;
+    private TempWizardAssets normalizeTempAssetNames(TempWizardAssets assets, String youTubeId) {
+        if (assets == null || StringUtils.isBlank(youTubeId)) {
+            return assets;
         }
-        File oldFile = new File(oldPath);
-        if (!oldFile.exists()) {
-            LOGGER.warning("File to rename does not exist: " + oldPath);
-            return;
-        }
+        TempWizardAssets normalized = new TempWizardAssets();
+        normalized.audioFile = renameToCanonicalTempAssetName(assets.audioFile, youTubeId, assets.derivedArtist, assets.derivedTitle, null);
+        normalized.videoFile = renameToCanonicalTempAssetName(assets.videoFile, youTubeId, assets.derivedArtist, assets.derivedTitle, null);
+        normalized.manualSubtitleFile = renameToCanonicalTempAssetName(assets.manualSubtitleFile, youTubeId, assets.derivedArtist, assets.derivedTitle, "subtitles");
+        normalized.autoSubtitleFile = renameToCanonicalTempAssetName(assets.autoSubtitleFile, youTubeId, assets.derivedArtist, assets.derivedTitle, "subtitles-auto");
+        normalized.derivedArtist = assets.derivedArtist;
+        normalized.derivedTitle = assets.derivedTitle;
+        return normalized;
+    }
 
-        String filename = oldFile.getName();
-        // This regex removes the ".v_...a_..." part from the filename.
-        // The non-greedy `.*?` is used to correctly handle video codec names that may contain dots.
-        String newFilename = filename.replaceAll("\\.v_.*?\\.a_.*?\\.", ".");
-        String youTubeId = extractYouTubeId(getYouTubeUrl());
+    private String buildTempOutputTemplate(String youTubeId) {
+        if (StringUtils.isBlank(youTubeId)) {
+            return "%(uploader)s - %(title)s.%(ext)s";
+        }
+        return youTubeId + " - %(uploader)s - %(title)s.%(ext)s";
+    }
+
+    private File renameToCanonicalTempAssetName(File sourceFile, String youTubeId, String artist, String title, String variantSuffix) {
+        if (sourceFile == null || !sourceFile.isFile()) {
+            return null;
+        }
+        String extension = "";
+        String name = sourceFile.getName();
+        int dot = name.lastIndexOf('.');
+        if (dot >= 0) {
+            extension = name.substring(dot);
+        }
+        File canonicalFile = new File(sourceFile.getParentFile(),
+                buildCanonicalTempFileName(youTubeId, artist, title, variantSuffix, extension.toLowerCase()));
+        if (sourceFile.equals(canonicalFile)) {
+            return sourceFile;
+        }
+        if (canonicalFile.exists() && canonicalFile.isFile()) {
+            return canonicalFile;
+        }
+        if (sourceFile.renameTo(canonicalFile)) {
+            LOGGER.info("Normalized temp asset " + sourceFile.getAbsolutePath() + " -> " + canonicalFile.getAbsolutePath());
+            return canonicalFile;
+        }
+        LOGGER.warning("Could not normalize temp asset name for " + sourceFile.getAbsolutePath());
+        return sourceFile;
+    }
+
+    private String buildCanonicalTempFileName(String youTubeId, String artist, String title, String variantSuffix, String extension) {
+        StringBuilder name = new StringBuilder();
         if (StringUtils.isNotBlank(youTubeId)) {
-            newFilename = newFilename.replace("." + youTubeId + ".", ".");
-            newFilename = newFilename.replace("." + youTubeId, "");
-        }
-
-        if (filename.equals(newFilename)) {
-            return; // No change needed
-        }
-
-        File newFile = new File(oldFile.getParent(), newFilename);
-
-        if (oldFile.renameTo(newFile)) {
-            LOGGER.info("Renamed " + oldPath + " to " + newFile.getAbsolutePath());
-            // Update the wizard with the new path
-            if (oldPath.equals(wizard.getValue("video"))) wizard.setValue("video", newFile.getAbsolutePath());
-            if (oldPath.equals(wizard.getValue("filename"))) wizard.setValue("filename", newFile.getAbsolutePath());
-            if (oldPath.equals(wizard.getValue("subtitle"))) wizard.setValue("subtitle", newFile.getAbsolutePath());
+            name.append(youTubeId);
         } else {
-            LOGGER.warning("Could not rename file " + oldPath + " to " + newFilename);
+            name.append("youtube");
+        }
+        if (StringUtils.isNotBlank(artist) || StringUtils.isNotBlank(title)) {
+            name.append(" - ");
+            if (StringUtils.isNotBlank(artist)) {
+                name.append(sanitizeTempNamePart(artist));
+            } else {
+                name.append("Unknown Artist");
+            }
+            if (StringUtils.isNotBlank(title)) {
+                name.append(" - ").append(sanitizeTempNamePart(title));
+            }
+        }
+        if (StringUtils.isNotBlank(variantSuffix)) {
+            name.append(" - ").append(variantSuffix);
+        }
+        name.append(extension);
+        return name.toString();
+    }
+
+    private String sanitizeTempNamePart(String value) {
+        String sanitized = StringUtils.defaultString(value)
+                .replaceAll("[\\\\/:*?\"<>|]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return StringUtils.defaultIfBlank(sanitized, "Unknown");
+    }
+
+    private void applyAssetsToWizard(TempWizardAssets assets) {
+        if (assets == null) {
+            return;
+        }
+        wizard.setValue("filename", assets.hasAudio() ? assets.audioFile.getAbsolutePath() : "");
+        wizard.setValue("video", assets.hasVideo() ? assets.videoFile.getAbsolutePath() : "");
+        if (assets.manualSubtitleFile != null && assets.manualSubtitleFile.isFile()) {
+            wizard.setValue("subtitle", assets.manualSubtitleFile.getAbsolutePath());
+            wizard.setValue("subtitles-auto-generated", "false");
+        } else if (assets.autoSubtitleFile != null && assets.autoSubtitleFile.isFile()) {
+            wizard.setValue("subtitle", assets.autoSubtitleFile.getAbsolutePath());
+            wizard.setValue("subtitles-auto-generated", "true");
+        } else {
+            wizard.setValue("subtitle", "");
+            wizard.setValue("subtitles-auto-generated", "");
+        }
+        if (StringUtils.isBlank(wizard.getValue("artist")) && StringUtils.isNotBlank(assets.derivedArtist)) {
+            wizard.setValue("artist", assets.derivedArtist);
+        }
+        if (StringUtils.isBlank(wizard.getValue("title")) && StringUtils.isNotBlank(assets.derivedTitle)) {
+            wizard.setValue("title", assets.derivedTitle);
         }
     }
 
-    private void applyPreferredSubtitleSelection() {
-        if (discoveredManualSubtitleFile != null && discoveredManualSubtitleFile.isFile()) {
-            wizard.setValue("subtitle", discoveredManualSubtitleFile.getAbsolutePath());
-            wizard.setValue("subtitles-auto-generated", "false");
-            return;
-        }
-        if (discoveredAutoSubtitleFile != null && discoveredAutoSubtitleFile.isFile()) {
-            wizard.setValue("subtitle", discoveredAutoSubtitleFile.getAbsolutePath());
-            wizard.setValue("subtitles-auto-generated", "true");
-            return;
-        }
-        // Preserve existing subtitle if already set and valid.
-        String existingSubtitle = wizard.getValue("subtitle");
-        if (StringUtils.isNotBlank(existingSubtitle) && new File(existingSubtitle).isFile()) {
-            return;
-        }
-        wizard.setValue("subtitle", "");
-        wizard.setValue("subtitles-auto-generated", "");
+    private DownloadReuseMode promptReuseMode(TempWizardAssets assets) {
+        Object[] options = {
+                I18.get("create_youtube_existing_files_reuse"),
+                I18.get("create_youtube_existing_files_missing"),
+                I18.get("create_youtube_existing_files_redownload")
+        };
+        String message = MessageFormat.format(
+                I18.get("create_youtube_existing_files_prompt"),
+                assetStateLabel(assets.hasAudio()),
+                assetStateLabel(assets.hasVideo()),
+                assetStateLabel(assets.hasAnySubtitle()));
+        int choice = JOptionPane.showOptionDialog(
+                SwingUtilities.getWindowAncestor(this),
+                message,
+                I18.get("create_title"),
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                options,
+                options[0]);
+        return switch (choice) {
+            case 0 -> DownloadReuseMode.REUSE_EXISTING;
+            case 1 -> DownloadReuseMode.DOWNLOAD_MISSING_ONLY;
+            case 2 -> DownloadReuseMode.REDOWNLOAD_ALL;
+            default -> null;
+        };
     }
+
+    private String assetStateLabel(boolean present) {
+        return present ? I18.get("create_youtube_existing_files_present") : I18.get("create_youtube_existing_files_missing_state");
+    }
+
+    private void deleteExistingAssets(TempWizardAssets assets) {
+        deleteAsset(assets.audioFile);
+        deleteAsset(assets.videoFile);
+        deleteAsset(assets.manualSubtitleFile);
+        deleteAsset(assets.autoSubtitleFile);
+    }
+
+    private void deleteAsset(File asset) {
+        if (asset == null || !asset.isFile()) {
+            return;
+        }
+        if (!asset.delete()) {
+            LOGGER.warning("Could not delete temp asset " + asset.getAbsolutePath());
+        }
+    }
+
+    private boolean isAudioFile(File file) {
+        String lower = file.getName().toLowerCase();
+        String ext = getExtension(lower);
+        return lower.contains(".v_none.") || AUDIO_EXTENSIONS.contains(ext);
+    }
+
+    private boolean isVideoFile(File file) {
+        String lower = file.getName().toLowerCase();
+        String ext = getExtension(lower);
+        return lower.contains(".a_none.") || VIDEO_EXTENSIONS.contains(ext);
+    }
+
+    private boolean isSubtitleFile(File file) {
+        return SUBTITLE_EXTENSIONS.contains(getExtension(file.getName().toLowerCase()));
+    }
+
+    private boolean isAutoSubtitleFile(File file) {
+        String lower = file.getName().toLowerCase();
+        return lower.contains("automatic subtitles") || lower.contains(".auto.");
+    }
+
+    private boolean preferAudioCandidate(File candidate, File current) {
+        return candidate.getName().toLowerCase().contains(".v_none.")
+                || candidate.lastModified() > current.lastModified();
+    }
+
+    private boolean preferVideoCandidate(File candidate, File current) {
+        return candidate.getName().toLowerCase().contains(".a_none.")
+                || candidate.lastModified() > current.lastModified();
+    }
+
+    private String getExtension(String fileName) {
+        int dot = fileName.lastIndexOf('.');
+        return dot >= 0 ? fileName.substring(dot + 1).toLowerCase() : "";
+    }
+
+    private void maybeSeedArtistAndTitleFromPath(String relativePath) {
+        if (StringUtils.isBlank(relativePath)) {
+            return;
+        }
+        String youTubeId = extractYouTubeId(getYouTubeUrl());
+        YouTubeMetadataParser.Metadata metadata =
+                YouTubeMetadataParser.inferMetadata(new File(relativePath).getName(), youTubeId);
+        if (StringUtils.isBlank(metadata.getArtist()) && StringUtils.isBlank(metadata.getTitle())) {
+            return;
+        }
+        String currentArtist = StringUtils.trimToEmpty(wizard.getValue("artist"));
+        String currentTitle = StringUtils.trimToEmpty(wizard.getValue("title"));
+        String artist = StringUtils.isBlank(currentArtist) ? metadata.getArtist() : currentArtist;
+        String title = StringUtils.isBlank(currentTitle) ? metadata.getTitle() : currentTitle;
+        if (StringUtils.isNotBlank(artist) && StringUtils.isBlank(currentArtist)) {
+            wizard.setValue("artist", artist);
+        }
+        if (StringUtils.isNotBlank(title) && StringUtils.isBlank(currentTitle)) {
+            wizard.setValue("title", title);
+        }
+        if (StringUtils.isNotBlank(artist) || StringUtils.isNotBlank(title)) {
+            persistYouTubeMetadata(youTubeId, artist, title);
+        }
+    }
+
+    private void maybeDeriveArtistAndTitleFromFile(File file, TempWizardAssets assets, String youTubeId) {
+        if (file == null || assets == null || (!StringUtils.isBlank(assets.derivedArtist) && !StringUtils.isBlank(assets.derivedTitle))) {
+            return;
+        }
+        YouTubeMetadataParser.Metadata metadata = YouTubeMetadataParser.inferMetadata(file.getName(), youTubeId);
+        if (StringUtils.isBlank(metadata.getArtist()) && StringUtils.isBlank(metadata.getTitle())) {
+            return;
+        }
+        if (StringUtils.isBlank(assets.derivedArtist) && StringUtils.isNotBlank(metadata.getArtist())) {
+            assets.derivedArtist = metadata.getArtist();
+        }
+        if (StringUtils.isBlank(assets.derivedTitle) && StringUtils.isNotBlank(metadata.getTitle())) {
+            assets.derivedTitle = metadata.getTitle();
+        }
+    }
+
+    private String normalizeDisplayBaseName(String baseName, String youTubeId) {
+        String normalized = StringUtils.defaultString(baseName).trim();
+        if (StringUtils.isBlank(normalized)) {
+            return normalized;
+        }
+        normalized = normalized.replaceAll("\\.v_.*?\\.a_.*?$", "");
+        normalized = normalized.replaceAll("\\.(f\\d+|NA)$", "");
+        normalized = normalized.replaceAll("\\s+-\\s+subtitles(?:-auto)?$", "");
+        normalized = normalized.replaceAll(",[a-z]{2}(?:-[A-Za-z0-9_-]{8,})?$", "");
+        normalized = normalized.replaceAll("\\.[a-z]{2}(?:-[A-Za-z0-9_-]{8,})?$", "");
+        if (StringUtils.isNotBlank(youTubeId)) {
+            normalized = normalized.replace("." + youTubeId, "");
+            normalized = normalized.replace(youTubeId + ".", "");
+            normalized = normalized.replaceFirst("^" + Pattern.quote(youTubeId) + "\\s*-\\s*", "");
+            normalized = normalized.replaceFirst("^" + Pattern.quote(youTubeId) + "[-_.]", "");
+        }
+        return normalized.trim();
+    }
+
+    private boolean isTechnicalBaseName(String baseName, String youTubeId) {
+        String normalized = StringUtils.trimToEmpty(baseName);
+        if (StringUtils.isBlank(normalized)) {
+            return true;
+        }
+        if (StringUtils.isNotBlank(youTubeId) && normalized.equalsIgnoreCase(youTubeId)) {
+            return true;
+        }
+        return normalized.matches("(?i)" + Pattern.quote(StringUtils.defaultString(youTubeId)))
+                || normalized.matches("(?i)" + Pattern.quote(StringUtils.defaultString(youTubeId)) + "\\.(audio|video|subtitles\\.(manual|auto))");
+    }
+
+    private void applyStoredMetadata(String youTubeId, TempWizardAssets assets) {
+        Properties metadata = loadYouTubeMetadata(youTubeId);
+        if (metadata.isEmpty()) {
+            return;
+        }
+        YouTubeMetadataParser.Metadata repairedMetadata = YouTubeMetadataParser.repairStoredMetadata(
+                metadata.getProperty("artist"),
+                metadata.getProperty("title"),
+                youTubeId);
+        String artist = sanitizeStoredArtist(repairedMetadata.getArtist(), youTubeId);
+        String title = sanitizeStoredTitle(repairedMetadata.getTitle(), artist);
+        if (!StringUtils.equals(metadata.getProperty("artist"), artist)
+                || !StringUtils.equals(metadata.getProperty("title"), title)) {
+            persistYouTubeMetadata(youTubeId, artist, title);
+        }
+        assets.derivedArtist = artist;
+        assets.derivedTitle = title;
+        if (StringUtils.isBlank(wizard.getValue("artist")) && StringUtils.isNotBlank(artist)) {
+            wizard.setValue("artist", artist);
+        }
+        if (StringUtils.isBlank(wizard.getValue("title")) && StringUtils.isNotBlank(title)) {
+            wizard.setValue("title", title);
+        }
+    }
+
+    private Properties loadYouTubeMetadata(String youTubeId) {
+        Properties properties = new Properties();
+        File metadataFile = getYouTubeMetadataFile(youTubeId);
+        if (metadataFile == null || !metadataFile.isFile()) {
+            return properties;
+        }
+        try (InputStream input = Files.newInputStream(metadataFile.toPath())) {
+            properties.load(input);
+        } catch (IOException ex) {
+            LOGGER.warning("Could not read YouTube temp metadata " + metadataFile.getAbsolutePath());
+        }
+        return properties;
+    }
+
+    private void persistYouTubeMetadata(String youTubeId, String artist, String title) {
+        File metadataFile = getYouTubeMetadataFile(youTubeId);
+        if (metadataFile == null) {
+            return;
+        }
+        Properties properties = new Properties();
+        properties.setProperty("artist", StringUtils.defaultString(artist));
+        properties.setProperty("title", StringUtils.defaultString(title));
+        try (OutputStream output = Files.newOutputStream(metadataFile.toPath())) {
+            properties.store(output, "Wizard YouTube temp metadata");
+        } catch (IOException ex) {
+            LOGGER.warning("Could not write YouTube temp metadata " + metadataFile.getAbsolutePath());
+        }
+    }
+
+    private File getYouTubeMetadataFile(String youTubeId) {
+        if (StringUtils.isBlank(youTubeId)) {
+            return null;
+        }
+        File tempDir = new File(wizard.getProperty("temp-dir"));
+        if (!tempDir.exists()) {
+            tempDir.mkdirs();
+        }
+        return new File(tempDir, youTubeId + ".metadata.properties");
+    }
+
+    private String sanitizeStoredArtist(String artist, String youTubeId) {
+        String value = StringUtils.trimToEmpty(artist);
+        if (StringUtils.isBlank(value) || StringUtils.isBlank(youTubeId)) {
+            return value;
+        }
+        value = value.replaceFirst("^" + Pattern.quote(youTubeId) + "\\s*-\\s*", "");
+        value = value.replaceFirst("^" + Pattern.quote(youTubeId) + "[-_.]", "");
+        return value.trim();
+    }
+
+    private String sanitizeStoredTitle(String title, String artist) {
+        String value = StringUtils.trimToEmpty(title);
+        if (StringUtils.isBlank(value)) {
+            return value;
+        }
+        value = value.replaceAll(",[a-z]{2}(?:-[A-Za-z0-9_-]{8,})?$", "");
+        value = value.replaceAll("\\.[a-z]{2}(?:-[A-Za-z0-9_-]{8,})?$", "");
+        return cleanupParsedTitle(artist, value);
+    }
+
+    private String cleanupParsedTitle(String artist, String title) {
+        String cleanTitle = StringUtils.trimToEmpty(title);
+        String cleanArtist = StringUtils.trimToEmpty(artist);
+        if (StringUtils.isBlank(cleanTitle)) {
+            return cleanTitle;
+        }
+        if (StringUtils.isNotBlank(cleanArtist)) {
+            String pattern = "(?i)^" + Pattern.quote(cleanArtist) + "\\s*-\\s*";
+            cleanTitle = cleanTitle.replaceFirst(pattern, "");
+        }
+        cleanTitle = cleanTitle.replaceAll("\\s*\\((?i:official\\s+video)\\)\\s*$", "");
+        cleanTitle = cleanTitle.replaceAll("\\s+", " ").trim();
+        return cleanTitle;
+    }
+
+    private static final Set<String> VIDEO_EXTENSIONS =
+            Set.of("mp4", "mkv", "webm", "mov", "avi");
+    private static final Set<String> SUBTITLE_EXTENSIONS =
+            Set.of("srt", "vtt", "ass", "ssa", "lrc");
 }
 

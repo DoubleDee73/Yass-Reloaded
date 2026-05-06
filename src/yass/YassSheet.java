@@ -51,6 +51,7 @@ import java.util.logging.Logger;
 @Getter
 @Setter
 public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollable {
+    private static final int TIMELINE_TOOLTIP_DELAY_MS = 1500;
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public final static int NORM_HEIGHT = 20;
@@ -300,6 +301,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
     private double bpm = -1;
     private double gap = 0;
     private double beatgap = 0;
+    private Timer timelineTooltipTimer;
+    private MouseEvent pendingTimelineTooltipEvent;
+    private String pendingTimelineTooltipText;
     private double duration = -1;
     private int outgap = 0;
     private double cutPercent = .5;
@@ -375,6 +379,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
     public YassSheet() {
         super(false);
         setFocusable(true);
+        ToolTipManager.sharedInstance().registerComponent(this);
         Image image = new ImageIcon(this.getClass().getResource("/yass/resources/img/cut.gif")).getImage();
         cutCursor = Toolkit.getDefaultToolkit().createCustomCursor(image, new Point(0, 10), "cut");
         panCursor = createPanCursorFromResource();
@@ -564,6 +569,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
             if (previewStart >= 0) {
                 int previewX = toTimeline(previewStart * 1000);
                 if (x >= previewX - 2 && x <= previewX + 2) {
+                    cancelTimelineTooltip();
                     setToolTipText(String.format("Preview Start: %.2f s", previewStart));
                     return;
                 }
@@ -572,7 +578,8 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
             if (medleyStart >= 0) {
                 int medleyX = beatToTimeline(medleyStart);
                 if (x >= medleyX - 2 && x <= medleyX + 2) {
-                    setToolTipText(String.format("Medley Start: %d ms", medleyX));
+                    cancelTimelineTooltip();
+                    setToolTipText(String.format("Medley Start: %d ms", Math.max(0, Math.round(table.beatToMs(medleyStart)))));
                     return;
                 }
             }
@@ -580,14 +587,21 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
             if (medleyEnd >= 0) {
                 int medleyX = beatToTimeline(medleyEnd);
                 if (x >= medleyX - 2 && x <= medleyX + 2) {
-                    setToolTipText(String.format("Medley End: %d ms", medleyX));
+                    cancelTimelineTooltip();
+                    setToolTipText(String.format("Medley End: %d ms", Math.max(0, Math.round(table.beatToMs(medleyEnd)))));
                     return;
                 }
             }
         }
-        // Clear tooltip when not hovering over anything specific
-        if (getToolTipText() != null) {
-            setToolTipText(null);
+
+        if (isTimelineTooltipArea(x, y)) {
+            scheduleTimelineTooltip(e, buildTimelineTooltipText(x));
+        } else {
+            cancelTimelineTooltip();
+            // Clear tooltip when not hovering over anything specific
+            if (getToolTipText() != null) {
+                setToolTipText(null);
+            }
         }
 
         if (inSelect >= 0 && inSelect != outSelect && y < TOP_BORDER
@@ -725,8 +739,75 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
         if (shouldRepaint)
             repaint();
     }
-    
+
     private void handleMouseDragged(MouseEvent e) {
+        cancelTimelineTooltip();
+        if (getToolTipText() != null) {
+            setToolTipText(null);
+        }
+        handleMouseDraggedImpl(e);
+    }
+
+    private boolean isTimelineTooltipArea(int x, int y) {
+        return table != null && rect != null && y >= 0 && y <= TOP_BORDER && x >= 0 && x <= getWidth();
+    }
+
+    private void scheduleTimelineTooltip(MouseEvent event, String tooltipText) {
+        if (StringUtils.isBlank(tooltipText)) {
+            cancelTimelineTooltip();
+            return;
+        }
+        pendingTimelineTooltipEvent = event;
+        pendingTimelineTooltipText = tooltipText;
+        if (timelineTooltipTimer == null) {
+            timelineTooltipTimer = new Timer(TIMELINE_TOOLTIP_DELAY_MS, evt -> showPendingTimelineTooltip());
+            timelineTooltipTimer.setRepeats(false);
+        }
+        timelineTooltipTimer.restart();
+        if (getToolTipText() != null && !Objects.equals(getToolTipText(), tooltipText)) {
+            setToolTipText(null);
+        }
+    }
+
+    private void showPendingTimelineTooltip() {
+        if (pendingTimelineTooltipEvent == null || StringUtils.isBlank(pendingTimelineTooltipText)) {
+            return;
+        }
+        setToolTipText(pendingTimelineTooltipText);
+        MouseEvent tooltipEvent = new MouseEvent(this,
+                MouseEvent.MOUSE_MOVED,
+                System.currentTimeMillis(),
+                0,
+                pendingTimelineTooltipEvent.getX(),
+                pendingTimelineTooltipEvent.getY(),
+                pendingTimelineTooltipEvent.getXOnScreen(),
+                pendingTimelineTooltipEvent.getYOnScreen(),
+                0,
+                false,
+                MouseEvent.NOBUTTON);
+        ToolTipManager.sharedInstance().mouseMoved(tooltipEvent);
+    }
+
+    private void cancelTimelineTooltip() {
+        pendingTimelineTooltipEvent = null;
+        pendingTimelineTooltipText = null;
+        if (timelineTooltipTimer != null) {
+            timelineTooltipTimer.stop();
+        }
+    }
+
+    private String buildTimelineTooltipText(int timelineX) {
+        if (table == null || wSize == 0) {
+            return null;
+        }
+        int adjustedX = paintHeights ? timelineX - heightBoxWidth : timelineX;
+        double beatExact = adjustedX / wSize - beatgap;
+        double msExact = table.getGap() + beatExact * (60d * 1000d) / (4d * table.getBPM());
+        long timestampMs = Math.max(0L, Math.round(msExact));
+        return String.format(java.util.Locale.US, "<html>Beat: %.2f<br>Timestamp: %d ms</html>", beatExact, timestampMs);
+    }
+    
+    private void handleMouseDraggedImpl(MouseEvent e) {
         if (isMouseOverInteractiveChild(e.getPoint())) {
             return;
         }
@@ -1783,7 +1864,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 if (table == null) {
                     return;
                 }
-                if (actions.getMP3().isPlaying()) {
+                if (actions.getMP3().isPlaying() && !actions.isRecording()) {
                     actions.interruptPlay();
                 }
                 char c = e.getKeyChar();
@@ -1832,22 +1913,22 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
 
                 // 0=next_note, 1=prev_note, 2=page_down, 3=page_up
                 if (code == keycodes[0] && !e.isControlDown() && !e.isAltDown()) {
-                    table.nextBeat(false);
+                    actions.triggerEditorNextBeatFromSheet();
                     e.consume();
                     return;
                 }
                 if (code == keycodes[1] && !e.isControlDown() && !e.isAltDown()) {
-                    table.prevBeat(false);
+                    actions.triggerEditorPrevBeatFromSheet();
                     e.consume();
                     return;
                 }
                 if (code == keycodes[2] && !e.isControlDown() && !e.isAltDown()) {
-                    table.gotoPage(1);
+                    actions.triggerEditorNextPageFromSheet();
                     e.consume();
                     return;
                 }
                 if (code == keycodes[3] && !e.isControlDown() && !e.isAltDown()) {
-                    table.gotoPage(-1);
+                    actions.triggerEditorPrevPageFromSheet();
                     e.consume();
                     return;
                 }
@@ -1855,31 +1936,28 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 if (code == keycodes[12] && !e.isControlDown()
                         && !e.isAltDown()) {
                     if (e.isShiftDown()) {
-                        firePropertyChange("play", null, "page");
+                        actions.triggerEditorPagePlaybackFromSheet(false);
                     } else {
-                        firePropertyChange("play", null, "start");
+                        actions.triggerEditorSelectionPlaybackFromSheet();
                     }
                     e.consume();
                     return;
                 }
                 if (code == keycodes[13] && !e.isControlDown()
                         && !e.isAltDown()) {
-                    Integer mode = e.isShiftDown() ? 1 : 0;
-                    firePropertyChange("play", mode, "page");
+                    actions.triggerEditorPagePlaybackFromSheet(e.isShiftDown());
                     e.consume();
                     return;
                 }
 
                 // 17=play_before, 18=play_next
                 if (code == keycodes[17] && !e.isControlDown() && !e.isAltDown()) {
-                    Integer mode = e.isShiftDown() ? 1 : 0;
-                    firePropertyChange("play", mode, "before");
+                    actions.triggerEditorBeforePlaybackFromSheet(e.isShiftDown());
                     e.consume();
                     return;
                 }
                 if (code == keycodes[18] && !e.isControlDown() && !e.isAltDown()) {
-                    Integer mode = e.isShiftDown() ? 1 : 0;
-                    firePropertyChange("play", mode, "next");
+                    actions.triggerEditorNextPlaybackFromSheet(e.isShiftDown());
                     e.consume();
                     return;
                 }
@@ -1889,20 +1967,20 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 // 14=scroll_left, 15=scroll_right, 16=one_page
                 if (code == keycodes[14] && !e.isControlDown()
                         && !e.isAltDown()) {
-                    slideLeft(e.isShiftDown() ? 50 : 10);
+                    actions.triggerEditorSlideLeftFromSheet(e.isShiftDown());
                     e.consume();
                     return;
                 }
                 if (code == keycodes[15] && !e.isControlDown()
                         && !e.isAltDown()) {
-                    slideRight(e.isShiftDown() ? 50 : 10);
+                    actions.triggerEditorSlideRightFromSheet(e.isShiftDown());
                     e.consume();
                     return;
                 }
 
                 if (code == keycodes[16] && !e.isControlDown()
                         && !e.isAltDown()) {
-                    firePropertyChange("one", null, null);
+                    actions.triggerEditorOnePageFromSheet();
                     e.consume();
                     return;
                 }
@@ -3128,6 +3206,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
             recordingStaticClipY = clip.y;
             recordingStaticWidth = layerWidth;
             recordingStaticHeight = clip.height;
+        }
+        if (recordingStaticLayer == null) {
+            return;
         }
 
         int sourceX = Math.max(0, Math.min(recordingStaticLayer.getWidth() - clip.width, clip.x - recordingStaticBaseX));
@@ -5895,6 +5976,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
         float sy = getStickyBandBaselineYLocal(yOffset);
 
         for (int k = firstRow; k <= lastRow; k++) {
+            if (rect == null || k < 0 || k >= rect.size()) {
+                break;
+            }
             YassRow row = table.getRowAt(k);
             YassRectangle r = rect.elementAt(k);
             if (row == null || !row.isNote()) continue;
@@ -7624,6 +7708,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
     }*/
 
     public int firstVisibleNote() {
+        if (rect == null || rect.isEmpty()) {
+            return -1;
+        }
         int x = clip.x + LEFT_BORDER;
         if (paintHeights) {
             x += heightBoxWidth;
@@ -7631,6 +7718,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
         return nextNote(x);
     }
     public int nextNote(int pos) {
+        if (rect == null || rect.isEmpty()) {
+            return -1;
+        }
         YassRectangle r;
         int i = 0;
         for (Enumeration<?> e = rect.elements(); e.hasMoreElements(); i++) {
@@ -7643,6 +7733,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
         return -1;
     }
     public int firstVisibleNote(int track) {
+        if (track < 0 || track >= rects.size() || rects.elementAt(track) == null || rects.elementAt(track).isEmpty()) {
+            return -1;
+        }
         int x = clip.x + LEFT_BORDER;
         if (paintHeights) {
             x += heightBoxWidth;
@@ -7652,7 +7745,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
     public int nextNote(int track, int pos) {
         YassRectangle r;
         int i = 0;
-        if (track < 0 || track >= rects.size())
+        if (track < 0 || track >= rects.size() || rects.elementAt(track) == null || rects.elementAt(track).isEmpty())
             return -1;
         for (Enumeration<?> e = rects.elementAt(track).elements(); e.hasMoreElements(); i++) {
             r = (YassRectangle) e.nextElement();

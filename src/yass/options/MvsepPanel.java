@@ -200,13 +200,7 @@ public class MvsepPanel extends OptionsPanel {
         }
 
         String savedKey = getProperty("mvsep-model-type");
-        MvsepFieldOption toSelect = null;
-        if (StringUtils.isNotBlank(savedKey)) {
-            toSelect = field.findOption(savedKey);
-        }
-        if (toSelect == null) {
-            toSelect = field.defaultOption();
-        }
+        MvsepFieldOption toSelect = field.preferredOption(savedKey);
         if (toSelect != null) {
             modelTypeComboBox.setSelectedItem(toSelect);
         } else if (modelTypeComboBox.getItemCount() > 0) {

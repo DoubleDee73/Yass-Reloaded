@@ -34,26 +34,23 @@ public abstract class AbstractFFMPEGLocator {
     abstract String getFfmpegPath();
 
     String findFfmpegInPath() {
+        return findFfmpegInPath(PATH);
+    }
+
+    String findFfmpegInPath(String pathValue) {
+        if (pathValue == null || pathValue.isBlank()) {
+            return null;
+        }
         String delimiter;
         if (CURRENT_OS.contains("linux") || CURRENT_OS.contains("mac")) {
             delimiter = ":";
         } else {
             delimiter = ";";
         }
-        String[] pathsToSearch = PATH.split(delimiter);
+        String[] pathsToSearch = pathValue.split(delimiter);
         String returnPath = null;
         for (String path : pathsToSearch) {
-            if (path.contains("ffmpeg")) {
-                returnPath = path;
-                break;
-            }
-            if ((path.contains("/bin") || path.contains("/homebrew")) && Arrays.stream(
-                                                                                       Objects.requireNonNull(Path.of(path)
-                                                                                                                  .toFile()
-                                                                                                                  .listFiles()))
-                                                                               .anyMatch(file -> file.getName()
-                                                                                                     .contains(
-                                                                                                             "ffmpeg"))) {
+            if (isValidFfmpegBinDirectory(path)) {
                 returnPath = path;
                 break;
             }
@@ -62,5 +59,38 @@ public abstract class AbstractFFMPEGLocator {
             LOGGER.info("Found FFmpeg in path " + returnPath);
         }
         return returnPath;
+    }
+
+    private boolean isValidFfmpegBinDirectory(String path) {
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        java.io.File dir = Path.of(path).toFile();
+        java.io.File[] files = dir.listFiles();
+        if (!dir.exists() || !dir.isDirectory() || files == null) {
+            return false;
+        }
+
+        boolean hasFfmpeg = hasExecutable(files, "ffmpeg");
+        boolean hasFfprobe = hasExecutable(files, "ffprobe");
+        if (!hasFfmpeg || !hasFfprobe) {
+            if (path.toLowerCase().contains("ffmpeg") || path.toLowerCase().contains("bin") || path.toLowerCase().contains("homebrew")) {
+                LOGGER.info("Skipping FFmpeg path candidate without both ffmpeg and ffprobe: " + path);
+            }
+            return false;
+        }
+        return true;
+    }
+
+    private boolean hasExecutable(java.io.File[] files, String baseName) {
+        return Arrays.stream(Objects.requireNonNull(files))
+                .anyMatch(file -> file.isFile() && matchesExecutableName(file.getName(), baseName));
+    }
+
+    private boolean matchesExecutableName(String fileName, String baseName) {
+        if (CURRENT_OS.contains("win")) {
+            return fileName.equalsIgnoreCase(baseName + ".exe");
+        }
+        return fileName.equals(baseName);
     }
 }

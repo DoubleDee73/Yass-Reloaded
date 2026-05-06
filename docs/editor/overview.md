@@ -83,6 +83,8 @@ This mode shows notes in fixed pitch space and is especially useful for:
 - octave-aware editing
 - comparing note placement against detected pitch lines
 
+When this view is active, Undo/Redo should preserve the current visible octave window more reliably than before, so normal undo steps should not throw you back to an unrelated octave.
+
 ## Navigation Basics
 
 The classic navigation model is still important:
@@ -91,6 +93,11 @@ The classic navigation model is still important:
 - `Up` / `Down` switches pages
 - `Page Up` / `Page Down` changes the number of visible pages
 - `Ctrl-Shift-Page Up` or `Ctrl-Numpad0` returns to one-page view
+
+Two practical details are worth knowing:
+
+- if a menu is open, the menu keeps `Up` and `Down` for its own navigation instead of the sheet taking them over
+- held keys should not accidentally trigger multi-press shortcuts; multi-press behavior is intended for real repeated presses, not for key-repeat while holding
 
 ## Editing Basics
 
