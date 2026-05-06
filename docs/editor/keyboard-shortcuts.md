@@ -20,6 +20,19 @@ This page collects the most useful shortcuts from the editor and the older built
 | One-page view | `Ctrl-Shift-Page Up` or `Ctrl-Numpad0` |
 | Show all remaining pages | `Ctrl-Shift-Page Down` |
 
+### Repeated Press Navigation
+
+Some navigation shortcuts support intentional repeated presses:
+
+| Action | Shortcut |
+| --- | --- |
+| Extend selection upward to the current word boundary | `Shift-Up` pressed twice |
+| Extend selection upward to the start of the current page | `Shift-Up` pressed three times |
+| Extend selection downward to the current word boundary | `Shift-Down` pressed twice |
+| Extend selection downward to the end of the current page | `Shift-Down` pressed three times |
+
+These are real repeated presses, not separate modifier combinations.
+
 ## Playback and Recording
 
 | Action | Shortcut |
