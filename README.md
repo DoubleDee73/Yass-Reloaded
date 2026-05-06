@@ -73,7 +73,7 @@ Prebuilt binaries for Windows, macOS, and Linux are available in the GitHub
 **Recommended:**  
 Download and run the Windows installer:
 
-- `yass-installer-2026.4.exe`
+- `yass-installer-2026.5.exe`
 
 Java is bundled. No manual setup required.
 
@@ -131,7 +131,7 @@ Only if you use a plain JDK without JavaFX, add a JavaFX SDK manually, for examp
 
 and start the jar like this:
 
-`java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2026.4.jar`
+`java --module-path $PATH_TO_FX --add-modules javafx.swing,javafx.media -jar Yass-Reloaded-2026.5.jar`
 
 # Developers
 
@@ -200,7 +200,7 @@ If you like this  app, feel free (but not pressured!) to buy me coffee. Any supp
   - Open a command line window and type in `java -version`. 
   - You should have Java 21
 - Have you tried opening it as a jar?
-  - Download the jar, open a command line window and type in `java -jar Yass-Reloaded-2026.4.jar`
+  - Download the jar, open a command line window and type in `java -jar Yass-Reloaded-2026.5.jar`
   - Any error messages are then printed out in the command line window for debugging
 
 ## Cannot find FFmpeg?
