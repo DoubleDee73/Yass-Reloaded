@@ -1,4 +1,4 @@
-Name "Yass Reloaded 2026.5"
+﻿Name "Yass Reloaded 2026.5"
 OutFile "yass.exe"
 
 Unicode true
@@ -8,6 +8,7 @@ InstallColors /windows
 Icon .\src\yass\resources\icons\yass-multi-icon.ico
 UninstallIcon .\src\yass\resources\icons\yass-multi-icon.ico
 InstallDir "$PROGRAMFILES\Yass Reloaded"
+InstallDirRegKey HKLM "SOFTWARE\Yass Reloaded" "installdir"
 RequestExecutionLevel admin
 
 LoadLanguageFile "${NSISDIR}\Contrib\Language files\English.nlf"
@@ -26,7 +27,7 @@ LangString Msg_Prev ${LANG_ENGLISH} "Yass Reloaded is already installed. $\n$\nC
 LangString Msg_Prev ${LANG_GERMAN} "Yass Reloaded ist bereits installiert. $\n$\nMit `OK` wird die vorherige Version entfernt, mit `Abbrechen` wird die Aktualisierung abgebrochen."
 LangString Msg_Prev ${LANG_HUNGARIAN} "Yass Reloaded is already installed. $\n$\nChoose `OK` to remove the previous version or `Cancel` to cancel this upgrade."
 LangString Msg_Prev ${LANG_POLISH} "Yass Reloaded is already installed. $\n$\nChoose `OK` to remove the previous version or `Cancel` to cancel this upgrade."
-LangString Msg_Prev ${LANG_SPANISH} "Yass Reloaded ya está instalado. $\n$\Elija `OK` para desinstalar la versión anterior o `Cancelar` para cancelar la actualización."
+LangString Msg_Prev ${LANG_SPANISH} "Yass Reloaded ya está instalado. $\n$\nElija `OK` para desinstalar la versión anterior o `Cancelar` para cancelar la actualización."
 
 LangString Sec_ContextMenuText ${LANG_ENGLISH} "Add context menu item to text files"
 LangString Sec_ContextMenuText ${LANG_GERMAN} "Kontextmenüeintrag für Textdateien"
@@ -103,6 +104,10 @@ Function .onInit
 	StrCmp $LANGUAGE "cancel" 0 +2
 		Abort
 
+  ReadRegStr $R2 HKLM "SOFTWARE\Yass Reloaded" "installdir"
+  StrCmp $R2 "" +2 0
+    StrCpy $INSTDIR $R2
+
   ReadRegStr $R0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Yass Reloaded" "UninstallString"
   StrCmp $R0 "" done
 
@@ -120,7 +125,12 @@ uninst:
   RMDir /r "$SMPROGRAMS\Yass 1.7.1"
 
   ClearErrors
-  ExecWait $R0
+  ExecWait '"$R0"'
+  RMDir /r "$INSTDIR\app"
+  RMDir /r "$INSTDIR\runtime"
+  Delete "$INSTDIR\yass.exe"
+  Delete "$INSTDIR\uninstall.exe"
+  RMDir "$INSTDIR"
 done:
 FunctionEnd
 ##################
@@ -131,8 +141,6 @@ Page directory
 
 Section $(Sec_ContextMenuText)
   SetOutPath "$INSTDIR"
-  # Packt alles inklusive JRE ein 
-  File /r "dist-img\yass\*.*" 
   WriteRegStr HKCR "Directory\shell\yass" "" $(ContextMenu_Edit)
   # Geändert auf yass.exe [cite: 23]
   WriteRegStr HKCR "Directory\shell\yass\command" "" '"$INSTDIR\yass.exe" "%1"'
@@ -183,6 +191,9 @@ Page instfiles
 Section
   SetShellVarContext all
   SetOutPath $INSTDIR
+  RMDir /r "$INSTDIR\app"
+  RMDir /r "$INSTDIR\runtime"
+  Delete "$INSTDIR\yass.exe"
   File /r "dist-img\yass\*.*"
 #  File ".\lib\fobs4jmf.dll"
 #  File ".\lib\jinput-raw.dll"
@@ -192,7 +203,7 @@ Section
   WriteRegStr HKLM "SOFTWARE\Yass Reloaded" "installdir" "$INSTDIR"
 
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Yass Reloaded" "DisplayName" "Yass Reloaded"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Yass Reloaded" "UninstallString" "$INSTDIR\uninstall.exe"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Yass Reloaded" "UninstallString" '"$INSTDIR\uninstall.exe"'
 
   WriteUninstaller $INSTDIR\uninstall.exe
 
@@ -250,6 +261,8 @@ Section "Uninstall"
   RMDir /r "$SMPROGRAMS\Yass Reloaded"
   Delete "$INSTDIR\Yass Reloaded 1.0.1.pref"
   Delete "$INSTDIR\fobs4jmf.dll"
+  RMDir /r "$INSTDIR\app"
+  RMDir /r "$INSTDIR\runtime"
   Delete "$INSTDIR\yass.exe"
   Delete "$INSTDIR\uninstall.exe"
   RMDir  "$INSTDIR"
