@@ -42,12 +42,7 @@ import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
-import java.awt.event.MouseAdapter;
-import java.awt.event.KeyEvent;
-import java.awt.event.MouseEvent;
-import java.awt.event.MouseMotionAdapter;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
+import java.awt.event.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
@@ -4830,10 +4825,18 @@ public class YassTable extends JTable {
     public void alignToMelody(List<YassRow> rows,
                               List<PitchDetector.PitchData> pitchData,
                               AlignToMelodyContext context) {
+        alignToMelody(rows, pitchData, context, AlignToMelodyMode.PITCH_AND_LENGTH);
+    }
+
+    public void alignToMelody(List<YassRow> rows,
+                              List<PitchDetector.PitchData> pitchData,
+                              AlignToMelodyContext context,
+                              AlignToMelodyMode mode) {
         if (rows == null || rows.isEmpty() || pitchData == null || pitchData.isEmpty()) {
             return;
         }
         AlignToMelodyContext effectiveContext = context == null ? AlignToMelodyContext.manual() : context;
+        AlignToMelodyMode effectiveMode = mode == null ? AlignToMelodyMode.PITCH_AND_LENGTH : mode;
         boolean debugAlignToMelody = LOGGER.isLoggable(Level.FINE);
 
         Map<YassRow, Integer> prevalentPitches = new HashMap<>();
@@ -4852,8 +4855,9 @@ public class YassTable extends JTable {
         int octaveBias = keepDetectedOctave || absolutePitchView ? 0 : determineSignificantOctaveBias(prevalentPitches.values());
         if (debugAlignToMelody) {
             LOGGER.fine(String.format(Locale.ROOT,
-                    "[AlignToMelody] start origin=%s notes=%d pitchFrames=%d absolutePitchView=%s keepDetectedOctave=%s octaveBias=%d",
+                    "[AlignToMelody] start origin=%s mode=%s notes=%d pitchFrames=%d absolutePitchView=%s keepDetectedOctave=%s octaveBias=%d",
                     effectiveContext.origin(),
+                    effectiveMode,
                     rows.size(),
                     pitchData.size(),
                     absolutePitchView,
@@ -4923,9 +4927,12 @@ public class YassTable extends JTable {
                 }
             }
 
-            if (alignedPitch != row.getHeightInt()) {
+            if (effectiveMode.adjustsPitch() && alignedPitch != row.getHeightInt()) {
                 row.setHeight(alignedPitch);
                 changed = true;
+            }
+            if (!effectiveMode.adjustsLength()) {
+                continue;
             }
 
             // Temporarily free this note's own beats so it can expand into adjacent free beats
@@ -5402,6 +5409,28 @@ public class YassTable extends JTable {
         MANUAL,
         CREATE_WIZARD,
         RECORDING
+    }
+
+    public enum AlignToMelodyMode {
+        PITCH_AND_LENGTH(true, true),
+        LENGTH_ONLY(false, true),
+        PITCH_ONLY(true, false);
+
+        private final boolean adjustsPitch;
+        private final boolean adjustsLength;
+
+        AlignToMelodyMode(boolean adjustsPitch, boolean adjustsLength) {
+            this.adjustsPitch = adjustsPitch;
+            this.adjustsLength = adjustsLength;
+        }
+
+        public boolean adjustsPitch() {
+            return adjustsPitch;
+        }
+
+        public boolean adjustsLength() {
+            return adjustsLength;
+        }
     }
 
     public record AlignToMelodyContext(AlignToMelodyOrigin origin) {

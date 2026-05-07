@@ -39,9 +39,9 @@ import yass.input.*;
 import yass.integration.cover.fanart.FanartTvCoverCandidate;
 import yass.integration.cover.fanart.FanartTvCoverPickerDialog;
 import yass.integration.cover.fanart.FanartTvCoverSearchService;
+import yass.integration.separation.SeparationPreference;
 import yass.integration.separation.SeparationRequest;
 import yass.integration.separation.SeparationResult;
-import yass.integration.separation.SeparationPreference;
 import yass.integration.separation.SeparationService;
 import yass.integration.separation.audioseparator.AudioSeparatorSeparationService;
 import yass.integration.separation.mvsep.MvsepAccountInfo;
@@ -59,28 +59,7 @@ import yass.musicalkey.MusicalKeyEnum;
 import yass.musicbrainz.MusicBrainz;
 import yass.musicbrainz.MusicBrainzInfo;
 import yass.renderer.YassSession;
-import yass.UsdbFile;
-import yass.usdb.UsdbClient;
-import yass.usdb.UsdbCookieBrowser;
-import yass.usdb.UsdbSongImportResult;
-import yass.usdb.UsdbSongImportService;
-import yass.usdb.UsdbCredentialStore;
-import yass.usdb.UsdbImportQueueService;
-import yass.usdb.UsdbLoginDialog;
-import yass.usdb.UsdbImportProgressListener;
-import yass.usdb.UsdbImportConflictChoice;
-import yass.usdb.UsdbMetaTagParser;
-import yass.usdb.UsdbPendingSongService;
-import yass.usdb.UsdbPythonCookieImporter;
-import yass.usdb.UsdbSearchDialog;
-import yass.usdb.UsdbSessionService;
-import yass.usdb.UsdbSongAddService;
-import yass.usdb.UsdbSongCommentService;
-import yass.usdb.UsdbSongEditDiffDialog;
-import yass.usdb.UsdbSongEditService;
-import yass.usdb.UsdbSongDetails;
-import yass.usdb.UsdbSongSummary;
-import yass.usdb.UsdbSyncerBridge;
+import yass.usdb.*;
 import yass.video.YassVideoDialog;
 import yass.wizard.CreateSongWizard;
 import yass.wizard.Lyrics;
@@ -100,11 +79,7 @@ import java.awt.event.*;
 import java.awt.im.InputContext;
 import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeListener;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PrintWriter;
+import java.io.*;
 import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -116,8 +91,8 @@ import java.text.MessageFormat;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -358,6 +333,13 @@ public class YassActions implements DropTargetListener {
         editorKeyBindingRegistry.bind(keyStroke, pressCount, createEditorCommand(id, executor));
     }
 
+    private void bindEditorCharShortcut(char keyChar,
+                                        String id,
+                                        Action action) {
+        editorKeyBindingRegistry.bind(keyChar, createEditorCommand(id, ctx -> action.actionPerformed(null)));
+        action.putValue(AbstractAction.ACCELERATOR_KEY, KeyStroke.getKeyStroke(keyChar));
+    }
+
     private void importEditorBindings(InputMap inputMap, ActionMap actionMap) {
         if (inputMap == null || actionMap == null) {
             return;
@@ -465,6 +447,10 @@ public class YassActions implements DropTargetListener {
         return List.of(
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_M, 0), "alignToMelody", alignToMelody,
                                           KeyStroke.getKeyStroke(KeyEvent.VK_M, 0)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_M, InputEvent.CTRL_DOWN_MASK), "alignNoteLength", alignNoteLength,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_M, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_M, InputEvent.SHIFT_DOWN_MASK), "alignPitch", alignPitch,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_M, InputEvent.SHIFT_DOWN_MASK)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_T, 0), "moveCursorDialog", moveCursorDialog,
                                           KeyStroke.getKeyStroke(KeyEvent.VK_T, 0)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.SHIFT_DOWN_MASK),
@@ -624,8 +610,6 @@ public class YassActions implements DropTargetListener {
                         KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0), "splitRows", splitRows,
                         KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0)),
-                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, 0), "joinRows", joinRows,
-                        KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, 0)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.SHIFT_DOWN_MASK), "rollLeft", rollLeft,
                         KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.SHIFT_DOWN_MASK)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_R, 0), "rollRight", rollRight,
@@ -913,33 +897,48 @@ public class YassActions implements DropTargetListener {
             table.shiftEndingLeft();
         }
     };
+
+    private void applyMelodyAlignment(YassTable.AlignToMelodyMode mode) {
+        if (lyrics.isEditable() || isFocusInSongHeader()) {
+            return;
+        }
+        int[] selectedRows = table.getSelectedRows();
+        if (selectedRows == null || selectedRows.length == 0) {
+            return;
+        }
+        List<YassRow> rows = new ArrayList<>();
+        for (int rowIndex : selectedRows) {
+            rows.add(table.getRowAt(rowIndex));
+        }
+        List<PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
+        int transpose = mp3.getPitchWaveformTranspose();
+        if (transpose != 0) {
+            pitchData = pitchData.stream()
+                                 .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose,
+                                                                        pd.noteName(), pd.rawFrequency()))
+                                 .collect(Collectors.toList());
+        }
+        table.alignToMelody(rows, pitchData, YassTable.AlignToMelodyContext.manual(), mode);
+        // Restore selection lost due to fireTableDataChanged
+        for (int rowIndex : selectedRows) {
+            table.addRowSelectionInterval(rowIndex, rowIndex);
+        }
+        sheet.repaint();
+    }
+
     private final Action alignToMelody = new AbstractAction(I18.get("edit_align_to_melody")) {
         public void actionPerformed(ActionEvent e) {
-            if (lyrics.isEditable() || isFocusInSongHeader()) {
-                return;
-            }
-            int[] selectedRows = table.getSelectedRows();
-            if (selectedRows == null || selectedRows.length == 0) {
-                return;
-            }
-            List<YassRow> rows = new ArrayList<>();
-            for (int rowIndex : selectedRows) {
-                rows.add(table.getRowAt(rowIndex));
-            }
-            List<PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
-            int transpose = mp3.getPitchWaveformTranspose();
-            if (transpose != 0) {
-                pitchData = pitchData.stream()
-                                     .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose,
-                                                                            pd.noteName(), pd.rawFrequency()))
-                                     .collect(Collectors.toList());
-            }
-            table.alignToMelody(rows, pitchData, YassTable.AlignToMelodyContext.manual());
-            // Restore selection lost due to fireTableDataChanged
-            for (int rowIndex : selectedRows) {
-                table.addRowSelectionInterval(rowIndex, rowIndex);
-            }
-            sheet.repaint();
+            applyMelodyAlignment(YassTable.AlignToMelodyMode.PITCH_AND_LENGTH);
+        }
+    };
+    private final Action alignNoteLength = new AbstractAction(I18.get("edit_align_note_length")) {
+        public void actionPerformed(ActionEvent e) {
+            applyMelodyAlignment(YassTable.AlignToMelodyMode.LENGTH_ONLY);
+        }
+    };
+    private final Action alignPitch = new AbstractAction(I18.get("edit_align_pitch")) {
+        public void actionPerformed(ActionEvent e) {
+            applyMelodyAlignment(YassTable.AlignToMelodyMode.PITCH_ONLY);
         }
     };
     private final Action findLyrics = new AbstractAction(I18.get("edit_lyrics_find")) {
@@ -5888,6 +5887,8 @@ public class YassActions implements DropTargetListener {
         ImageIcon alignToMelodyActionIcon = getOptionalResizedIcon("alignToMelodyIcon", 16);
         if (alignToMelodyActionIcon != null) {
             alignToMelody.putValue(AbstractAction.SMALL_ICON, alignToMelodyActionIcon);
+            alignNoteLength.putValue(AbstractAction.SMALL_ICON, alignToMelodyActionIcon);
+            alignPitch.putValue(AbstractAction.SMALL_ICON, alignToMelodyActionIcon);
         }
         ImageIcon createDuetActionIcon = getOptionalResizedIcon("createDuetIcon", 16);
         if (createDuetActionIcon != null) {
@@ -5971,7 +5972,8 @@ public class YassActions implements DropTargetListener {
         menu.add(removeRowsWithLyrics);
         menu.add(alignToGrid);
         menu.add(alignToMelody);
-        menu.add(createDuet);
+        menu.add(alignNoteLength);
+        menu.add(alignPitch);
         menu.addSeparator();
 
         gapSpinner = new TimeSpinner(I18.get("mpop_gap"), 0, 10000);
@@ -7851,6 +7853,8 @@ public class YassActions implements DropTargetListener {
         alignNotesWithTranscription.setEnabled(hasAnyTranscriptionEngine() && isOpened && !isCurrentSongDuet());
         boolean hasPitchData = mp3 != null && mp3.getPitchDataList() != null && !mp3.getPitchDataList().isEmpty();
         alignToMelody.setEnabled(hasPitchData && isOpened);
+        alignNoteLength.setEnabled(hasPitchData && isOpened);
+        alignPitch.setEnabled(hasPitchData && isOpened);
         separateAudio.setEnabled(hasMvsepApiToken() && isOpened && !separationRunning && canSeparateCurrentSong());
         separateAudioLocal.setEnabled(
                 new AudioSeparatorSeparationService(prop).isConfigured() && isOpened && !separationRunning);
@@ -11511,6 +11515,7 @@ public class YassActions implements DropTargetListener {
                 3,
                 "selectToEndOfCurrentPage",
                 ctx -> selectToEndOfCurrentPage.actionPerformed(null));
+        bindEditorCharShortcut('+', "joinRows", joinRows);
     }
 
 

@@ -32,7 +32,7 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
         if (!editorActive.get() || e.isConsumed()) {
             return false;
         }
-        if (e.getID() != KeyEvent.KEY_PRESSED && e.getID() != KeyEvent.KEY_RELEASED) {
+        if (e.getID() != KeyEvent.KEY_PRESSED && e.getID() != KeyEvent.KEY_RELEASED && e.getID() != KeyEvent.KEY_TYPED) {
             return false;
         }
         if (isModifierOnlyKey(e)) {
@@ -59,6 +59,9 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
             sequenceTracker.clear();
             pressedKeyCodes.clear();
             return false;
+        }
+        if (e.getID() == KeyEvent.KEY_TYPED) {
+            return dispatchTypedCharacter(e, context);
         }
 
         KeyStroke stroke = KeyStroke.getKeyStrokeForEvent(e);
@@ -138,7 +141,38 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
             return false;
         }
         int modifiers = stroke.getModifiers();
-        boolean hasCommandModifier = (modifiers & (KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.META_DOWN_MASK)) != 0;
-        return !hasCommandModifier;
+        return !hasCommandModifier(modifiers);
+    }
+
+    private boolean hasCommandModifier(int modifiers) {
+        return (modifiers & (KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.META_DOWN_MASK)) != 0;
+    }
+
+    private boolean dispatchTypedCharacter(KeyEvent e, EditorInputContext context) {
+        char keyChar = e.getKeyChar();
+        if (keyChar == KeyEvent.CHAR_UNDEFINED || Character.isISOControl(keyChar)) {
+            return false;
+        }
+        if (hasCommandModifier(e.getModifiersEx())) {
+            return false;
+        }
+        if (!isCharacterShortcutContext(context)) {
+            if (context.isTypingContext()) {
+                sequenceTracker.clear();
+            }
+            return false;
+        }
+        EditorCommand command = registry.get(keyChar);
+        if (command == null || !command.isEnabled(context)) {
+            return false;
+        }
+        command.execute(context);
+        e.consume();
+        return true;
+    }
+
+    private boolean isCharacterShortcutContext(EditorInputContext context) {
+        return (context.focusArea() == FocusArea.SHEET || context.focusArea() == FocusArea.LYRICS_VIEW)
+                && !context.songHeaderEditing();
     }
 }

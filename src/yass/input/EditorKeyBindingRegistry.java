@@ -6,6 +6,7 @@ import java.util.Map;
 
 public class EditorKeyBindingRegistry {
     private final Map<KeyStroke, Map<Integer, EditorCommand>> bindings = new HashMap<>();
+    private final Map<Character, EditorCommand> charBindings = new HashMap<>();
 
     public void bind(KeyStroke keyStroke, EditorCommand command) {
         bind(keyStroke, 1, command);
@@ -13,6 +14,10 @@ public class EditorKeyBindingRegistry {
 
     public void bind(KeyStroke keyStroke, int pressCount, EditorCommand command) {
         bindings.computeIfAbsent(keyStroke, ignored -> new HashMap<>()).put(pressCount, command);
+    }
+
+    public void bind(char keyChar, EditorCommand command) {
+        charBindings.put(keyChar, command);
     }
 
     public EditorCommand get(KeyStroke keyStroke, int pressCount) {
@@ -33,7 +38,12 @@ public class EditorKeyBindingRegistry {
         return commands.get(fallbackCount);
     }
 
+    public EditorCommand get(char keyChar) {
+        return charBindings.get(keyChar);
+    }
+
     public void clear() {
         bindings.clear();
+        charBindings.clear();
     }
 }

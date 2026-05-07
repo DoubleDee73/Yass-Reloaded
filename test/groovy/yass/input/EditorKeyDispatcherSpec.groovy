@@ -2,12 +2,8 @@ package yass.input
 
 import spock.lang.Specification
 
-import javax.swing.JMenuItem
-import javax.swing.JPopupMenu
-import javax.swing.MenuSelectionManager
-import javax.swing.JPanel
-import java.awt.DefaultKeyboardFocusManager
-import java.awt.KeyboardFocusManager
+import javax.swing.*
+import java.awt.*
 import java.awt.event.KeyEvent
 import java.util.function.Supplier
 
@@ -168,6 +164,67 @@ class EditorKeyDispatcherSpec extends Specification {
 
         then:
         commandCalls == ['single', 'double']
+    }
+
+    def 'dispatches character shortcuts by typed character in sheet and lyrics view'() {
+        given:
+        def focusOwner = new JPanel()
+        KeyboardFocusManager.setCurrentKeyboardFocusManager(new StubKeyboardFocusManager(focusOwner))
+        def registry = new EditorKeyBindingRegistry()
+        def tracker = new KeySequenceTracker(500)
+        def commandCalls = []
+        registry.bind('+' as char,
+                new SimpleEditorCommand('joinRows', { true }, { commandCalls << it.focusArea() }))
+        Supplier<EditorInputContext> contextSupplier = {
+            new EditorInputContext(focusArea, false, false, false, false, false, true, false)
+        }
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def event = new KeyEvent(focusOwner, KeyEvent.KEY_TYPED, System.currentTimeMillis(), modifiers, KeyEvent.VK_UNDEFINED, '+' as char)
+
+        when:
+        def handled = dispatcher.dispatchKeyEvent(event)
+
+        then:
+        handled
+        event.consumed
+        commandCalls == [focusArea]
+
+        where:
+        focusArea             | modifiers
+        FocusArea.SHEET       | 0
+        FocusArea.LYRICS_VIEW | KeyEvent.SHIFT_DOWN_MASK
+    }
+
+    def 'does not dispatch character shortcuts while typing or outside editor content'() {
+        given:
+        def focusOwner = new JPanel()
+        KeyboardFocusManager.setCurrentKeyboardFocusManager(new StubKeyboardFocusManager(focusOwner))
+        def registry = new EditorKeyBindingRegistry()
+        def tracker = new KeySequenceTracker(500)
+        def commandCalls = []
+        registry.bind('+' as char,
+                new SimpleEditorCommand('joinRows', { true }, { commandCalls << it.focusArea() }))
+        Supplier<EditorInputContext> contextSupplier = {
+            new EditorInputContext(focusArea, false, songHeaderEditing, false, false, false, true, false)
+        }
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def event = new KeyEvent(focusOwner, KeyEvent.KEY_TYPED, System.currentTimeMillis(), modifiers, KeyEvent.VK_UNDEFINED, '+' as char)
+
+        when:
+        def handled = dispatcher.dispatchKeyEvent(event)
+
+        then:
+        !handled
+        !event.consumed
+        commandCalls.isEmpty()
+
+        where:
+        focusArea             | songHeaderEditing | modifiers
+        FocusArea.LYRICS_EDIT | false             | 0
+        FocusArea.SONG_HEADER | false             | 0
+        FocusArea.OTHER       | false             | 0
+        FocusArea.SHEET       | true              | 0
+        FocusArea.SHEET       | false             | KeyEvent.CTRL_DOWN_MASK
     }
 
     private static class StubKeyboardFocusManager extends DefaultKeyboardFocusManager {

@@ -185,6 +185,74 @@ class AlignToMelodySpec extends Specification {
         note.getHeightInt() == -2
     }
 
+    def 'alignNoteLength keeps pitch while adjusting note timing to the detected melody'() {
+        given:
+        YassTableModel ytm = new YassTableModel()
+        def note = new YassRow(':', '0', '4', '10', 'Test ')
+        ytm.addRow(note)
+        ytm.addRow(new YassRow('E', '', '', '', ''))
+
+        and:
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> true
+        }
+        YassTable yassTable = new YassTable(ytm, props)
+        yassTable.setBPM(15d)
+        yassTable.gap = 0
+        yassTable.model = Stub(TableModel) {
+            getRowCount() >> 2
+        }
+        def pitchData = [
+                pd(0.10f, -2, 1.0d), pd(0.20f, -2, 1.0d), pd(0.30f, -2, 1.0d), pd(0.40f, -2, 1.0d),
+                pd(1.10f, -2, 1.0d), pd(1.20f, -2, 1.0d), pd(1.30f, -2, 1.0d), pd(1.40f, -2, 1.0d),
+                pd(2.10f, -2, 1.0d), pd(2.20f, -2, 1.0d), pd(2.30f, -2, 1.0d), pd(2.40f, -2, 1.0d),
+                pd(3.10f, -2, 0.08d), pd(3.20f, -2, 0.08d), pd(3.30f, -2, 0.08d), pd(3.40f, -2, 0.08d)
+        ]
+
+        when:
+        yassTable.alignToMelody([note], pitchData, YassTable.AlignToMelodyContext.manual(),
+                YassTable.AlignToMelodyMode.LENGTH_ONLY)
+
+        then:
+        note.getBeatInt() == 0
+        note.getLengthInt() == 3
+        note.getHeightInt() == 10
+    }
+
+    def 'alignPitch keeps timing while moving pitch to the detected melody line'() {
+        given:
+        YassTableModel ytm = new YassTableModel()
+        def note = new YassRow(':', '0', '4', '10', 'Test ')
+        ytm.addRow(note)
+        ytm.addRow(new YassRow('E', '', '', '', ''))
+
+        and:
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> true
+        }
+        YassTable yassTable = new YassTable(ytm, props)
+        yassTable.setBPM(15d)
+        yassTable.gap = 0
+        yassTable.model = Stub(TableModel) {
+            getRowCount() >> 2
+        }
+        def pitchData = [
+                pd(0.10f, -2), pd(0.20f, -2), pd(0.30f, -2), pd(0.40f, -2),
+                pd(1.10f, -2), pd(1.20f, -2), pd(1.30f, -2), pd(1.40f, -2),
+                pd(2.10f, -2), pd(2.20f, -2), pd(2.30f, -2), pd(2.40f, -2),
+                pd(3.10f, -2), pd(3.20f, -2)
+        ]
+
+        when:
+        yassTable.alignToMelody([note], pitchData, YassTable.AlignToMelodyContext.manual(),
+                YassTable.AlignToMelodyMode.PITCH_ONLY)
+
+        then:
+        note.getBeatInt() == 0
+        note.getLengthInt() == 4
+        note.getHeightInt() == -2
+    }
+
     private static PitchDetector.PitchData pd(float time, int pitch) {
         new PitchDetector.PitchData(time, pitch, "A", 440d)
     }
