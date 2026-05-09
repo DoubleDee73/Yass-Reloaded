@@ -25,6 +25,7 @@ import org.jetbrains.annotations.Nullable;
 import yass.I18;
 import yass.YassActions;
 import yass.YassProperties;
+import yass.YassUtils;
 
 import javax.swing.*;
 import javax.swing.event.TreeSelectionEvent;
@@ -32,14 +33,12 @@ import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeSelectionModel;
 import java.awt.*;
-import java.net.URL;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.Hashtable;
-import java.util.logging.Logger;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Description of the Class
@@ -64,7 +63,7 @@ public class YassOptions extends JDialog {
      * @param a Description of the Parameter
      */
     public YassOptions(YassActions a) {
-        super(new OwnerFrame());
+        super(YassUtils.resolveDialogOwnerWindow(a != null ? a.getTab() : null));
 
         actions = a;
         YassProperties prop = actions.getProperties();
@@ -185,9 +184,8 @@ public class YassOptions extends JDialog {
         setModal(true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         pack();
-        Dimension dim = this.getToolkit().getScreenSize();
         setSize(920, 720);
-        setLocation(dim.width / 2 - 460, dim.height / 2 - 360);
+        setLocationRelativeTo(YassUtils.resolveDialogOwner(actions.getTab()));
         setTitle(I18.get("options_title"));
         showPanel(I18.get("options_directories"));
         startAsyncYtDlpCheck(prop);
@@ -343,27 +341,6 @@ public class YassOptions extends JDialog {
     }
 
 
-    private static class OwnerFrame extends JFrame {
-        private static final long serialVersionUID = -5555522703593740252L;
-
-        OwnerFrame() {
-            URL icon16 = this.getClass().getResource("/yass/resources/img/yass-icon-16.png");
-            URL icon32 = this.getClass().getResource("/yass/resources/img/yass-icon-32.png");
-            URL icon48 = this.getClass().getResource("/yass/resources/img/yass-icon-48.png");
-            ArrayList<Image> icons = new ArrayList<Image>();
-            icons.add(new ImageIcon(icon48).getImage());
-            icons.add(new ImageIcon(icon32).getImage());
-            icons.add(new ImageIcon(icon16).getImage());
-            setIconImages(icons);
-        }
-        // This frame can never be shown.
-
-        @SuppressWarnings("deprecation")
-        public void show() {
-        }
-    }
-    
-    
 }
 
 

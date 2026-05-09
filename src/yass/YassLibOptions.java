@@ -74,7 +74,7 @@ public class YassLibOptions extends JDialog {
      * @param a        Description of the Parameter
      */
     public YassLibOptions(YassProperties p, YassActions a, YassSongList songList, YassPlayer mp3) {
-        super(a.createOwnerFrame());
+        super(YassUtils.resolveDialogOwnerWindow(a != null ? a.getTab() : null));
         this.actions = a;
         this.prop = p;
         this.songList = songList;
@@ -497,9 +497,8 @@ public class YassLibOptions extends JDialog {
         setModal(true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         pack();
-        Dimension dim = this.getToolkit().getScreenSize();
         setSize(500, 300);
-        setLocation(dim.width / 2 - 250, dim.height / 2 - 150);
+        setLocationRelativeTo(YassUtils.resolveDialogOwner(actions.getTab()));
         //setIconImage(new ImageIcon(YassLibOptions.this.getClass().getResource("/yass/yass-icon-16.png")).getImage());
         refreshTexts();
         setVisible(true);

@@ -47,4 +47,13 @@ class CreateSongWizardSpec extends Specification {
         query.artist() == "Beyoncé"
         query.title() == "Halo"
     }
+
+    def "wizard dialog is centered relative to its owner instead of the default screen"() {
+        given:
+        String source = new File("src/yass/wizard/CreateSongWizard.java").text
+
+        expect:
+        !source.contains("getDialog().setLocationRelativeTo(null)")
+        source.contains("YassUtils.resolveDialogOwner(parent)")
+    }
 }

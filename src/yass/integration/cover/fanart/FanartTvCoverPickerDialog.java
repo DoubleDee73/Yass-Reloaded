@@ -9,7 +9,6 @@ import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import javax.swing.event.ChangeListener;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
@@ -17,12 +16,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.io.InputStream;
-import java.net.ConnectException;
-import java.net.HttpURLConnection;
-import java.net.Proxy;
-import java.net.ProxySelector;
-import java.net.URI;
-import java.net.URISyntaxException;
+import java.net.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -90,8 +84,6 @@ public class FanartTvCoverPickerDialog extends JDialog {
                 ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
                 ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         scrollPane.getHorizontalScrollBar().setUnitIncrement(32);
-        ChangeListener lazyLoadListener = event -> triggerVisiblePreviewLoads(scrollPane);
-        scrollPane.getViewport().addChangeListener(lazyLoadListener);
 
         JTextField searchField = new JTextField();
         searchField.getDocument().addDocumentListener(new DocumentListener() {
@@ -134,10 +126,7 @@ public class FanartTvCoverPickerDialog extends JDialog {
             JToggleButton preferredButton = candidateButtons.get(preferredIndex);
             preferredButton.setSelected(true);
             selectedCandidate = candidates.get(preferredIndex);
-            SwingUtilities.invokeLater(() -> {
-                scrollPane.getViewport().scrollRectToVisible(preferredButton.getBounds());
-                triggerVisiblePreviewLoads(scrollPane);
-            });
+            SwingUtilities.invokeLater(() -> scrollPane.getViewport().scrollRectToVisible(preferredButton.getBounds()));
         }
 
         add(scrollPane, BorderLayout.CENTER);
@@ -173,10 +162,17 @@ public class FanartTvCoverPickerDialog extends JDialog {
         button.setContentAreaFilled(true);
         button.putClientProperty("candidate", candidate);
 
-        JLabel imageLabel = new JLabel("Loading...", SwingConstants.CENTER);
+        JLabel imageLabel = new JLabel(I18.get("lib_search_fanarttv_cover_click_preview"), SwingConstants.CENTER);
         imageLabel.setPreferredSize(new Dimension(PREVIEW_SIZE, PREVIEW_SIZE));
         imageLabel.setOpaque(true);
         imageLabel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (!e.isPopupTrigger() && SwingUtilities.isLeftMouseButton(e)) {
+                    selectCandidateAndLoadPreview(button, imageLabel, candidate);
+                }
+            }
+
             @Override
             public void mousePressed(MouseEvent e) {
                 handlePreviewContextClick(e, candidate, button);
@@ -211,7 +207,7 @@ public class FanartTvCoverPickerDialog extends JDialog {
 
         String previewKey = getPreviewCacheKey(candidate);
         button.setToolTipText(StringUtils.defaultIfBlank(candidate.getPreviewImageUrl(), candidate.getImageUrl()));
-        button.addActionListener(e -> selectedCandidate = candidate);
+        button.addActionListener(e -> selectCandidateAndLoadPreview(button, imageLabel, candidate));
         button.addChangeListener(e -> applyTileStyle(button, button.isSelected()));
         applyTileStyle(button, false);
 
@@ -223,6 +219,12 @@ public class FanartTvCoverPickerDialog extends JDialog {
             return button;
         }
         return button;
+    }
+
+    private void selectCandidateAndLoadPreview(JToggleButton button, JLabel imageLabel, FanartTvCoverCandidate candidate) {
+        button.setSelected(true);
+        selectedCandidate = candidate;
+        startPreviewLoadIfNeeded(button, imageLabel, candidate);
     }
 
     static void applyTileStyle(JToggleButton button, boolean selected) {
@@ -243,21 +245,6 @@ public class FanartTvCoverPickerDialog extends JDialog {
         Object textLabelValue = button.getClientProperty(TEXT_LABEL_PROPERTY);
         if (textLabelValue instanceof JLabel textLabel) {
             textLabel.setBackground(background);
-        }
-    }
-
-    private void triggerVisiblePreviewLoads(JScrollPane scrollPane) {
-        Rectangle visibleRect = scrollPane.getViewport().getViewRect();
-        for (JToggleButton button : candidateButtons) {
-            if (!shouldLoadPreview(visibleRect, button.getBounds())) {
-                continue;
-            }
-            Object candidateValue = button.getClientProperty("candidate");
-            Object labelValue = button.getClientProperty(PREVIEW_LABEL_PROPERTY);
-            if (!(candidateValue instanceof FanartTvCoverCandidate candidate) || !(labelValue instanceof JLabel imageLabel)) {
-                continue;
-            }
-            startPreviewLoadIfNeeded(button, imageLabel, candidate);
         }
     }
 
@@ -313,13 +300,6 @@ public class FanartTvCoverPickerDialog extends JDialog {
                 });
             }
         });
-    }
-
-    static boolean shouldLoadPreview(Rectangle visibleRect, Rectangle buttonBounds) {
-        if (visibleRect == null || buttonBounds == null) {
-            return false;
-        }
-        return visibleRect.intersects(buttonBounds);
     }
 
     protected BufferedImage loadPreviewImage(FanartTvCoverCandidate candidate) throws Exception {
@@ -491,10 +471,7 @@ public class FanartTvCoverPickerDialog extends JDialog {
         }
         button.setSelected(true);
         selectedCandidate = candidate;
-        SwingUtilities.invokeLater(() -> {
-            scrollPane.getViewport().scrollRectToVisible(button.getBounds());
-            triggerVisiblePreviewLoads(scrollPane);
-        });
+        SwingUtilities.invokeLater(() -> scrollPane.getViewport().scrollRectToVisible(button.getBounds()));
     }
 
     private static String normalizeSearchQuery(String query) {

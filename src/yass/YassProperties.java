@@ -566,7 +566,7 @@ public class YassProperties extends Properties {
         if (!propDirFile.exists()) {
             boolean ok = propDirFile.mkdir();
             if (!ok) {
-                JOptionPane.showMessageDialog(null, "Cannot write properties to " + propDir, "Store properties", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(YassUtils.resolveDialogOwner(null), "Cannot write properties to " + propDir, "Store properties", JOptionPane.ERROR_MESSAGE);
                 return;
             }
         }
@@ -578,7 +578,7 @@ public class YassProperties extends Properties {
             fos.close();
             LOGGER.info("Stored " + propDirFile);
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(null, "Error in storing properties to " + propFile, "Store properties", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(YassUtils.resolveDialogOwner(null), "Error in storing properties to " + propFile, "Store properties", JOptionPane.ERROR_MESSAGE);
         }
     }
 

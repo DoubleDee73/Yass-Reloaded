@@ -25,11 +25,7 @@ import yass.musicalkey.MusicalKeyEnum;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
@@ -209,8 +205,8 @@ public class PitchDetector {
             return rawPitchData;
         }
         try {
-            Waveform waveform = loadWaveform(analysisInputFile);
-            if (waveform == null || waveform.samples().length == 0) {
+            Map.Entry<double[], Float> waveform = loadWaveform(analysisInputFile);
+            if (waveform == null || waveform.getKey().length == 0) {
                 return rawPitchData;
             }
             List<PitchData> withEnergy = new ArrayList<>(rawPitchData.size());
@@ -225,14 +221,15 @@ public class PitchDetector {
         }
     }
 
-    private static double computeFrameEnergy(Waveform waveform, float timeSeconds) {
+    private static double computeFrameEnergy(Map.Entry<double[], Float> waveform, float timeSeconds) {
         final double windowSeconds = 0.04d;
-        double[] samples = waveform.samples();
+        double[] samples = waveform.getKey();
         if (samples.length == 0) {
             return Double.NaN;
         }
-        int center = (int) Math.round(timeSeconds * waveform.sampleRate());
-        int halfWindow = Math.max(1, (int) Math.round(windowSeconds * waveform.sampleRate() / 2.0));
+        float sampleRate = waveform.getValue();
+        int center = (int) Math.round(timeSeconds * sampleRate);
+        int halfWindow = Math.max(1, (int) Math.round(windowSeconds * sampleRate / 2.0));
         int start = Math.max(0, center - halfWindow);
         int end = Math.min(samples.length, center + halfWindow);
         if (end <= start) {
@@ -246,7 +243,7 @@ public class PitchDetector {
         return Math.sqrt(sumSquares / (end - start));
     }
 
-    private static Waveform loadWaveform(File audioFile) throws Exception {
+    private static Map.Entry<double[], Float> loadWaveform(File audioFile) throws Exception {
         try (AudioInputStream sourceStream = AudioSystem.getAudioInputStream(audioFile)) {
             AudioFormat sourceFormat = sourceStream.getFormat();
             AudioFormat pcmFormat = sourceFormat;
@@ -279,7 +276,7 @@ public class PitchDetector {
         return output.toByteArray();
     }
 
-    private static Waveform decodeWaveform(byte[] bytes, AudioFormat format) {
+    private static Map.Entry<double[], Float> decodeWaveform(byte[] bytes, AudioFormat format) {
         int channels = Math.max(1, format.getChannels());
         int frameSize = Math.max(2, format.getFrameSize());
         int totalFrames = bytes.length / frameSize;
@@ -297,7 +294,7 @@ public class PitchDetector {
             }
             samples[frame] = mixed / channels;
         }
-        return new Waveform(samples, format.getSampleRate());
+        return Map.entry(samples, format.getSampleRate());
     }
 
     private static File createMonoAnalysisFile(File sourceWavFile, YassProperties properties) {
@@ -842,9 +839,6 @@ public class PitchDetector {
         public PitchData(float time, int pitch, String noteName, double rawFrequency) {
             this(time, pitch, noteName, rawFrequency, Double.NaN);
         }
-    }
-
-    private record Waveform(double[] samples, float sampleRate) {
     }
 
     public record TuningOffsetAnalysis(boolean available,

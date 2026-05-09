@@ -2059,7 +2059,7 @@ public class YassTable extends JTable {
             LOGGER.info(msg);
             JTextArea text = new JTextArea(msg);
             text.setOpaque(false);
-            JOptionPane.showMessageDialog(null, text);
+            JOptionPane.showMessageDialog(YassUtils.resolveDialogOwner(this), text);
             return false;
         }
         boolean isUnityFormat = prop.getUsFormatVersion().getNumericVersion() >= 1d;
@@ -2169,7 +2169,7 @@ public class YassTable extends JTable {
             LOGGER.info("File: " + filename);
             LOGGER.info("Encoding: " + encoding);
             LOGGER.info("###############################################");
-            JOptionPane.showMessageDialog(null,
+            JOptionPane.showMessageDialog(YassUtils.resolveDialogOwner(this),
                                           "<html>Write Error: Written data could not be verified.<br>File: "
                                                   + filename, "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -3927,6 +3927,7 @@ public class YassTable extends JTable {
             if (!add && !getRowAt(i - 1).isNote()) {
                 end();
             } else {
+                int scrollRow = i - 1;
                 if (add) {
                     if (rows.length > 1) {
                         int j = rows[rows.length - 2];
@@ -3937,13 +3938,24 @@ public class YassTable extends JTable {
                             }
                         }
                         setRowSelectionInterval(i, j);
+                        scrollRow = j;
+                    } else {
+                        int j = i - 1;
+                        while (j >= 0 && !getRowAt(j).isNote()) {
+                            j--;
+                        }
+                        if (j < 0) {
+                            return;
+                        }
+                        setRowSelectionInterval(j, i);
+                        scrollRow = j;
                     }
                 } else {
                     setRowSelectionInterval(i - 1, i - 1);
                 }
 
-                Rectangle rr = getCellRect(i - 1, 0, true);
-                rr.add(getCellRect(i - 1, 4, true));
+                Rectangle rr = getCellRect(scrollRow, 0, true);
+                rr.add(getCellRect(scrollRow, 4, true));
                 scrollRectToVisible(rr);
 
                 updatePlayerPosition();

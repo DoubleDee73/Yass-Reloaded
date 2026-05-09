@@ -488,11 +488,15 @@ public class YassActions implements DropTargetListener {
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
                         "shiftLeft", shiftLeft,
                         KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "shiftLeft", shiftLeft, null),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.SHIFT_DOWN_MASK),
                         "shiftLeft", shiftLeft, null),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK),
                         "shiftRight", shiftRight,
                         KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                        "shiftRight", shiftRight, null),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.SHIFT_DOWN_MASK),
                         "shiftRight", shiftRight, null),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.CTRL_DOWN_MASK),
@@ -608,8 +612,6 @@ public class YassActions implements DropTargetListener {
                         KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK), "redo", redo,
                         KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK)),
-                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0), "splitRows", splitRows,
-                        KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.SHIFT_DOWN_MASK), "rollLeft", rollLeft,
                         KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.SHIFT_DOWN_MASK)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_R, 0), "rollRight", rollRight,
@@ -631,9 +633,6 @@ public class YassActions implements DropTargetListener {
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0), "addEndian", addEndian,
                         KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_CIRCUMFLEX, 0), "addEndian", addEndian, null),
-                new EditorShortcutBinding(KeyStroke.getKeyStroke("~"), "addEndian", addEndian, null),
-                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_UNDERSCORE, InputEvent.SHIFT_DOWN_MASK), "minus", minus,
-                        KeyStroke.getKeyStroke(KeyEvent.VK_UNDERSCORE, InputEvent.SHIFT_DOWN_MASK)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.SHIFT_DOWN_MASK), "togglePreview", togglePreview,
                         KeyStroke.getKeyStroke(KeyEvent.VK_I, InputEvent.SHIFT_DOWN_MASK)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_A, 0), "toggleMedleyStart", toggleMedleyStart,
@@ -803,7 +802,7 @@ public class YassActions implements DropTargetListener {
                         openURL(e1.getURL().toExternalForm());
                     }
                 });
-                JOptionPane.showMessageDialog(null, label, I18.get("lib_about_title"), JOptionPane.PLAIN_MESSAGE, icon);
+                JOptionPane.showMessageDialog(getFrame(tab), label, I18.get("lib_about_title"), JOptionPane.PLAIN_MESSAGE, icon);
             } catch (Exception ex) {
                 LOGGER.log(Level.INFO, ex.getMessage(), ex);
             }
@@ -1153,7 +1152,7 @@ public class YassActions implements DropTargetListener {
     };
     private final Action testMic = new AbstractAction(I18.get("lib_test_mic")) {
         public void actionPerformed(ActionEvent e) {
-            YassCaptureAudio cap = new YassCaptureAudio();
+            YassCaptureAudio cap = new YassCaptureAudio(tab);
             cap.createGUI();
             cap.startCapture(getProperties().getProperty("control-mic"));
         }
@@ -1637,7 +1636,7 @@ public class YassActions implements DropTargetListener {
             for (Enumeration<?> en = v.elements(); en.hasMoreElements(); ) {
                 String fn = (String) en.nextElement();
 
-                JDialog fh = new JDialog(new OwnerFrame());
+                JDialog fh = new JDialog(YassUtils.resolveDialogOwnerWindow(tab));
                 fh.setTitle(I18.get("lib_source_title"));
                 fh.setAlwaysOnTop(true);
                 fh.addWindowListener(new WindowAdapter() {
@@ -1654,6 +1653,7 @@ public class YassActions implements DropTargetListener {
                 int w = 240;
                 int h = 400;
                 fh.setSize(w, h);
+                fh.setLocationRelativeTo(YassUtils.resolveDialogOwner(tab));
                 fh.setVisible(true);
             }
         }
@@ -2641,7 +2641,7 @@ public class YassActions implements DropTargetListener {
                     });
                     grid.add(nameCombo[i]);
                 }
-                JDialog dia = new JDialog(new OwnerFrame());
+                JDialog dia = new JDialog(YassUtils.resolveDialogOwnerWindow(tab));
                 dia.setTitle(I18.get("edit_tracks_exchange"));
                 dia.setAlwaysOnTop(true);
                 dia.addWindowListener(new WindowAdapter() {
@@ -3319,7 +3319,7 @@ public class YassActions implements DropTargetListener {
                 srcDialog.dispose();
                 srcDialog = null;
             }
-            JDialog dia = srcDialog = new JDialog(new OwnerFrame());
+            JDialog dia = srcDialog = new JDialog(YassUtils.resolveDialogOwnerWindow(tab));
             dia.setTitle(I18.get("edit_source_title"));
             dia.setAlwaysOnTop(true);
             dia.addWindowListener(new WindowAdapter() {
@@ -3334,6 +3334,7 @@ public class YassActions implements DropTargetListener {
             dia.setSize(w, h);
             // dia.setIconImage(new
             // ImageIcon(YassActions.this.getClass().getResource("/yass/yass-icon-16.png")).getImage());
+            dia.setLocationRelativeTo(YassUtils.resolveDialogOwner(tab));
             dia.setVisible(true);
         }
     };
@@ -3493,7 +3494,7 @@ public class YassActions implements DropTargetListener {
                 return;
             }
 
-            JDialog dia = errDialog = new JDialog(new OwnerFrame());
+            JDialog dia = errDialog = new JDialog(YassUtils.resolveDialogOwnerWindow(tab));
             dia.setTitle(I18.get("edit_errors_title"));
             dia.setAlwaysOnTop(true);
             dia.addWindowListener(new WindowAdapter() {
@@ -3511,6 +3512,7 @@ public class YassActions implements DropTargetListener {
             dia.pack();
             // dia.setIconImage(new
             // ImageIcon(YassActions.this.getClass().getResource("/yass/yass-icon-16.png")).getImage());
+            dia.setLocationRelativeTo(YassUtils.resolveDialogOwner(tab));
             dia.setVisible(true);
         }
     };
@@ -5178,6 +5180,9 @@ public class YassActions implements DropTargetListener {
     }
 
     private JFrame getFrame(Component c) {
+        if (c == null) {
+            return null;
+        }
         Window root = SwingUtilities.getWindowAncestor(c);
         if (root instanceof JFrame) {
             return (JFrame) root;
@@ -8878,7 +8883,7 @@ public class YassActions implements DropTargetListener {
     }
 
     public void setStartSeconds(double seconds) {
-        for (YassTable t : getOpenTables(table)) {
+        for (YassTable t : tablesForCurrentSongUpdate(getOpenTables(table), table)) {
             t.setStart(seconds);
         }
         if (Math.abs(sheet.getSongHeader().getStartSpinner().getTimeDouble() - seconds) > 0.0001d) {
@@ -8899,7 +8904,7 @@ public class YassActions implements DropTargetListener {
         if (Math.abs(seconds - durationSeconds) < 0.0001d) {
             seconds = -1d;
         }
-        for (YassTable t : getOpenTables(table)) {
+        for (YassTable t : tablesForCurrentSongUpdate(getOpenTables(table), table)) {
             t.setEnd(seconds);
         }
         if (Math.abs(sheet.getSongHeader().getEndSpinner().getTimeDouble() - seconds) > 0.0001d) {
@@ -8923,9 +8928,14 @@ public class YassActions implements DropTargetListener {
     }
 
     public void setGap(int ms) {
-        for (YassTable t : getOpenTables(table))
+        Vector<YassTable> matchingTables = getOpenTables(table);
+        Vector<YassTable> targetTables = tablesForCurrentSongUpdate(matchingTables, table);
+        for (YassTable t : targetTables) {
             t.setGap(ms);
+        }
         sheet.setPlayerPosition(sheet.toTimeline(table.getGap()));
+        sheet.update();
+        sheet.repaint();
         updateGapBpm();
     }
 
@@ -8934,7 +8944,8 @@ public class YassActions implements DropTargetListener {
         SongHeader songHeader = sheet.getSongHeader();
         if (songHeader != null && songHeader.getGapSpinner() != null) {
             songHeader.getGapSpinner().setTime(gap);
-            int dur = (int) (mp3.getDuration() / 1000);
+            long audioDurationMicros = mp3 != null ? mp3.getDuration() : -1L;
+            int dur = SongHeader.calculateGapSpinnerDurationMillis(gap, audioDurationMicros);
             songHeader.getGapSpinner().setDuration(dur);
         }
         double bpm = table.getBPM();
@@ -8942,7 +8953,6 @@ public class YassActions implements DropTargetListener {
             songHeader.getBpmField().setText(bpm + "");
         }
         table.zoomPage();
-        sheet.requestFocus();
     }
 
     public void setVideoGap(int ms) {
@@ -11120,6 +11130,17 @@ public class YassActions implements DropTargetListener {
         return tables;
     }
 
+    static Vector<YassTable> tablesForCurrentSongUpdate(Vector<YassTable> matchingTables, YassTable activeTable) {
+        if (matchingTables != null && !matchingTables.isEmpty()) {
+            return matchingTables;
+        }
+        Vector<YassTable> tables = new Vector<>();
+        if (activeTable != null) {
+            tables.add(activeTable);
+        }
+        return tables;
+    }
+
     public void filterLibrary() {
         String s = filterEditor.getText();
         if (s.equals(I18.get("tool_lib_find_empty"))) {
@@ -11515,12 +11536,16 @@ public class YassActions implements DropTargetListener {
                 3,
                 "selectToEndOfCurrentPage",
                 ctx -> selectToEndOfCurrentPage.actionPerformed(null));
+        bindEditorCharShortcut('-', "splitRows", splitRows);
         bindEditorCharShortcut('+', "joinRows", joinRows);
+        bindEditorCharShortcut('_', "minus", minus);
+        bindEditorCharShortcut('~', "addEndian", addEndian);
     }
 
 
     public JFrame createOwnerFrame() {
-        return new OwnerFrame();
+        JFrame owner = getFrame(tab);
+        return owner != null ? owner : new OwnerFrame();
     }
 
     public boolean loginToUsdb(String username, char[] password) {

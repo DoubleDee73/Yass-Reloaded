@@ -1,21 +1,19 @@
 package yass.integration.cover.fanart
 
 import spock.lang.Specification
+import spock.util.concurrent.PollingConditions
+import yass.I18
 
-import javax.swing.BorderFactory
-import javax.swing.JLabel
-import javax.swing.JToggleButton
+import javax.swing.*
 import javax.swing.border.LineBorder
-import java.awt.Rectangle
+import java.awt.*
 import java.awt.image.BufferedImage
 import java.util.concurrent.atomic.AtomicInteger
 
 class FanartTvCoverPickerDialogSpec extends Specification {
 
-    def 'loads preview only when button intersects viewport'() {
-        expect:
-        FanartTvCoverPickerDialog.shouldLoadPreview(new Rectangle(0, 0, 300, 300), new Rectangle(10, 10, 100, 100))
-        !FanartTvCoverPickerDialog.shouldLoadPreview(new Rectangle(0, 0, 300, 300), new Rectangle(400, 10, 100, 100))
+    def setupSpec() {
+        I18.setLanguage("en")
     }
 
     def 'falls back to original image when preview image request throws'() {
@@ -134,6 +132,58 @@ class FanartTvCoverPickerDialogSpec extends Specification {
         dialog.rootPane.defaultButton == null
     }
 
+    def 'does not auto load previews from viewport changes'() {
+        given:
+        String source = new File('src/yass/integration/cover/fanart/FanartTvCoverPickerDialog.java').text
+
+        expect:
+        !source.contains('triggerVisiblePreviewLoads(scrollPane)')
+        !source.contains('addChangeListener(lazyLoadListener)')
+    }
+
+    def 'click to preview label is localized in every supported language'() {
+        expect:
+        [
+                'yass_de.properties',
+                'yass_en.properties',
+                'yass_es.properties',
+                'yass_fr.properties',
+                'yass_hu.properties',
+                'yass_pl.properties'
+        ].every { fileName ->
+            new File('src/yass/resources/i18', fileName).text.contains('lib_search_fanarttv_cover_click_preview = ')
+        }
+    }
+
+    def 'loads preview when candidate tile is clicked'() {
+        given:
+        def calls = new AtomicInteger()
+        def dialog = new FanartTvCoverPickerDialog(null, 'Title', 'Download', [
+                new FanartTvCoverCandidate(
+                        'https://assets.fanart.tv/fanart/test.jpg',
+                        'https://images.fanart.tv/bigpreview/test.jpg',
+                        'Album',
+                        0,
+                        true
+                )
+        ]) {
+            @Override
+            protected BufferedImage loadPreviewImage(FanartTvCoverCandidate candidate) throws Exception {
+                calls.incrementAndGet()
+                return new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB)
+            }
+        }
+        JToggleButton button = findFirstToggleButton(dialog)
+
+        when:
+        button.doClick()
+
+        then:
+        new PollingConditions(timeout: 2).eventually {
+            assert calls.get() == 1
+        }
+    }
+
     def 'finds first matching search result when no previous match exists'() {
         expect:
         FanartTvCoverPickerDialog.findNextMatchingIndex(
@@ -159,5 +209,20 @@ class FanartTvCoverPickerDialogSpec extends Specification {
                 'first',
                 2
         ) == 0
+    }
+
+    private static JToggleButton findFirstToggleButton(Container container) {
+        for (component in container.components) {
+            if (component instanceof JToggleButton) {
+                return component
+            }
+            if (component instanceof Container) {
+                JToggleButton button = findFirstToggleButton(component)
+                if (button != null) {
+                    return button
+                }
+            }
+        }
+        null
     }
 }

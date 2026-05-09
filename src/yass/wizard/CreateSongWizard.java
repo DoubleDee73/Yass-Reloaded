@@ -24,20 +24,15 @@ import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
 import yass.*;
+import yass.alignment.TranscriptTruthRewriteService;
 import yass.ffmpeg.FFMPEGLocator;
+import yass.integration.lyrics.lrclib.*;
 import yass.integration.separation.SeparationPreference;
 import yass.integration.separation.SeparationRequest;
 import yass.integration.separation.SeparationResult;
 import yass.integration.separation.SeparationService;
 import yass.integration.separation.audioseparator.AudioSeparatorSeparationService;
 import yass.integration.separation.mvsep.MvsepSeparationService;
-import yass.integration.lyrics.lrclib.LrcLibCandidate;
-import yass.integration.lyrics.lrclib.LrcLibQueryDialog;
-import yass.integration.lyrics.lrclib.LrcLibResultsDialog;
-import yass.integration.lyrics.lrclib.LrcLibSearchQuery;
-import yass.integration.lyrics.lrclib.LrcLibSearchResponse;
-import yass.integration.lyrics.lrclib.LrcLibSearchService;
-import yass.alignment.TranscriptTruthRewriteService;
 import yass.integration.transcription.TranscriptionEngine;
 import yass.integration.transcription.openai.OpenAiTranscriptionRequest;
 import yass.integration.transcription.openai.OpenAiTranscriptionResult;
@@ -48,10 +43,10 @@ import yass.musicbrainz.MusicBrainz;
 import yass.musicbrainz.MusicBrainzInfo;
 
 import javax.swing.*;
+import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
-import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -61,7 +56,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CancellationException;
@@ -93,6 +87,7 @@ public class CreateSongWizard extends Wizard {
     private WizardTranscriptionState wizardTranscriptionState;
     private JButton separateAndTranscribeButton;
     private boolean lyricsLrcLibPromptShown;
+    private final Component parent;
 
     /**
      * Constructor for the CreateSongWizard object
@@ -102,6 +97,7 @@ public class CreateSongWizard extends Wizard {
     public CreateSongWizard(Component parent, YassProperties yassProperties) {
         super(JOptionPane.getFrameForComponent(parent));
         getDialog().setTitle(I18.get("create_title"));
+        this.parent = parent;
         this.yassProperties = yassProperties;
         WizardMidiMode midiMode = WizardMidiMode.valueOf(yassProperties.getProperty("wizard-skip-midi", "USE_MIDI"));
 
@@ -420,7 +416,7 @@ public class CreateSongWizard extends Wizard {
         setModal(true);
         getDialog().pack();
         getDialog().setSize(new Dimension(600, 480));
-        getDialog().setLocationRelativeTo(null);
+        getDialog().setLocationRelativeTo(YassUtils.resolveDialogOwner(parent));
         getDialog().setVisible(true);
     }
 

@@ -39,6 +39,7 @@ import java.util.Vector;
 public class YassSongListPrinter {
     YassProperties prop = null;
     PrintDialog pd = null;
+    private final Component owner;
 
 
     /**
@@ -47,7 +48,12 @@ public class YassSongListPrinter {
      * @param prop Description of the Parameter
      */
     public YassSongListPrinter(YassProperties prop) {
+        this(prop, null);
+    }
+
+    public YassSongListPrinter(YassProperties prop, Component owner) {
         this.prop = prop;
+        this.owner = owner;
     }
 
 
@@ -150,6 +156,7 @@ public class YassSongListPrinter {
          * Constructor for the PrintDialog object
          */
         public PrintDialog() {
+            super(YassUtils.resolveDialogOwnerWindow(owner));
             JPanel panel = new JPanel(new BorderLayout());
 
             description = new JPanel(new BorderLayout());
@@ -221,9 +228,8 @@ public class YassSongListPrinter {
             setModal(true);
             setDefaultCloseOperation(DISPOSE_ON_CLOSE);
             pack();
-            Dimension dim = this.getToolkit().getScreenSize();
             setSize(500, 400);
-            setLocation(dim.width / 2 - 200, dim.height / 2 - 150);
+            setLocationRelativeTo(YassUtils.resolveDialogOwner(owner));
             setTitle(I18.get("print_title"));
         }
 

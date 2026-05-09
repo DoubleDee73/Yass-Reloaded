@@ -4,6 +4,11 @@ import spock.lang.Specification
 
 class PitchDetectorSpec extends Specification {
 
+    def "uses no private waveform nested class for frame energy helpers"() {
+        expect:
+        !PitchDetector.declaredClasses*.simpleName.contains('Waveform')
+    }
+
     def "analyzeTuningOffset detects positive global tuning drift from raw frequencies"() {
         given:
         def pitchFrames = buildFrames(440d, 18d, 40)

@@ -166,6 +166,37 @@ class EditorKeyDispatcherSpec extends Specification {
         commandCalls == ['single', 'double']
     }
 
+    def 'dispatches single shift-up selection after shift modifier is pressed first'() {
+        given:
+        def focusOwner = new JPanel()
+        KeyboardFocusManager.setCurrentKeyboardFocusManager(new StubKeyboardFocusManager(focusOwner))
+        def registry = new EditorKeyBindingRegistry()
+        def tracker = new KeySequenceTracker(500)
+        def commandCalls = []
+        registry.bind(javax.swing.KeyStroke.getKeyStroke(KeyEvent.VK_UP, KeyEvent.SHIFT_DOWN_MASK),
+                new SimpleEditorCommand('selectPrevBeat', { true }, { commandCalls << 'single' }))
+        registry.bind(javax.swing.KeyStroke.getKeyStroke(KeyEvent.VK_UP, KeyEvent.SHIFT_DOWN_MASK), 2,
+                new SimpleEditorCommand('selectCurrentWordUp', { true }, { commandCalls << 'double' }))
+        registry.bind(javax.swing.KeyStroke.getKeyStroke(KeyEvent.VK_UP, KeyEvent.SHIFT_DOWN_MASK), 3,
+                new SimpleEditorCommand('selectToStartOfCurrentPage', { true }, { commandCalls << 'triple' }))
+        Supplier<EditorInputContext> contextSupplier = {
+            new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
+        }
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+
+        when:
+        def shiftPress = new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), KeyEvent.SHIFT_DOWN_MASK, KeyEvent.VK_SHIFT, KeyEvent.CHAR_UNDEFINED)
+        def upPress = new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis() + 10, KeyEvent.SHIFT_DOWN_MASK, KeyEvent.VK_UP, KeyEvent.CHAR_UNDEFINED)
+        def handledShift = dispatcher.dispatchKeyEvent(shiftPress)
+        def handledUp = dispatcher.dispatchKeyEvent(upPress)
+
+        then:
+        !handledShift
+        handledUp
+        upPress.consumed
+        commandCalls == ['single']
+    }
+
     def 'dispatches character shortcuts by typed character in sheet and lyrics view'() {
         given:
         def focusOwner = new JPanel()
@@ -173,13 +204,13 @@ class EditorKeyDispatcherSpec extends Specification {
         def registry = new EditorKeyBindingRegistry()
         def tracker = new KeySequenceTracker(500)
         def commandCalls = []
-        registry.bind('+' as char,
-                new SimpleEditorCommand('joinRows', { true }, { commandCalls << it.focusArea() }))
+        registry.bind(shortcutChar as char,
+                new SimpleEditorCommand(commandId, { true }, { commandCalls << it.focusArea() }))
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(focusArea, false, false, false, false, false, true, false)
         }
         def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
-        def event = new KeyEvent(focusOwner, KeyEvent.KEY_TYPED, System.currentTimeMillis(), modifiers, KeyEvent.VK_UNDEFINED, '+' as char)
+        def event = new KeyEvent(focusOwner, KeyEvent.KEY_TYPED, System.currentTimeMillis(), modifiers, KeyEvent.VK_UNDEFINED, shortcutChar as char)
 
         when:
         def handled = dispatcher.dispatchKeyEvent(event)
@@ -190,9 +221,15 @@ class EditorKeyDispatcherSpec extends Specification {
         commandCalls == [focusArea]
 
         where:
-        focusArea             | modifiers
-        FocusArea.SHEET       | 0
-        FocusArea.LYRICS_VIEW | KeyEvent.SHIFT_DOWN_MASK
+        focusArea             | modifiers                | shortcutChar | commandId
+        FocusArea.SHEET       | 0                        | '+'          | 'joinRows'
+        FocusArea.LYRICS_VIEW | KeyEvent.SHIFT_DOWN_MASK | '+'          | 'joinRows'
+        FocusArea.SHEET       | KeyEvent.SHIFT_DOWN_MASK | '_'          | 'minus'
+        FocusArea.LYRICS_VIEW | KeyEvent.SHIFT_DOWN_MASK | '_'          | 'minus'
+        FocusArea.SHEET       | 0                        | '-'          | 'splitRows'
+        FocusArea.LYRICS_VIEW | 0                        | '-'          | 'splitRows'
+        FocusArea.SHEET       | KeyEvent.SHIFT_DOWN_MASK | '~'          | 'addEndian'
+        FocusArea.LYRICS_VIEW | KeyEvent.SHIFT_DOWN_MASK | '~'          | 'addEndian'
     }
 
     def 'does not dispatch character shortcuts while typing or outside editor content'() {

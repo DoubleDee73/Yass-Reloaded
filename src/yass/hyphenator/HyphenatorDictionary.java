@@ -35,8 +35,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List;
 import java.util.*;
+import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -67,6 +67,7 @@ public class HyphenatorDictionary extends JDialog {
     }
 
     public HyphenatorDictionary(YassActions yassActions, boolean visible) {
+        super(YassUtils.resolveDialogOwnerWindow(yassActions != null ? yassActions.getTab() : null));
         setTitle(I18.get("lib_edit_hyphenations"));
         setIconImage(yassActions.getIcon("hyphenate24Icon").getImage());
         this.yassActions = yassActions;
@@ -88,8 +89,7 @@ public class HyphenatorDictionary extends JDialog {
         initLanguages(songLocale);
         add(mainPanel);
         setSize(800, 400);
-        Dimension dim = this.getToolkit().getScreenSize();
-        setLocation(dim.width / 2 - 400, dim.height / 2 - 200);
+        setLocationRelativeTo(YassUtils.resolveDialogOwner(yassActions.getTab()));
         setVisible(visible);
         setDefaultCloseOperation(HIDE_ON_CLOSE);
         cboLanguage.addItemListener(changeLanguage());

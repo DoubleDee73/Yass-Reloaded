@@ -68,7 +68,7 @@ public class FfmpegDownloader {
                 options[0]);
 
         if (internetAvailable && choice == 0) {
-            openDownloadPage();
+            openDownloadPage(parent);
             return null;
         }
 
@@ -97,16 +97,16 @@ public class FfmpegDownloader {
         };
     }
 
-    private static void openDownloadPage() {
+    private static void openDownloadPage(Component parent) {
         try {
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
                 Desktop.getDesktop().browse(new URI(FFMPEG_DOWNLOAD_URL));
             } else {
                 // Fallback for systems where Desktop API is not supported
-                JOptionPane.showMessageDialog(null, I18.get("ffmpeg_open_url_manually") + "\n" + FFMPEG_DOWNLOAD_URL);
+                JOptionPane.showMessageDialog(parent, I18.get("ffmpeg_open_url_manually") + "\n" + FFMPEG_DOWNLOAD_URL);
             }
         } catch (IOException | URISyntaxException e) {
-            JOptionPane.showMessageDialog(null, I18.get("ffmpeg_open_url_manually") + "\n" + FFMPEG_DOWNLOAD_URL);
+            JOptionPane.showMessageDialog(parent, I18.get("ffmpeg_open_url_manually") + "\n" + FFMPEG_DOWNLOAD_URL);
         }
     }
 

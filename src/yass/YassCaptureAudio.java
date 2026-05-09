@@ -65,11 +65,17 @@ public class YassCaptureAudio {
     private int LEFT = 0;
     private int RIGHT = 1;
     private double pitchprob[] = new double[12];
+    private final Component owner;
 
     /**
      * Constructor for the YassCaptureAudio object
      */
     public YassCaptureAudio() {
+        this(null);
+    }
+
+    public YassCaptureAudio(Component owner) {
+        this.owner = owner;
     }
 
     /**
@@ -335,9 +341,8 @@ public class YassCaptureAudio {
             }
         });
 
-        Dimension dim = f.getToolkit().getScreenSize();
         f.setSize(600, 400);
-        f.setLocation(dim.width / 2 - 300, dim.height / 2 - 200);
+        f.setLocationRelativeTo(YassUtils.resolveDialogOwner(owner));
         f.setIconImage(new ImageIcon(YassCaptureAudio.this.getClass()
                 .getResource("/yass/resources/img/yass-icon-16.png")).getImage());
         f.setVisible(true);

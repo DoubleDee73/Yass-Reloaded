@@ -1859,7 +1859,7 @@ public class YassSongList extends JTable {
             return;
         }
 
-        YassSongListPrinter p = new YassSongListPrinter(prop);
+        YassSongListPrinter p = new YassSongListPrinter(prop, this);
         Hashtable<String, Object> hash = p.showDialog();
         if (hash != null) {
             Vector<YassSong> d = sm.getData();

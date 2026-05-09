@@ -38,18 +38,12 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.ConnectException;
-import java.net.HttpURLConnection;
-import java.net.Proxy;
-import java.net.ProxySelector;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
+import java.net.*;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.*;
-import java.util.logging.Level;
 import java.util.List;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -110,6 +104,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
 
 
     public UsdbSyncerMetaTagCreator(YassActions a) {
+        super(YassUtils.resolveDialogOwnerWindow(a != null ? a.getTab() : null));
         actions = a;
         YassSongList songList = a.getSongList();
         Vector<YassSong> songs = songList.getSelectedSongs();
@@ -126,9 +121,8 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         checkExistingUsdbSyncerTags();
         setModal(true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-        Dimension dim = this.getToolkit().getScreenSize();
         setSize(700, 660);
-        setLocation(dim.width / 2 - 350, dim.height / 2 - 320);
+        setLocationRelativeTo(YassUtils.resolveDialogOwner(a.getTab()));
         setTitle(I18.get("usdb_syncer_title"));
         setLayout(new BorderLayout());
         setIconImage(actions.getIcon("createSyncerTagsIcon").getImage());
@@ -727,7 +721,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
                             actions.getSongList().repaint();
                             actions.refreshGroups();
                         }
-                        JOptionPane.showMessageDialog(null, I18.get("usdb_syncer_cover_saved").replace("%s", file.getName()), I18.get("usdb_syncer_cover"),
+                        JOptionPane.showMessageDialog(UsdbSyncerMetaTagCreator.this, I18.get("usdb_syncer_cover_saved").replace("%s", file.getName()), I18.get("usdb_syncer_cover"),
                                                       JOptionPane.PLAIN_MESSAGE);
                     }
                 }

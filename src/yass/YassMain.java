@@ -21,8 +21,8 @@ package yass;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
 import yass.ffmpeg.FFMPEGLocator;
-import yass.ffmpeg.FfmpegPromptSupport;
 import yass.ffmpeg.FfmpegDownloader;
+import yass.ffmpeg.FfmpegPromptSupport;
 import yass.logger.YassLogger;
 import yass.stats.YassStats;
 import yass.titlecase.PhrasalVerbManager;
@@ -361,14 +361,14 @@ public class YassMain extends JFrame {
     private void checkVersion() {
         if (prop.checkVersion()) {
             String dir = prop.getUserDir();
-            int ok = JOptionPane.showConfirmDialog(null, "<html>" + I18.get(
+            int ok = JOptionPane.showConfirmDialog(this, "<html>" + I18.get(
                                                            "incompatible_version") + "<br>" + dir + "<br><br>" + I18.get("remove_version"),
                                                    I18.get("incompatible_version") + " - Yass",
                                                    JOptionPane.YES_NO_OPTION);
             if (ok == JOptionPane.OK_OPTION) {
                 boolean verify = !dir.contains(".yass");
                 if (verify || !(new File(dir).exists()) || !(new File(dir).isDirectory())) {
-                    JOptionPane.showMessageDialog(null, I18.get("remove_version_error"),
+                    JOptionPane.showMessageDialog(this, I18.get("remove_version_error"),
                                                   I18.get("incompatible_version"), JOptionPane.WARNING_MESSAGE);
                 } else {
                     YassUtils.deleteDir(new File(dir));
@@ -468,7 +468,7 @@ public class YassMain extends JFrame {
 
     private boolean checkRefreshDirSetting(boolean store) {
         if (StringUtils.isEmpty(prop.getProperty("options_dir_refresh"))) {
-            int option = JOptionPane.showConfirmDialog(null, I18.get("options_dir_refresh_confirm"), I18.get(
+            int option = JOptionPane.showConfirmDialog(this, I18.get("options_dir_refresh_confirm"), I18.get(
                     "options_dir_refresh"), JOptionPane.OK_CANCEL_OPTION);
             prop.setProperty("options_dir_refresh", option == JOptionPane.OK_OPTION ? "true" : "false");
             store = true;

@@ -33,6 +33,30 @@ class YassTableSpec extends Specification {
     private final static List<YassRow> TRAILING_SPACE_END_WORD_SONG = initSong4()
     private final static List<YassRow> TILDE_SONG = initSong5()
 
+    def 'selectPrevBeat extends a single-note selection upward'() {
+        given:
+        YassTable yassTable = tableWithNotes()
+        yassTable.setRowSelectionInterval(1, 1)
+
+        when:
+        yassTable.selectPrevBeat()
+
+        then:
+        yassTable.getSelectedRows() == [0, 1] as int[]
+    }
+
+    def 'selectNextBeat extends a single-note selection downward'() {
+        given:
+        YassTable yassTable = tableWithNotes()
+        yassTable.setRowSelectionInterval(1, 1)
+
+        when:
+        yassTable.selectNextBeat()
+
+        then:
+        yassTable.getSelectedRows() == [1, 2] as int[]
+    }
+
     def 'isSongWithTrailingSpaces should check, if a song has trailing spaces'() {
         given:
         YassTableModel ytm = new YassTableModel()
@@ -791,6 +815,18 @@ class YassTableSpec extends Specification {
                 }
             }
         }
+    }
+
+    private YassTable tableWithNotes() {
+        I18.setDefaultLanguage()
+        YassTableModel ytm = new YassTableModel()
+        ytm.addRow(new YassRow(':', '0', '4', '10', 'One '))
+        ytm.addRow(new YassRow(':', '4', '4', '10', 'two '))
+        ytm.addRow(new YassRow(':', '8', '4', '10', 'three '))
+        ytm.addRow(new YassRow('E', '', '', '', ''))
+        YassTable yassTable = new YassTable(ytm, Stub(YassProperties))
+        yassTable.setModel(ytm)
+        yassTable
     }
 
     private static List<YassRow> initSong1() {

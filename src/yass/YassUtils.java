@@ -87,6 +87,31 @@ public class YassUtils {
         return getSongDir(parent, prop, false);
     }
 
+    public static Component resolveDialogOwner(Component preferredOwner) {
+        Window window = resolveDialogOwnerWindow(preferredOwner);
+        if (window != null) {
+            return window;
+        }
+        if (preferredOwner != null) {
+            return preferredOwner;
+        }
+        return null;
+    }
+
+    public static Window resolveDialogOwnerWindow(Component preferredOwner) {
+        if (preferredOwner instanceof Window window) {
+            return window;
+        }
+        if (preferredOwner != null) {
+            Window ancestor = SwingUtilities.getWindowAncestor(preferredOwner);
+            if (ancestor != null) {
+                return ancestor;
+            }
+        }
+        KeyboardFocusManager focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+        return focusManager != null ? focusManager.getActiveWindow() : null;
+    }
+
     /**
      * Gets the songDir attribute of the YassUtils class
      *

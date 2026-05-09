@@ -20,9 +20,12 @@ package yass;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.io.Serial;
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -119,7 +122,7 @@ public class TimeSpinner extends JPanel {
         } else {
             int maximum = (int) Math.round(duration);
             int minimum = type == POSITIVE ? 0 : -maximum;
-            msModel = new SpinnerNumberModel(init.intValue(), minimum, maximum, step.intValue());
+            msModel = new SpinnerNumberModel(init.doubleValue(), (double) minimum, (double) maximum, step.doubleValue());
         }
         msSpinner = new JSpinner(msModel);
         if (decimalMode) {
@@ -129,10 +132,20 @@ public class TimeSpinner extends JPanel {
         JTextField tf = ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField();
         tf.setColumns(Math.max(4, String.valueOf(dur).length()));
         tf.setHorizontalAlignment(JTextField.RIGHT);
+        tf.addActionListener(e -> commitEditorValue());
+        tf.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent e) {
+                commitEditorValue();
+            }
+        });
         tf.addKeyListener(
                 new KeyAdapter() {
                     public void keyTyped(KeyEvent e) {
                         char c = e.getKeyChar();
+                        if (Character.isISOControl(c)) {
+                            return;
+                        }
                         if (Character.isDigit(c) || c == ',' || c == '.') {
                             return;
                         }
@@ -168,6 +181,67 @@ public class TimeSpinner extends JPanel {
         setLayout(new BorderLayout());
         setOpaque(false);
         add("Center", boxPanel);
+    }
+
+    private void commitEditorValue() {
+        JComponent editor = msSpinner.getEditor();
+        JTextField textField = editor instanceof JSpinner.DefaultEditor defaultEditor
+                ? defaultEditor.getTextField()
+                : null;
+        try {
+            if (decimalMode) {
+                msSpinner.commitEdit();
+                normalizeModelValue();
+            } else if (textField != null) {
+                msSpinner.setValue((double) parseIntegerEditorValue(textField.getText()));
+            } else {
+                msSpinner.commitEdit();
+                normalizeModelValue();
+            }
+        } catch (ParseException | IllegalArgumentException e) {
+            if (textField != null) {
+                if (textField instanceof JFormattedTextField formattedTextField) {
+                    formattedTextField.setValue(msSpinner.getValue());
+                } else {
+                    textField.setText(String.valueOf(msSpinner.getValue()));
+                }
+            }
+        }
+    }
+
+    private int parseIntegerEditorValue(String text) throws ParseException {
+        if (text == null) {
+            throw new ParseException("Missing value", 0);
+        }
+        String trimmed = text.trim();
+        if (trimmed.isEmpty() || "-".equals(trimmed)) {
+            throw new ParseException("Missing value", 0);
+        }
+        StringBuilder normalized = new StringBuilder(trimmed.length());
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if (Character.isDigit(c)) {
+                normalized.append(c);
+            } else if (c == '-' && normalized.length() == 0 && ((Number) msModel.getMinimum()).intValue() < 0) {
+                normalized.append(c);
+            } else if (c == '.' || c == ',' || c == '\'' || Character.isWhitespace(c) || c == '\u00A0') {
+                // Accept common grouping separators from formatted spinner text.
+            } else {
+                throw new ParseException("Unsupported number character: " + c, i);
+            }
+        }
+        int value = Integer.parseInt(normalized.toString());
+        int minimum = ((Number) msModel.getMinimum()).intValue();
+        int maximum = ((Number) msModel.getMaximum()).intValue();
+        if (value < minimum || value > maximum) {
+            throw new ParseException("Value outside spinner range: " + value, 0);
+        }
+        return value;
+    }
+
+    private void normalizeModelValue() {
+        Number value = (Number) msSpinner.getValue();
+        msSpinner.setValue(decimalMode ? value.doubleValue() : (double) value.intValue());
     }
 
     /**
@@ -220,6 +294,7 @@ public class TimeSpinner extends JPanel {
         }
         return null;
     }
+
     public void setSpinnerSize(Dimension size) {
         ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setColumns(5);
         ((JSpinner.DefaultEditor) msSpinner.getEditor()).getTextField().setSize(size);
@@ -251,9 +326,10 @@ public class TimeSpinner extends JPanel {
     public void setTime(double t) {
         double current = ((Number) msSpinner.getValue()).doubleValue();
         if (Double.compare(t, current) == 0) {
+            normalizeModelValue();
             return;
         }
-        msSpinner.setValue(decimalMode ? t : (int) Math.round(t));
+        msSpinner.setValue(decimalMode ? t : (double) Math.round(t));
     }
 
     /**
@@ -270,7 +346,8 @@ public class TimeSpinner extends JPanel {
             return;
         }
         duration = d;
-        msModel.setMaximum(decimalMode ? d : (int) Math.round(duration));
+        msModel.setMaximum(decimalMode ? d : (double) Math.round(duration));
+        normalizeModelValue();
     }
 
     @Override

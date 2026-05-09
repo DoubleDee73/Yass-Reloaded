@@ -423,12 +423,13 @@ public class SongHeader extends JPanel implements YassSheetListener {
         YassProperties yassProperties = actions.getProperties();
         boolean debugWaveform = yassProperties.getBooleanProperty("debug-waveform");
         String audio = StringUtils.isNotEmpty(table.getAudio()) ? table.getAudio() : table.getMP3();
+        long audioDurationMicros = actions.getMP3() != null ? actions.getMP3().getDuration() : -1L;
+        double duration = audioDurationMicros > 0 ? (audioDurationMicros / 1_000_000d) : 10000d;
         setInternalUpdate(true);
         audioField.setText(audio);
         gapSpinner.setTime((int) table.getGap());
-        gapSpinner.setDuration((int) (table.getGap() * 10));
+        gapSpinner.setDuration(calculateGapSpinnerDurationMillis(table.getGap(), audioDurationMicros));
         bpmField.setText(String.valueOf(table.getBPM()));
-        double duration = actions.getMP3() != null ? (actions.getMP3().getDuration() / 1_000_000d) : 10000d;
         if ((table.getStart() * 1000) > duration * 1000 && table.getStart() > 1000) {
             table.setStart(table.getStart() / 1000);
         }
@@ -711,6 +712,15 @@ public class SongHeader extends JPanel implements YassSheetListener {
         LOGGER.fine("SongHeader.setSelectedAudio end tag=" + selectedAudioTag
                 + " headerSize=" + getWidth() + "x" + getHeight()
                 + " bpmFieldSize=" + (bpmField == null ? "null" : bpmField.getWidth() + "x" + bpmField.getHeight()));
+    }
+
+    static int calculateGapSpinnerDurationMillis(double currentGapMillis, long audioDurationMicros) {
+        int fallbackDurationMillis = 10000;
+        int audioDurationMillis = audioDurationMicros > 0
+                ? (int) Math.min(Integer.MAX_VALUE, Math.round(audioDurationMicros / 1000d))
+                : fallbackDurationMillis;
+        int currentGapRangeMillis = (int) Math.min(Integer.MAX_VALUE, Math.round(Math.abs(currentGapMillis) * 10d));
+        return Math.max(fallbackDurationMillis, Math.max(audioDurationMillis, currentGapRangeMillis));
     }
 
     public void setAudioToVocals() {
