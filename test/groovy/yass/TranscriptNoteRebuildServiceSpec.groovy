@@ -8,6 +8,10 @@ import yass.integration.transcription.openai.OpenAiTranscriptionResult
 
 class TranscriptNoteRebuildServiceSpec extends Specification {
 
+    def setupSpec() {
+        I18.setDefaultLanguage()
+    }
+
     def "rebuild derives page breaks from long pauses even without transcript segments"() {
         given:
         def table = createTable()
@@ -177,6 +181,33 @@ class TranscriptNoteRebuildServiceSpec extends Specification {
         noteBeats(table)[2] < 12
     }
 
+    def "rebuild can align freshly created notes to melody when pitch data is provided"() {
+        given:
+        def table = createTrackingTable()
+        def result = transcriptionResultWithSegments([
+                segment(1000, 3000, [
+                        word("Hello", 1000, 1800),
+                        word("world", 1800, 3000)
+                ])
+        ])
+        def pitchData = [
+                new yass.analysis.PitchDetector.PitchData(1.05f, 6, "F#4", 370.0f),
+                new yass.analysis.PitchDetector.PitchData(1.55f, 6, "F#4", 370.0f),
+                new yass.analysis.PitchDetector.PitchData(2.05f, 6, "F#4", 370.0f),
+                new yass.analysis.PitchDetector.PitchData(2.55f, 6, "F#4", 370.0f)
+        ]
+
+        when:
+        new TranscriptNoteRebuildService().transcript(table, result, pitchData)
+
+        then:
+        table.alignToMelodyCalled
+        table.alignedRows.size() == 3
+        table.alignedRows.every { row -> table.actualAlignedRows.any { actual -> actual.is(row) } }
+        table.alignmentContext?.origin() == YassTable.AlignToMelodyOrigin.CREATE_WIZARD
+        table.alignedPitchData == pitchData
+    }
+
     private static OpenAiTranscriptionResult transcriptionResult(List<OpenAiTranscriptWord> words) {
         new OpenAiTranscriptionResult(
                 new File("audio.wav"),
@@ -218,6 +249,17 @@ class TranscriptNoteRebuildServiceSpec extends Specification {
     private static YassTable createTable() {
         I18.setDefaultLanguage()
         def table = new YassTable()
+        initializeTable(table)
+        table
+    }
+
+    private static TrackingYassTable createTrackingTable() {
+        def table = new TrackingYassTable()
+        initializeTable(table)
+        table
+    }
+
+    private static void initializeTable(YassTable table) {
         def properties = new YassProperties()
         table.init(properties)
         assert table.setText("""#TITLE:Test
@@ -232,7 +274,27 @@ E
         hyphenator.language = "EN"
         hyphenator.yassProperties = properties
         table.hyphenator = hyphenator
-        table
+    }
+
+    private static class TrackingYassTable extends YassTable {
+        boolean alignToMelodyCalled
+        List<YassRow> alignedRows
+        List<yass.analysis.PitchDetector.PitchData> alignedPitchData
+        AlignToMelodyContext alignmentContext
+        List<YassRow> actualAlignedRows = []
+
+        @Override
+        void alignToMelody(List<YassRow> rows,
+                           List<yass.analysis.PitchDetector.PitchData> pitchData,
+                           AlignToMelodyContext context) {
+            alignToMelodyCalled = true
+            alignedRows = rows
+            alignedPitchData = pitchData
+            alignmentContext = context
+            actualAlignedRows = (0..<rowCount)
+                    .collect { getRowAt(it) }
+                    .findAll { it?.isNote() }
+        }
     }
 
     private static List<Integer> pageBreakBeats(YassTable table) {

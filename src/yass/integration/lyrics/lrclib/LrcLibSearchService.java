@@ -279,9 +279,6 @@ public class LrcLibSearchService {
                 continue;
             }
             String text = StringUtils.trimToEmpty(rawLine.substring(endOfLastTimestamp));
-            if (StringUtils.isBlank(text)) {
-                continue;
-            }
             for (Integer timestamp : timestamps) {
                 timedLines.add(new TimedLine(timestamp, text));
             }

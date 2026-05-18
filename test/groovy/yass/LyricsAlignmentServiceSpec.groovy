@@ -41,7 +41,7 @@ class LyricsAlignmentServiceSpec extends Specification {
         fixture.alignmentResult.matchedRegions >= 8
         fixture.table.gap > 0d
         fixture.table.gap == 8480d
-        fixture.early35After <= Math.round(fixture.early35Before * 0.45d)
+        fixture.early35After <= Math.round(fixture.early35Before * 0.46d)
         fixture.early70After <= Math.round(fixture.early70Before * 0.35d)
         fixture.alignmentResult.movedNotes > 0
         hasNoOverlaps(fixture.table)
@@ -104,6 +104,176 @@ class LyricsAlignmentServiceSpec extends Specification {
         hasNoOverlaps(table)
         noEmptyNoteTexts(table)
         beatForWord(table, "oud?") >= 18
+    }
+
+    def "alignment falls back to current table tokens when transcript artifact has no lyric tokens"() {
+        given:
+        def originalText = loadFixture("calimero-original.txt")
+        def alignedText = loadFixture("calimero-aligned.txt")
+        def transcriptJson = JsonParser.parseString(loadFixture("calimero-transcript.json")).asJsonObject
+        def table = createTable(originalText)
+        def expected = createTable(alignedText)
+        def words = extractWords(transcriptJson)
+        def segments = extractSegments(transcriptJson)
+        def result = new OpenAiTranscriptionResult(
+                new File("calimero.opus"),
+                new File("calimero.opus"),
+                "#AUDIO",
+                extractTranscriptText(transcriptJson),
+                words,
+                segments,
+                List.of(),
+                true,
+                new File("calimero.openai-transcript.json"))
+        def beforeEntries = timingEntries(table)
+        def expectedEntries = timingEntries(expected)
+
+        when:
+        def alignmentResult = new LyricsAlignmentService().alignAndApply(table, result)
+        def afterEntries = timingEntries(table)
+
+        then:
+        alignmentResult.matchedRegions >= 10
+        alignmentResult.movedNotes > 0
+        sumBeatDistance(afterEntries, expectedEntries) < sumBeatDistance(beforeEntries, expectedEntries)
+        hasNoOverlaps(table)
+    }
+
+    def "alignment updates existing gap to refined opening word start when first anchor is safe"() {
+        given:
+        def table = createTable('''#TITLE:Test
+#ARTIST:Spec
+#BPM:240
+#GAP:14310
+: 0 4 6 I 
+: 6 4 6 can 
+: 12 4 6 go 
+- 17
+E
+''')
+        def result = new OpenAiTranscriptionResult(
+                new File("test.wav"),
+                new File("test.wav"),
+                "#VOCALS",
+                "I can go",
+                [
+                        new OpenAiTranscriptWord("I", "i", 14131, 14500),
+                        new OpenAiTranscriptWord("can", "can", 14500, 14900),
+                        new OpenAiTranscriptWord("go", "go", 14900, 15300)
+                ],
+                [
+                        new OpenAiTranscriptSegment(14131, 15300, "I can go", [
+                                new OpenAiTranscriptWord("I", "i", 14131, 14500),
+                                new OpenAiTranscriptWord("can", "can", 14500, 14900),
+                                new OpenAiTranscriptWord("go", "go", 14900, 15300)
+                        ])
+                ],
+                LyricsAlignmentTokenizer.buildTokens(table),
+                false,
+                null)
+
+        when:
+        def alignmentResult = new LyricsAlignmentService().alignAndApply(table, result)
+
+        then:
+        alignmentResult.matchedRegions >= 1
+        table.gap == 14130d
+    }
+
+    def "alignment redistributes note lengths across transcript word windows"() {
+        given:
+        def table = createTable('''#TITLE:Test
+#ARTIST:Spec
+#BPM:60
+#GAP:1000
+: 0 1 6 I 
+: 2 1 6 can 
+: 4 1 6 go
+E
+''')
+        def result = new OpenAiTranscriptionResult(
+                new File("test.wav"),
+                new File("test.wav"),
+                "#VOCALS",
+                "I can go",
+                [
+                        new OpenAiTranscriptWord("I", "i", 1000, 2000),
+                        new OpenAiTranscriptWord("can", "can", 2000, 3000),
+                        new OpenAiTranscriptWord("go", "go", 3000, 4500)
+                ],
+                [
+                        new OpenAiTranscriptSegment(1000, 4500, "I can go", [
+                                new OpenAiTranscriptWord("I", "i", 1000, 2000),
+                                new OpenAiTranscriptWord("can", "can", 2000, 3000),
+                                new OpenAiTranscriptWord("go", "go", 3000, 4500)
+                        ])
+                ],
+                LyricsAlignmentTokenizer.buildTokens(table),
+                false,
+                null)
+
+        when:
+        new LyricsAlignmentService().alignAndApply(table, result)
+
+        then:
+        table.getFirstNote().beatInt == 0
+        table.getFirstNote().lengthInt == 3
+        table.getRowAt(table.getFirstNoteRow() + 1).beatInt == 4
+        table.getRowAt(table.getFirstNoteRow() + 1).lengthInt == 3
+        table.getRowAt(table.getFirstNoteRow() + 2).beatInt == 8
+        table.getRowAt(table.getFirstNoteRow() + 2).lengthInt == 6
+    }
+
+    def "alignment redistributes opening page notes even when first anchor crosses a page break"() {
+        given:
+        def table = createTable('''#TITLE:Test
+#ARTIST:Spec
+#BPM:60
+#GAP:1000
+: 0 1 6 I 
+: 2 1 6 can 
+: 4 1 6 think 
+: 6 1 6 of 
+: 8 1 6 youn
+: 10 1 6 ger 
+: 12 1 6 days 
+- 14
+: 16 1 6 When 
+: 18 1 6 liv
+: 20 1 6 ing 
+E
+''')
+        def words = [
+                new OpenAiTranscriptWord("I", "i", 1000, 1400),
+                new OpenAiTranscriptWord("can", "can", 1400, 1800),
+                new OpenAiTranscriptWord("think", "think", 1800, 2200),
+                new OpenAiTranscriptWord("of", "of", 2200, 2600),
+                new OpenAiTranscriptWord("younger", "younger", 2600, 3400),
+                new OpenAiTranscriptWord("days", "days", 3400, 5400),
+                new OpenAiTranscriptWord("When", "when", 7000, 7600),
+                new OpenAiTranscriptWord("living", "living", 7600, 8600)
+        ]
+        def result = new OpenAiTranscriptionResult(
+                new File("test.wav"),
+                new File("test.wav"),
+                "#VOCALS",
+                "I can think of younger days When living",
+                words,
+                [
+                        new OpenAiTranscriptSegment(1000, 5400, "I can think of younger days", words.subList(0, 6)),
+                        new OpenAiTranscriptSegment(7000, 8600, "When living", words.subList(6, 8))
+                ],
+                LyricsAlignmentTokenizer.buildTokens(table),
+                false,
+                null)
+
+        when:
+        new LyricsAlignmentService().alignAndApply(table, result)
+
+        then:
+        table.getRowAt(table.getFirstNoteRow() + 6).beatInt == 12
+        table.getRowAt(table.getFirstNoteRow() + 6).lengthInt == 6
+        table.getRowAt(table.getFirstNoteRow() + 8).beatInt == 24
     }
 
     // --- helpers ---

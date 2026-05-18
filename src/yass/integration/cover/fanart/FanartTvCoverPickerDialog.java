@@ -18,6 +18,7 @@ import java.awt.image.BufferedImage;
 import java.io.InputStream;
 import java.net.*;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -109,9 +110,10 @@ public class FanartTvCoverPickerDialog extends JDialog {
         topPanel.add(searchField, BorderLayout.CENTER);
         add(topPanel, BorderLayout.NORTH);
 
+        List<FanartTvCoverCandidate> sortedCandidates = sortCandidatesAlphabetically(candidates);
         int preferredIndex = 0;
-        for (int i = 0; i < candidates.size(); i++) {
-            FanartTvCoverCandidate candidate = candidates.get(i);
+        for (int i = 0; i < sortedCandidates.size(); i++) {
+            FanartTvCoverCandidate candidate = sortedCandidates.get(i);
             JToggleButton button = createCandidateButton(candidate);
             group.add(button);
             candidateButtons.add(button);
@@ -125,7 +127,7 @@ public class FanartTvCoverPickerDialog extends JDialog {
         if (!candidateButtons.isEmpty()) {
             JToggleButton preferredButton = candidateButtons.get(preferredIndex);
             preferredButton.setSelected(true);
-            selectedCandidate = candidates.get(preferredIndex);
+            selectedCandidate = sortedCandidates.get(preferredIndex);
             SwingUtilities.invokeLater(() -> scrollPane.getViewport().scrollRectToVisible(preferredButton.getBounds()));
         }
 
@@ -146,6 +148,21 @@ public class FanartTvCoverPickerDialog extends JDialog {
         add(buttonPanel, BorderLayout.SOUTH);
 
         getRootPane().setDefaultButton(null);
+    }
+
+    static List<FanartTvCoverCandidate> sortCandidatesAlphabetically(List<FanartTvCoverCandidate> candidates) {
+        List<FanartTvCoverCandidate> sorted = new ArrayList<>(candidates == null ? List.of() : candidates);
+        sorted.sort(Comparator.comparing(FanartTvCoverPickerDialog::candidateAlbumSortKey)
+                              .thenComparing(candidate -> StringUtils.defaultString(candidate.getImageUrl())));
+        return sorted;
+    }
+
+    private static String candidateAlbumSortKey(FanartTvCoverCandidate candidate) {
+        String albumName = candidate == null ? "" : StringUtils.trimToEmpty(candidate.getAlbumName());
+        if (StringUtils.isBlank(albumName)) {
+            return Character.toString(Character.MAX_VALUE);
+        }
+        return StringUtils.stripAccents(albumName).toLowerCase(Locale.ROOT);
     }
 
     public FanartTvCoverCandidate showDialog() {

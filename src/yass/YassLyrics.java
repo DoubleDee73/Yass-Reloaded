@@ -403,6 +403,9 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
 
         lyricsArea.addKeyListener(new KeyListener() {
             public void keyPressed(KeyEvent e) {
+                if (e.isConsumed()) {
+                    return;
+                }
                 boolean shift = e.isShiftDown() && !e.isAltDown() && !e.isControlDown();
                 boolean ctrlShift = e.isShiftDown() && e.isControlDown() && !e.isAltDown();
                 boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isShiftDown();
@@ -652,8 +655,6 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                         table.rehyphenate();
                     } else if (c == StringConstants.APOSTROPHE ) {
                         table.toggleApostropheEnd();
-                    } else if (c == '~') {
-                        table.toggleTildeStart();
                     } else {
                         table.dispatchEvent(e);
                     }
@@ -685,6 +686,9 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
             }
 
             public void keyTyped(KeyEvent e) {
+                if (e.isConsumed()) {
+                    return;
+                }
                 int keyCode = e.getKeyCode();
                 if (!overwrite && (keyCode == KeyEvent.VK_SPACE
                         || keyCode == KeyEvent.VK_DELETE

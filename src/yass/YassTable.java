@@ -47,6 +47,7 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.text.MessageFormat;
 import java.text.Normalizer;
 import java.time.Year;
 import java.util.*;
@@ -91,6 +92,7 @@ public class YassTable extends JTable {
     private Color myColor = null;
     private boolean saved = true;
     private boolean autosaved = true;
+    private boolean timingTagSanityTouched = false;
     private boolean isLoading = false;
     private String encoding = null;
     private boolean showMessages = true;
@@ -126,6 +128,15 @@ public class YassTable extends JTable {
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static final int ALIGN_TO_MELODY_RENDER_SHIFT_SEMITONES = 0;
+    private static final int SEMITONES_PER_OCTAVE = 12;
+    private static final int RECORDING_OUTLIER_HIGH_PITCH = 24; // C6 relative to C4
+    private static final int RECORDING_OUTLIER_LOW_PITCH = -12; // C3 relative to C4
+    private static final int RECORDING_OUTLIER_NEIGHBOR_DISTANCE = 20;
+    private static final int PITCH_SPLIT_MIN_STABLE_BEATS = 3;
+    private static final int PITCH_SPLIT_TOLERANCE = 1;
+    private static final List<String> PITCH_SPLIT_FINAL_CLUSTERS = Arrays.asList(
+            "n't", "'t", "ght", "cht", "sch", "nd", "nt", "mp", "ld", "ll", "st", "rt", "ng", "ch", "nk",
+            "d", "t", "n", "s", "r", "l", "m", "f", "p", "g");
 
     public YassTable() {
         fileUtils = new YassFileUtils();
@@ -333,6 +344,18 @@ public class YassTable extends JTable {
 
     public void setAutosaved(boolean autosaved) {
         this.autosaved = autosaved;
+    }
+
+    public boolean isTimingTagSanityTouched() {
+        return timingTagSanityTouched;
+    }
+
+    public void resetTimingTagSanityTouched() {
+        timingTagSanityTouched = false;
+    }
+
+    public void markTimingTagSanityTouched() {
+        timingTagSanityTouched = true;
     }
 
     public Color getTableColor() {
@@ -2176,6 +2199,9 @@ public class YassTable extends JTable {
         if (prop.getBooleanProperty("usdbsyncer-always-pin")) {
             pinUsdbSyncer();
         }
+        if (success) {
+            markTimingTagSanityTouched();
+        }
         return success;
     }
 
@@ -2345,6 +2371,7 @@ public class YassTable extends JTable {
         if (redoMax < 1) {
             return;
         }
+        Point currentSheetViewport = currentSheetViewport();
         redoMax--;
         undoPos++;
 
@@ -2390,6 +2417,7 @@ public class YassTable extends JTable {
             sheet.update();
             sheet.setBeatSize(undoElem.sheetBeatSize);
             restoreSheetViewportFromUndo(undoElem);
+            restoreCurrentSheetViewport(currentSheetViewport);
             sheet.repaint();
         }
     }
@@ -2398,6 +2426,7 @@ public class YassTable extends JTable {
         int n = undos.size();
         if (n < 1 || undoPos > n - 1 || undoPos <= 0)
             return;
+        Point currentSheetViewport = currentSheetViewport();
         undoPos--;
         redoMax++;
 
@@ -2443,8 +2472,25 @@ public class YassTable extends JTable {
             sheet.update();
             sheet.setBeatSize(undoElem.sheetBeatSize);
             restoreSheetViewportFromUndo(undoElem);
+            restoreCurrentSheetViewport(currentSheetViewport);
             sheet.repaint();
         }
+    }
+
+    private Point currentSheetViewport() {
+        return sheet == null ? null : new Point(sheet.getViewPosition());
+    }
+
+    private void restoreCurrentSheetViewport(Point currentSheetViewport) {
+        if (sheet == null || currentSheetViewport == null) {
+            return;
+        }
+        if (sheet.isAbsolutePitchViewEnabled()) {
+            Point restoredView = sheet.getViewPosition();
+            sheet.setViewPosition(new Point(currentSheetViewport.x, restoredView.y));
+            return;
+        }
+        sheet.setViewPosition(currentSheetViewport);
     }
 
     private void restoreSheetViewportFromUndo(YassUndoElement undoElem) {
@@ -4790,14 +4836,8 @@ public class YassTable extends JTable {
         }
         double noteStartMs = beatToMs(row.getBeatInt());
         double noteEndMs = beatToMs(row.getBeatInt() + row.getLengthInt());
-        Map<Integer, Integer> histogram = new HashMap<>();
+        Map<Integer, Integer> histogram = computePitchHistogramForRow(row, pitchData);
         MusicalKeyEnum commentKey = getPreferredAlignmentKey();
-        for (PitchDetector.PitchData pd : pitchData) {
-            double frameMs = pd.time() * 1000.0;
-            if (frameMs >= noteStartMs && frameMs < noteEndMs) {
-                histogram.merge(pd.pitch(), 1, Integer::sum);
-            }
-        }
         if (histogram.isEmpty()) {
             return null;
         }
@@ -4820,6 +4860,22 @@ public class YassTable extends JTable {
                 })
                 .map(Map.Entry::getKey)
                 .orElse(row.getHeightInt());
+    }
+
+    private Map<Integer, Integer> computePitchHistogramForRow(YassRow row, List<PitchDetector.PitchData> pitchData) {
+        Map<Integer, Integer> histogram = new HashMap<>();
+        if (row == null || !row.isNote() || pitchData == null || pitchData.isEmpty()) {
+            return histogram;
+        }
+        double noteStartMs = beatToMs(row.getBeatInt());
+        double noteEndMs = beatToMs(row.getBeatInt() + row.getLengthInt());
+        for (PitchDetector.PitchData pd : pitchData) {
+            double frameMs = pd.time() * 1000.0;
+            if (frameMs >= noteStartMs && frameMs < noteEndMs) {
+                histogram.merge(pd.pitch(), 1, Integer::sum);
+            }
+        }
+        return histogram;
     }
 
     private MusicalKeyEnum getPreferredAlignmentKey() {
@@ -4863,7 +4919,8 @@ public class YassTable extends JTable {
         boolean absolutePitchView = sheet != null && sheet.isAbsolutePitchViewEnabled();
         boolean keepDetectedOctave =
                 effectiveContext.origin() == AlignToMelodyOrigin.CREATE_WIZARD
-                        || effectiveContext.origin() == AlignToMelodyOrigin.RECORDING;
+                        || effectiveContext.origin() == AlignToMelodyOrigin.RECORDING
+                        || effectiveContext.origin() == AlignToMelodyOrigin.INSERTED_LYRICS;
         int octaveBias = keepDetectedOctave || absolutePitchView ? 0 : determineSignificantOctaveBias(prevalentPitches.values());
         if (debugAlignToMelody) {
             LOGGER.fine(String.format(Locale.ROOT,
@@ -4911,32 +4968,77 @@ public class YassTable extends JTable {
             int originalLength = row.getLengthInt();
             int originalHeight = row.getHeightInt();
             int alignedPitch;
+            String pitchDecision;
+            int drawnPitchLine = prevalentPitch + ALIGN_TO_MELODY_RENDER_SHIFT_SEMITONES;
+            int biasedPitchLine = drawnPitchLine + octaveBias;
+            int snappedPitch = Integer.MIN_VALUE;
+            Integer recordingNeighborReference = null;
+            int recordingOutlierCorrection = 0;
             if (keepDetectedOctave) {
                 alignedPitch = prevalentPitch;
+                pitchDecision = "keep detected octave";
+                if (effectiveContext.origin() == AlignToMelodyOrigin.RECORDING
+                        || effectiveContext.origin() == AlignToMelodyOrigin.CREATE_WIZARD
+                        || effectiveContext.origin() == AlignToMelodyOrigin.INSERTED_LYRICS) {
+                    recordingNeighborReference = determineRecordingOutlierNeighborReference(row, rows,
+                                                                                           prevalentPitches);
+                    recordingOutlierCorrection =
+                            determineRecordingOutlierOctaveCorrection(alignedPitch, recordingNeighborReference);
+                    if (recordingOutlierCorrection != 0) {
+                        alignedPitch += recordingOutlierCorrection;
+                        pitchDecision = "detected octave outlier: one-octave correction toward neighboring notes";
+                    }
+                }
             } else {
                 // Keep align-to-melody output in sync with the visual pitch rendering
                 // (pitch lines are currently displayed one octave higher).
-                alignedPitch = prevalentPitch + octaveBias + ALIGN_TO_MELODY_RENDER_SHIFT_SEMITONES;
+                alignedPitch = biasedPitchLine;
                 boolean samePitchClassDifferentOctave =
-                        Math.floorMod(alignedPitch - row.getHeightInt(), 12) == 0
-                                && alignedPitch != row.getHeightInt();
+                        Math.floorMod(drawnPitchLine - row.getHeightInt(), 12) == 0
+                                && drawnPitchLine != row.getHeightInt();
                 if (samePitchClassDifferentOctave) {
                     // When the note already matches the detected tone class but sits in the
                     // wrong octave, move it to the exact octave where the pitch lines were drawn.
                     // This keeps manual align-to-melody visually consistent with the detected signal.
-                    alignedPitch = prevalentPitch + octaveBias + ALIGN_TO_MELODY_RENDER_SHIFT_SEMITONES;
+                    alignedPitch = drawnPitchLine;
+                    pitchDecision = "same pitch class in different octave: snap to drawn pitch line";
                 } else if (absolutePitchView) {
                     // Absolute mode should still snap to the nearest pitch-line octave
                     // around the current note, but avoid large accidental shifts.
-                    int snappedPitch = normalizePitchIntoWindow(alignedPitch, row.getHeightInt());
+                    snappedPitch = normalizePitchIntoWindow(alignedPitch, row.getHeightInt());
                     if (Math.abs(snappedPitch - row.getHeightInt()) <= 10) {
                         alignedPitch = snappedPitch;
+                        pitchDecision = "absolute view: nearest pitch-line octave";
                     } else {
                         alignedPitch = row.getHeightInt();
+                        pitchDecision = "absolute view: blocked large pitch jump";
                     }
                 } else {
                     alignedPitch = normalizePitchIntoWindow(alignedPitch, row.getHeightInt());
+                    pitchDecision = "relative view: nearest pitch-line octave";
                 }
+            }
+            if (debugAlignToMelody) {
+                LOGGER.fine(String.format(Locale.ROOT,
+                    "[AlignToMelodyDebug] row beat=%d length=%d text=\"%s\" mode=%s origin=%s absolutePitchView=%s currentPitch=%d prevalentPitch=%d drawnPitchLine=%d octaveBias=%d biasedPitchLine=%d snappedPitch=%s alignedPitch=%d decision=\"%s\" recordingNeighborReference=%s recordingOutlierCorrection=%d pitchLineOctavesNearCurrent=%s pitchHistogram=%s",
+                    originalBeat,
+                    originalLength,
+                    row.getText(),
+                    effectiveMode,
+                    effectiveContext.origin(),
+                    absolutePitchView,
+                    originalHeight,
+                    prevalentPitch,
+                    drawnPitchLine,
+                    octaveBias,
+                    biasedPitchLine,
+                    snappedPitch == Integer.MIN_VALUE ? "n/a" : Integer.toString(snappedPitch),
+                    alignedPitch,
+                    pitchDecision,
+                    recordingNeighborReference == null ? "n/a" : recordingNeighborReference.toString(),
+                    recordingOutlierCorrection,
+                    formatPitchLineOctaves(drawnPitchLine, originalHeight),
+                    formatPitchHistogram(computePitchHistogramForRow(row, pitchData))));
             }
 
             if (effectiveMode.adjustsPitch() && alignedPitch != row.getHeightInt()) {
@@ -5420,7 +5522,8 @@ public class YassTable extends JTable {
     public enum AlignToMelodyOrigin {
         MANUAL,
         CREATE_WIZARD,
-        RECORDING
+        RECORDING,
+        INSERTED_LYRICS
     }
 
     public enum AlignToMelodyMode {
@@ -5462,6 +5565,10 @@ public class YassTable extends JTable {
 
         public static AlignToMelodyContext recording() {
             return new AlignToMelodyContext(AlignToMelodyOrigin.RECORDING);
+        }
+
+        public static AlignToMelodyContext insertedLyrics() {
+            return new AlignToMelodyContext(AlignToMelodyOrigin.INSERTED_LYRICS);
         }
     }
 
@@ -5519,6 +5626,151 @@ public class YassTable extends JTable {
         return bestPitch;
     }
 
+    private Integer determineRecordingOutlierNeighborReference(YassRow row,
+                                                               List<YassRow> alignedRows,
+                                                               Map<YassRow, Integer> prevalentPitches) {
+        List<Integer> neighborPitches = new ArrayList<>(2);
+        addNeighborPitchReference(neighborPitches,
+                                  findAdjacentNoteInAlignedRows(row, alignedRows, -1),
+                                  prevalentPitches);
+        addNeighborPitchReference(neighborPitches,
+                                  findAdjacentNoteInAlignedRows(row, alignedRows, 1),
+                                  prevalentPitches);
+        if (neighborPitches.isEmpty()) {
+            addNeighborPitchReference(neighborPitches, findAdjacentNoteInTable(row, -1), prevalentPitches);
+            addNeighborPitchReference(neighborPitches, findAdjacentNoteInTable(row, 1), prevalentPitches);
+        }
+        if (neighborPitches.isEmpty()) {
+            return null;
+        }
+        neighborPitches.sort(null);
+        if (neighborPitches.size() == 1) {
+            return neighborPitches.get(0);
+        }
+        int middle = neighborPitches.size() / 2;
+        if ((neighborPitches.size() & 1) == 1) {
+            return neighborPitches.get(middle);
+        }
+        return (int) Math.round((neighborPitches.get(middle - 1) + neighborPitches.get(middle)) / 2.0d);
+    }
+
+    private void addNeighborPitchReference(List<Integer> neighborPitches,
+                                           YassRow neighbor,
+                                           Map<YassRow, Integer> prevalentPitches) {
+        if (neighbor == null || !neighbor.isNote()) {
+            return;
+        }
+        Integer detectedPitch = prevalentPitches == null ? null : prevalentPitches.get(neighbor);
+        neighborPitches.add(detectedPitch == null ? neighbor.getHeightInt() : detectedPitch);
+    }
+
+    private YassRow findAdjacentNoteInAlignedRows(YassRow row, List<YassRow> alignedRows, int direction) {
+        if (row == null || alignedRows == null || alignedRows.isEmpty() || direction == 0) {
+            return null;
+        }
+        int rowIndex = -1;
+        for (int i = 0; i < alignedRows.size(); i++) {
+            if (alignedRows.get(i) == row) {
+                rowIndex = i;
+                break;
+            }
+        }
+        if (rowIndex < 0) {
+            return null;
+        }
+        for (int i = rowIndex + direction; i >= 0 && i < alignedRows.size(); i += direction) {
+            YassRow candidate = alignedRows.get(i);
+            if (candidate != null && candidate.isNote()) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private YassRow findAdjacentNoteInTable(YassRow row, int direction) {
+        if (row == null || direction == 0) {
+            return null;
+        }
+        int rowIndex = -1;
+        int rowCount = getRowCount();
+        for (int i = 0; i < rowCount; i++) {
+            if (getRowAt(i) == row) {
+                rowIndex = i;
+                break;
+            }
+        }
+        if (rowIndex < 0) {
+            return null;
+        }
+        for (int i = rowIndex + direction; i >= 0 && i < rowCount; i += direction) {
+            YassRow candidate = getRowAt(i);
+            if (candidate != null && candidate.isNote()) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private int determineRecordingOutlierOctaveCorrection(int pitch, Integer neighborReference) {
+        if (neighborReference == null) {
+            return 0;
+        }
+        int correctedPitch = pitch;
+        if (correctedPitch > RECORDING_OUTLIER_HIGH_PITCH) {
+            while (correctedPitch >= RECORDING_OUTLIER_HIGH_PITCH) {
+                correctedPitch -= SEMITONES_PER_OCTAVE;
+            }
+            return correctedPitch - pitch;
+        }
+        if (correctedPitch == RECORDING_OUTLIER_HIGH_PITCH
+                && correctedPitch - neighborReference > RECORDING_OUTLIER_NEIGHBOR_DISTANCE) {
+            correctedPitch -= SEMITONES_PER_OCTAVE;
+        }
+        while (correctedPitch < RECORDING_OUTLIER_LOW_PITCH
+                && neighborReference - correctedPitch > RECORDING_OUTLIER_NEIGHBOR_DISTANCE) {
+            correctedPitch += SEMITONES_PER_OCTAVE;
+        }
+        return correctedPitch - pitch;
+    }
+
+    private String formatPitchLineOctaves(int pitch, int referencePitch) {
+        StringJoiner joiner = new StringJoiner(", ", "[", "]");
+        for (int candidate = pitch - 48; candidate <= pitch + 48; candidate += 12) {
+            if (Math.abs(candidate - referencePitch) <= 24) {
+                joiner.add(Integer.toString(candidate));
+            }
+        }
+        return joiner.toString();
+    }
+
+    private String formatPitchHistogram(Map<Integer, Integer> histogram) {
+        if (histogram == null || histogram.isEmpty()) {
+            return "{}";
+        }
+        return histogram.entrySet()
+                        .stream()
+                        .sorted((left, right) -> {
+                            int byCount = Integer.compare(right.getValue(), left.getValue());
+                            if (byCount != 0) {
+                                return byCount;
+                            }
+                            return Integer.compare(left.getKey(), right.getKey());
+                        })
+                        .map(entry -> entry.getKey() + ":" + entry.getValue())
+                        .collect(Collectors.joining(", ", "{", "}"));
+    }
+
+    private String formatPitchArray(int[] pitches) {
+        if (pitches == null || pitches.length == 0) {
+            return "[]";
+        }
+        StringJoiner joiner = new StringJoiner(", ", "[", "]");
+        for (int pitch : pitches) {
+            joiner.add(pitch == Integer.MIN_VALUE ? "n/a" : Integer.toString(pitch));
+        }
+        return joiner.toString();
+    }
+
     private boolean matchesAlignedPitch(int framePitch, int alignedPitch) {
         return Math.floorMod(framePitch - alignedPitch, 12) == 0;
     }
@@ -5545,7 +5797,7 @@ public class YassTable extends JTable {
         String newLast = shouldPrefixShiftTilde(newLastBody) ? "~" + newLastBody : newLastBody;
         String newFirst = StringUtils.left(firstNote.getTrimmedText(), firstNote.getTrimmedText().length() - 1);
         lastNote.setText(newLast + (lastNote.endsWithSpace() ? YassRow.SPACE : ""));
-        firstNote.setText(newFirst);
+        firstNote.setText(keepTildeIfShiftSourceWouldBeEmpty(newFirst));
         trimMiddleTildes();
         tm.fireTableDataChanged();
         getSelectionModel().setSelectionInterval(selectedRowIndex, selectedRowIndex + (selectedRows - 1));
@@ -5652,11 +5904,16 @@ public class YassTable extends JTable {
         }
         String newFirst = firstNote.getTrimmedText() + characterToMove;
         String newLastPrefixed = shouldPrefixShiftTilde(newLast) ? "~" + newLast : newLast;
-        lastNote.setText(newLastPrefixed + (lastNote.endsWithSpace() ? YassRow.SPACE : ""));
+        lastNote.setText(keepTildeIfShiftSourceWouldBeEmpty(newLastPrefixed)
+                + (lastNote.endsWithSpace() ? YassRow.SPACE : ""));
         firstNote.setText(newFirst);
         trimMiddleTildes();
         tm.fireTableDataChanged();
         getSelectionModel().setSelectionInterval(selectedRowIndex, selectedRowIndex + (selectedRows - 1));
+    }
+
+    private String keepTildeIfShiftSourceWouldBeEmpty(String text) {
+        return StringUtils.isBlank(text) ? "~" : text;
     }
 
     private boolean checkShiftEndingConditions(boolean toLeft) {
@@ -5671,8 +5928,8 @@ public class YassTable extends JTable {
                 return false;
             }
             String text = tempSyllable.getTrimmedText();
-            if (i == 0 && !toLeft && text.length() == 1) {
-                // First syllable is too short
+            if (i == 0 && !toLeft && text.length() < 1) {
+                // First syllable is empty
                 return false;
             } else if (i > 0 && i < (selectedRows - 1) && !text.equals("~")) {
                 // Syllables between are not ~
@@ -5814,6 +6071,68 @@ public class YassTable extends JTable {
         insertNoteWithOptionalText(noteText);
     }
 
+    public void insertNoteWithVocalPitch(List<PitchDetector.PitchData> pitchData) {
+        String noteText = promptForInsertedLyrics();
+        if (noteText == null) {
+            return;
+        }
+        if (StringUtils.isBlank(noteText)) {
+            insertNoteWithOptionalText(noteText);
+            return;
+        }
+        InsertedLyricsResult result = insertLyricsWithVocalPitchAtBeat(noteText, resolveInsertCursorBeat(), pitchData);
+        if (!result.inserted()) {
+            showInsertedLyricsResult(result);
+        }
+    }
+
+    public enum InsertedLyricsStatus {
+        INSERTED,
+        NO_INSERTABLE_TEXT,
+        NO_SPACE,
+        TOO_MANY_SYLLABLES,
+        NO_USABLE_PITCH_DATA,
+        ALIGNMENT_OUT_OF_BOUNDS
+    }
+
+    public record InsertedLyricsResult(InsertedLyricsStatus status,
+                                       int syllableCount,
+                                       int capacity,
+                                       String messageKey) {
+        public boolean inserted() {
+            return status == InsertedLyricsStatus.INSERTED;
+        }
+
+        public static InsertedLyricsResult inserted(int syllableCount, int capacity) {
+            return new InsertedLyricsResult(InsertedLyricsStatus.INSERTED, syllableCount, capacity, null);
+        }
+
+        public static InsertedLyricsResult noInsertableText() {
+            return new InsertedLyricsResult(InsertedLyricsStatus.NO_INSERTABLE_TEXT, 0, 0,
+                    "edit_insert_notes_no_insertable_text");
+        }
+
+        public static InsertedLyricsResult noSpace(int syllableCount, int capacity) {
+            return new InsertedLyricsResult(InsertedLyricsStatus.NO_SPACE, syllableCount, capacity,
+                    "edit_insert_notes_no_space");
+        }
+
+        public static InsertedLyricsResult tooManySyllables(int syllableCount, int capacity) {
+            return new InsertedLyricsResult(InsertedLyricsStatus.TOO_MANY_SYLLABLES, syllableCount, capacity,
+                    "edit_insert_notes_too_many_syllables");
+        }
+
+        public static InsertedLyricsResult noUsablePitchData(int syllableCount, int capacity) {
+            return new InsertedLyricsResult(InsertedLyricsStatus.NO_USABLE_PITCH_DATA, syllableCount, capacity,
+                    "edit_insert_notes_no_pitch");
+        }
+
+        public static InsertedLyricsResult alignmentOutOfBounds(int syllableCount, int capacity) {
+            return new InsertedLyricsResult(InsertedLyricsStatus.ALIGNMENT_OUT_OF_BOUNDS, syllableCount, capacity,
+                    "edit_insert_notes_alignment_failed");
+        }
+    }
+
     private String promptForInsertedLyrics() {
         Window owner = SwingUtilities.getWindowAncestor(this);
         JDialog dialog = new JDialog(owner, I18.get("edit_insert_notes_title"), Dialog.ModalityType.APPLICATION_MODAL);
@@ -5867,6 +6186,35 @@ public class YassTable extends JTable {
         dialog.setLocationRelativeTo(owner);
         dialog.setVisible(true);
         return result[0];
+    }
+
+    private int resolveInsertCursorBeat() {
+        if (sheet != null && sheet.getPlayerPosition() >= 0) {
+            return sheet.timelineToBeat(sheet.getPlayerPosition());
+        }
+        int row = getSelectedRow();
+        if (row >= 0) {
+            YassRow selected = getRowAt(row);
+            if (selected != null && (selected.isNote() || selected.isPageBreak())) {
+                return selected.getBeatInt();
+            }
+        }
+        return 0;
+    }
+
+    private void showInsertedLyricsResult(InsertedLyricsResult result) {
+        if (result == null || result.inserted() || StringUtils.isBlank(result.messageKey())) {
+            return;
+        }
+        String message = I18.get(result.messageKey());
+        if (result.status() == InsertedLyricsStatus.TOO_MANY_SYLLABLES
+                || result.status() == InsertedLyricsStatus.NO_SPACE) {
+            message = MessageFormat.format(message, result.syllableCount(), result.capacity());
+        }
+        JOptionPane.showMessageDialog(YassUtils.resolveDialogOwner(this),
+                                      message,
+                                      I18.get("edit_insert_notes_title"),
+                                      JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void restoreAbsoluteViewYLater(int preservedAbsoluteViewY) {
@@ -6001,24 +6349,273 @@ public class YassTable extends JTable {
         restoreAbsoluteViewYLater(preservedAbsoluteViewY);
     }
 
+    public InsertedLyricsResult insertLyricsWithVocalPitchAtBeat(String noteText,
+                                                                 int cursorBeat,
+                                                                 List<PitchDetector.PitchData> pitchData) {
+        List<String> noteTexts = extractInsertedLyricNoteTexts(noteText, cursorBeat);
+        if (noteTexts.isEmpty()) {
+            return InsertedLyricsResult.noInsertableText();
+        }
+        LocalInsertWindow window = determineLocalInsertWindow(cursorBeat, pitchData);
+        if (window == null || window.capacity() <= 0) {
+            return InsertedLyricsResult.noSpace(noteTexts.size(), 0);
+        }
+        if (noteTexts.size() > window.capacity()) {
+            return InsertedLyricsResult.tooManySyllables(noteTexts.size(), window.capacity());
+        }
+        if (!hasPitchFramesForPlannedNotes(window.startBeat(), noteTexts.size(), pitchData)) {
+            return InsertedLyricsResult.noUsablePitchData(noteTexts.size(), window.capacity());
+        }
+
+        Vector<YassRow> snapshot = cloneRows(tm.getData());
+        addUndo();
+        if (window.replacedRowIndex() >= 0) {
+            tm.removeRowAt(window.replacedRowIndex());
+        }
+
+        List<YassRow> insertedRows = new ArrayList<>();
+        int initialHeight = determineInsertedLyricsInitialHeight(window.replacedRow(), window.startBeat());
+        for (int index = 0; index < noteTexts.size(); index++) {
+            int beat = window.startBeat() + index * 2;
+            YassRow row = new YassRow(":", Integer.toString(beat), "1", Integer.toString(initialHeight),
+                                      noteTexts.get(index));
+            int insertIndex = findInsertionIndexForBeat(beat);
+            tm.getData().insertElementAt(row, insertIndex);
+            insertedRows.add(row);
+        }
+
+        alignToMelody(insertedRows, pitchData, AlignToMelodyContext.insertedLyrics());
+        if (!insertedRowsRespectWindow(insertedRows, window)) {
+            restoreRows(snapshot);
+            return InsertedLyricsResult.alignmentOutOfBounds(noteTexts.size(), window.capacity());
+        }
+
+        tm.fireTableDataChanged();
+        setInsertedLyricsSelection(insertedRows);
+        updatePlayerPosition();
+        zoomPage();
+        return InsertedLyricsResult.inserted(noteTexts.size(), window.capacity());
+    }
+
+    private record LocalInsertWindow(int startBeat,
+                                     int endBeat,
+                                     Integer nextNoteBeat,
+                                     int replacedRowIndex,
+                                     YassRow replacedRow) {
+        int capacity() {
+            int beats = endBeat - startBeat + 1;
+            return beats <= 0 ? 0 : beats / 2;
+        }
+    }
+
+    private List<String> extractInsertedLyricNoteTexts(String noteText, int startBeat) {
+        if (StringUtils.isBlank(noteText)) {
+            return Collections.emptyList();
+        }
+        String[] lines = splitTextToLines(noteText, startBeat);
+        List<String> noteTexts = new ArrayList<>();
+        for (String line : lines) {
+            YassRow row = new YassRow(line);
+            if (row.isNote()) {
+                noteTexts.add(row.getText());
+            }
+        }
+        return noteTexts;
+    }
+
+    private LocalInsertWindow determineLocalInsertWindow(int cursorBeat, List<PitchDetector.PitchData> pitchData) {
+        int replacedRowIndex = findNoteIndexContainingBeat(cursorBeat);
+        YassRow replacedRow = replacedRowIndex >= 0 ? new YassRow(getRowAt(replacedRowIndex)) : null;
+        Integer nextNoteBeat = findNextNoteBeatAfter(cursorBeat, replacedRowIndex);
+        int endBeat = nextNoteBeat == null ? findLastPitchBeatAtOrAfter(cursorBeat, pitchData) : nextNoteBeat - 1;
+        if (endBeat < cursorBeat) {
+            return null;
+        }
+        return new LocalInsertWindow(cursorBeat, endBeat, nextNoteBeat, replacedRowIndex, replacedRow);
+    }
+
+    private int findNoteIndexContainingBeat(int cursorBeat) {
+        int rowCount = getRowCount();
+        for (int index = 0; index < rowCount; index++) {
+            YassRow row = getRowAt(index);
+            if (row != null && row.isNote()
+                    && row.getBeatInt() <= cursorBeat
+                    && cursorBeat < row.getBeatInt() + row.getLengthInt()) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private Integer findNextNoteBeatAfter(int cursorBeat, int ignoredRowIndex) {
+        int rowCount = getRowCount();
+        for (int index = 0; index < rowCount; index++) {
+            if (index == ignoredRowIndex) {
+                continue;
+            }
+            YassRow row = getRowAt(index);
+            if (row != null && row.isNote() && row.getBeatInt() > cursorBeat) {
+                return row.getBeatInt();
+            }
+        }
+        return null;
+    }
+
+    private int findLastPitchBeatAtOrAfter(int cursorBeat, List<PitchDetector.PitchData> pitchData) {
+        if (pitchData == null || pitchData.isEmpty()) {
+            return cursorBeat - 1;
+        }
+        int lastBeat = cursorBeat - 1;
+        for (PitchDetector.PitchData frame : pitchData) {
+            int beat = beatContainingFrame(frame);
+            if (beat >= cursorBeat) {
+                lastBeat = Math.max(lastBeat, beat);
+            }
+        }
+        return lastBeat;
+    }
+
+    private boolean hasPitchFramesForPlannedNotes(int startBeat,
+                                                  int syllableCount,
+                                                  List<PitchDetector.PitchData> pitchData) {
+        if (pitchData == null || pitchData.isEmpty()) {
+            return false;
+        }
+        for (int index = 0; index < syllableCount; index++) {
+            if (!hasPitchFrameInBeat(startBeat + index * 2, pitchData)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean hasPitchFrameInBeat(int beat, List<PitchDetector.PitchData> pitchData) {
+        double startMs = beatToMs(beat);
+        double endMs = beatToMs(beat + 1);
+        for (PitchDetector.PitchData frame : pitchData) {
+            double frameMs = frame.time() * 1000.0;
+            if (frameMs >= startMs && frameMs < endMs) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int beatContainingFrame(PitchDetector.PitchData frame) {
+        return (int) Math.floor(msToBeatExact(frame.time() * 1000.0));
+    }
+
+    private int determineInsertedLyricsInitialHeight(YassRow replacedRow, int startBeat) {
+        if (replacedRow != null && replacedRow.isNote()) {
+            return replacedRow.getHeightInt();
+        }
+        YassRow previous = findPreviousInsertedLyricsNoteBefore(startBeat);
+        if (previous != null) {
+            return previous.getHeightInt();
+        }
+        YassRow next = findNextNoteAtOrAfter(startBeat);
+        return next == null ? 6 : next.getHeightInt();
+    }
+
+    private YassRow findPreviousInsertedLyricsNoteBefore(int beat) {
+        YassRow previous = null;
+        int rowCount = getRowCount();
+        for (int index = 0; index < rowCount; index++) {
+            YassRow row = getRowAt(index);
+            if (row != null && row.isNote() && row.getBeatInt() < beat) {
+                previous = row;
+            }
+        }
+        return previous;
+    }
+
+    private YassRow findNextNoteAtOrAfter(int beat) {
+        int rowCount = getRowCount();
+        for (int index = 0; index < rowCount; index++) {
+            YassRow row = getRowAt(index);
+            if (row != null && row.isNote() && row.getBeatInt() >= beat) {
+                return row;
+            }
+        }
+        return null;
+    }
+
+    private int findInsertionIndexForBeat(int beat) {
+        int rowCount = getRowCount();
+        for (int index = 0; index < rowCount; index++) {
+            YassRow row = getRowAt(index);
+            if (row == null || row.isEnd()) {
+                return index;
+            }
+            if ((row.isNote() || row.isPageBreak()) && row.getBeatInt() > beat) {
+                return index;
+            }
+        }
+        return rowCount;
+    }
+
+    private boolean insertedRowsRespectWindow(List<YassRow> insertedRows, LocalInsertWindow window) {
+        if (insertedRows == null || insertedRows.isEmpty()) {
+            return false;
+        }
+        List<YassRow> sorted = new ArrayList<>(insertedRows);
+        sorted.sort(Comparator.comparingInt(YassRow::getBeatInt));
+        int previousEnd = window.startBeat() - 2;
+        for (YassRow row : sorted) {
+            if (row == null || !row.isNote() || row.getLengthInt() < 1) {
+                return false;
+            }
+            int start = row.getBeatInt();
+            int end = start + row.getLengthInt() - 1;
+            if (start < window.startBeat() || end > window.endBeat()) {
+                return false;
+            }
+            if (start <= previousEnd + 1) {
+                return false;
+            }
+            previousEnd = end;
+        }
+        if (window.nextNoteBeat() != null && previousEnd >= window.nextNoteBeat() - 1) {
+            return false;
+        }
+        return true;
+    }
+
+    private Vector<YassRow> cloneRows(Vector<YassRow> rows) {
+        Vector<YassRow> clone = new Vector<>();
+        for (YassRow row : rows) {
+            clone.add(row == null ? null : new YassRow(row));
+        }
+        return clone;
+    }
+
+    private void restoreRows(Vector<YassRow> rows) {
+        tm.setData(cloneRows(rows));
+        tm.fireTableDataChanged();
+    }
+
+    private void setInsertedLyricsSelection(List<YassRow> insertedRows) {
+        if (insertedRows == null || insertedRows.isEmpty()) {
+            return;
+        }
+        int firstIndex = tm.getData().indexOf(insertedRows.get(0));
+        int lastIndex = tm.getData().indexOf(insertedRows.get(insertedRows.size() - 1));
+        if (firstIndex >= 0 && lastIndex >= 0) {
+            setRowSelectionInterval(Math.min(firstIndex, lastIndex), Math.max(firstIndex, lastIndex));
+        }
+    }
+
     public void togglePageBreak() {
         int row = getSelectionModel().getMinSelectionIndex() - 1;
         if (row < 0) {
             return;
         }
         YassRow r = getRowAt(row);
-        YassRow nextRow = getRowAt(row + 1);
         if (r.isNote()) {
             insertPageBreak(true);
             setRowSelectionInterval(row + 2, row + 2);
-            if (prop.getBooleanProperty("capitalize-rows") && nextRow.isNote()) {
-                nextRow.setText(StringUtils.capitalize(nextRow.getText()));
-            }
         } else if (r.isPageBreak()) {
             removePageBreak(true);
-            if (prop.getBooleanProperty("capitalize-rows") && nextRow.isNote()) {
-                nextRow.setText(StringUtils.uncapitalize(nextRow.getText()));
-            }
             setRowSelectionInterval(row, row);
         }
         if (zoomMode == ZOOM_ONE) {
@@ -6064,6 +6661,9 @@ public class YassTable extends JTable {
             String txt = next.getText();
             if (txt.startsWith(YassRow.SPACE + "")) {
                 next.setText(txt.substring(1));
+            }
+            if (prop.getBooleanProperty("capitalize-rows") && next.isNote()) {
+                next.setText(StringUtils.capitalize(next.getText()));
             }
         }
 
@@ -6487,6 +7087,15 @@ public class YassTable extends JTable {
         if (words > 1) {
             f = (words - 1) / (double) words;
         }
+        LOGGER.info(String.format(Locale.ROOT,
+                "[SplitDebug] standardSplit row=%d beat=%d length=%d pitch=%d text=\"%s\" words=%d percent=%.4f",
+                row,
+                r != null && r.isNote() ? r.getBeatInt() : -1,
+                r != null && r.isNote() ? r.getLengthInt() : -1,
+                r != null && r.isNote() ? r.getHeightInt() : -1,
+                r == null ? "" : r.getText(),
+                words,
+                f));
         split(f, false);
     }
 
@@ -6507,9 +7116,25 @@ public class YassTable extends JTable {
         if (!r.isNote()) {
             return;
         }
+        LOGGER.info(String.format(Locale.ROOT,
+                "[SplitDebug] pitchSplit:start row=%d beat=%d length=%d pitch=%d text=\"%s\" pitchFrames=%d bpm=%.2f",
+                row,
+                r.getBeatInt(),
+                r.getLengthInt(),
+                r.getHeightInt(),
+                r.getText(),
+                pitchData == null ? 0 : pitchData.size(),
+                getBPM()));
+        if (pitchData == null || pitchData.isEmpty()) {
+            LOGGER.info("[SplitDebug] pitchSplit:fallback reason=no pitch data");
+            splitRows();
+            return;
+        }
         int length = r.getLengthInt();
         if (length < 4) {
             // Too short to find a 2-beat sustained pitch change; use standard split
+            LOGGER.info(String.format(Locale.ROOT,
+                    "[SplitDebug] pitchSplit:fallback reason=note too short length=%d minimum=4", length));
             splitRows();
             return;
         }
@@ -6531,6 +7156,13 @@ public class YassTable extends JTable {
         // A beat needs at least 25% of the note's average frame density to be trusted.
         // Below this it is silence / reverb noise — treated as "no pitch data".
         double minFrames = Math.max(1, (double) totalFrames / length * 0.25);
+        LOGGER.info(String.format(Locale.ROOT,
+                "[SplitDebug] pitchSplit:frameDensity startBeat=%d length=%d totalFrames=%d framesPerBeat=%s minFrames=%.2f",
+                startBeat,
+                length,
+                totalFrames,
+                Arrays.toString(framesPerBeat),
+                minFrames));
 
         // Find the prevalent pitch per beat, ignoring beats below the density threshold
         int[] beatPitch = new int[length];
@@ -6553,6 +7185,24 @@ public class YassTable extends JTable {
                     .map(Map.Entry::getKey)
                     .orElse(Integer.MIN_VALUE);
         }
+        LOGGER.info(String.format(Locale.ROOT,
+                "[SplitDebug] pitchSplit:beatPitches beatPitch=%s",
+                formatPitchArray(beatPitch)));
+        List<PitchSplitSegment> pitchSegments = findConservativePitchSplitSegments(beatPitch);
+        List<String> pitchSegmentTexts = buildPitchSplitTexts(r, pitchSegments.size());
+        if (pitchSegments.size() > 1 && pitchSegmentTexts != null) {
+            LOGGER.info(String.format(Locale.ROOT,
+                    "[SplitDebug] pitchSplit:segments segments=%s",
+                    formatPitchSplitSegments(pitchSegments, startBeat)));
+            applyPitchSplitSegments(row, pitchSegments, pitchSegmentTexts);
+            return;
+        }
+        if (pitchSegments.size() > 1) {
+            LOGGER.info(String.format(Locale.ROOT,
+                    "[SplitDebug] pitchSplit:fallback reason=ambiguous text for pitch segments segments=%s text=\"%s\"",
+                    formatPitchSplitSegments(pitchSegments, startBeat),
+                    r.getText()));
+        }
 
         // Dominant pitch = most common beat pitch across the whole note (sparse beats excluded)
         Map<Integer, Integer> overallHistogram = new HashMap<>();
@@ -6561,7 +7211,13 @@ public class YassTable extends JTable {
                 overallHistogram.merge(p, 1, Integer::sum);
             }
         }
+        LOGGER.info(String.format(Locale.ROOT,
+                "[SplitDebug] pitchSplit:histogram pitches=%s",
+                formatPitchHistogram(overallHistogram)));
         if (overallHistogram.size() <= 1) {
+            LOGGER.info(String.format(Locale.ROOT,
+                    "[SplitDebug] pitchSplit:fallback reason=uniform or sparse pitch histogram=%s",
+                    formatPitchHistogram(overallHistogram)));
             // Note is uniform in pitch (or all beats are sparse) — use standard split
             splitRows();
             return;
@@ -6603,6 +7259,10 @@ public class YassTable extends JTable {
         }
 
         if (splitBeat <= 0 || splitBeat >= length) {
+            LOGGER.info(String.format(Locale.ROOT,
+                    "[SplitDebug] pitchSplit:fallback reason=no sustained pitch change dominantPitch=%d beatPitch=%s",
+                    dominantPitch,
+                    formatPitchArray(beatPitch)));
             // No sustained pitch change found — use standard split
             splitRows();
             return;
@@ -6613,6 +7273,10 @@ public class YassTable extends JTable {
         // That means first note length = splitBeat - 1.
         // If splitBeat == 1, the first part would be 0 beats — not viable, fall back.
         if (splitBeat < 2 || length - splitBeat < 1) {
+            LOGGER.info(String.format(Locale.ROOT,
+                    "[SplitDebug] pitchSplit:fallback reason=split beat not viable splitBeat=%d length=%d",
+                    splitBeat,
+                    length));
             splitRows();
             return;
         }
@@ -6625,7 +7289,325 @@ public class YassTable extends JTable {
         // split() will then set length to w1 (or w1-1 if touchingSyllables is on).
         // To prevent double-deduction when touchingSyllables is on, we add 1 to compensate:
         int targetW1 = auto.isTouchingSyllables() ? splitBeat : splitBeat - 1;
+        LOGGER.info(String.format(Locale.ROOT,
+                "[SplitDebug] pitchSplit:decision dominantPitch=%d changedPitch=%d splitBeatOffset=%d splitAbsoluteBeat=%d targetW1=%d percent=%.4f touchingSyllables=%s beatPitch=%s",
+                dominantPitch,
+                beatPitch[splitBeat],
+                splitBeat,
+                startBeat + splitBeat,
+                targetW1,
+                (double) targetW1 / length,
+                auto.isTouchingSyllables(),
+                formatPitchArray(beatPitch)));
         split((double) targetW1 / length, false);
+        applyPitchSplitFallbackPitches(row, dominantPitch, beatPitch[splitBeat]);
+    }
+
+    private void applyPitchSplitFallbackPitches(int row, int leftPitch, int rightPitch) {
+        if (row < 0 || row + 1 >= getRowCount()) {
+            return;
+        }
+        YassRow leftRow = getRowAt(row);
+        YassRow rightRow = getRowAt(row + 1);
+        if (leftRow == null || rightRow == null || !leftRow.isNote() || !rightRow.isNote()) {
+            return;
+        }
+        leftRow.setHeight(leftPitch);
+        rightRow.setHeight(rightPitch);
+        LOGGER.info(String.format(Locale.ROOT,
+                "[SplitDebug] pitchSplit:pitchFallbackApplied leftPitch=%d rightPitch=%d rows=%s",
+                leftPitch,
+                rightPitch,
+                formatRowsForPitchSplitResult(row, 2)));
+        tm.fireTableDataChanged();
+    }
+
+    private List<PitchSplitSegment> findConservativePitchSplitSegments(int[] beatPitch) {
+        List<Integer> boundaries = new ArrayList<>();
+        boundaries.add(0);
+        int currentPitch = firstValidPitch(beatPitch);
+        if (currentPitch == Integer.MIN_VALUE) {
+            return Collections.emptyList();
+        }
+
+        int searchStart = 0;
+        while (searchStart + PITCH_SPLIT_MIN_STABLE_BEATS < beatPitch.length) {
+            PitchSplitCandidate candidate = findNextStablePitchSplitCandidate(beatPitch, searchStart, currentPitch);
+            if (candidate == null) {
+                break;
+            }
+            boundaries.add(candidate.startOffset);
+            searchStart = candidate.startOffset;
+            currentPitch = candidate.pitch;
+        }
+
+        if (boundaries.size() < 2) {
+            return Collections.emptyList();
+        }
+
+        List<PitchSplitSegment> segments = new ArrayList<>();
+        for (int i = 0; i < boundaries.size(); i++) {
+            int start = boundaries.get(i);
+            int end = i + 1 < boundaries.size() ? boundaries.get(i + 1) : beatPitch.length;
+            int pitch = dominantPitchInRange(beatPitch, start, end);
+            if (pitch == Integer.MIN_VALUE || end - start < PITCH_SPLIT_MIN_STABLE_BEATS) {
+                return Collections.emptyList();
+            }
+            segments.add(new PitchSplitSegment(start, end, pitch));
+        }
+        return segments;
+    }
+
+    private PitchSplitCandidate findNextStablePitchSplitCandidate(int[] beatPitch, int searchStart, int currentPitch) {
+        for (int start = searchStart + 1; start <= beatPitch.length - PITCH_SPLIT_MIN_STABLE_BEATS; start++) {
+            if (start - searchStart < 2) {
+                continue;
+            }
+            int stablePitch = stablePitchStartingAt(beatPitch, start);
+            if (stablePitch == Integer.MIN_VALUE) {
+                continue;
+            }
+            if (Math.abs(stablePitch - currentPitch) > PITCH_SPLIT_TOLERANCE) {
+                return new PitchSplitCandidate(start, stablePitch);
+            }
+        }
+        return null;
+    }
+
+    private int stablePitchStartingAt(int[] beatPitch, int start) {
+        Map<Integer, Integer> histogram = new HashMap<>();
+        for (int i = start; i < start + PITCH_SPLIT_MIN_STABLE_BEATS; i++) {
+            int pitch = beatPitch[i];
+            if (pitch == Integer.MIN_VALUE) {
+                return Integer.MIN_VALUE;
+            }
+            histogram.merge(pitch, 1, Integer::sum);
+        }
+        int pitch = histogram.entrySet().stream()
+                             .max(Map.Entry.comparingByValue())
+                             .map(Map.Entry::getKey)
+                             .orElse(Integer.MIN_VALUE);
+        if (pitch == Integer.MIN_VALUE || beatPitch[start] != pitch) {
+            return Integer.MIN_VALUE;
+        }
+        for (int i = start; i < start + PITCH_SPLIT_MIN_STABLE_BEATS; i++) {
+            if (Math.abs(beatPitch[i] - pitch) > PITCH_SPLIT_TOLERANCE) {
+                return Integer.MIN_VALUE;
+            }
+        }
+        return pitch;
+    }
+
+    private int firstValidPitch(int[] beatPitch) {
+        for (int pitch : beatPitch) {
+            if (pitch != Integer.MIN_VALUE) {
+                return pitch;
+            }
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    private int dominantPitchInRange(int[] beatPitch, int start, int end) {
+        Map<Integer, Integer> histogram = new HashMap<>();
+        for (int i = start; i < end; i++) {
+            int pitch = beatPitch[i];
+            if (pitch != Integer.MIN_VALUE) {
+                histogram.merge(pitch, 1, Integer::sum);
+            }
+        }
+        return histogram.entrySet().stream()
+                        .max(Map.Entry.comparingByValue())
+                        .map(Map.Entry::getKey)
+                        .orElse(Integer.MIN_VALUE);
+    }
+
+    private List<String> buildPitchSplitTexts(YassRow row, int segmentCount) {
+        if (segmentCount < 2) {
+            return null;
+        }
+        String[] textPunctuationPair = splitTextFromPunctuation(row);
+        String text = textPunctuationPair[0];
+        if (StringUtils.isBlank(text) || text.indexOf(YassRow.SPACE) >= 0 || text.contains("-")) {
+            return null;
+        }
+        String hyphenated = hyphenator == null ? text : hyphenator.hyphenateWord(text);
+        String[] syllables = Arrays.stream(hyphenated.split("\u00AD"))
+                                   .filter(StringUtils::isNotBlank)
+                                   .toArray(String[]::new);
+        if (syllables.length == 0) {
+            return null;
+        }
+
+        String punctuationSuffix = textPunctuationPair[1].startsWith("~")
+                ? textPunctuationPair[1].substring(1)
+                : StringUtils.EMPTY;
+        List<String> texts = new ArrayList<>();
+        if (syllables.length == 1) {
+            PitchSplitWordParts wordParts = splitPitchSplitFinalCluster(text);
+            if (wordParts == null) {
+                texts.add(text);
+                for (int i = 1; i < segmentCount; i++) {
+                    texts.add("~" + (i == segmentCount - 1 ? punctuationSuffix : StringUtils.EMPTY));
+                }
+            } else {
+                texts.add(wordParts.body);
+                for (int i = 1; i < segmentCount - 1; i++) {
+                    texts.add("~");
+                }
+                texts.add("~" + wordParts.finalCluster + punctuationSuffix);
+            }
+            return texts;
+        }
+        if (syllables.length == segmentCount) {
+            texts.addAll(Arrays.asList(syllables));
+            texts.set(texts.size() - 1, texts.get(texts.size() - 1) + punctuationSuffix);
+            return texts;
+        }
+        if (segmentCount == 2 && syllables.length > 2) {
+            texts.add(syllables[0]);
+            texts.add(String.join(StringUtils.EMPTY,
+                                  Arrays.copyOfRange(syllables, 1, syllables.length)) + punctuationSuffix);
+            return texts;
+        }
+        return null;
+    }
+
+    private PitchSplitWordParts splitPitchSplitFinalCluster(String text) {
+        if (text.startsWith("~") && text.length() > 1) {
+            return new PitchSplitWordParts("~", text.substring(1));
+        }
+        int contractionApostrophe = findPitchSplitContractionApostrophe(text);
+        if (contractionApostrophe > 0 && contractionApostrophe < text.length() - 1) {
+            return new PitchSplitWordParts(text.substring(0, contractionApostrophe),
+                                           text.substring(contractionApostrophe));
+        }
+        if (text.length() <= 2) {
+            return null;
+        }
+        String lowerText = text.toLowerCase(Locale.ROOT);
+        for (String cluster : PITCH_SPLIT_FINAL_CLUSTERS) {
+            if (!lowerText.endsWith(cluster)) {
+                continue;
+            }
+            int bodyLength = text.length() - cluster.length();
+            if (bodyLength <= 0) {
+                continue;
+            }
+            if (cluster.length() == 1 && bodyLength < 2) {
+                continue;
+            }
+            return new PitchSplitWordParts(text.substring(0, bodyLength), text.substring(bodyLength));
+        }
+        return null;
+    }
+
+    private int findPitchSplitContractionApostrophe(String text) {
+        int straight = text.indexOf('\'');
+        int typographic = text.indexOf('\u2019');
+        if (straight < 0) {
+            return typographic;
+        }
+        if (typographic < 0) {
+            return straight;
+        }
+        return Math.min(straight, typographic);
+    }
+
+    private void applyPitchSplitSegments(int row, List<PitchSplitSegment> segments, List<String> texts) {
+        YassRow currentRow = getRowAt(row);
+        int originalBeat = currentRow.getBeatInt();
+        boolean touchingSyllables = auto != null && auto.isTouchingSyllables();
+        boolean startSyllable = !prop.isUncommonSpacingAfter() && currentRow.startsWithSpace();
+        boolean endSyllable = prop.isUncommonSpacingAfter() && currentRow.endsWithSpace();
+
+        currentRow.setBeat(originalBeat + segments.get(0).startOffset);
+        currentRow.setLength(lengthForPitchSplitSegment(segments.get(0), touchingSyllables, false));
+        currentRow.setHeight(segments.get(0).pitch);
+        currentRow.setText((startSyllable ? YassRow.SPACE : StringUtils.EMPTY) + texts.get(0));
+
+        int insertAt = row + 1;
+        for (int i = 1; i < segments.size(); i++) {
+            PitchSplitSegment segment = segments.get(i);
+            boolean last = i == segments.size() - 1;
+            YassRow newRow = currentRow.clone();
+            newRow.setBeat(originalBeat + segment.startOffset);
+            newRow.setLength(lengthForPitchSplitSegment(segment, touchingSyllables, last));
+            newRow.setHeight(segment.pitch);
+            String segmentText = texts.get(i);
+            if (last && endSyllable && !segmentText.endsWith(YassRow.SPACE + "")) {
+                segmentText += YassRow.SPACE;
+            }
+            newRow.setText(segmentText);
+            tm.getData().insertElementAt(newRow, insertAt++);
+        }
+
+        LOGGER.info(String.format(Locale.ROOT,
+                "[SplitDebug] pitchSplit:result segments=%s",
+                formatRowsForPitchSplitResult(row, segments.size())));
+        tm.fireTableDataChanged();
+        setRowSelectionInterval(row, row);
+        updatePlayerPosition();
+    }
+
+    private int lengthForPitchSplitSegment(PitchSplitSegment segment, boolean touchingSyllables, boolean last) {
+        int length = segment.endOffset - segment.startOffset;
+        if (!last && touchingSyllables && length > 1) {
+            return length - 1;
+        }
+        return length;
+    }
+
+    private String formatPitchSplitSegments(List<PitchSplitSegment> segments, int startBeat) {
+        return segments.stream()
+                       .map(segment -> "{offset=" + segment.startOffset
+                               + ",beat=" + (startBeat + segment.startOffset)
+                               + ",endOffset=" + segment.endOffset
+                               + ",pitch=" + segment.pitch + "}")
+                       .collect(Collectors.joining(", ", "[", "]"));
+    }
+
+    private String formatRowsForPitchSplitResult(int firstRow, int count) {
+        StringJoiner joiner = new StringJoiner(", ", "[", "]");
+        for (int i = 0; i < count; i++) {
+            YassRow row = getRowAt(firstRow + i);
+            joiner.add("{beat=" + row.getBeatInt()
+                    + ",length=" + row.getLengthInt()
+                    + ",pitch=" + row.getHeightInt()
+                    + ",text=\"" + row.getText() + "\"}");
+        }
+        return joiner.toString();
+    }
+
+    private static final class PitchSplitCandidate {
+        private final int startOffset;
+        private final int pitch;
+
+        private PitchSplitCandidate(int startOffset, int pitch) {
+            this.startOffset = startOffset;
+            this.pitch = pitch;
+        }
+    }
+
+    private static final class PitchSplitSegment {
+        private final int startOffset;
+        private final int endOffset;
+        private final int pitch;
+
+        private PitchSplitSegment(int startOffset, int endOffset, int pitch) {
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+            this.pitch = pitch;
+        }
+    }
+
+    private static final class PitchSplitWordParts {
+        private final String body;
+        private final String finalCluster;
+
+        private PitchSplitWordParts(String body, String finalCluster) {
+            this.body = body;
+            this.finalCluster = finalCluster;
+        }
     }
 
     /**
@@ -7334,6 +8316,11 @@ public class YassTable extends JTable {
         if (!currentRow.isNote()) {
             return;
         }
+        double requestedPercent = percent;
+        int originalBeat = currentRow.getBeatInt();
+        int originalLength = currentRow.getLengthInt();
+        int originalPitch = currentRow.getHeightInt();
+        String originalText = currentRow.getText();
 
         String[] textPunctuationPair = splitTextFromPunctuation(currentRow);
         String hyphenated = hyphenator.hyphenateWord(textPunctuationPair[0]);
@@ -7357,8 +8344,19 @@ public class YassTable extends JTable {
             newText = textPunctuationPair[1].replace("~", hyphenated.substring(hyphenPos + 1)
                                                                     .replace("\u00AD", ""));
         } else {
-            currentText = textPunctuationPair[0];
-            newText = textPunctuationPair[1];
+            PitchSplitWordParts wordParts = splitByMouse
+                    ? null
+                    : splitPitchSplitFinalCluster(textPunctuationPair[0]);
+            if (wordParts == null) {
+                currentText = textPunctuationPair[0];
+                newText = textPunctuationPair[1];
+            } else {
+                String punctuationSuffix = textPunctuationPair[1].startsWith("~")
+                        ? textPunctuationPair[1].substring(1)
+                        : StringUtils.EMPTY;
+                currentText = wordParts.body;
+                newText = "~" + wordParts.finalCluster + punctuationSuffix;
+            }
         }
 
         int w = currentRow.getLengthInt();
@@ -7368,6 +8366,21 @@ public class YassTable extends JTable {
 
         int w1 = (int) Math.round(w * percent);
         int w2 = w - w1;
+        LOGGER.info(String.format(Locale.ROOT,
+                "[SplitDebug] split:apply row=%d beat=%d length=%d pitch=%d text=\"%s\" requestedPercent=%.4f effectivePercent=%.4f splitByMouse=%s hyphenated=\"%s\" hyphenPos=%d minusPos=%d w1=%d w2=%d",
+                row,
+                originalBeat,
+                originalLength,
+                originalPitch,
+                originalText,
+                requestedPercent,
+                percent,
+                splitByMouse,
+                hyphenated,
+                hyphenPos,
+                minusPos,
+                w1,
+                w2));
         boolean startSyllable = !prop.isUncommonSpacingAfter() && currentRow.startsWithSpace();
         boolean endSyllable = prop.isUncommonSpacingAfter() && currentRow.endsWithSpace();
         if (auto.isTouchingSyllables() && w1 > 1) {
@@ -7385,6 +8398,16 @@ public class YassTable extends JTable {
         }
         newRow.setText(newText);
         tm.getData().insertElementAt(newRow, row + 1);
+        LOGGER.info(String.format(Locale.ROOT,
+                "[SplitDebug] split:result left={beat=%d,length=%d,pitch=%d,text=\"%s\"} right={beat=%d,length=%d,pitch=%d,text=\"%s\"}",
+                currentRow.getBeatInt(),
+                currentRow.getLengthInt(),
+                currentRow.getHeightInt(),
+                currentRow.getText(),
+                newRow.getBeatInt(),
+                newRow.getLengthInt(),
+                newRow.getHeightInt(),
+                newRow.getText()));
         tm.fireTableDataChanged();
         setRowSelectionInterval(row, row);
         updatePlayerPosition();
@@ -8336,14 +9359,54 @@ public class YassTable extends JTable {
     // EDITORS
 
     public void suggestGoldenNotes() {
-        int currentGolden = getDurationGolden();
-        while (currentGolden < idealGoldenBeats) {
-            currentGolden += findLongNotesForGolden();
-        }
-        tm.fireTableDataChanged();
+        suggestGoldenNotes(true);
     }
 
-    private int findLongNotesForGolden() {
+    public boolean suggestGoldenNotesForCorrection() {
+        return suggestGoldenNotes(false);
+    }
+
+    private boolean suggestGoldenNotes(boolean fireTableEvent) {
+        int currentGolden = getDurationGolden();
+        boolean changed = false;
+        List<GoldenSuggestionType> activeTypes = new ArrayList<>(
+                Arrays.asList(GoldenSuggestionType.PITCH_LEAPS, GoldenSuggestionType.LONG_WORDS));
+        int typeIndex = 0;
+        while (currentGolden < idealGoldenBeats && !activeTypes.isEmpty()) {
+            int remainingGolden = idealGoldenBeats - currentGolden;
+            GoldenSuggestionType type = activeTypes.get(typeIndex);
+            GoldenSuggestion suggestion = findGoldenSuggestion(type, remainingGolden);
+            if (suggestion == null || suggestion.duration <= 0) {
+                activeTypes.remove(typeIndex);
+                if (!activeTypes.isEmpty()) {
+                    typeIndex %= activeTypes.size();
+                }
+                continue;
+            }
+            markAsGolden(suggestion.rows);
+            changed = true;
+            currentGolden += suggestion.duration;
+            if (!activeTypes.isEmpty()) {
+                typeIndex = (typeIndex + 1) % activeTypes.size();
+            }
+        }
+        if (fireTableEvent) {
+            tm.fireTableDataChanged();
+        }
+        return changed;
+    }
+
+    private GoldenSuggestion findGoldenSuggestion(GoldenSuggestionType type, int maxDuration) {
+        if (maxDuration <= 0) {
+            return null;
+        }
+        if (type == GoldenSuggestionType.PITCH_LEAPS) {
+            return findPitchLeapGoldenSuggestion(maxDuration);
+        }
+        return findLongWordGoldenSuggestion(maxDuration);
+    }
+
+    private GoldenSuggestion findLongWordGoldenSuggestion(int maxDuration) {
         List<YassRow> longestWord = new ArrayList<>();
         int longestWordLength = 0;
 
@@ -8386,7 +9449,7 @@ public class YassTable extends JTable {
             }
 
             if (isWordBoundary) {
-                if (currentWordLength > longestWordLength) {
+                if (currentWordLength <= maxDuration && currentWordLength > longestWordLength) {
                     longestWordLength = currentWordLength;
                     longestWord = new ArrayList<>(currentWord);
                 }
@@ -8395,11 +9458,94 @@ public class YassTable extends JTable {
             }
         }
 
-        for (YassRow rowToMark : longestWord) {
-            markAsGolden(rowToMark);
-        }
+        return longestWordLength > 0 ? new GoldenSuggestion(longestWord, longestWordLength) : null;
+    }
 
-        return longestWordLength;
+    private GoldenSuggestion findPitchLeapGoldenSuggestion(int maxDuration) {
+        List<YassRow> rows = getModelData();
+        GoldenSuggestion bestSuggestion = null;
+        for (int i = 0; i + 2 < rows.size(); i++) {
+            YassRow first = rows.get(i);
+            YassRow second = rows.get(i + 1);
+            YassRow third = rows.get(i + 2);
+            if (!first.isRegularNote() || !second.isRegularNote() || !third.isRegularNote()) {
+                continue;
+            }
+            List<YassRow> candidateRows = Arrays.asList(first, second, third);
+            int duration = candidateRows.stream().mapToInt(YassRow::getLengthInt).sum();
+            if (duration <= 0 || duration > maxDuration) {
+                continue;
+            }
+            if (!hasPitchLeapIntervals(first, second, third)) {
+                continue;
+            }
+            YassRow previous = i > 0 ? rows.get(i - 1) : null;
+            YassRow next = i + 3 < rows.size() ? rows.get(i + 3) : null;
+            if (!containsTwoOrThreeCompleteWords(previous, candidateRows, next)) {
+                continue;
+            }
+            if (bestSuggestion == null || duration > bestSuggestion.duration) {
+                bestSuggestion = new GoldenSuggestion(candidateRows, duration);
+            }
+        }
+        return bestSuggestion;
+    }
+
+    private boolean hasPitchLeapIntervals(YassRow first, YassRow second, YassRow third) {
+        int firstInterval = Math.abs(second.getHeightInt() - first.getHeightInt());
+        int secondInterval = Math.abs(third.getHeightInt() - second.getHeightInt());
+        boolean hasThird = isThirdInterval(firstInterval) || isThirdInterval(secondInterval);
+        boolean hasFifth = firstInterval == 7 || secondInterval == 7;
+        return hasThird && hasFifth;
+    }
+
+    private boolean isThirdInterval(int interval) {
+        return interval == 3 || interval == 4;
+    }
+
+    private boolean containsTwoOrThreeCompleteWords(YassRow previous, List<YassRow> rows, YassRow next) {
+        return prop.isUncommonSpacingAfter()
+                ? containsTwoOrThreeTrailingSpaceWords(previous, rows)
+                : containsTwoOrThreeLeadingSpaceWords(previous, rows, next);
+    }
+
+    private boolean containsTwoOrThreeTrailingSpaceWords(YassRow previous, List<YassRow> rows) {
+        if (previous != null && previous.isRegularNote() && !previous.endsWithSpace()) {
+            return false;
+        }
+        int wordCount = 0;
+        for (YassRow row : rows) {
+            if (row.endsWithSpace()) {
+                wordCount++;
+            }
+        }
+        YassRow last = rows.get(rows.size() - 1);
+        return last.endsWithSpace() && wordCount >= 2 && wordCount <= 3;
+    }
+
+    private boolean containsTwoOrThreeLeadingSpaceWords(YassRow previous, List<YassRow> rows, YassRow next) {
+        YassRow first = rows.get(0);
+        boolean startsCompleteWord = previous == null || !previous.isRegularNote() || first.startsWithSpace();
+        if (!startsCompleteWord) {
+            return false;
+        }
+        boolean endsCompleteWord = next == null || !next.isRegularNote() || next.startsWithSpace();
+        if (!endsCompleteWord) {
+            return false;
+        }
+        int wordCount = 1;
+        for (int i = 1; i < rows.size(); i++) {
+            if (rows.get(i).startsWithSpace()) {
+                wordCount++;
+            }
+        }
+        return wordCount >= 2 && wordCount <= 3;
+    }
+
+    private void markAsGolden(List<YassRow> rows) {
+        for (YassRow row : rows) {
+            markAsGolden(row);
+        }
     }
 
     private void markAsGolden(YassRow row) {
@@ -8407,6 +9553,21 @@ public class YassTable extends JTable {
             row.setType("*");
         } else if (row.isRap()) {
             row.setType("G");
+        }
+    }
+
+    private enum GoldenSuggestionType {
+        PITCH_LEAPS,
+        LONG_WORDS
+    }
+
+    private static final class GoldenSuggestion {
+        private final List<YassRow> rows;
+        private final int duration;
+
+        private GoldenSuggestion(List<YassRow> rows, int duration) {
+            this.rows = rows;
+            this.duration = duration;
         }
     }
 

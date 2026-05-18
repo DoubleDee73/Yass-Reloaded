@@ -690,6 +690,9 @@ public class YassSongInfo extends JPanel implements DropTargetListener {
             curbg = null;
             if (standardbg != null) {
                 g2d.drawImage(curbg = standardbg, xx, yy, dw, h, null);
+            } else {
+                g2d.setColor(Color.BLACK);
+                g2d.fillRect(0, 0, dw, dh);
             }
             g2d.translate(dw / 2, dh / 2);
             g2d.rotate(-Math.PI / 6);

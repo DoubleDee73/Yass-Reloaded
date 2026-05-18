@@ -28,7 +28,9 @@ public enum MvsepOutputFormat implements YassEnum {
     FLAC("flac", "FLAC", "2", "flac"),
     WAV("wav", "WAV", "1", "wav"),
     MP3("mp3", "MP3", "0", "mp3"),
-    M4A("m4a", "M4A", "3", "m4a");
+    M4A("m4a", "M4A", "3", "m4a"),
+    OGG_VORBIS("ogg-vorbis", "Ogg/Vorbis", "1", "ogg"),
+    OGG_OPUS("ogg-opus", "Ogg/Opus", "1", "opus");
 
     private final String value;
     private final String label;
@@ -43,6 +45,12 @@ public enum MvsepOutputFormat implements YassEnum {
     }
 
     public static MvsepOutputFormat fromValue(String value) {
+        if ("ogg".equalsIgnoreCase(value) || "vorbis".equalsIgnoreCase(value)) {
+            return OGG_VORBIS;
+        }
+        if ("opus".equalsIgnoreCase(value)) {
+            return OGG_OPUS;
+        }
         for (MvsepOutputFormat format : values()) {
             if (format.value.equalsIgnoreCase(value)) {
                 return format;
@@ -55,8 +63,20 @@ public enum MvsepOutputFormat implements YassEnum {
         return apiValue;
     }
 
+    public String getRemoteApiValue() {
+        return requiresLocalTranscode() ? WAV.apiValue : apiValue;
+    }
+
     public String getExtension() {
         return extension;
+    }
+
+    public String getDownloadExtension() {
+        return requiresLocalTranscode() ? WAV.extension : extension;
+    }
+
+    public boolean requiresLocalTranscode() {
+        return this == OGG_VORBIS || this == OGG_OPUS;
     }
 
     @Override

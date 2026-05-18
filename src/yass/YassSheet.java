@@ -358,6 +358,8 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
     private boolean recordingRollingMode = false;
     private int recordingSavedPitchWindowStart = -1;
     private int recordingSavedPitchWindowSpan = -1;
+    private VerticalPitchViewMode recordingSavedPitchViewMode = null;
+    private boolean recordingSavedPanEnabled = false;
     private static final int RECORDING_STATIC_CHUNK_PX = 64;
     private static final int RECORDING_STATIC_MARGIN_PX = RECORDING_STATIC_CHUNK_PX;
     private BufferedImage recordingStaticLayer = null;
@@ -1850,6 +1852,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
             private int lastDigit;
 
             public void keyTyped(KeyEvent e) {
+                if (e.isConsumed()) {
+                    return;
+                }
                 if (equalsKeyMillis > 0) {
                     e.consume();
                     return;
@@ -1858,6 +1863,9 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
             }
 
             public void keyPressed(KeyEvent e) {
+                if (e.isConsumed()) {
+                    return;
+                }
                 if (isFocusInSongHeader()) {
                     return;
                 }
@@ -2211,8 +2219,6 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                     return;
                 } else if (c == '\'') {
                     table.toggleApostropheEnd();
-                } else if (c == '~') {
-                    table.toggleTildeStart();
                 }
                 dispatch();
             }
@@ -3019,6 +3025,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
             paintPlayerText(gb);
         }
         paintPlayerPosition(gb);
+        paintRecordingTapCursor(gb);
         if (!live) {
             paintStickyMarkers(gb);
         }
@@ -3069,6 +3076,11 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 + " clip=" + (clip == null ? "null" : clip.width + "x" + clip.height));
 
         if (image == null) {
+            refreshing = false;
+            repaint();
+            return;
+        }
+        if (table == null || rect == null || rect.size() < 1) {
             refreshing = false;
             repaint();
             return;
@@ -5991,6 +6003,10 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
             Color currentColor = darkMode ? colorSet[YassSheet.COLOR_NORMAL] : colorSet[YassSheet.COLOR_SHADE];
             int verticalAdjust = 0;
 
+            if (!isPlaying && recordingNoteIndex == -1 && table.isRowSelected(k)) {
+                currentColor = colorSet[YassSheet.COLOR_ACTIVE];
+            }
+
             if (isPlaying || recordingNoteIndex != -1) {
                 boolean isActiveNote = (recordingNoteIndex != -1 && k == recordingNoteIndex) ||
                                        (recordingNoteIndex == -1 && playerPos >= r.x && playerPos < r.x + r.width);
@@ -6354,6 +6370,14 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
     }
 
     public void setRecordingRollingMode(boolean enabled) {
+        boolean wasRecordingRollingMode = this.recordingRollingMode;
+        if (enabled && !wasRecordingRollingMode) {
+            recordingSavedPitchViewMode = verticalPitchViewMode;
+            recordingSavedPanEnabled = pan;
+            if (!isAbsolutePitchViewEnabled()) {
+                setAbsolutePitchViewEnabled(true);
+            }
+        }
         this.recordingRollingMode = enabled;
         lastRecordingTimingLogMs = Long.MIN_VALUE;
         recordingEndPinnedMode = false;
@@ -6374,6 +6398,13 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 recordingSavedPitchWindowStart = -1;
                 recordingSavedPitchWindowSpan = -1;
             }
+        }
+        if (!enabled && wasRecordingRollingMode && recordingSavedPitchViewMode != null) {
+            if (recordingSavedPitchViewMode != VerticalPitchViewMode.ABSOLUTE) {
+                setAbsolutePitchViewEnabled(false);
+                enablePan(recordingSavedPanEnabled);
+            }
+            recordingSavedPitchViewMode = null;
         }
         if (enabled) {
             double anchorMs = playerPos >= 0 ? fromTimeline(playerPos) : 0d;
@@ -8158,11 +8189,13 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
         }
         playerPos = newPlayerPos;
         firePosChanged();
+        boolean recordingViewMoved = false;
         if (recordingRollingMode) {
             double visibleMs = getMaxVisibleMs() - getLeftMs();
             if (Math.abs(visibleMs - RECORDING_WINDOW_MS) > 500d) {
                 double startMs = Math.max(0d, fromTimeline(playerPos) - RECORDING_CURSOR_OFFSET_MS);
                 setVisibleWindowMs(startMs, RECORDING_WINDOW_MS);
+                recordingViewMoved = true;
             }
             Container parent = getParent();
             if (parent instanceof JViewport viewport) {
@@ -8182,7 +8215,12 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 Point view = getViewPosition();
                 if (Math.abs(view.x - targetX) >= 2) {
                     setViewPosition(new Point(targetX, view.y));
+                    recordingViewMoved = true;
                 }
+            }
+            if (recordingViewMoved) {
+                repaint();
+                return;
             }
         }
         if (playerPos > clip.x + clip.width) {

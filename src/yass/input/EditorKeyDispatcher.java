@@ -16,6 +16,7 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
     private final EditorKeyBindingRegistry registry;
     private final KeySequenceTracker sequenceTracker;
     private final Set<Integer> pressedKeyCodes = new HashSet<>();
+    private boolean suppressNextTypedTildeShortcut = false;
 
     public EditorKeyDispatcher(Supplier<Boolean> editorActive,
                                Supplier<EditorInputContext> contextSupplier,
@@ -73,9 +74,10 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
             }
             return false;
         }
+        KeyStroke lookupStroke = normalizeAltGraphDeadKeyStroke(stroke);
         if (e.getID() == KeyEvent.KEY_RELEASED) {
             pressedKeyCodes.remove(e.getKeyCode());
-            EditorCommand releaseCommand = registry.get(stroke, 1);
+            EditorCommand releaseCommand = registry.get(lookupStroke, 1);
             if (releaseCommand == null || !releaseCommand.isEnabled(context)) {
                 return false;
             }
@@ -87,9 +89,9 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
         long nowMs = System.currentTimeMillis();
         boolean repeatedPressWithoutRelease = !pressedKeyCodes.add(e.getKeyCode());
         if (!repeatedPressWithoutRelease) {
-            sequenceTracker.record(stroke, nowMs);
+            sequenceTracker.record(lookupStroke, nowMs);
         }
-        int pressCount = repeatedPressWithoutRelease ? 1 : sequenceTracker.countRecentMatches(stroke, nowMs);
+        int pressCount = repeatedPressWithoutRelease ? 1 : sequenceTracker.countRecentMatches(lookupStroke, nowMs);
         if (isTrackedMultiPressStroke(stroke)) {
             LOGGER.fine("Editor multi-press count: keyCode=" + e.getKeyCode()
                     + ", modifiers=" + stroke.getModifiers()
@@ -97,7 +99,7 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
                     + ", repeatedPressWithoutRelease=" + repeatedPressWithoutRelease
                     + ", focusArea=" + context.focusArea());
         }
-        EditorCommand command = registry.get(stroke, pressCount);
+        EditorCommand command = registry.get(lookupStroke, pressCount);
         if (command == null) {
             if (context.isTypingContext()) {
                 sequenceTracker.clear();
@@ -119,6 +121,9 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
             return false;
         }
         command.execute(context);
+        if (e.getID() == KeyEvent.KEY_PRESSED && isDeadTildeKeyCode(lookupStroke.getKeyCode())) {
+            suppressNextTypedTildeShortcut = true;
+        }
         e.consume();
         return true;
     }
@@ -140,6 +145,9 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
         if (!context.isTypingContext()) {
             return false;
         }
+        if (isAltGraphDeadKeyStroke(stroke)) {
+            return true;
+        }
         int modifiers = stroke.getModifiers();
         return !hasCommandModifier(modifiers);
     }
@@ -148,12 +156,41 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
         return (modifiers & (KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.META_DOWN_MASK)) != 0;
     }
 
+    private KeyStroke normalizeAltGraphDeadKeyStroke(KeyStroke stroke) {
+        if (!isAltGraphDeadKeyStroke(stroke)) {
+            return stroke;
+        }
+        return KeyStroke.getKeyStroke(stroke.getKeyCode(), 0, stroke.isOnKeyRelease());
+    }
+
+    private boolean isAltGraphDeadKeyStroke(KeyStroke stroke) {
+        if (stroke == null || !isDeadTildeKeyCode(stroke.getKeyCode())) {
+            return false;
+        }
+        int modifiers = stroke.getModifiers();
+        boolean altGraph = (modifiers & KeyEvent.ALT_GRAPH_DOWN_MASK) != 0;
+        boolean ctrlAlt = (modifiers & KeyEvent.CTRL_DOWN_MASK) != 0
+                && (modifiers & KeyEvent.ALT_DOWN_MASK) != 0;
+        return altGraph || ctrlAlt;
+    }
+
+    private boolean isDeadTildeKeyCode(int keyCode) {
+        return keyCode == KeyEvent.VK_DEAD_TILDE || keyCode == KeyEvent.VK_DEAD_CIRCUMFLEX;
+    }
+
     private boolean dispatchTypedCharacter(KeyEvent e, EditorInputContext context) {
         char keyChar = e.getKeyChar();
         if (keyChar == KeyEvent.CHAR_UNDEFINED || Character.isISOControl(keyChar)) {
             return false;
         }
-        if (hasCommandModifier(e.getModifiersEx())) {
+        if (suppressNextTypedTildeShortcut) {
+            suppressNextTypedTildeShortcut = false;
+            if (keyChar == '~') {
+                e.consume();
+                return true;
+            }
+        }
+        if (hasBlockingCharacterShortcutModifier(e.getModifiersEx())) {
             return false;
         }
         if (!isCharacterShortcutContext(context)) {
@@ -169,6 +206,14 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
         command.execute(context);
         e.consume();
         return true;
+    }
+
+    private boolean hasBlockingCharacterShortcutModifier(int modifiers) {
+        int commandModifiers = modifiers & (KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.META_DOWN_MASK);
+        if ((modifiers & KeyEvent.ALT_GRAPH_DOWN_MASK) != 0) {
+            commandModifiers &= ~(KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK);
+        }
+        return commandModifiers != 0;
     }
 
     private boolean isCharacterShortcutContext(EditorInputContext context) {

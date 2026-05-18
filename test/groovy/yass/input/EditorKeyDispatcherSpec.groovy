@@ -232,6 +232,117 @@ class EditorKeyDispatcherSpec extends Specification {
         FocusArea.LYRICS_VIEW | KeyEvent.SHIFT_DOWN_MASK | '~'          | 'addEndian'
     }
 
+    def 'dispatches AltGr character shortcuts by typed character'() {
+        given:
+        def focusOwner = new JPanel()
+        KeyboardFocusManager.setCurrentKeyboardFocusManager(new StubKeyboardFocusManager(focusOwner))
+        def registry = new EditorKeyBindingRegistry()
+        def tracker = new KeySequenceTracker(500)
+        def commandCalls = []
+        registry.bind('~' as char,
+                new SimpleEditorCommand('addEndian', { true }, { commandCalls << 'addEndian' }))
+        Supplier<EditorInputContext> contextSupplier = {
+            new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
+        }
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        int altGrModifiers = KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.ALT_GRAPH_DOWN_MASK
+        def event = new KeyEvent(focusOwner, KeyEvent.KEY_TYPED, System.currentTimeMillis(), altGrModifiers,
+                KeyEvent.VK_UNDEFINED, '~' as char)
+
+        when:
+        def handled = dispatcher.dispatchKeyEvent(event)
+
+        then:
+        handled
+        event.consumed
+        commandCalls == ['addEndian']
+    }
+
+    def 'dispatches AltGr dead tilde through the dead key binding'() {
+        given:
+        def focusOwner = new JPanel()
+        KeyboardFocusManager.setCurrentKeyboardFocusManager(new StubKeyboardFocusManager(focusOwner))
+        def registry = new EditorKeyBindingRegistry()
+        def tracker = new KeySequenceTracker(500)
+        def commandCalls = []
+        registry.bind(javax.swing.KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0),
+                new SimpleEditorCommand('addEndian', { true }, { commandCalls << 'addEndian' }))
+        Supplier<EditorInputContext> contextSupplier = {
+            new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
+        }
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        int altGrModifiers = KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.ALT_GRAPH_DOWN_MASK
+        def event = new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), altGrModifiers,
+                KeyEvent.VK_DEAD_TILDE, KeyEvent.CHAR_UNDEFINED)
+
+        when:
+        def handled = dispatcher.dispatchKeyEvent(event)
+
+        then:
+        handled
+        event.consumed
+        commandCalls == ['addEndian']
+    }
+
+    def 'does not dispatch the typed tilde again after handling a dead tilde press'() {
+        given:
+        def focusOwner = new JPanel()
+        KeyboardFocusManager.setCurrentKeyboardFocusManager(new StubKeyboardFocusManager(focusOwner))
+        def registry = new EditorKeyBindingRegistry()
+        def tracker = new KeySequenceTracker(500)
+        def commandCalls = []
+        registry.bind(javax.swing.KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0),
+                new SimpleEditorCommand('addEndian', { true }, { commandCalls << 'deadTilde' }))
+        registry.bind('~' as char,
+                new SimpleEditorCommand('addEndian', { true }, { commandCalls << 'typedTilde' }))
+        Supplier<EditorInputContext> contextSupplier = {
+            new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
+        }
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        int altGrModifiers = KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.ALT_GRAPH_DOWN_MASK
+        def press = new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), altGrModifiers,
+                KeyEvent.VK_DEAD_TILDE, KeyEvent.CHAR_UNDEFINED)
+        def typed = new KeyEvent(focusOwner, KeyEvent.KEY_TYPED, System.currentTimeMillis(), 0,
+                KeyEvent.VK_UNDEFINED, '~' as char)
+
+        when:
+        def pressHandled = dispatcher.dispatchKeyEvent(press)
+        def typedHandled = dispatcher.dispatchKeyEvent(typed)
+
+        then:
+        pressHandled
+        press.consumed
+        typedHandled
+        typed.consumed
+        commandCalls == ['deadTilde']
+    }
+
+    def 'does not dispatch AltGr dead tilde while typing lyrics'() {
+        given:
+        def focusOwner = new JPanel()
+        KeyboardFocusManager.setCurrentKeyboardFocusManager(new StubKeyboardFocusManager(focusOwner))
+        def registry = new EditorKeyBindingRegistry()
+        def tracker = new KeySequenceTracker(500)
+        def commandCalls = []
+        registry.bind(javax.swing.KeyStroke.getKeyStroke(KeyEvent.VK_DEAD_TILDE, 0),
+                new SimpleEditorCommand('addEndian', { true }, { commandCalls << 'addEndian' }))
+        Supplier<EditorInputContext> contextSupplier = {
+            new EditorInputContext(FocusArea.LYRICS_EDIT, true, false, false, false, false, true, false)
+        }
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        int altGrModifiers = KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.ALT_GRAPH_DOWN_MASK
+        def event = new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), altGrModifiers,
+                KeyEvent.VK_DEAD_TILDE, KeyEvent.CHAR_UNDEFINED)
+
+        when:
+        def handled = dispatcher.dispatchKeyEvent(event)
+
+        then:
+        !handled
+        !event.consumed
+        commandCalls.isEmpty()
+    }
+
     def 'does not dispatch character shortcuts while typing or outside editor content'() {
         given:
         def focusOwner = new JPanel()

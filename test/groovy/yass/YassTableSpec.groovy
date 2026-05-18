@@ -21,6 +21,8 @@ package yass
 
 import net.davidashen.text.Hyphenator
 import spock.lang.Specification
+import yass.analysis.PitchDetector
+import yass.autocorrect.YassAutoCorrect
 
 import javax.swing.*
 import javax.swing.table.TableModel 
@@ -55,6 +57,367 @@ class YassTableSpec extends Specification {
 
         then:
         yassTable.getSelectedRows() == [1, 2] as int[]
+    }
+
+    def 'splitRowsByPitch splits a held syllable at the first stable pitch segment change'() {
+        given:
+        YassTable yassTable = tableWithSingleNote(690, 14, 1, 'down ')
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 690,
+                [4, 4, 4, 4, 1, 0, 1, 1, 0, 1, 2, 0, 1, 1])
+
+        when:
+        yassTable.splitRowsByPitch(pitchData)
+
+        then:
+        yassTable.getRowAt(1).getBeatInt() == 690
+        yassTable.getRowAt(1).getLengthInt() == 3
+        yassTable.getRowAt(1).getHeightInt() == 4
+        yassTable.getRowAt(1).getText() == 'dow'
+        yassTable.getRowAt(2).getBeatInt() == 694
+        yassTable.getRowAt(2).getLengthInt() == 10
+        yassTable.getRowAt(2).getHeightInt() == 1
+        yassTable.getRowAt(2).getText() == '~n' + YassRow.SPACE
+    }
+
+    def 'splitRowsByPitch waits for a stable target pitch and ignores transition beats'() {
+        given:
+        YassTable yassTable = tableWithSingleNote(1801, 15, 1, 'round ')
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 1801,
+                [4, 4, 4, 4, 3, 0, 1, 1, 1, 2, 1, 1, 1, 1, 1])
+
+        when:
+        yassTable.splitRowsByPitch(pitchData)
+
+        then:
+        yassTable.getRowAt(1).getBeatInt() == 1801
+        yassTable.getRowAt(1).getLengthInt() == 5
+        yassTable.getRowAt(1).getHeightInt() == 4
+        yassTable.getRowAt(1).getText() == 'rou'
+        yassTable.getRowAt(2).getBeatInt() == 1807
+        yassTable.getRowAt(2).getLengthInt() == 9
+        yassTable.getRowAt(2).getHeightInt() == 1
+        yassTable.getRowAt(2).getText() == '~nd' + YassRow.SPACE
+    }
+
+    def 'splitRowsByPitch maps matching syllable and pitch segment counts one to one'() {
+        given:
+        YassTable yassTable = tableWithSingleNote(100, 6, 4, 'pudding ', 'pud\u00ADding')
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 100,
+                [4, 4, 4, 7, 7, 7])
+
+        when:
+        yassTable.splitRowsByPitch(pitchData)
+
+        then:
+        yassTable.getRowAt(1).getBeatInt() == 100
+        yassTable.getRowAt(1).getLengthInt() == 2
+        yassTable.getRowAt(1).getHeightInt() == 4
+        yassTable.getRowAt(1).getText() == 'pud'
+        yassTable.getRowAt(2).getBeatInt() == 103
+        yassTable.getRowAt(2).getLengthInt() == 3
+        yassTable.getRowAt(2).getHeightInt() == 7
+        yassTable.getRowAt(2).getText() == 'ding' + YassRow.SPACE
+    }
+
+    def 'splitRowsByPitch maps the first syllable to the first segment and the remaining syllables to the second segment'() {
+        given:
+        YassTable yassTable = tableWithSingleNote(200, 7, 2, 'amazing ', 'a\u00ADma\u00ADzing')
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 200,
+                [2, 2, 2, 5, 5, 5, 5])
+
+        when:
+        yassTable.splitRowsByPitch(pitchData)
+
+        then:
+        yassTable.getRowAt(1).getBeatInt() == 200
+        yassTable.getRowAt(1).getLengthInt() == 2
+        yassTable.getRowAt(1).getHeightInt() == 2
+        yassTable.getRowAt(1).getText() == 'a'
+        yassTable.getRowAt(2).getBeatInt() == 203
+        yassTable.getRowAt(2).getLengthInt() == 4
+        yassTable.getRowAt(2).getHeightInt() == 5
+        yassTable.getRowAt(2).getText() == 'mazing' + YassRow.SPACE
+    }
+
+    def 'splitRowsByPitch moves a final consonant cluster to the last pitch segment'() {
+        given:
+        YassTable yassTable = tableWithSingleNote(300, 6, 4, text)
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 300,
+                [4, 4, 4, 7, 7, 7])
+
+        when:
+        yassTable.splitRowsByPitch(pitchData)
+
+        then:
+        yassTable.getRowAt(1).getBeatInt() == 300
+        yassTable.getRowAt(1).getLengthInt() == 2
+        yassTable.getRowAt(1).getHeightInt() == 4
+        yassTable.getRowAt(1).getText() == expectedLeft
+        yassTable.getRowAt(2).getBeatInt() == 303
+        yassTable.getRowAt(2).getLengthInt() == 3
+        yassTable.getRowAt(2).getHeightInt() == 7
+        yassTable.getRowAt(2).getText() == expectedRight + YassRow.SPACE
+
+        where:
+        text       || expectedLeft | expectedRight
+        'Ground '  || 'Grou'       | '~nd'
+        'Point '   || 'Poi'        | '~nt'
+        'jump '    || 'ju'         | '~mp'
+    }
+
+    def 'splitRowsByPitch keeps a two letter word intact before the tilde continuation'() {
+        given:
+        YassTable yassTable = tableWithSingleNote(400, 6, 4, 'is ')
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 400,
+                [4, 4, 4, 7, 7, 7])
+
+        when:
+        yassTable.splitRowsByPitch(pitchData)
+
+        then:
+        yassTable.getRowAt(1).getText() == 'is'
+        yassTable.getRowAt(2).getText() == '~' + YassRow.SPACE
+    }
+
+    def 'splitRowsByPitch moves contraction endings to the last pitch segment'() {
+        given:
+        YassTable yassTable = tableWithSingleNote(450, 6, 4, text)
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 450,
+                [4, 4, 4, 7, 7, 7])
+
+        when:
+        yassTable.splitRowsByPitch(pitchData)
+
+        then:
+        yassTable.getRowAt(1).getText() == expectedLeft
+        yassTable.getRowAt(2).getText() == expectedRight + YassRow.SPACE
+
+        where:
+        text          || expectedLeft | expectedRight
+        "I'll "       || 'I'          | "~'ll"
+        "won't "      || 'won'        | "~'t"
+        "I\u2019ll "  || 'I'          | "~\u2019ll"
+    }
+
+    def 'splitRowsByPitch puts final consonant clusters on the last of several pitch segments'() {
+        given:
+        YassTable yassTable = tableWithSingleNote(500, 9, 16, 'friend ')
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 500,
+                [16, 16, 16, 14, 14, 14, 11, 11, 11])
+
+        when:
+        yassTable.splitRowsByPitch(pitchData)
+
+        then:
+        yassTable.getRowAt(1).getText() == 'frie'
+        yassTable.getRowAt(2).getText() == '~'
+        yassTable.getRowAt(3).getText() == '~nd' + YassRow.SPACE
+    }
+
+    def 'splitRowsByPitch keeps final consonant cluster and punctuation when pitch tail is not stable enough'() {
+        given:
+        YassTable yassTable = tableWithSingleNote(17, 7, 11, 'wind, ')
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 17,
+                [11, 11, 11, 11, 9, 8, 7])
+
+        when:
+        yassTable.splitRowsByPitch(pitchData)
+
+        then:
+        yassTable.getRowAt(1).getBeatInt() == 17
+        yassTable.getRowAt(1).getLengthInt() == 3
+        yassTable.getRowAt(1).getHeightInt() == 11
+        yassTable.getRowAt(1).getText() == 'wi'
+        yassTable.getRowAt(2).getBeatInt() == 21
+        yassTable.getRowAt(2).getLengthInt() == 3
+        yassTable.getRowAt(2).getHeightInt() == 11
+        yassTable.getRowAt(2).getText() == '~nd,' + YassRow.SPACE
+    }
+
+    def 'splitRowsByPitch applies the changed pitch when legacy sustained-run fallback is used'() {
+        given:
+        YassTable yassTable = tableWithSingleNote(316, 12, 6, 'sound ')
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 316,
+                [31, 5, 6, 6, 5, 6, 8, 8, 8, 8, 7, 6])
+
+        when:
+        yassTable.splitRowsByPitch(pitchData)
+
+        then:
+        yassTable.getRowAt(1).getBeatInt() == 316
+        yassTable.getRowAt(1).getLengthInt() == 5
+        yassTable.getRowAt(1).getHeightInt() == 6
+        yassTable.getRowAt(1).getText() == 'sou'
+        yassTable.getRowAt(2).getBeatInt() == 322
+        yassTable.getRowAt(2).getLengthInt() == 6
+        yassTable.getRowAt(2).getHeightInt() == 8
+        yassTable.getRowAt(2).getText() == '~nd' + YassRow.SPACE
+    }
+
+    def 'splitRows keeps a tilde continuation on the right when splitting it again'() {
+        given:
+        YassTable yassTable = tableWithSingleNote(600, 6, 4, '~n ')
+
+        when:
+        yassTable.splitRows()
+
+        then:
+        yassTable.getRowAt(1).getBeatInt() == 600
+        yassTable.getRowAt(1).getLengthInt() == 2
+        yassTable.getRowAt(1).getHeightInt() == 4
+        yassTable.getRowAt(1).getText() == '~'
+        yassTable.getRowAt(2).getBeatInt() == 603
+        yassTable.getRowAt(2).getLengthInt() == 3
+        yassTable.getRowAt(2).getHeightInt() == 4
+        yassTable.getRowAt(2).getText() == '~n' + YassRow.SPACE
+    }
+
+    def 'shiftEndingLeft keeps a tilde in the source note when moving its only letter'() {
+        given:
+        YassTable yassTable = tableWithTwoNotes('O', 'f')
+        yassTable.setRowSelectionInterval(0, 1)
+
+        when:
+        yassTable.shiftEndingLeft()
+
+        then:
+        yassTable.getRowAt(0).getText() == 'Of'
+        yassTable.getRowAt(1).getText() == '~'
+    }
+
+    def 'shiftEnding keeps a tilde in the source note when moving its only letter'() {
+        given:
+        YassTable yassTable = tableWithTwoNotes('g', 'h')
+        yassTable.setRowSelectionInterval(0, 1)
+
+        when:
+        yassTable.shiftEnding()
+
+        then:
+        yassTable.getRowAt(0).getText() == '~'
+        yassTable.getRowAt(1).getText() == '~gh'
+    }
+
+    def 'toggleTilde removes a leading tilde before a sung vowel fragment'() {
+        given:
+        YassTable yassTable = tableWithSingleNote(497, 2, 11, '~o')
+
+        when:
+        yassTable.toggleTilde()
+
+        then:
+        yassTable.getRowAt(1).getText() == 'o'
+    }
+
+    def 'suggestGoldenNotes starts with pitch leaps before long words'() {
+        given:
+        YassTable yassTable = tableForGoldenSuggestions([
+                note(':', 0, 2, 0, 'risk '),
+                note(':', 3, 2, 7, 'it '),
+                note(':', 6, 2, 3, 'all '),
+                note(':', 9, 5, 3, 'later ')
+        ])
+        yassTable.setGoldenPoints(0, 1250, 250, 0, 6, '+6')
+
+        when:
+        yassTable.suggestGoldenNotes()
+
+        then:
+        yassTable.getRowAt(0).getType() == '*'
+        yassTable.getRowAt(1).getType() == '*'
+        yassTable.getRowAt(2).getType() == '*'
+        yassTable.getRowAt(3).getType() == ':'
+    }
+
+    def 'suggestGoldenNotes alternates pitch leaps and long words'() {
+        given:
+        YassTable yassTable = tableForGoldenSuggestions([
+                note(':', 0, 2, 0, 'risk '),
+                note(':', 3, 2, 7, 'it '),
+                note(':', 6, 2, 3, 'all '),
+                note(':', 9, 5, 3, 'later ')
+        ])
+        yassTable.setGoldenPoints(0, 1250, 250, 0, 11, '+11')
+
+        when:
+        yassTable.suggestGoldenNotes()
+
+        then:
+        (0..3).collect { yassTable.getRowAt(it).getType() } == ['*', '*', '*', '*']
+    }
+
+    def 'suggestGoldenNotes uses a shorter pitch leap when a long word no longer fits'() {
+        given:
+        YassTable yassTable = tableForGoldenSuggestions([
+                note(':', 0, 2, 0, 'risk '),
+                note(':', 3, 2, 7, 'it '),
+                note(':', 6, 2, 3, 'all '),
+                note(':', 9, 5, 3, 'later '),
+                note(':', 15, 1, 2, 'ri'),
+                note(':', 17, 1, 9, '~sk '),
+                note(':', 19, 2, 5, 'it ')
+        ])
+        yassTable.setGoldenPoints(0, 1250, 250, 0, 10, '+10')
+
+        when:
+        yassTable.suggestGoldenNotes()
+
+        then:
+        (0..2).collect { yassTable.getRowAt(it).getType() } == ['*', '*', '*']
+        yassTable.getRowAt(3).getType() == ':'
+        (4..6).collect { yassTable.getRowAt(it).getType() } == ['*', '*', '*']
+    }
+
+    def 'suggestGoldenNotes converts rap pitch leaps to rap golden notes'() {
+        given:
+        YassTable yassTable = tableForGoldenSuggestions([
+                note('R', 0, 2, 0, 'risk '),
+                note('R', 3, 2, 7, 'it '),
+                note('R', 6, 2, 3, 'all ')
+        ])
+        yassTable.setGoldenPoints(0, 1250, 250, 0, 6, '+6')
+
+        when:
+        yassTable.suggestGoldenNotes()
+
+        then:
+        (0..2).collect { yassTable.getRowAt(it).getType() } == ['G', 'G', 'G']
+    }
+
+    def 'suggestGoldenNotes ignores freestyle and already golden notes'() {
+        given:
+        YassTable yassTable = tableForGoldenSuggestions([
+                note('*', 0, 5, 0, 'golden '),
+                note('F', 6, 5, 0, 'free '),
+                note(':', 12, 2, 0, 'risk '),
+                note(':', 15, 2, 7, 'it '),
+                note(':', 18, 2, 3, 'all ')
+        ])
+        yassTable.setGoldenPoints(0, 1250, 250, 0, 6, '+6')
+
+        when:
+        yassTable.suggestGoldenNotes()
+
+        then:
+        (0..4).collect { yassTable.getRowAt(it).getType() } == ['*', 'F', '*', '*', '*']
+    }
+
+    def 'suggestGoldenNotes honors leading-space word boundaries'() {
+        given:
+        YassTable yassTable = tableForGoldenSuggestions([
+                note(':', 0, 2, 0, ' risk'),
+                note(':', 3, 2, 7, ' it'),
+                note(':', 6, 2, 3, ' all'),
+                note(':', 9, 5, 3, ' later')
+        ], false)
+        yassTable.setGoldenPoints(0, 1250, 250, 0, 6, '+6')
+
+        when:
+        yassTable.suggestGoldenNotes()
+
+        then:
+        (0..2).collect { yassTable.getRowAt(it).getType() } == ['*', '*', '*']
+        yassTable.getRowAt(3).getType() == ':'
     }
 
     def 'isSongWithTrailingSpaces should check, if a song has trailing spaces'() {
@@ -507,6 +870,33 @@ class YassTableSpec extends Specification {
         6      || ['One', '~ ', 'two ', 'three ', '_', 'Four ', 'five', '_', '~ ']
     }
 
+    def 'togglePageBreak publishes capitalized lyrics in the table model event'() {
+        given:
+        I18.setDefaultLanguage()
+        YassTableModel ytm = new YassTableModel()
+        ytm.addRow(new YassRow(':', '0', '4', '10', 'hello '.replace(' ' as char, YassRow.SPACE)))
+        ytm.addRow(new YassRow(':', '5', '4', '10', 'world '.replace(' ' as char, YassRow.SPACE)))
+        ytm.addRow(new YassRow('E', '', '', '', ''))
+
+        and:
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> true
+            getBooleanProperty('capitalize-rows') >> true
+        }
+        YassTable yassTable = new YassTable(ytm, props)
+        yassTable.setModel(ytm)
+        yassTable.setRowSelectionInterval(1, 1)
+        List<String> lyricsSnapshots = []
+        ytm.addTableModelListener { lyricsSnapshots << yassTable.getText() }
+
+        when:
+        yassTable.togglePageBreak()
+
+        then:
+        yassTable.getRowAt(2).getText() == 'World' + YassRow.SPACE
+        lyricsSnapshots == ['hello\nWorld']
+    }
+
     def 'getText retrieves the text of a song with Legacy spacing'() {
         given:
         YassTableModel ytm = new YassTableModel()
@@ -608,6 +998,82 @@ class YassTableSpec extends Specification {
                 ':\t9\t3\t20\td \n' +
                 ':\t14\t2\t20\te \n'  | 5        || ['One', '~ ', 'two ', 'a ', 'b ', 'c ', 'd ', 'e ', '_', 'Four ', 'five', '~ ']
         'hello b c d\ne f g h\n'      | 5        || ['One', '~ ', 'two ', 'he', 'lo ', 'b ', 'c ', 'd ', '_', 'e ', 'f ', 'g ', 'h ', '_', 'Four ', 'five', '~ ']
+    }
+
+    def 'insertLyricsWithVocalPitchAtBeat replaces the local note with aligned syllables inside the next-note gap'() {
+        given:
+        YassTable yassTable = tableForInsertedLyrics([
+                note(':', 100, 4, 0, 'old '),
+                note(':', 104, 4, 0, 'next ')
+        ], ['hello': 'hel\u00ADlo'])
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 100, [5, 5, 7, 7])
+
+        when:
+        def result = yassTable.insertLyricsWithVocalPitchAtBeat('hello', 100, pitchData)
+
+        then:
+        result.status() == YassTable.InsertedLyricsStatus.INSERTED
+        noteTexts(yassTable) == ['hel', 'lo ', 'next ']
+        noteBeats(yassTable) == [100, 102, 104]
+        noteLengths(yassTable) == [1, 1, 4]
+        notePitches(yassTable)[0..1] == [5, 7]
+    }
+
+    def 'insertLyricsWithVocalPitchAtBeat rejects text with more syllables than the local gap can hold'() {
+        given:
+        YassTable yassTable = tableForInsertedLyrics([
+                note(':', 100, 4, 0, 'old '),
+                note(':', 104, 4, 0, 'next ')
+        ], [
+                'hello'   : 'hel\u00ADlo',
+                'darkness': 'dark\u00ADness'
+        ])
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 100, [5, 5, 7, 7])
+
+        when:
+        def result = yassTable.insertLyricsWithVocalPitchAtBeat('hello darkness', 100, pitchData)
+
+        then:
+        result.status() == YassTable.InsertedLyricsStatus.TOO_MANY_SYLLABLES
+        result.syllableCount() == 4
+        result.capacity() == 2
+        noteTexts(yassTable) == ['old ', 'next ']
+        noteBeats(yassTable) == [100, 104]
+    }
+
+    def 'insertLyricsWithVocalPitchAtBeat preserves a page break while using the first note after it as boundary'() {
+        given:
+        YassTable yassTable = tableForInsertedLyrics([
+                note(':', 100, 1, 0, 'old '),
+                new YassRow('-', '103', '', '', ''),
+                note(':', 108, 4, 0, 'next ')
+        ], ['hello': 'hel\u00ADlo'])
+        List<PitchDetector.PitchData> pitchData = pitchFramesByBeat(yassTable, 100, [5, 5, 7, 7, 7, 7, 7, 7])
+
+        when:
+        def result = yassTable.insertLyricsWithVocalPitchAtBeat('hello', 100, pitchData)
+
+        then:
+        result.status() == YassTable.InsertedLyricsStatus.INSERTED
+        pageBreakBeats(yassTable) == [103]
+        noteTexts(yassTable) == ['hel', 'lo ', 'next ']
+        noteBeats(yassTable) == [100, 102, 108]
+    }
+
+    def 'insertLyricsWithVocalPitchAtBeat rejects windows without usable pitch frames'() {
+        given:
+        YassTable yassTable = tableForInsertedLyrics([
+                note(':', 100, 4, 0, 'old '),
+                note(':', 104, 4, 0, 'next ')
+        ], ['hello': 'hel\u00ADlo'])
+
+        when:
+        def result = yassTable.insertLyricsWithVocalPitchAtBeat('hello', 100, [])
+
+        then:
+        result.status() == YassTable.InsertedLyricsStatus.NO_USABLE_PITCH_DATA
+        noteTexts(yassTable) == ['old ', 'next ']
+        noteBeats(yassTable) == [100, 104]
     }
 
     def 'calculateNewGap should add a Gap'() {
@@ -827,6 +1293,127 @@ class YassTableSpec extends Specification {
         YassTable yassTable = new YassTable(ytm, Stub(YassProperties))
         yassTable.setModel(ytm)
         yassTable
+    }
+
+    private YassTable tableWithSingleNote(int beat, int length, int pitch, String text,
+                                          String hyphenated = null) {
+        I18.setDefaultLanguage()
+        YassTableModel ytm = new YassTableModel()
+        ytm.addRow(new YassRow(':', beat as String, length as String, pitch as String,
+                text.replace(' ' as char, YassRow.SPACE)))
+        ytm.addRow(new YassRow('E', '', '', '', ''))
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> true
+        }
+        YassTable yassTable = new YassTable(ytm, props)
+        yassTable.setModel(ytm)
+        yassTable.setBPM(236d)
+        yassTable.setAutoCorrect(Stub(YassAutoCorrect) {
+            isTouchingSyllables() >> true
+        })
+        yassTable.setHyphenator(Stub(YassHyphenator) {
+            hyphenateWord(_ as String) >> { String word -> hyphenated == null ? word : hyphenated }
+        })
+        yassTable.setRowSelectionInterval(1, 1)
+        yassTable
+    }
+
+    private YassTable tableWithTwoNotes(String firstText, String secondText) {
+        I18.setDefaultLanguage()
+        YassTableModel ytm = new YassTableModel()
+        ytm.addRow(new YassRow(':', '0', '4', '10', firstText.replace(' ' as char, YassRow.SPACE)))
+        ytm.addRow(new YassRow(':', '5', '4', '10', secondText.replace(' ' as char, YassRow.SPACE)))
+        ytm.addRow(new YassRow('E', '', '', '', ''))
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> true
+        }
+        YassTable yassTable = new YassTable(ytm, props)
+        yassTable.setModel(ytm)
+        yassTable
+    }
+
+    private YassTable tableForGoldenSuggestions(List<YassRow> rows, boolean uncommonSpacingAfter = true) {
+        I18.setDefaultLanguage()
+        YassTableModel ytm = new YassTableModel()
+        rows.each { ytm.addRow(it) }
+        ytm.addRow(new YassRow('E', '', '', '', ''))
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> uncommonSpacingAfter
+        }
+        YassTable yassTable = new YassTable(ytm, props)
+        yassTable.setModel(ytm)
+        yassTable
+    }
+
+    private static YassRow note(String type, int beat, int length, int pitch, String text) {
+        new YassRow(type, beat as String, length as String, pitch as String,
+                text.replace(' ' as char, YassRow.SPACE))
+    }
+
+    private YassTable tableForInsertedLyrics(List<YassRow> rows, Map<String, String> hyphenations) {
+        I18.setDefaultLanguage()
+        YassTableModel ytm = new YassTableModel()
+        rows.each { ytm.addRow(it) }
+        ytm.addRow(new YassRow('E', '', '', '', ''))
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> true
+        }
+        YassTable yassTable = new YassTable(ytm, props)
+        yassTable.setModel(ytm)
+        yassTable.setBPM(60d)
+        yassTable.gap = 0
+        YassHyphenator hyphenator = Stub(YassHyphenator) {
+            hyphenateWord(_ as String) >> { String word -> hyphenations.get(word, word) }
+        }
+        yassTable.setHyphenator(hyphenator)
+        yassTable.yassUtils = new YassUtils(hyphenator: hyphenator)
+        yassTable.yassUtils.setDefaultLength(1)
+        yassTable.yassUtils.setSpacingAfter(true)
+        yassTable
+    }
+
+    private static List<String> noteTexts(YassTable table) {
+        (0..<table.rowCount)
+                .collect { table.getRowAt(it) }
+                .findAll { it?.note }
+                .collect { it.text.replace(YassRow.SPACE, ' ' as char) }
+    }
+
+    private static List<Integer> noteBeats(YassTable table) {
+        (0..<table.rowCount)
+                .collect { table.getRowAt(it) }
+                .findAll { it?.note }
+                .collect { it.beatInt }
+    }
+
+    private static List<Integer> noteLengths(YassTable table) {
+        (0..<table.rowCount)
+                .collect { table.getRowAt(it) }
+                .findAll { it?.note }
+                .collect { it.lengthInt }
+    }
+
+    private static List<Integer> notePitches(YassTable table) {
+        (0..<table.rowCount)
+                .collect { table.getRowAt(it) }
+                .findAll { it?.note }
+                .collect { it.heightInt }
+    }
+
+    private static List<Integer> pageBreakBeats(YassTable table) {
+        (0..<table.rowCount)
+                .collect { table.getRowAt(it) }
+                .findAll { it?.pageBreak }
+                .collect { it.beatInt }
+    }
+
+    private static List<PitchDetector.PitchData> pitchFramesByBeat(YassTable table, int startBeat, List<Integer> pitches) {
+        List<PitchDetector.PitchData> frames = []
+        pitches.eachWithIndex { int pitch, int index ->
+            double time = (table.beatToMs(startBeat + index) + 1d) / 1000d
+            frames.add(new PitchDetector.PitchData(time as float, pitch, 'A', 440d))
+        }
+        frames
     }
 
     private static List<YassRow> initSong1() {

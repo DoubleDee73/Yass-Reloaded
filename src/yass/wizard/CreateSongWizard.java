@@ -930,7 +930,7 @@ public class CreateSongWizard extends Wizard {
         ClipboardLyricsDiffDialog dialog = new ClipboardLyricsDiffDialog(getDialog(), transcriptText, plainLyrics);
         ClipboardLyricsDiffDialog.Result diffResult = dialog.showDialog();
         if (diffResult != null) {
-            applyLyricsTexts(diffResult.transcriptText(), diffResult.clipboardText());
+            applyLyricsTexts(diffResult.transcriptText(), diffResult.clipboardText(), "#LRCLIB");
             if (lyrics != null) {
                 lyrics.setWizardStatusText(I18.get("create_lyrics_lrclib_compare_ready"));
                 lyrics.refreshIntegrationAvailability();
@@ -939,6 +939,10 @@ public class CreateSongWizard extends Wizard {
     }
 
     private void applyLyricsTexts(String transcriptStructureText, String finalLyricsText) {
+        applyLyricsTexts(transcriptStructureText, finalLyricsText, null);
+    }
+
+    private void applyLyricsTexts(String transcriptStructureText, String finalLyricsText, String textSourceTag) {
         String normalizedFinalLyrics = normalizeClipboardLyrics(finalLyricsText);
         String normalizedTranscriptStructure = normalizeClipboardLyrics(transcriptStructureText);
         if (wizardTranscriptionState != null && wizardTranscriptionState.getTranscriptionResult() != null) {
@@ -950,6 +954,9 @@ public class CreateSongWizard extends Wizard {
                 rewritten = rewriteService.applyLyricsToStructuredTranscript(structuredTranscript, normalizedFinalLyrics);
             } else {
                 rewritten = rewriteService.rewrite(baseTranscript, normalizedFinalLyrics);
+            }
+            if (StringUtils.isNotBlank(textSourceTag)) {
+                rewritten = rewritten.withTextSourceTag(textSourceTag);
             }
             wizardTranscriptionState = wizardTranscriptionState.withTranscriptionResult(rewritten);
             applyWizardTranscriptionState(wizardTranscriptionState);

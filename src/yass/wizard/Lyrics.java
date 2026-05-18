@@ -27,6 +27,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import yass.*;
 import yass.analysis.SubtitleParser;
 import yass.alignment.TranscriptNoteRebuildService;
+import yass.integration.transcription.SubtitleTranscriptionAdapter;
 import yass.integration.transcription.openai.OpenAiTranscriptionResult;
 
 import javax.swing.*;
@@ -270,6 +271,9 @@ public class Lyrics extends JPanel {
             transcriptionResult = null;
             return;
         }
+        if (transcriptionResult != null) {
+            return;
+        }
         java.io.File subtitleFile = new java.io.File(subtitlePath);
         if (subtitleFile.exists()) {
             // This check prevents re-parsing if the lyrics area already has content from this file.
@@ -277,7 +281,7 @@ public class Lyrics extends JPanel {
                 return;
             }
             subtitles = SubtitleParser.parse(subtitleFile);
-            transcriptionResult = null;
+            transcriptionResult = new SubtitleTranscriptionAdapter().fromSubtitles(subtitleFile);
             if (!subtitles.isEmpty()) {
                 String lyricsText = String.join("\n", subtitles.values());
                 setText(lyricsText);

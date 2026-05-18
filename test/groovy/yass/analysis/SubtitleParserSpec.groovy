@@ -25,6 +25,28 @@ Hello there, General Kenobi
         Files.deleteIfExists(subtitleFile)
     }
 
+    def "parseCues preserves cue end timestamps"() {
+        given:
+        def subtitleFile = Files.createTempFile("cue-times", ".srt")
+        subtitleFile.toFile().text = """1
+00:00:01,250 --> 00:00:03,750
+Hello timing
+
+"""
+
+        when:
+        def cues = SubtitleParser.parseCues(subtitleFile.toFile())
+
+        then:
+        cues.size() == 1
+        cues[0].startMs() == 1250
+        cues[0].endMs() == 3750
+        cues[0].text() == "Hello timing"
+
+        cleanup:
+        Files.deleteIfExists(subtitleFile)
+    }
+
     def "parse normalizes subtitles that are almost entirely all caps"() {
         given:
         def subtitleFile = Files.createTempFile("all-caps", ".srt")

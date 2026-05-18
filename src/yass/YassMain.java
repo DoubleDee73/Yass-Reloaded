@@ -93,8 +93,71 @@ public class YassMain extends JFrame {
         }
         
         YassLogger.init( userDir.getAbsolutePath() + File.separator + "log.txt");
+        logRuntimeGraphicsDiagnostics();
         checkAudio();
         initLater(argv);
+    }
+
+    private static void logRuntimeGraphicsDiagnostics() {
+        LOGGER.info("[GraphicsDebug] java.version=" + System.getProperty("java.version")
+                + ", java.vendor=" + System.getProperty("java.vendor")
+                + ", java.vm.name=" + System.getProperty("java.vm.name")
+                + ", os.name=" + System.getProperty("os.name")
+                + ", os.version=" + System.getProperty("os.version")
+                + ", os.arch=" + System.getProperty("os.arch"));
+        LOGGER.info("[GraphicsDebug] java2d d3d=" + System.getProperty("sun.java2d.d3d")
+                + ", opengl=" + System.getProperty("sun.java2d.opengl")
+                + ", noddraw=" + System.getProperty("sun.java2d.noddraw")
+                + ", ddoffscreen=" + System.getProperty("sun.java2d.ddoffscreen")
+                + ", uiScale=" + System.getProperty("sun.java2d.uiScale"));
+        try {
+            LookAndFeel lookAndFeel = UIManager.getLookAndFeel();
+            LOGGER.info("[GraphicsDebug] lookAndFeel="
+                    + (lookAndFeel == null ? "<none>" : lookAndFeel.getClass().getName())
+                    + ", lightweightPopups=" + JPopupMenu.getDefaultLightWeightPopupEnabled()
+                    + ", headless=" + GraphicsEnvironment.isHeadless());
+        } catch (Exception ex) {
+            LOGGER.info("[GraphicsDebug] Could not read Swing look and feel diagnostics: " + ex.getMessage());
+        }
+        try {
+            Toolkit toolkit = Toolkit.getDefaultToolkit();
+            LOGGER.info("[GraphicsDebug] toolkit=" + toolkit.getClass().getName()
+                    + ", screenResolution=" + toolkit.getScreenResolution()
+                    + ", screenSize=" + toolkit.getScreenSize().width + "x" + toolkit.getScreenSize().height);
+        } catch (Exception ex) {
+            LOGGER.info("[GraphicsDebug] Could not read toolkit diagnostics: " + ex.getMessage());
+        }
+        try {
+            GraphicsEnvironment environment = GraphicsEnvironment.getLocalGraphicsEnvironment();
+            GraphicsDevice defaultDevice = environment.getDefaultScreenDevice();
+            logGraphicsDevice("default", defaultDevice);
+            GraphicsDevice[] devices = environment.getScreenDevices();
+            for (int i = 0; i < devices.length; i++) {
+                logGraphicsDevice("screen[" + i + "]", devices[i]);
+            }
+        } catch (Exception ex) {
+            LOGGER.info("[GraphicsDebug] Could not read graphics device diagnostics: " + ex.getMessage());
+        }
+    }
+
+    private static void logGraphicsDevice(String label, GraphicsDevice device) {
+        if (device == null) {
+            LOGGER.info("[GraphicsDebug] " + label + "=<none>");
+            return;
+        }
+        DisplayMode displayMode = device.getDisplayMode();
+        GraphicsConfiguration configuration = device.getDefaultConfiguration();
+        Rectangle bounds = configuration == null ? null : configuration.getBounds();
+        LOGGER.info("[GraphicsDebug] " + label
+                + " id=" + device.getIDstring()
+                + ", type=" + device.getType()
+                + ", displayMode=" + (displayMode == null ? "<none>"
+                        : displayMode.getWidth() + "x" + displayMode.getHeight()
+                        + "x" + displayMode.getBitDepth() + "@" + displayMode.getRefreshRate())
+                + ", bounds=" + (bounds == null ? "<none>"
+                        : bounds.x + "," + bounds.y + " " + bounds.width + "x" + bounds.height)
+                + ", defaultTransform=" + (configuration == null ? "<none>" : configuration.getDefaultTransform())
+                + ", normalizingTransform=" + (configuration == null ? "<none>" : configuration.getNormalizingTransform()));
     }
 
     private static void initLater(final String[] argv) {
@@ -630,7 +693,7 @@ public class YassMain extends JFrame {
         sheetViewportPanel.add(sheetPane, BorderLayout.CENTER);
         sheetViewportPanel.add(verticalPitchScrollbar, BorderLayout.EAST);
         Timer resizeRefreshTimer = new Timer(120, e -> {
-            if (actions == null || actions.getTable() == null) {
+            if (actions == null || actions.getTable() == null || sheet.getActiveTable() == null) {
                 return;
             }
             sheet.refreshImage();

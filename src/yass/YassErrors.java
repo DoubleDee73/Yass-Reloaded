@@ -297,7 +297,7 @@ public class YassErrors extends JPanel {
 
         String mess = r.getMessage(id);
         msgButtonPanel.remove(buttons);
-        if (auto.autoCorrectionSupported(mess)) {
+        if (auto.autoCorrectionSupported(table, mess)) {
             msgButtonPanel.add("West", buttons);
         }
         repaint();
@@ -456,7 +456,7 @@ public class YassErrors extends JPanel {
         //popupLabel.repaint();
 
         msgButtonPanel.remove(buttons);
-        if (auto.autoCorrectionSupported(mess)) {
+        if (auto.autoCorrectionSupported(table, mess)) {
             msgButtonPanel.add("West", buttons);
         }
 
@@ -507,7 +507,7 @@ public class YassErrors extends JPanel {
             sb.append("</font><br><font size=-2 color=red>");
             sb.append(mess[1]);
         }
-        if (!auto.isAutoCorrectionSafe(r.getMessage()) && auto.autoCorrectionSupported(r.getMessage())) {
+        if (!auto.isAutoCorrectionSafe(mess[0]) && auto.autoCorrectionSupported(table, mess[0])) {
             sb.append("</font><br><font size=-2 color=red>").append(I18.get("tool_correct_unsafe"));
         }
         sb.append("</font></html>");

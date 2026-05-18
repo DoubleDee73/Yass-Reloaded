@@ -13,6 +13,7 @@ import org.apache.commons.lang3.StringUtils;
 import yass.YassProperties;
 import yass.YassRow;
 import yass.YassTable;
+import yass.analysis.PitchDetector;
 import yass.integration.transcription.openai.OpenAiTranscriptSegment;
 import yass.integration.transcription.openai.OpenAiTranscriptWord;
 import yass.integration.transcription.openai.OpenAiTranscriptionResult;
@@ -32,6 +33,12 @@ public class TranscriptNoteRebuildService {
     private static final String SOFT_HYPHEN = "\u00AD";
 
     public TranscriptRebuildResult transcript(YassTable table, OpenAiTranscriptionResult transcriptionResult) {
+        return transcript(table, transcriptionResult, null);
+    }
+
+    public TranscriptRebuildResult transcript(YassTable table,
+                                              OpenAiTranscriptionResult transcriptionResult,
+                                              List<PitchDetector.PitchData> pitchData) {
         List<List<OpenAiTranscriptWord>> phrases = collectPhrases(transcriptionResult);
         if (phrases.isEmpty()) {
             throw new IllegalArgumentException("No transcript segments available for rebuild.");
@@ -55,6 +62,7 @@ public class TranscriptNoteRebuildService {
 
         int noteCount = 0;
         int pageBreakCount = 0;
+        List<YassRow> rebuiltNotes = new ArrayList<>();
         for (String row : rebuiltRows) {
             YassRow parsed = new YassRow(row);
             if (parsed.isNote()) {
@@ -63,11 +71,56 @@ public class TranscriptNoteRebuildService {
                 pageBreakCount++;
             }
             table.addRow(parsed);
+            if (parsed.isNote()) {
+                YassRow actualRow = table.getRowAt(table.getRowCount() - 1);
+                if (actualRow != null && actualRow.isNote()) {
+                    rebuiltNotes.add(actualRow);
+                }
+            }
         }
         table.addRow("E");
         normalizeTiming(table);
+        if (pitchData != null && !pitchData.isEmpty() && !rebuiltNotes.isEmpty()) {
+            List<String> beforeAlign = snapshotNoteGeometry(rebuiltNotes);
+            table.alignToMelody(rebuiltNotes, pitchData, YassTable.AlignToMelodyContext.createWizard());
+            int changedNotes = countChangedNotes(beforeAlign, rebuiltNotes);
+            LOGGER.info("[TranscriptAlignToMelody] pitchFrames=" + pitchData.size()
+                    + " notes=" + rebuiltNotes.size()
+                    + " changedNotes=" + changedNotes);
+        } else {
+            LOGGER.info("[TranscriptAlignToMelody] skipped pitchFrames="
+                    + (pitchData == null ? 0 : pitchData.size())
+                    + " notes=" + rebuiltNotes.size());
+        }
         LOGGER.info("Rebuilt " + noteCount + " notes, " + pageBreakCount + " page breaks from transcript with gap " + gapMs + " ms.");
         return new TranscriptRebuildResult(noteCount, pageBreakCount, gapMs);
+    }
+
+    private List<String> snapshotNoteGeometry(List<YassRow> rows) {
+        List<String> snapshot = new ArrayList<>();
+        for (YassRow row : rows) {
+            if (row == null || !row.isNote()) {
+                snapshot.add("");
+                continue;
+            }
+            snapshot.add(row.getBeatInt() + ":" + row.getLengthInt() + ":" + row.getHeightInt());
+        }
+        return snapshot;
+    }
+
+    private int countChangedNotes(List<String> beforeAlign, List<YassRow> rows) {
+        int limit = Math.min(beforeAlign == null ? 0 : beforeAlign.size(), rows == null ? 0 : rows.size());
+        int changed = 0;
+        for (int i = 0; i < limit; i++) {
+            YassRow row = rows.get(i);
+            String after = row == null || !row.isNote()
+                    ? ""
+                    : row.getBeatInt() + ":" + row.getLengthInt() + ":" + row.getHeightInt();
+            if (!StringUtils.equals(beforeAlign.get(i), after)) {
+                changed++;
+            }
+        }
+        return changed;
     }
 
     public Map<Integer, String> deriveDisplayPhrases(OpenAiTranscriptionResult transcriptionResult) {

@@ -52,9 +52,17 @@ public class SubtitleParser {
      */
     public static Map<Integer, String> parse(File subtitleFile) {
         Map<Integer, String> subtitles = new LinkedHashMap<>();
+        for (SubtitleCue cue : parseCues(subtitleFile)) {
+            subtitles.put(cue.startMs(), cue.text());
+        }
+        return subtitles;
+    }
+
+    public static List<SubtitleCue> parseCues(File subtitleFile) {
+        List<SubtitleCue> cues = new ArrayList<>();
         if (subtitleFile == null || !subtitleFile.exists()) {
             LOGGER.warning("Subtitle file not found or is null: " + (subtitleFile != null ? subtitleFile.getAbsolutePath() : "null"));
-            return subtitles;
+            return cues;
         }
 
         try (BufferedReader reader = new BufferedReader(new FileReader(subtitleFile))) {
@@ -97,19 +105,19 @@ public class SubtitleParser {
                     if (!cleanedText.isEmpty()) {
                         String incrementalText = collapseRollingCaption(previousCleanedText, previousEndMillis, millis, cleanedText);
                         if (!incrementalText.isEmpty()) {
-                            subtitles.put(millis, incrementalText);
+                            cues.add(new SubtitleCue(millis, Math.max(millis + 1, endMillis), incrementalText));
                         }
                         previousCleanedText = cleanedText;
                         previousEndMillis = endMillis;
                     }
                 }
             }
-            normalizeSubtitleCasingIfNeeded(subtitles);
+            normalizeSubtitleCasingIfNeeded(cues);
         } catch (IOException e) {
             LOGGER.log(Level.SEVERE, "Error reading subtitle file: " + subtitleFile.getAbsolutePath(), e);
         }
 
-        return subtitles;
+        return cues;
     }
 
     private static String extractEndTimestamp(String rawEndPart) {
@@ -268,22 +276,61 @@ public class SubtitleParser {
         }
     }
 
+    private static void normalizeSubtitleCasingIfNeeded(List<SubtitleCue> cues) {
+        if (cues.isEmpty() || !shouldNormalizeAllCaps(cues)) {
+            return;
+        }
+        PhrasalVerbManager.getInstance(null);
+        for (int i = 0; i < cues.size(); i++) {
+            SubtitleCue cue = cues.get(i);
+            cues.set(i, new SubtitleCue(cue.startMs(), cue.endMs(),
+                    TitleCaseConverter.toApTitleCase(StringUtils.lowerCase(cue.text()))));
+        }
+    }
+
     private static boolean shouldNormalizeAllCaps(Map<Integer, String> subtitles) {
         int uppercaseLetters = 0;
         int lowercaseLetters = 0;
         for (String value : subtitles.values()) {
-            for (char ch : StringUtils.defaultString(value).toCharArray()) {
-                if (Character.isUpperCase(ch)) {
-                    uppercaseLetters++;
-                } else if (Character.isLowerCase(ch)) {
-                    lowercaseLetters++;
-                }
+            int[] counts = countLetterCase(value);
+            uppercaseLetters += counts[0];
+            lowercaseLetters += counts[1];
+        }
+        return shouldNormalizeAllCaps(uppercaseLetters, lowercaseLetters);
+    }
+
+    private static boolean shouldNormalizeAllCaps(List<SubtitleCue> cues) {
+        int uppercaseLetters = 0;
+        int lowercaseLetters = 0;
+        for (SubtitleCue cue : cues) {
+            int[] counts = countLetterCase(cue.text());
+            uppercaseLetters += counts[0];
+            lowercaseLetters += counts[1];
+        }
+        return shouldNormalizeAllCaps(uppercaseLetters, lowercaseLetters);
+    }
+
+    private static int[] countLetterCase(String value) {
+        int uppercaseLetters = 0;
+        int lowercaseLetters = 0;
+        for (char ch : StringUtils.defaultString(value).toCharArray()) {
+            if (Character.isUpperCase(ch)) {
+                uppercaseLetters++;
+            } else if (Character.isLowerCase(ch)) {
+                lowercaseLetters++;
             }
         }
+        return new int[]{uppercaseLetters, lowercaseLetters};
+    }
+
+    private static boolean shouldNormalizeAllCaps(int uppercaseLetters, int lowercaseLetters) {
         int totalLetters = uppercaseLetters + lowercaseLetters;
         if (totalLetters < 8) {
             return false;
         }
         return lowercaseLetters == 0 || ((double) uppercaseLetters / totalLetters) >= 0.9d;
+    }
+
+    public record SubtitleCue(int startMs, int endMs, String text) {
     }
 }

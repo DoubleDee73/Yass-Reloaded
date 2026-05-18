@@ -49,6 +49,8 @@ import yass.integration.separation.mvsep.MvsepAlgorithmInfo;
 import yass.integration.separation.mvsep.MvsepSeparationService;
 import yass.integration.separation.mvsep.MvsepStartDialog;
 import yass.integration.transcription.TranscriptionEngine;
+import yass.integration.transcription.TranscriptArtifactService;
+import yass.integration.transcription.TranscriptSourceComment;
 import yass.integration.transcription.openai.OpenAiTranscriptionRequest;
 import yass.integration.transcription.openai.OpenAiTranscriptionResult;
 import yass.integration.transcription.openai.OpenAiTranscriptionService;
@@ -168,6 +170,8 @@ public class YassActions implements DropTargetListener {
     private YassProperties prop = null;
     private YassAutoCorrect auto = null;
     private CreateSongWizard activeWizard = null;
+    private final SongTimingTagSanityService songTimingTagSanityService = new SongTimingTagSanityService();
+    private boolean suppressNextTimingTagSanityNotice = false;
     private YassSongList songList = null;
     private final UsdbSessionService usdbSessionService = new UsdbSessionService();
     private final UsdbClient usdbClient = new UsdbClient(usdbSessionService);
@@ -597,7 +601,7 @@ public class YassActions implements DropTargetListener {
                         "removeRowsWithLyrics", removeRowsWithLyrics,
                         KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, InputEvent.CTRL_DOWN_MASK)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, 0), "removePageBreak", removePageBreak, null),
-                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK), "insertNote", insertNote,
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK), "insertNoteWithVocalPitch", insertNoteWithVocalPitch,
                         KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK), "insertNote", insertNote,
                         KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK))
@@ -911,7 +915,12 @@ public class YassActions implements DropTargetListener {
         }
         List<PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
         int transpose = mp3.getPitchWaveformTranspose();
-        if (transpose != 0) {
+        LOGGER.fine("[AlignToMelodyDebug] action mode=" + mode
+                + " selectedRows=" + Arrays.toString(selectedRows)
+                + " pitchFrames=" + (pitchData == null ? 0 : pitchData.size())
+                + " pitchWaveformTranspose=" + transpose
+                + " absolutePitchView=" + (sheet != null && sheet.isAbsolutePitchViewEnabled()));
+        if (transpose != 0 && pitchData != null) {
             pitchData = pitchData.stream()
                                  .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose,
                                                                         pd.noteName(), pd.rawFrequency()))
@@ -923,6 +932,34 @@ public class YassActions implements DropTargetListener {
             table.addRowSelectionInterval(rowIndex, rowIndex);
         }
         sheet.repaint();
+    }
+
+    private boolean shouldUseVocalAwareInsertNote() {
+        SongHeader header = sheet == null ? null : sheet.getSongHeader();
+        boolean isVocalTrack = header != null
+                && UltrastarHeaderTag.VOCALS.toString().equals(header.getSelectedAudio());
+        return isVocalTrack
+                && mp3 != null
+                && mp3.getPitchDataList() != null
+                && !mp3.getPitchDataList().isEmpty();
+    }
+
+    private List<PitchDetector.PitchData> currentPitchDataForEditorAlignment() {
+        if (mp3 == null || mp3.getPitchDataList() == null) {
+            return Collections.emptyList();
+        }
+        List<PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
+        int transpose = mp3.getPitchWaveformTranspose();
+        if (transpose == 0) {
+            return pitchData;
+        }
+        return pitchData.stream()
+                        .map(pd -> new PitchDetector.PitchData(pd.time(),
+                                                               pd.pitch() + transpose,
+                                                               pd.noteName(),
+                                                               pd.rawFrequency(),
+                                                               pd.energy()))
+                        .collect(Collectors.toList());
     }
 
     private final Action alignToMelody = new AbstractAction(I18.get("edit_align_to_melody")) {
@@ -2070,7 +2107,7 @@ public class YassActions implements DropTargetListener {
                 sheet.configureRecordingRollingWindow(inout[0] / 1000.0);
                 sheet.refreshImage();
                 sheet.repaint();
-                mp3.playSelection(recordingPlaybackSource, inout[0], playbackOutUs, null, timebase, fadeOutMs);
+                startRecordingPlayback(inout[0], playbackOutUs, timebase, fadeOutMs);
             }
         }
     };
@@ -2127,7 +2164,7 @@ public class YassActions implements DropTargetListener {
             table.clearSelection();
             prepareRecordingPlaybackSource();
             startRecording();
-            mp3.playAll(null);
+            startRecordingPlayback(0L, -1L, Timebase.NORMAL, 0);
         }
     };
     private final Action pasteRows = new AbstractAction(I18.get("edit_paste")) {
@@ -2173,6 +2210,16 @@ public class YassActions implements DropTargetListener {
         public void actionPerformed(ActionEvent e) {
             interruptPlay();
             table.insertNote();
+        }
+    };
+    private final Action insertNoteWithVocalPitch = new AbstractAction(I18.get("edit_add")) {
+        public void actionPerformed(ActionEvent e) {
+            interruptPlay();
+            if (shouldUseVocalAwareInsertNote()) {
+                table.insertNoteWithVocalPitch(currentPitchDataForEditorAlignment());
+            } else {
+                table.insertNote();
+            }
         }
     };
     private final Action removeRows = new AbstractAction(I18.get("edit_remove")) {
@@ -2236,6 +2283,12 @@ public class YassActions implements DropTargetListener {
             boolean hasPitchData = mp3 != null
                     && mp3.getPitchDataList() != null
                     && !mp3.getPitchDataList().isEmpty();
+            LOGGER.info("[SplitDebug] action selectedAudio="
+                    + (header == null ? "n/a" : header.getSelectedAudio())
+                    + " isVocalTrack=" + isVocalTrack
+                    + " hasPitchData=" + hasPitchData
+                    + " pitchFrames=" + (hasPitchData ? mp3.getPitchDataList().size() : 0)
+                    + " pitchWaveformTranspose=" + (mp3 == null ? 0 : mp3.getPitchWaveformTranspose()));
             if (isVocalTrack && hasPitchData) {
                 int transpose = mp3.getPitchWaveformTranspose();
                 List<PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
@@ -3344,14 +3397,11 @@ public class YassActions implements DropTargetListener {
             if (lyrics.isEditable()) {
                 lyrics.finishEditing();
             }
-            Integer viewportYBeforeUndo = sheet != null ? sheet.getViewPosition().y : null;
+            Point viewportBeforeUndo = sheet != null ? new Point(sheet.getViewPosition()) : null;
             table.undoRows();
             checkData(table, false, true);
             updateGapBpm();
-            if (sheet != null && viewportYBeforeUndo != null) {
-                Point afterUndo = sheet.getViewPosition();
-                sheet.setViewPosition(new Point(afterUndo.x, viewportYBeforeUndo));
-            }
+            restoreSheetViewportAfterUndoRedo(viewportBeforeUndo);
         }
     };
     private final Action redo = new AbstractAction(I18.get("edit_redo")) {
@@ -3360,16 +3410,26 @@ public class YassActions implements DropTargetListener {
             if (lyrics.isEditable()) {
                 lyrics.finishEditing();
             }
-            Integer viewportYBeforeRedo = sheet != null ? sheet.getViewPosition().y : null;
+            Point viewportBeforeRedo = sheet != null ? new Point(sheet.getViewPosition()) : null;
             table.redoRows();
             checkData(table, false, true);
             updateGapBpm();
-            if (sheet != null && viewportYBeforeRedo != null) {
-                Point afterRedo = sheet.getViewPosition();
-                sheet.setViewPosition(new Point(afterRedo.x, viewportYBeforeRedo));
-            }
+            restoreSheetViewportAfterUndoRedo(viewportBeforeRedo);
         }
     };
+
+    private void restoreSheetViewportAfterUndoRedo(Point viewportBeforeAction) {
+        if (sheet == null || viewportBeforeAction == null) {
+            return;
+        }
+        if (sheet.isAbsolutePitchViewEnabled()) {
+            Point restoredView = sheet.getViewPosition();
+            sheet.setViewPosition(new Point(viewportBeforeAction.x, restoredView.y));
+            return;
+        }
+        sheet.setViewPosition(viewportBeforeAction);
+    }
+
     private final Action openFileFromLibrary = new AbstractAction(I18.get("lib_edit_file")) {
         public void actionPerformed(ActionEvent e) {
             if (currentView == VIEW_EDIT) {
@@ -3815,6 +3875,9 @@ public class YassActions implements DropTargetListener {
                                               JOptionPane.INFORMATION_MESSAGE);
                 return;
             }
+            if (tryUseExistingTranscriptArtifact()) {
+                return;
+            }
             if (!hasAnyTranscriptionEngine()) {
                 JOptionPane.showMessageDialog(tab,
                                               I18.get("edit_align_transcription_missing_engine"),
@@ -3912,66 +3975,9 @@ public class YassActions implements DropTargetListener {
                             progressDialog.dispose();
                             try {
                                 OpenAiTranscriptionResult result = get();
-                                boolean rebuildFromTranscript = false;
-                                if (!result.getWords().isEmpty()) {
-                                    int overwriteDecision = JOptionPane.showConfirmDialog(tab,
-                                                                                          I18.get("edit_align_transcription_overwrite_prompt"),
-                                                                                          I18.get("edit_align_transcription"),
-                                                                                          JOptionPane.YES_NO_CANCEL_OPTION,
-                                                                                          JOptionPane.QUESTION_MESSAGE);
-                                    if (overwriteDecision == JOptionPane.CANCEL_OPTION ||
-                                            overwriteDecision == JOptionPane.CLOSED_OPTION) {
-                                        return;
-                                    }
-                                    rebuildFromTranscript = overwriteDecision == JOptionPane.YES_OPTION;
-                                }
-
-                                String summary;
-                                if (rebuildFromTranscript) {
-                                    TranscriptRebuildResult rebuildResult =
-                                            new TranscriptNoteRebuildService().transcript(table, result);
-                                    summary = (useWhisperX ? whisperXService.buildSummary(result) :
-                                            openAiService.buildSummary(result))
-                                            .replace("</html>", "<br><br>"
-                                                    + MessageFormat.format(
-                                                    I18.get("edit_align_transcription_rebuild_summary"),
-                                                    rebuildResult.getNoteCount(),
-                                                    rebuildResult.getPageBreakCount(),
-                                                    rebuildResult.getGapMs())
-                                                    + "</html>");
-                                } else {
-                                    LyricsAlignmentService alignmentService = new LyricsAlignmentService();
-                                    LyricsAlignmentResult alignmentResult = alignmentService.alignAndApply(table,
-                                                                                                           result);
-                                    summary = (useWhisperX ? whisperXService.buildSummary(result) :
-                                            openAiService.buildSummary(result))
-                                            .replace("</html>", "<br><br>"
-                                                    + MessageFormat.format(
-                                                    I18.get("edit_align_transcription_applied_summary"),
-                                                    alignmentResult.getMatchedRegions(),
-                                                    alignmentResult.getMovedNotes(),
-                                                    String.format(java.util.Locale.US, "%.1f",
-                                                                  alignmentResult.getAverageBeatDelta()),
-                                                    alignmentResult.getIgnoredWords())
-                                                    + "</html>");
-                                }
-
-                                if (sheet != null && rebuildFromTranscript) {
-                                    sheet.init();
-                                }
-                                updateGapBpm();
-                                table.fireTableTableDataChanged();
-                                table.setSaved(false);
-                                if (sheet != null && !rebuildFromTranscript) {
-                                    sheet.repaint();
-                                }
-                                table.repaint();
-                                updateActions();
-                                JLabel summaryLabel = new JLabel(ensureHtmlMessage(summary));
-                                JOptionPane.showMessageDialog(tab,
-                                                              summaryLabel,
-                                                              I18.get("edit_align_transcription"),
-                                                              JOptionPane.INFORMATION_MESSAGE);
+                                String summary = useWhisperX ? whisperXService.buildSummary(result) :
+                                        openAiService.buildSummary(result);
+                                promptAndApplyTranscriptionResult(result, summary);
                             } catch (Exception ex) {
                                 Throwable cause =
                                         ex instanceof java.util.concurrent.ExecutionException && ex.getCause() != null
@@ -4003,6 +4009,245 @@ public class YassActions implements DropTargetListener {
                                           I18.get("edit_align_transcription"),
                                           JOptionPane.WARNING_MESSAGE);
         }
+    }
+
+    private boolean tryUseExistingTranscriptArtifact() {
+        File transcriptFile = findTranscriptArtifactForSongFile(buildSeparationSongKey(table));
+        if (transcriptFile == null) {
+            return false;
+        }
+        int decision = JOptionPane.showConfirmDialog(tab,
+                                                     MessageFormat.format(
+                                                             I18.get("edit_align_transcription_artifact_prompt"),
+                                                             transcriptFile.getName()),
+                                                     I18.get("edit_align_transcription"),
+                                                     JOptionPane.YES_NO_CANCEL_OPTION,
+                                                     JOptionPane.QUESTION_MESSAGE);
+        if (decision == JOptionPane.CANCEL_OPTION || decision == JOptionPane.CLOSED_OPTION) {
+            return true;
+        }
+        if (decision != JOptionPane.YES_OPTION) {
+            return false;
+        }
+        try {
+            OpenAiTranscriptionResult result = new TranscriptArtifactService().loadFile(transcriptFile);
+            if (result == null) {
+                return false;
+            }
+            promptAndApplyTranscriptionResult(result, buildTranscriptArtifactSummary(result, transcriptFile));
+            return true;
+        } catch (IOException ex) {
+            LOGGER.log(Level.WARNING, "Could not load transcript artifact " + transcriptFile.getAbsolutePath(), ex);
+            JOptionPane.showMessageDialog(tab,
+                                          StringUtils.defaultIfBlank(ex.getMessage(), ex.toString()),
+                                          I18.get("edit_align_transcription"),
+                                          JOptionPane.WARNING_MESSAGE);
+            return true;
+        }
+    }
+
+    private String buildTranscriptArtifactSummary(OpenAiTranscriptionResult result, File transcriptFile) {
+        StringBuilder summary = new StringBuilder("<html>");
+        summary.append("Transcript source: ").append(escapeHtml(result.getSourceTag())).append("<br>");
+        summary.append("Text source: ").append(escapeHtml(result.getTextSourceTag())).append("<br>");
+        summary.append("Timing source: ").append(escapeHtml(result.getTimingSourceTag())).append("<br>");
+        summary.append("Artifact: ").append(escapeHtml(transcriptFile.getName())).append("<br>");
+        summary.append("Timestamped words: ").append(result.getWords().size()).append("<br>");
+        summary.append("Transcript preview: ").append(escapeHtml(trimPreview(result.getTranscriptText())));
+        summary.append("</html>");
+        return summary.toString();
+    }
+
+    private String trimPreview(String text) {
+        String normalized = StringUtils.defaultString(text).replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= 180) {
+            return normalized;
+        }
+        return normalized.substring(0, 177) + "...";
+    }
+
+    private String escapeHtml(String value) {
+        return StringUtils.defaultString(value)
+                          .replace("&", "&amp;")
+                          .replace("<", "&lt;")
+                          .replace(">", "&gt;")
+                          .replace("\"", "&quot;");
+    }
+
+    private void promptAndApplyTranscriptionResult(OpenAiTranscriptionResult result, String summaryBase) {
+        result = maybeRefineTranscriptTimingForAlignment(result);
+        boolean rebuildFromTranscript = false;
+        if (!result.getWords().isEmpty()) {
+            int overwriteDecision = JOptionPane.showConfirmDialog(tab,
+                                                                  I18.get("edit_align_transcription_overwrite_prompt"),
+                                                                  I18.get("edit_align_transcription"),
+                                                                  JOptionPane.YES_NO_CANCEL_OPTION,
+                                                                  JOptionPane.QUESTION_MESSAGE);
+            if (overwriteDecision == JOptionPane.CANCEL_OPTION ||
+                    overwriteDecision == JOptionPane.CLOSED_OPTION) {
+                return;
+            }
+            rebuildFromTranscript = overwriteDecision == JOptionPane.YES_OPTION;
+        }
+
+        String summary;
+        if (rebuildFromTranscript) {
+            List<PitchDetector.PitchData> rebuiltPitchData = loadTranscriptAlignmentPitchData(result);
+            TranscriptRebuildResult rebuildResult =
+                    new TranscriptNoteRebuildService().transcript(table, result, rebuiltPitchData);
+            summary = summaryBase
+                    .replace("</html>", "<br><br>"
+                            + MessageFormat.format(
+                            I18.get("edit_align_transcription_rebuild_summary"),
+                            rebuildResult.getNoteCount(),
+                            rebuildResult.getPageBreakCount(),
+                            rebuildResult.getGapMs())
+                            + "</html>");
+        } else {
+            LyricsAlignmentService alignmentService = new LyricsAlignmentService();
+            LyricsAlignmentResult alignmentResult = alignmentService.alignAndApply(table, result);
+            summary = summaryBase
+                    .replace("</html>", "<br><br>"
+                            + MessageFormat.format(
+                            I18.get("edit_align_transcription_applied_summary"),
+                            alignmentResult.getMatchedRegions(),
+                            alignmentResult.getMovedNotes(),
+                            String.format(java.util.Locale.US, "%.1f",
+                                          alignmentResult.getAverageBeatDelta()),
+                            alignmentResult.getIgnoredWords())
+                            + "</html>");
+        }
+
+        table.setCommentTag(TranscriptSourceComment.merge(table.getCommentTag(), result));
+        if (sheet != null && rebuildFromTranscript) {
+            sheet.init();
+        }
+        updateGapBpm();
+        table.fireTableTableDataChanged();
+        table.setSaved(false);
+        if (sheet != null && !rebuildFromTranscript) {
+            sheet.repaint();
+        }
+        table.repaint();
+        updateActions();
+        if (rebuildFromTranscript) {
+            refreshEditorViewAfterTranscriptRebuild();
+        }
+        JLabel summaryLabel = new JLabel(ensureHtmlMessage(summary));
+        JOptionPane.showMessageDialog(tab,
+                                      summaryLabel,
+                                      I18.get("edit_align_transcription"),
+                                      JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void refreshEditorViewAfterTranscriptRebuild() {
+        if (table == null) {
+            return;
+        }
+        SwingUtilities.invokeLater(() -> {
+            if (table == null) {
+                return;
+            }
+            int firstNoteRow = table.getFirstNoteRow();
+            if (firstNoteRow < 0) {
+                return;
+            }
+            table.gotoPageNumber(1);
+            if (lyrics != null) {
+                lyrics.repaintLineNumbers();
+            }
+            if (sheet != null) {
+                sheet.repaint();
+            }
+        });
+    }
+
+    private List<PitchDetector.PitchData> loadTranscriptAlignmentPitchData(OpenAiTranscriptionResult result) {
+        if (result == null || table == null) {
+            return Collections.emptyList();
+        }
+        File timingAudioFile = resolveTranscriptTimingRefinementAudioFile(result);
+        if (timingAudioFile == null) {
+            LOGGER.info("[TranscriptAlignToMelody] no timing audio file available for post-rebuild melody align");
+            return Collections.emptyList();
+        }
+        try {
+            List<PitchDetector.PitchData> rawPitchData =
+                    PitchDetector.detectPitchWithRaw(timingAudioFile, prop, MusicalKeyEnum.UNDEFINED).rawPitchData();
+            LOGGER.info("[TranscriptAlignToMelody] loaded pitch frames=" + rawPitchData.size()
+                    + " from " + timingAudioFile.getName());
+            return rawPitchData;
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO,
+                    "[TranscriptTimingRefinement] skipping post-rebuild alignToMelody because pitch detection failed for "
+                            + timingAudioFile.getName(),
+                    ex);
+            return Collections.emptyList();
+        }
+    }
+
+    private OpenAiTranscriptionResult maybeRefineTranscriptTimingForAlignment(OpenAiTranscriptionResult result) {
+        if (result == null || table == null) {
+            return result;
+        }
+        TranscriptTimingRefinementService refinementService = new TranscriptTimingRefinementService();
+        if (!refinementService.shouldRefineForAlignment(result)) {
+            return result;
+        }
+        File timingAudioFile = resolveTranscriptTimingRefinementAudioFile(result);
+        if (timingAudioFile == null) {
+            return result;
+        }
+        try {
+            PitchDetector.PitchDetectionResult pitchDetection =
+                    PitchDetector.detectPitchWithRaw(timingAudioFile, prop, MusicalKeyEnum.UNDEFINED);
+            OpenAiTranscriptionResult refined = refinementService.refineForAlignment(result,
+                    pitchDetection.rawPitchData(),
+                    (int) Math.round(table.getGap()),
+                    resolveTranscriptTimingRefinementTag(result, timingAudioFile),
+                    table.getBPM());
+            if (refined != result) {
+                LOGGER.info("[TranscriptTimingRefinement] applied before alignment using "
+                        + timingAudioFile.getName()
+                        + " timingSource="
+                        + refined.getTimingSourceTag());
+            }
+            return refined;
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO,
+                    "[TranscriptTimingRefinement] skipped before alignment for " + timingAudioFile.getAbsolutePath(),
+                    ex);
+            return result;
+        }
+    }
+
+    private File resolveTranscriptTimingRefinementAudioFile(OpenAiTranscriptionResult result) {
+        if (table != null && StringUtils.isNotBlank(table.getVocals()) && StringUtils.isNotBlank(table.getDir())) {
+            File vocalsFile = new File(table.getDir(), table.getVocals());
+            if (vocalsFile.isFile()) {
+                return vocalsFile;
+            }
+        }
+        if (result != null
+                && result.getSourceAudioFile() != null
+                && result.getSourceAudioFile().isFile()
+                && UltrastarHeaderTag.VOCALS.toString().equalsIgnoreCase(result.getSourceTag())) {
+            return result.getSourceAudioFile();
+        }
+        return null;
+    }
+
+    private String resolveTranscriptTimingRefinementTag(OpenAiTranscriptionResult result, File timingAudioFile) {
+        if (result == null) {
+            return UltrastarHeaderTag.VOCALS.toString();
+        }
+        if (table != null && StringUtils.isNotBlank(table.getVocals()) && StringUtils.isNotBlank(table.getDir())) {
+            File vocalsFile = new File(table.getDir(), table.getVocals());
+            if (timingAudioFile != null && timingAudioFile.equals(vocalsFile)) {
+                return UltrastarHeaderTag.VOCALS.toString();
+            }
+        }
+        return result.getTimingSourceTag();
     }
 
     private String formatWhisperXProgressLine(String value) {
@@ -4116,8 +4361,11 @@ public class YassActions implements DropTargetListener {
                     applyCorrectedLyricsToTranscript(state.getTranscriptionResult(), correctedLyrics);
             Lyrics.configureTranscriptHyphenator(prop, createdTable, createdTable.getLanguage());
             new TranscriptNoteRebuildService().transcript(createdTable, transcriptionResult);
-            copyWizardSeparationFiles(destinationDir, createdTable, state);
+            createdTable.setCommentTag(TranscriptSourceComment.merge(createdTable.getCommentTag(), transcriptionResult));
+            File copiedVocals = copyWizardSeparationFiles(destinationDir, createdTable, state);
+            logTranscriptTimingRefinement(createdTable, transcriptionResult, copiedVocals);
             copyWizardTranscriptCache(destinationDir, state);
+            new TranscriptArtifactService().save(destinationDir, transcriptionResult);
             createdTable.storeFile(songTextFile.getAbsolutePath());
             LOGGER.info("Applied wizard separation and transcription outputs to " + songFile);
             return true;
@@ -4129,14 +4377,15 @@ public class YassActions implements DropTargetListener {
 
     private OpenAiTranscriptionResult applyCorrectedLyricsToTranscript(
             OpenAiTranscriptionResult original, String correctedLyrics) {
-        return new TranscriptTruthRewriteService().rewrite(original, correctedLyrics);
+        OpenAiTranscriptionResult rewritten = new TranscriptTruthRewriteService().rewrite(original, correctedLyrics);
+        return rewritten != null && original != null ? rewritten.withTextSourceTag(original.getTextSourceTag()) : rewritten;
     }
 
-    private void copyWizardSeparationFiles(File destinationDir, YassTable createdTable,
+    private File copyWizardSeparationFiles(File destinationDir, YassTable createdTable,
      WizardTranscriptionState state) throws IOException {
         SeparationResult separationResult = state.getSeparationResult();
         if (separationResult == null) {
-            return;
+            return null;
         }
         String songBase = buildSongBaseName(createdTable);
         File copiedVocals = copyIfPresent(separationResult.getVocalsFile(), destinationDir,
@@ -4161,6 +4410,56 @@ public class YassActions implements DropTargetListener {
                 : (copiedInstrumental != null ? copiedInstrumental : copiedInstrumentalBacking);
         if (preferredInstrumental != null) {
             createdTable.setInstrumental(preferredInstrumental.getName());
+        }
+        return preferredVocals;
+    }
+
+    private void logTranscriptTimingRefinement(YassTable createdTable,
+                                               OpenAiTranscriptionResult transcriptionResult,
+                                               File vocalsFile) {
+        if (createdTable == null || transcriptionResult == null || vocalsFile == null || !vocalsFile.isFile()) {
+            return;
+        }
+        try {
+            PitchDetector.PitchDetectionResult pitchDetection =
+                    PitchDetector.detectPitchWithRaw(vocalsFile, prop, MusicalKeyEnum.UNDEFINED);
+            List<PitchDetector.PitchData> vocalFrames = pitchDetection.rawPitchData();
+            TranscriptTimingRefinementService.TimingRefinementAnalysis analysis =
+                    new TranscriptTimingRefinementService().analyze(transcriptionResult,
+                                                                    vocalFrames,
+                                                                    (int) Math.round(createdTable.getGap()),
+                                                                    createdTable.getBPM());
+            logTranscriptTimingRefinementAnalysis(vocalsFile, analysis);
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO,
+                       "[TranscriptTimingRefinement] analysis skipped for " + vocalsFile.getAbsolutePath(),
+                       ex);
+        }
+    }
+
+    private void logTranscriptTimingRefinementAnalysis(
+            File vocalsFile,
+            TranscriptTimingRefinementService.TimingRefinementAnalysis analysis) {
+        if (analysis == null) {
+            return;
+        }
+        LOGGER.info("[TranscriptTimingRefinement] source=" + vocalsFile.getName()
+                + " accepted=" + analysis.accepted()
+                + " currentGapMs=" + analysis.currentGapMs()
+                + " firstTranscriptStartMs=" + analysis.firstTranscriptStartMs()
+                + " firstVocalOnsetMs=" + analysis.firstVocalOnsetMs()
+                + " gapDeltaMs=" + analysis.gapDeltaMs()
+                + " transcriptToAudioOffsetMs=" + analysis.transcriptToAudioOffsetMs()
+                + " proposedGapMs=" + analysis.proposedGapMs()
+                + (StringUtils.isBlank(analysis.rejectionReason()) ? "" : " reason=\"" + analysis.rejectionReason() + "\""));
+        for (TranscriptTimingRefinementService.PhraseTiming phrase : analysis.phrases()) {
+            LOGGER.info("[TranscriptTimingRefinement] phrase index=" + phrase.index()
+                    + " transcriptStartMs=" + phrase.transcriptStartMs()
+                    + " adjustedStartMs=" + phrase.adjustedStartMs()
+                    + " nextAnchorMs=" + phrase.nextAnchorMs()
+                    + " detectedVocalEndMs=" + phrase.detectedVocalEndMs()
+                    + " decision=\"" + phrase.decision() + "\""
+                    + " text=\"" + StringUtils.abbreviate(StringUtils.defaultString(phrase.text()), 80) + "\"");
         }
     }
 
@@ -4223,12 +4522,34 @@ public class YassActions implements DropTargetListener {
         return state == null || state.getSeparationResult() == null;
     }
 
+    static File findTranscriptArtifactForSongFile(String songFile) {
+        if (StringUtils.isBlank(songFile)) {
+            return null;
+        }
+        File songTextFile = new File(songFile);
+        File destinationDir = songTextFile.getParentFile();
+        if (destinationDir == null || !destinationDir.isDirectory()) {
+            return null;
+        }
+        File transcriptFile = new File(destinationDir, TranscriptArtifactService.FILE_NAME);
+        return transcriptFile.isFile() ? transcriptFile : null;
+    }
+
+    static String buildPostWizardSeparationPrompt(boolean hasTranscriptArtifact) {
+        String prompt = I18.get("create_song_open_separation_prompt");
+        if (hasTranscriptArtifact) {
+            prompt += "\n\n" + I18.get("create_song_open_separation_transcript_hint");
+        }
+        return prompt;
+    }
+
     private void maybeStartSeparationAfterCreateSong() {
         if (!hasConfiguredSeparation() || table == null) {
             return;
         }
+        File transcriptFile = findTranscriptArtifactForSongFile(buildSeparationSongKey(table));
         int option = JOptionPane.showConfirmDialog(tab,
-                                                   I18.get("create_song_open_separation_prompt"),
+                                                   buildPostWizardSeparationPrompt(transcriptFile != null),
                                                    I18.get("create_song_open_separation_title"),
                                                    JOptionPane.YES_NO_OPTION,
                                                    JOptionPane.QUESTION_MESSAGE);
@@ -4736,7 +5057,8 @@ public class YassActions implements DropTargetListener {
             public void playerStarted() {
                 if (currentView == VIEW_EDIT && isRecording()) {
                     recordingPlaybackStarted = true;
-                    LOGGER.finest("Recording: playerStarted acknowledged.");
+                    LOGGER.info("[RecordingDebug] playback playerStarted source=" + recordingPlaybackSource
+                                        + " positionUs=" + (long) (mp3.getPosition() * mp3.getPlayrate().getTimerate()));
                     SwingUtilities.invokeLater(() -> {
                         if (sheet != null) {
                             long currentPlaybackMs = mp3 != null ? Math.max(0L, mp3.getPosition() / 1000L) : 0L;
@@ -4769,7 +5091,9 @@ public class YassActions implements DropTargetListener {
                         if (!recordingPlaybackStarted) {
                             // A stop event may occur during preparation/source switching
                             // before recording playback actually started.
-                            LOGGER.finest("Recording: ignoring playerStopped before playerStarted.");
+                            LOGGER.info("[RecordingDebug] playback stopped before playerStarted source="
+                                                + recordingPlaybackSource
+                                                + " isPlaying=" + mp3.isPlaying());
                             return;
                         }
                         if (recordingIgnoreNextPlayerStopped) {
@@ -7511,6 +7835,9 @@ public class YassActions implements DropTargetListener {
     }
 
     public void setView(int n) {
+        if (n == VIEW_LIBRARY && currentView == VIEW_EDIT) {
+            cleanupTouchedTimingTagsBeforeLibrary();
+        }
         if (n == VIEW_EDIT) {
             songList.stopPlaying();
             playToggle.setIcon(getIcon("play24Icon"));
@@ -7820,6 +8147,7 @@ public class YassActions implements DropTargetListener {
         joinRows.setEnabled(isOpened);
         togglePageBreak.setEnabled(isOpened);
         insertNote.setEnabled(isOpened);
+        insertNoteWithVocalPitch.setEnabled(isOpened);
         removeRows.setEnabled(isOpened);
         removeRowsWithLyrics.setEnabled(isOpened);
         absolute.setEnabled(isOpened);
@@ -8766,7 +9094,6 @@ public class YassActions implements DropTargetListener {
                         .acceptDrop(DnDConstants.ACTION_COPY_OR_MOVE);
                 Object td = tr.getTransferData(DataFlavor.stringFlavor);
                 if (td instanceof String) {
-                    // TODO IMPORT
                     String tds = (String) td;
                     boolean ok = isValidKaraokeString(tds);
                     if (ok) {
@@ -9138,6 +9465,11 @@ public class YassActions implements DropTargetListener {
                 openMp3(recordingPlaybackSource);
             }
         }
+        LOGGER.info("[RecordingDebug] prepare source previousTag=" + recordingPreviousAudioTag
+                            + " playbackSource=" + recordingPlaybackSource
+                            + " selectedTagNow="
+                            + (songHeader.getSelectedAudio() == null ? "null" : songHeader.getSelectedAudio())
+                            + " overlayFrames=" + (recordingSnapPitchData == null ? 0 : recordingSnapPitchData.size()));
         LOGGER.fine("Recording prepare source selectedTagNow="
                             + (songHeader.getSelectedAudio() == null ? "null" : songHeader.getSelectedAudio()));
     }
@@ -9232,6 +9564,7 @@ public class YassActions implements DropTargetListener {
         sheet.getTemporaryNotes().clear();
         sheet.clearTempPitches();
         sheet.setRecordingRollingMode(true);
+        syncPitchViewControls();
         recordingPlaybackStarted = false;
         if (!midiButton.isSelected()) {
             sheet.initNoteMapping(0);
@@ -9243,6 +9576,19 @@ public class YassActions implements DropTargetListener {
         Toolkit.getDefaultToolkit()
                .addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK |
                        AWTEvent.KEY_EVENT_MASK);
+    }
+
+    private void startRecordingPlayback(long startUs, long outUs, Timebase timebase, int fadeOutMs) {
+        Timebase effectiveTimebase = timebase == null ? Timebase.NORMAL : timebase;
+        mp3.setMIDIEnabled(false);
+        mp3.setAudioEnabled(true);
+        LOGGER.info("[RecordingDebug] playback start source=" + recordingPlaybackSource
+                            + " startUs=" + startUs
+                            + " outUs=" + outUs
+                            + " timebase=" + effectiveTimebase
+                            + " fadeOutMs=" + fadeOutMs
+                            + " audioEnabled=" + mp3.isAudioEnabled());
+        mp3.playSelection(recordingPlaybackSource, startUs, outUs, null, effectiveTimebase, fadeOutMs);
     }
 
     private void finishRecordingInput() {
@@ -9279,6 +9625,7 @@ public class YassActions implements DropTargetListener {
         sheet.setRecordingNoteIndex(-1); // IMPORTANT: Reset recording mode
         sheet.setRecordingLastNoteIndex(-1);
         sheet.setRecordingRollingMode(false);
+        syncPitchViewControls();
         sheet.refreshImage();
         sheet.repaint();
         Toolkit.getDefaultToolkit().removeAWTEventListener(awt);
@@ -10019,6 +10366,16 @@ public class YassActions implements DropTargetListener {
         }
     }
 
+    private void syncPitchViewControls() {
+        if (sheet == null) {
+            return;
+        }
+        updateAbsolutePitchViewControls(sheet.isAbsolutePitchViewEnabled());
+        if (alignCBI != null) {
+            alignCBI.setState(sheet.isPanEnabled());
+        }
+    }
+
     private void setAbsolutePitchView(boolean enabled, boolean persist) {
         if (!enabled) {
             sheet.setAbsolutePitchViewEnabled(false);
@@ -10285,6 +10642,15 @@ public class YassActions implements DropTargetListener {
         return true;
     }
 
+    private boolean openFilesAfterWizard(String file) {
+        suppressNextTimingTagSanityNotice = true;
+        try {
+            return openFiles(file, false);
+        } finally {
+            suppressNextTimingTagSanityNotice = false;
+        }
+    }
+
     private void checkAutosaveBackup(String absolutPath) throws IOException {
         File backupFile = new File(absolutPath + ".bak");
         File currentFile = new File(absolutPath);
@@ -10356,6 +10722,7 @@ public class YassActions implements DropTargetListener {
         updateTitle();
 
         sheet.setDuration(mp3.getDuration() / 1000.0);
+        cleanupTimingTagsForEditorOpen(currentAudioDurationSeconds(), suppressNextTimingTagSanityNotice);
         sheet.setActiveTable(table);
         table.loadUsdbSyncerMetaFile(table.getDir());
         syncMusicalKeyToComment();
@@ -10459,6 +10826,76 @@ public class YassActions implements DropTargetListener {
         table.initAutoSave();
     }
 
+    private void cleanupTimingTagsForEditorOpen(double audioDurationSeconds, boolean silent) {
+        if (table == null) {
+            return;
+        }
+        cleanupTimingTags(table, audioDurationSeconds, silent);
+        table.resetTimingTagSanityTouched();
+    }
+
+    private void cleanupTouchedTimingTagsBeforeLibrary() {
+        double audioDurationSeconds = currentAudioDurationSeconds();
+        for (YassTable openTable : openTables) {
+            if (openTable != null && openTable.isTimingTagSanityTouched()) {
+                cleanupTimingTags(openTable, audioDurationSeconds, false);
+            }
+        }
+    }
+
+    private void cleanupTimingTags(YassTable targetTable, double audioDurationSeconds, boolean silent) {
+        List<SongTimingTagSanityService.Finding> findings =
+                songTimingTagSanityService.cleanup(targetTable, audioDurationSeconds);
+        List<SongTimingTagSanityService.Finding> cleanupFindings = findings.stream()
+                .filter(finding -> finding.action() != SongTimingTagSanityService.Action.REPORT)
+                .collect(Collectors.toList());
+        if (cleanupFindings.isEmpty()) {
+            return;
+        }
+
+        String details = formatTimingTagCleanupDetails(cleanupFindings);
+        LOGGER.info("Cleaned unsafe timing tags for " + targetTable.getDirFilename() + ": " + details);
+        if (!silent) {
+            JOptionPane.showMessageDialog(tab,
+                    MessageFormat.format(I18.get("edit_timing_tags_cleaned_msg"), details),
+                    I18.get("edit_timing_tags_cleaned_title"),
+                    JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    private String formatTimingTagCleanupDetails(List<SongTimingTagSanityService.Finding> findings) {
+        List<String> removed = new ArrayList<>();
+        List<String> corrected = new ArrayList<>();
+        for (SongTimingTagSanityService.Finding finding : findings) {
+            if (finding.action() == SongTimingTagSanityService.Action.REMOVE) {
+                removed.add(formatTimingTag(finding.tag()));
+            } else if (finding.action() == SongTimingTagSanityService.Action.CORRECT) {
+                corrected.add(formatTimingTag(finding.tag()));
+            }
+        }
+
+        List<String> parts = new ArrayList<>();
+        if (!removed.isEmpty()) {
+            parts.add("Removed: " + String.join(", ", removed));
+        }
+        if (!corrected.isEmpty()) {
+            parts.add("Corrected: " + String.join(", ", corrected));
+        }
+        return String.join("; ", parts);
+    }
+
+    private String formatTimingTag(UltrastarHeaderTag tag) {
+        String tagName = tag.getTagName();
+        return "#" + tagName.substring(0, tagName.length() - 1);
+    }
+
+    private double currentAudioDurationSeconds() {
+        if (mp3 == null || mp3.getDuration() <= 0L) {
+            return SongTimingTagSanityService.UNKNOWN_AUDIO_DURATION_SECONDS;
+        }
+        return mp3.getDuration() / 1_000_000d;
+    }
+
     private void logEditorLayoutState(String phase) {
         try {
             SongHeader header = sheet != null ? sheet.getSongHeader() : null;
@@ -10553,7 +10990,7 @@ public class YassActions implements DropTargetListener {
     private YassSession initMic() {
         YassSession session;
         if (true) {
-            // TODO: Fix the mic!
+            // Microphone pitch capture is currently disabled; see docs/specs/microphone-pitch-capture.md.
             return null;
         }
         LOGGER.info("Searching for USB mic...");
@@ -11260,7 +11697,7 @@ public class YassActions implements DropTargetListener {
                 songList.addSong(filedir, folder, name);
                 if (starteditor) {
                     songList.gotoSong(table);
-                    openFiles(file, false);
+                    openFilesAfterWizard(file);
                     if (shouldOfferSeparationAfterWizard(wiz.getWizardTranscriptionState())) {
                         maybeStartSeparationAfterCreateSong();
                     }
@@ -11270,7 +11707,7 @@ public class YassActions implements DropTargetListener {
         } else {
             if (file != null && starteditor) {
                 songList.gotoSong(table);
-                openFiles(file, false);
+                openFilesAfterWizard(file);
                 if (shouldOfferSeparationAfterWizard(wiz.getWizardTranscriptionState())) {
                     maybeStartSeparationAfterCreateSong();
                 }

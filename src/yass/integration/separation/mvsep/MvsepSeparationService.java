@@ -30,6 +30,8 @@ import yass.integration.separation.SeparationProgressListener;
 import yass.integration.separation.SeparationRequest;
 import yass.integration.separation.SeparationResult;
 import yass.integration.separation.SeparationService;
+import yass.options.YtDlpPanel;
+import yass.Timebase;
 
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -38,8 +40,11 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
 import java.text.Normalizer;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -50,6 +55,8 @@ public class MvsepSeparationService implements SeparationService {
     private static final int CONNECT_TIMEOUT_MS = 30_000;
     private static final int READ_TIMEOUT_MS = 300_000;
     private static final int MAX_POLLS = 1_440;
+    private static final int TRANSCODE_TIMEOUT_SECONDS = 600;
+    private static final int DEFAULT_AUDIO_BITRATE_KBPS = 192;
 
     private final YassProperties properties;
 
@@ -238,7 +245,7 @@ public class MvsepSeparationService implements SeparationService {
 
         File songDirectory = new File(request.getSongDirectory());
         String baseName = request.getSongBaseName();
-        LinkedHashMap<DownloadDescriptor, File> downloadedFiles = downloadAllCandidates(result, stems, listener, songDirectory, baseName, outputFormat.getExtension());
+        LinkedHashMap<DownloadDescriptor, File> downloadedFiles = downloadAllCandidates(result, stems, listener, songDirectory, baseName, outputFormat.getDownloadExtension());
 
         File vocalsFile = resolveDownloadedStem(stems, downloadedFiles, "vocals");
         File leadFile = resolveDownloadedStem(stems, downloadedFiles, "lead");
@@ -249,11 +256,250 @@ public class MvsepSeparationService implements SeparationService {
             throw new IOException("MVSEP finished, but no downloadable stems could be downloaded.");
         }
 
-        return new SeparationResult(vocalsFile,
+        SeparationResult rawResult = new SeparationResult(vocalsFile,
                 leadFile,
                 instrumentalFile,
                 instrumentalBackingFile,
                 new ArrayList<>(downloadedFiles.values()));
+        if (outputFormat.requiresLocalTranscode()) {
+            return transcodeResult(rawResult, outputFormat, listener);
+        }
+        return rawResult;
+    }
+
+    private SeparationResult transcodeResult(SeparationResult result,
+                                             MvsepOutputFormat targetFormat,
+                                             SeparationProgressListener listener) throws IOException {
+        Map<String, File> convertedFiles = new LinkedHashMap<>();
+        List<File> downloadedFiles = new ArrayList<>();
+        for (File downloadedFile : result.getDownloadedFiles()) {
+            File convertedFile = transcodeStem(downloadedFile, targetFormat, listener, convertedFiles);
+            if (convertedFile != null && !downloadedFiles.contains(convertedFile)) {
+                downloadedFiles.add(convertedFile);
+            }
+        }
+
+        File vocalsFile = transcodeStem(result.getVocalsFile(), targetFormat, listener, convertedFiles);
+        File leadFile = transcodeStem(result.getLeadFile(), targetFormat, listener, convertedFiles);
+        File instrumentalFile = transcodeStem(result.getInstrumentalFile(), targetFormat, listener, convertedFiles);
+        File instrumentalBackingFile = transcodeStem(result.getInstrumentalBackingFile(), targetFormat, listener, convertedFiles);
+        return new SeparationResult(vocalsFile, leadFile, instrumentalFile, instrumentalBackingFile, downloadedFiles);
+    }
+
+    private File transcodeStem(File stem,
+                               MvsepOutputFormat targetFormat,
+                               SeparationProgressListener listener,
+                               Map<String, File> convertedFiles) throws IOException {
+        if (stem == null) {
+            return null;
+        }
+        if (stem.getName().toLowerCase(Locale.ROOT).endsWith("." + targetFormat.getExtension())) {
+            return stem;
+        }
+
+        String key = stem.getCanonicalPath();
+        File cached = convertedFiles.get(key);
+        if (cached != null) {
+            return cached;
+        }
+
+        File output = buildUniqueConvertedTarget(stem, targetFormat.getExtension());
+        listener.onStatusChanged("Converting " + stem.getName() + " to " + targetFormat.getLabel() + "...");
+        LOGGER.info("Converting MVSEP stem " + stem.getAbsolutePath() + " to " + output.getAbsolutePath());
+
+        List<String> command = new ArrayList<>(Arrays.asList(resolveFfmpegExecutable(),
+                "-y",
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                stem.getAbsolutePath()));
+        addTranscodeArguments(command, targetFormat);
+        command.add(output.getAbsolutePath());
+
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        processBuilder.redirectErrorStream(true);
+        prependFfmpegToPath(processBuilder);
+        Process process = processBuilder.start();
+
+        boolean finished;
+        try {
+            finished = process.waitFor(TRANSCODE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException ex) {
+            process.destroyForcibly();
+            Thread.currentThread().interrupt();
+            throw new IOException("FFmpeg conversion interrupted for " + stem.getName(), ex);
+        }
+
+        if (!finished) {
+            process.destroyForcibly();
+            throw new IOException("FFmpeg conversion timed out for " + stem.getName() + ".");
+        }
+        String outputText = readFully(process.getInputStream());
+        if (process.exitValue() != 0) {
+            Files.deleteIfExists(output.toPath());
+            throw new IOException("FFmpeg conversion failed for " + stem.getName() + ":\n" + outputText);
+        }
+
+        archiveIntermediateStem(stem, output);
+        convertedFiles.put(key, output);
+        return output;
+    }
+
+    private void addTranscodeArguments(List<String> command, MvsepOutputFormat targetFormat) {
+        if (targetFormat == MvsepOutputFormat.OGG_VORBIS) {
+            command.add("-c:a");
+            command.add("libvorbis");
+            command.add("-q:a");
+            command.add(Integer.toString(resolveVorbisQuality()));
+            return;
+        }
+        if (targetFormat == MvsepOutputFormat.OGG_OPUS) {
+            command.add("-c:a");
+            command.add("libopus");
+            command.add("-b:a");
+            command.add(resolveAudioBitrateKbps() + "k");
+        }
+    }
+
+    private int resolveVorbisQuality() {
+        int bitrate = resolveAudioBitrateKbps();
+        if (bitrate <= 128) {
+            return 4;
+        }
+        if (bitrate <= 160) {
+            return 5;
+        }
+        if (bitrate <= 192) {
+            return 6;
+        }
+        if (bitrate <= 256) {
+            return 8;
+        }
+        return 10;
+    }
+
+    private int resolveAudioBitrateKbps() {
+        String bitrate = properties.getProperty(YtDlpPanel.YTDLP_AUDIO_BITRATE);
+        if (StringUtils.isBlank(bitrate)) {
+            return DEFAULT_AUDIO_BITRATE_KBPS;
+        }
+        String digits = bitrate.replaceAll("[^0-9]", "");
+        if (StringUtils.isBlank(digits)) {
+            return DEFAULT_AUDIO_BITRATE_KBPS;
+        }
+        try {
+            int value = Integer.parseInt(digits);
+            return value >= 32 && value <= 512 ? value : DEFAULT_AUDIO_BITRATE_KBPS;
+        } catch (NumberFormatException ex) {
+            return DEFAULT_AUDIO_BITRATE_KBPS;
+        }
+    }
+
+    private File buildUniqueConvertedTarget(File source, String extension) {
+        File parent = source.getParentFile();
+        String baseName = stripExtension(source.getName());
+        File candidate = new File(parent, baseName + "." + extension);
+        int index = 2;
+        while (candidate.exists()) {
+            candidate = new File(parent, baseName + " " + index + "." + extension);
+            index++;
+        }
+        return candidate;
+    }
+
+    private void deleteIntermediateStem(File stem) {
+        try {
+            Files.deleteIfExists(stem.toPath());
+        } catch (IOException ex) {
+            LOGGER.log(Level.WARNING, "Could not delete intermediate MVSEP stem " + stem.getAbsolutePath(), ex);
+        }
+    }
+
+    private void archiveIntermediateStem(File stem, File finalAudioFile) {
+        if (stem == null) {
+            return;
+        }
+        if (!stem.getName().toLowerCase(Locale.ROOT).endsWith(".wav")) {
+            deleteIntermediateStem(stem);
+            return;
+        }
+        try {
+            moveIntermediateStemToTempCache(stem, finalAudioFile);
+        } catch (IOException ex) {
+            LOGGER.log(Level.WARNING, "Could not move intermediate MVSEP WAV to the audio cache: " + stem.getAbsolutePath(), ex);
+        }
+    }
+
+    private File moveIntermediateStemToTempCache(File stem, File finalAudioFile) throws IOException {
+        if (stem == null || finalAudioFile == null || !stem.isFile()) {
+            return null;
+        }
+        File cacheFile = resolveNormalAudioCacheFile(finalAudioFile);
+        Files.createDirectories(cacheFile.getParentFile().toPath());
+        Files.move(stem.toPath(), cacheFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        LOGGER.info("Moved intermediate MVSEP WAV to audio cache " + cacheFile.getAbsolutePath());
+        return cacheFile;
+    }
+
+    private File resolveNormalAudioCacheFile(File finalAudioFile) {
+        File tempDirectory = getTempCacheDirectory();
+        return new File(tempDirectory, "audio-" + buildTempAudioHash(finalAudioFile) + "-normal.wav");
+    }
+
+    private File getTempCacheDirectory() {
+        String configured = properties != null ? properties.getProperty("temp-dir") : null;
+        File baseDirectory = StringUtils.isNotBlank(configured)
+                ? new File(configured)
+                : new File(System.getProperty("user.home"), ".yass" + File.separator + "temp");
+        return new File(baseDirectory, "audio-cache");
+    }
+
+    private String buildTempAudioHash(File sourceFile) {
+        String fingerprint = sourceFile.getAbsolutePath() + "|" + sourceFile.length() + "|" + sourceFile.lastModified() + "|" + Timebase.NORMAL.getId();
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            byte[] bytes = digest.digest(fingerprint.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder();
+            for (int i = 0; i < Math.min(bytes.length, 8); i++) {
+                builder.append(String.format(Locale.ROOT, "%02x", bytes[i]));
+            }
+            return builder.toString();
+        } catch (Exception ex) {
+            throw new IllegalStateException("SHA-1 is not available for the audio cache hash.", ex);
+        }
+    }
+
+    private void prependFfmpegToPath(ProcessBuilder processBuilder) {
+        String ffmpegExecutable = resolveFfmpegExecutable();
+        File ffmpegFile = new File(ffmpegExecutable);
+        String ffmpegDirectory = ffmpegFile.getParent();
+        if (StringUtils.isBlank(ffmpegDirectory)) {
+            return;
+        }
+        processBuilder.environment().merge("PATH", ffmpegDirectory, (existing, added) -> added + File.pathSeparator + existing);
+    }
+
+    private String resolveFfmpegExecutable() {
+        String ffmpegPath = properties.getProperty("ffmpegPath");
+        if (StringUtils.isBlank(ffmpegPath)) {
+            return "ffmpeg";
+        }
+        File configuredPath = new File(ffmpegPath);
+        if (configuredPath.isDirectory()) {
+            File windowsExecutable = new File(configuredPath, "ffmpeg.exe");
+            if (windowsExecutable.isFile()) {
+                return windowsExecutable.getAbsolutePath();
+            }
+            File unixExecutable = new File(configuredPath, "ffmpeg");
+            if (unixExecutable.isFile()) {
+                return unixExecutable.getAbsolutePath();
+            }
+        } else if (configuredPath.isFile()) {
+            return configuredPath.getAbsolutePath();
+        }
+        return "ffmpeg";
     }
 
     private int parsePollInterval(String value) {
@@ -288,7 +534,7 @@ public class MvsepSeparationService implements SeparationService {
             if (StringUtils.isNotBlank(model.getAddOpt2())) {
                 writeFormField(data, boundary, "add_opt2", model.getAddOpt2());
             }
-            writeFormField(data, boundary, "output_format", outputFormat.getApiValue());
+            writeFormField(data, boundary, "output_format", outputFormat.getRemoteApiValue());
             writeFileField(data, boundary, "audiofile", request.getAudioFile());
             data.writeBytes("--" + boundary + "--\r\n");
             data.flush();
@@ -827,7 +1073,7 @@ public class MvsepSeparationService implements SeparationService {
             return null;
         }
         String normalized = value.toLowerCase(Locale.ROOT);
-        for (String ext : List.of("mp3", "flac", "wav", "m4a")) {
+        for (String ext : List.of("mp3", "flac", "wav", "m4a", "ogg", "opus")) {
             if (normalized.contains("." + ext)) {
                 return ext;
             }

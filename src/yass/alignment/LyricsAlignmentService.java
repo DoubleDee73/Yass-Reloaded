@@ -19,9 +19,13 @@ public class LyricsAlignmentService {
     private static final double MIN_ANCHOR_SCORE = 0.82d;
     private static final double MIN_OPENING_ANCHOR_SCORE = 0.78d;
     private static final int MAX_NEAR_DISTANCE = 1;
+    private static final int MAX_GAP_ADJUSTMENT_MS = 5_000;
 
     public LyricsAlignmentResult alignAndApply(YassTable table, OpenAiTranscriptionResult transcriptionResult) {
         List<LyricToken> lyricTokens = transcriptionResult.getLyricTokens();
+        if (lyricTokens.isEmpty()) {
+            lyricTokens = LyricsAlignmentTokenizer.buildTokens(table);
+        }
         List<OpenAiTranscriptWord> transcriptWords = transcriptionResult.getWords();
         if (lyricTokens.isEmpty() || transcriptWords.isEmpty()) {
             return new LyricsAlignmentResult(0, 0, 0, 0d, table.getGap(), List.of());
@@ -114,7 +118,18 @@ public class LyricsAlignmentService {
                                         List<LyricToken> lyricTokens,
                                         List<OpenAiTranscriptWord> transcriptWords,
                                         List<AlignmentAnchor> anchors) {
-        if (table.getGap() > 0d) {
+        if (transcriptWords.isEmpty()) {
+            return table.getGap();
+        }
+        AlignmentAnchor openingAnchor = anchors.stream()
+                .filter(anchor -> anchor.getLyricStart() == 0 && anchor.getTranscriptStart() == 0)
+                .findFirst()
+                .orElse(null);
+        if (openingAnchor == null || lyricTokens.isEmpty()) {
+            return table.getGap();
+        }
+        int firstLyricRow = lyricTokens.get(0).getFirstRow();
+        if (firstLyricRow < 0 || firstLyricRow != table.getFirstNoteRow()) {
             return table.getGap();
         }
         int startMs = transcriptWords.stream()
@@ -126,6 +141,12 @@ public class LyricsAlignmentService {
             return table.getGap();
         }
         startMs = (int) (Math.round(startMs / 10.0d) * 10);
+        if (table.getGap() > 0d && Math.abs(startMs - table.getGap()) > MAX_GAP_ADJUSTMENT_MS) {
+            return table.getGap();
+        }
+        if (startMs == Math.round(table.getGap())) {
+            return table.getGap();
+        }
         LOGGER.info("Applying initial OpenAI word start to #GAP: " + startMs + " ms");
         table.setGap(startMs);
         return startMs;
@@ -139,8 +160,6 @@ public class LyricsAlignmentService {
         LyricToken lastToken = lyricTokens.get(anchor.getLyricEnd());
         int moved = 0;
         int nextFreeBeat = findRequiredStartBeatBefore(table, firstToken.getFirstRow());
-        boolean preserveSongStart = anchor.getLyricStart() == 0 && firstToken.getFirstRow() == table.getFirstNoteRow();
-        int preserveThroughRow = preserveSongStart ? findFirstPageBreakWithin(table, firstToken.getFirstRow(), lastToken.getLastRow()) : -1;
 
         for (int offset = 0; offset <= anchor.getLyricEnd() - anchor.getLyricStart(); offset++) {
             LyricToken token = lyricTokens.get(anchor.getLyricStart() + offset);
@@ -149,15 +168,28 @@ public class LyricsAlignmentService {
             if (rowIndices.isEmpty()) {
                 continue;
             }
-            if (preserveThroughRow >= 0 && rowIndices.get(rowIndices.size() - 1) <= preserveThroughRow) {
-                nextFreeBeat = table.getRowAt(rowIndices.get(rowIndices.size() - 1)).getBeatInt()
-                        + Math.max(1, table.getRowAt(rowIndices.get(rowIndices.size() - 1)).getLengthInt()) + 1;
-                continue;
+
+            int targetBeat = (int) Math.round(msToBeat(table, word.getStartMs()));
+            if (nextFreeBeat != Integer.MIN_VALUE && targetBeat < nextFreeBeat) {
+                targetBeat = nextFreeBeat;
             }
 
-            double targetStartBeat = msToBeat(table, word.getStartMs());
-            double targetEndBeat = msToBeat(table, Math.max(word.getStartMs(), word.getEndMs()));
-            double span = Math.max(rowIndices.size() + 1d, targetEndBeat - targetStartBeat);
+            int targetEndBeat = (int) Math.round(msToBeat(table, Math.max(word.getStartMs(), word.getEndMs())));
+            if (offset < anchor.getLyricEnd() - anchor.getLyricStart()) {
+                OpenAiTranscriptWord nextWord = transcriptWords.get(anchor.getTranscriptStart() + offset + 1);
+                int nextWordStartBeat = (int) Math.round(msToBeat(table, nextWord.getStartMs()));
+                targetEndBeat = Math.min(targetEndBeat, nextWordStartBeat - 1);
+            }
+
+            int minSpan = Math.max(1, rowIndices.size() * 2 - 1);
+            if (targetEndBeat < targetBeat + minSpan) {
+                targetEndBeat = targetBeat + minSpan;
+            }
+            int totalLengthBudget = Math.max(rowIndices.size(),
+                    targetEndBeat - targetBeat - (rowIndices.size() - 1));
+            int baseLength = totalLengthBudget / rowIndices.size();
+            int extraBeats = totalLengthBudget % rowIndices.size();
+            int cursorBeat = targetBeat;
 
             for (int rowOffset = 0; rowOffset < rowIndices.size(); rowOffset++) {
                 int rowIndex = rowIndices.get(rowOffset);
@@ -165,17 +197,18 @@ public class LyricsAlignmentService {
                 if (row == null || !row.isNote()) {
                     continue;
                 }
-                double segmentStart = targetStartBeat + (span * rowOffset / rowIndices.size());
-                int targetBeat = (int) Math.round(segmentStart);
-                if (nextFreeBeat != Integer.MIN_VALUE && targetBeat < nextFreeBeat) {
-                    targetBeat = nextFreeBeat;
-                }
-                if (row.getBeatInt() != targetBeat) {
-                    row.setBeat(targetBeat);
+                int targetLength = baseLength + (rowOffset < extraBeats ? 1 : 0);
+                if (row.getBeatInt() != cursorBeat) {
+                    row.setBeat(cursorBeat);
                     moved++;
                 }
-                nextFreeBeat = row.getBeatInt() + 1;
+                if (row.getLengthInt() != targetLength) {
+                    row.setLength(targetLength);
+                    moved++;
+                }
+                cursorBeat = row.getBeatInt() + row.getLengthInt() + 1;
             }
+            nextFreeBeat = cursorBeat;
         }
         return moved;
     }
@@ -194,15 +227,6 @@ public class LyricsAlignmentService {
         return targetBeat - table.getRowAt(firstRow).getBeatInt();
     }
 
-    private int findFirstPageBreakWithin(YassTable table, int firstRow, int lastRow) {
-        for (int rowIndex = firstRow; rowIndex <= lastRow; rowIndex++) {
-            YassRow row = table.getRowAt(rowIndex);
-            if (row != null && row.isPageBreak()) {
-                return rowIndex;
-            }
-        }
-        return -1;
-    }
     private int findRequiredStartBeatBefore(YassTable table, int firstRow) {
         for (int rowIndex = firstRow - 1; rowIndex >= 0; rowIndex--) {
             YassRow row = table.getRowAt(rowIndex);

@@ -141,6 +141,18 @@ class FanartTvCoverPickerDialogSpec extends Specification {
         !source.contains('addChangeListener(lazyLoadListener)')
     }
 
+    def 'sorts candidate tiles alphabetically by album name'() {
+        given:
+        def dialog = new FanartTvCoverPickerDialog(null, 'Title', 'Download', [
+                new FanartTvCoverCandidate('https://assets.fanart.tv/fanart/z.jpg', 'https://images.fanart.tv/z.jpg', 'Zebra', 0, false),
+                new FanartTvCoverCandidate('https://assets.fanart.tv/fanart/a.jpg', 'https://images.fanart.tv/a.jpg', 'alpha', 0, false),
+                new FanartTvCoverCandidate('https://assets.fanart.tv/fanart/b.jpg', 'https://images.fanart.tv/b.jpg', 'Beta', 0, true)
+        ])
+
+        expect:
+        findToggleButtons(dialog)*.getClientProperty('candidate')*.albumName == ['alpha', 'Beta', 'Zebra']
+    }
+
     def 'click to preview label is localized in every supported language'() {
         expect:
         [
@@ -224,5 +236,18 @@ class FanartTvCoverPickerDialogSpec extends Specification {
             }
         }
         null
+    }
+
+    private static java.util.List<JToggleButton> findToggleButtons(Container container) {
+        java.util.List<JToggleButton> buttons = []
+        for (component in container.components) {
+            if (component instanceof JToggleButton) {
+                buttons.add(component)
+            }
+            if (component instanceof Container) {
+                buttons.addAll(findToggleButtons(component))
+            }
+        }
+        buttons
     }
 }

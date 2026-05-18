@@ -10,6 +10,7 @@ UninstallIcon .\src\yass\resources\icons\yass-multi-icon.ico
 InstallDir "$PROGRAMFILES\Yass Reloaded"
 InstallDirRegKey HKLM "SOFTWARE\Yass Reloaded" "installdir"
 RequestExecutionLevel admin
+!include "FileFunc.nsh"
 
 LoadLanguageFile "${NSISDIR}\Contrib\Language files\English.nlf"
 LoadLanguageFile "${NSISDIR}\Contrib\Language files\German.nlf"
@@ -124,8 +125,6 @@ uninst:
   RMDir /r "$SMPROGRAMS\Yass 1.8.0"
   RMDir /r "$SMPROGRAMS\Yass 1.7.1"
 
-  ClearErrors
-  ExecWait '"$R0"'
   RMDir /r "$INSTDIR\app"
   RMDir /r "$INSTDIR\runtime"
   Delete "$INSTDIR\yass.exe"
@@ -266,6 +265,11 @@ Section "Uninstall"
   Delete "$INSTDIR\yass.exe"
   Delete "$INSTDIR\uninstall.exe"
   RMDir  "$INSTDIR"
+
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/UPGRADE" $R1
+  IfErrors 0 bye
 
   MessageBox MB_YESNO|MB_ICONEXCLAMATION \
     $(Msg_RemoveSettings) \

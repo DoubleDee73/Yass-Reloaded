@@ -470,6 +470,13 @@ public class YassAutoCorrect {
                 || msg.equals(YassRow.BORING_APOSTROPHE);
     }
 
+    public boolean autoCorrectionSupported(YassTable table, String msg) {
+        if (autoCorrectionSupported(msg)) {
+            return true;
+        }
+        return msg.equals(YassRow.UNCOMMON_GOLDEN) && canAutoCorrectGoldenNotes(table);
+    }
+
     // should return true if messages were added;
     // for now, only returns false if table is relative
 
@@ -1259,6 +1266,10 @@ public class YassAutoCorrect {
     public boolean autoCorrect(YassTable table, boolean all, String currentMessage) {
         // correct messages until data is inserted/removed
 
+        if (currentMessage.equals(YassRow.UNCOMMON_GOLDEN)) {
+            return autoCorrectGoldenNotes(table);
+        }
+
         String dir = table.getDir();
 
         int rows[];
@@ -1490,6 +1501,17 @@ public class YassAutoCorrect {
             }
         }
         return changed;
+    }
+
+    private boolean autoCorrectGoldenNotes(YassTable table) {
+        if (!canAutoCorrectGoldenNotes(table)) {
+            return false;
+        }
+        return table.suggestGoldenNotesForCorrection();
+    }
+
+    private boolean canAutoCorrectGoldenNotes(YassTable table) {
+        return table != null && table.getDurationGolden() < table.getIdealGoldenBeats();
     }
 
     /**

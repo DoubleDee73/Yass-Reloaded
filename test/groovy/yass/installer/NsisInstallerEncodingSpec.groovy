@@ -24,19 +24,35 @@ class NsisInstallerEncodingSpec extends Specification {
         script.contains('Yass Reloaded ya está instalado. $\\n$\\nElija `OK`')
     }
 
-    def 'installer avoids stale jpackage app images during upgrades'() {
+    def 'installer avoids stale jpackage app images during upgrades without running old uninstaller'() {
         given:
         String script = installerScript()
 
         expect:
         script.contains('InstallDirRegKey HKLM "SOFTWARE\\Yass Reloaded" "installdir"')
-        script.contains('ExecWait \'"$R0"\'')
+        !script.contains('ExecWait \'"$R0"\'')
+        !script.contains("ExecWait '\$R0 /UPGRADE'")
         script.contains('RMDir /r "$INSTDIR\\app"')
         script.contains('RMDir /r "$INSTDIR\\runtime"')
 
         and:
         script.findAll(/File \/r "dist-img\\yass\\\*\.\*"/).size() == 1
         script.contains('WriteRegStr HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Yass Reloaded" "UninstallString" \'"$INSTDIR\\uninstall.exe"\'')
+    }
+
+    def 'upgrade uninstall path never offers to delete user settings'() {
+        given:
+        String script = installerScript()
+
+        expect:
+        script.contains('!include "FileFunc.nsh"')
+        script.contains('${GetParameters} $R0')
+        script.contains('${GetOptions} $R0 "/UPGRADE" $R1')
+        script.contains('IfErrors 0 bye')
+
+        and:
+        script.indexOf('${GetOptions} $R0 "/UPGRADE" $R1') < script.indexOf('MessageBox MB_YESNO|MB_ICONEXCLAMATION \\')
+        script.indexOf('IfErrors 0 bye') < script.indexOf('RMDir /r "$PROFILE\\.yass"')
     }
 
     private static byte[] installerScriptBytes() {

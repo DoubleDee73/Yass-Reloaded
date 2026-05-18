@@ -253,6 +253,301 @@ class AlignToMelodySpec extends Specification {
         note.getHeightInt() == -2
     }
 
+    def 'alignPitch snaps to the exact detected pitch line when pressed again after nearest-octave alignment'() {
+        given:
+        YassTableModel ytm = new YassTableModel()
+        def note = new YassRow(':', '0', '4', '16', 'Test ')
+        ytm.addRow(note)
+        ytm.addRow(new YassRow('E', '', '', '', ''))
+
+        and:
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> true
+        }
+        YassTable yassTable = new YassTable(ytm, props)
+        yassTable.setBPM(15d)
+        yassTable.gap = 0
+        yassTable.model = Stub(TableModel) {
+            getRowCount() >> 2
+        }
+        def pitchData = [
+                pd(0.10f, 5), pd(0.20f, 5), pd(0.30f, 5), pd(0.40f, 5),
+                pd(1.10f, 5), pd(1.20f, 5), pd(1.30f, 5), pd(1.40f, 5),
+                pd(2.10f, 5), pd(2.20f, 5), pd(2.30f, 5), pd(2.40f, 5),
+                pd(3.10f, 5), pd(3.20f, 5)
+        ]
+
+        when:
+        yassTable.alignToMelody([note], pitchData, YassTable.AlignToMelodyContext.manual(),
+                YassTable.AlignToMelodyMode.PITCH_ONLY)
+
+        then:
+        note.getHeightInt() == 17
+
+        when:
+        yassTable.alignToMelody([note], pitchData, YassTable.AlignToMelodyContext.manual(),
+                YassTable.AlignToMelodyMode.PITCH_ONLY)
+
+        then:
+        note.getHeightInt() == 5
+    }
+
+    def 'recording alignment lowers C6-or-higher outliers when neighboring notes are much lower'() {
+        given:
+        def previous = new YassRow(':', '0', '4', '0', 'Prev ')
+        def outlier = new YassRow(':', '4', '4', '0', 'High ')
+        def next = new YassRow(':', '8', '4', '2', 'Next ')
+        YassTable yassTable = tableWithRows(previous, outlier, next)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(0, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(1, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(2, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(3, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(4, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(5, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(6, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(7, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(8, 4, 2, 1.0d))
+        pitchData.addAll(framesForBeat(9, 4, 2, 1.0d))
+        pitchData.addAll(framesForBeat(10, 4, 2, 1.0d))
+        pitchData.addAll(framesForBeat(11, 4, 2, 1.0d))
+
+        when:
+        yassTable.alignToMelody([previous, outlier, next], pitchData,
+                YassTable.AlignToMelodyContext.recording(), YassTable.AlignToMelodyMode.PITCH_ONLY)
+
+        then:
+        previous.getHeightInt() == 0
+        outlier.getHeightInt() == 12
+        next.getHeightInt() == 2
+    }
+
+    def 'create wizard alignment lowers C6-or-higher outliers when neighboring notes are much lower'() {
+        given:
+        def previous = new YassRow(':', '0', '4', '0', 'Prev ')
+        def outlier = new YassRow(':', '4', '4', '0', 'High ')
+        def next = new YassRow(':', '8', '4', '2', 'Next ')
+        YassTable yassTable = tableWithRows(previous, outlier, next)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(0, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(1, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(2, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(3, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(4, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(5, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(6, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(7, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(8, 4, 2, 1.0d))
+        pitchData.addAll(framesForBeat(9, 4, 2, 1.0d))
+        pitchData.addAll(framesForBeat(10, 4, 2, 1.0d))
+        pitchData.addAll(framesForBeat(11, 4, 2, 1.0d))
+
+        when:
+        yassTable.alignToMelody([previous, outlier, next], pitchData,
+                YassTable.AlignToMelodyContext.createWizard(), YassTable.AlignToMelodyMode.PITCH_ONLY)
+
+        then:
+        previous.getHeightInt() == 0
+        outlier.getHeightInt() == 12
+        next.getHeightInt() == 2
+    }
+
+    def 'inserted lyrics alignment uses generated-note octave handling'() {
+        given:
+        def previous = new YassRow(':', '0', '4', '0', 'Prev ')
+        def outlier = new YassRow(':', '4', '4', '0', 'High ')
+        def next = new YassRow(':', '8', '4', '2', 'Next ')
+        YassTable yassTable = tableWithRows(previous, outlier, next)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(0, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(1, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(2, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(3, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(4, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(5, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(6, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(7, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(8, 4, 2, 1.0d))
+        pitchData.addAll(framesForBeat(9, 4, 2, 1.0d))
+        pitchData.addAll(framesForBeat(10, 4, 2, 1.0d))
+        pitchData.addAll(framesForBeat(11, 4, 2, 1.0d))
+
+        when:
+        yassTable.alignToMelody([previous, outlier, next], pitchData,
+                YassTable.AlignToMelodyContext.insertedLyrics(), YassTable.AlignToMelodyMode.PITCH_ONLY)
+
+        then:
+        previous.getHeightInt() == 0
+        outlier.getHeightInt() == 12
+        next.getHeightInt() == 2
+    }
+
+    def 'recording alignment lowers very high outliers repeatedly until they land below C6'() {
+        given:
+        def previous = new YassRow(':', '0', '4', '0', 'Prev ')
+        def outlier = new YassRow(':', '4', '4', '0', 'VeryHigh ')
+        def next = new YassRow(':', '8', '4', '2', 'Next ')
+        YassTable yassTable = tableWithRows(previous, outlier, next)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(0, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(1, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(2, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(3, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(4, 4, 41, 1.0d))
+        pitchData.addAll(framesForBeat(5, 4, 41, 1.0d))
+        pitchData.addAll(framesForBeat(6, 4, 41, 1.0d))
+        pitchData.addAll(framesForBeat(7, 4, 41, 1.0d))
+        pitchData.addAll(framesForBeat(8, 4, 2, 1.0d))
+        pitchData.addAll(framesForBeat(9, 4, 2, 1.0d))
+        pitchData.addAll(framesForBeat(10, 4, 2, 1.0d))
+        pitchData.addAll(framesForBeat(11, 4, 2, 1.0d))
+
+        when:
+        yassTable.alignToMelody([previous, outlier, next], pitchData,
+                YassTable.AlignToMelodyContext.recording(), YassTable.AlignToMelodyMode.PITCH_ONLY)
+
+        then:
+        previous.getHeightInt() == 0
+        outlier.getHeightInt() == 17
+        next.getHeightInt() == 2
+    }
+
+    def 'recording alignment lowers notes above C6 even when neighbors are not more than twenty semitones lower'() {
+        given:
+        def previous = new YassRow(':', '0', '4', '11', 'Prev ')
+        def outlier = new YassRow(':', '4', '4', '30', 'Meet ')
+        def next = new YassRow(':', '8', '4', '11', 'Next ')
+        YassTable yassTable = tableWithRows(previous, outlier, next)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(0, 4, 11, 1.0d))
+        pitchData.addAll(framesForBeat(1, 4, 11, 1.0d))
+        pitchData.addAll(framesForBeat(2, 4, 11, 1.0d))
+        pitchData.addAll(framesForBeat(3, 4, 11, 1.0d))
+        pitchData.addAll(framesForBeat(4, 4, 29, 1.0d))
+        pitchData.addAll(framesForBeat(5, 4, 29, 1.0d))
+        pitchData.addAll(framesForBeat(6, 4, 29, 1.0d))
+        pitchData.addAll(framesForBeat(7, 4, 29, 1.0d))
+        pitchData.addAll(framesForBeat(8, 4, 11, 1.0d))
+        pitchData.addAll(framesForBeat(9, 4, 11, 1.0d))
+        pitchData.addAll(framesForBeat(10, 4, 11, 1.0d))
+        pitchData.addAll(framesForBeat(11, 4, 11, 1.0d))
+
+        when:
+        yassTable.alignToMelody([previous, outlier, next], pitchData,
+                YassTable.AlignToMelodyContext.recording(), YassTable.AlignToMelodyMode.PITCH_ONLY)
+
+        then:
+        previous.getHeightInt() == 11
+        outlier.getHeightInt() == 17
+        next.getHeightInt() == 11
+    }
+
+    def 'recording alignment raises below-C3 outliers when neighboring notes are much higher'() {
+        given:
+        def previous = new YassRow(':', '0', '4', '8', 'Prev ')
+        def outlier = new YassRow(':', '4', '4', '0', 'Low ')
+        def next = new YassRow(':', '8', '4', '10', 'Next ')
+        YassTable yassTable = tableWithRows(previous, outlier, next)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(0, 4, 8, 1.0d))
+        pitchData.addAll(framesForBeat(1, 4, 8, 1.0d))
+        pitchData.addAll(framesForBeat(2, 4, 8, 1.0d))
+        pitchData.addAll(framesForBeat(3, 4, 8, 1.0d))
+        pitchData.addAll(framesForBeat(4, 4, -13, 1.0d))
+        pitchData.addAll(framesForBeat(5, 4, -13, 1.0d))
+        pitchData.addAll(framesForBeat(6, 4, -13, 1.0d))
+        pitchData.addAll(framesForBeat(7, 4, -13, 1.0d))
+        pitchData.addAll(framesForBeat(8, 4, 10, 1.0d))
+        pitchData.addAll(framesForBeat(9, 4, 10, 1.0d))
+        pitchData.addAll(framesForBeat(10, 4, 10, 1.0d))
+        pitchData.addAll(framesForBeat(11, 4, 10, 1.0d))
+
+        when:
+        yassTable.alignToMelody([previous, outlier, next], pitchData,
+                YassTable.AlignToMelodyContext.recording(), YassTable.AlignToMelodyMode.PITCH_ONLY)
+
+        then:
+        previous.getHeightInt() == 8
+        outlier.getHeightInt() == -1
+        next.getHeightInt() == 10
+    }
+
+    def 'recording alignment raises very low outliers repeatedly until they land at C3 or above'() {
+        given:
+        def previous = new YassRow(':', '0', '4', '8', 'Prev ')
+        def outlier = new YassRow(':', '4', '4', '0', 'VeryLow ')
+        def next = new YassRow(':', '8', '4', '10', 'Next ')
+        YassTable yassTable = tableWithRows(previous, outlier, next)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(0, 4, 8, 1.0d))
+        pitchData.addAll(framesForBeat(1, 4, 8, 1.0d))
+        pitchData.addAll(framesForBeat(2, 4, 8, 1.0d))
+        pitchData.addAll(framesForBeat(3, 4, 8, 1.0d))
+        pitchData.addAll(framesForBeat(4, 4, -37, 1.0d))
+        pitchData.addAll(framesForBeat(5, 4, -37, 1.0d))
+        pitchData.addAll(framesForBeat(6, 4, -37, 1.0d))
+        pitchData.addAll(framesForBeat(7, 4, -37, 1.0d))
+        pitchData.addAll(framesForBeat(8, 4, 10, 1.0d))
+        pitchData.addAll(framesForBeat(9, 4, 10, 1.0d))
+        pitchData.addAll(framesForBeat(10, 4, 10, 1.0d))
+        pitchData.addAll(framesForBeat(11, 4, 10, 1.0d))
+
+        when:
+        yassTable.alignToMelody([previous, outlier, next], pitchData,
+                YassTable.AlignToMelodyContext.recording(), YassTable.AlignToMelodyMode.PITCH_ONLY)
+
+        then:
+        previous.getHeightInt() == 8
+        outlier.getHeightInt() == -1
+        next.getHeightInt() == 10
+    }
+
+    def 'recording alignment keeps C6 notes when neighboring notes are not far enough below'() {
+        given:
+        def previous = new YassRow(':', '0', '4', '5', 'Prev ')
+        def high = new YassRow(':', '4', '4', '0', 'High ')
+        def next = new YassRow(':', '8', '4', '5', 'Next ')
+        YassTable yassTable = tableWithRows(previous, high, next)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(0, 4, 5, 1.0d))
+        pitchData.addAll(framesForBeat(1, 4, 5, 1.0d))
+        pitchData.addAll(framesForBeat(2, 4, 5, 1.0d))
+        pitchData.addAll(framesForBeat(3, 4, 5, 1.0d))
+        pitchData.addAll(framesForBeat(4, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(5, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(6, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(7, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(8, 4, 5, 1.0d))
+        pitchData.addAll(framesForBeat(9, 4, 5, 1.0d))
+        pitchData.addAll(framesForBeat(10, 4, 5, 1.0d))
+        pitchData.addAll(framesForBeat(11, 4, 5, 1.0d))
+
+        when:
+        yassTable.alignToMelody([previous, high, next], pitchData,
+                YassTable.AlignToMelodyContext.recording(), YassTable.AlignToMelodyMode.PITCH_ONLY)
+
+        then:
+        previous.getHeightInt() == 5
+        high.getHeightInt() == 24
+        next.getHeightInt() == 5
+    }
+
+    private YassTable tableWithRows(YassRow... notes) {
+        YassTableModel ytm = new YassTableModel()
+        notes.each { ytm.addRow(it) }
+        ytm.addRow(new YassRow('E', '', '', '', ''))
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> true
+        }
+        YassTable yassTable = new YassTable(ytm, props)
+        yassTable.setBPM(15d)
+        yassTable.gap = 0
+        yassTable.model = Stub(TableModel) {
+            getRowCount() >> ytm.getRowCount()
+        }
+        yassTable
+    }
+
     private static PitchDetector.PitchData pd(float time, int pitch) {
         new PitchDetector.PitchData(time, pitch, "A", 440d)
     }

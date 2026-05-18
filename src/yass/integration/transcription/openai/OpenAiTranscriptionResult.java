@@ -16,6 +16,8 @@ public class OpenAiTranscriptionResult {
     private final List<LyricToken> lyricTokens;
     private final boolean fromCache;
     private final File cacheFile;
+    private final String textSourceTag;
+    private final String timingSourceTag;
 
     public OpenAiTranscriptionResult(File sourceAudioFile,
                                      File uploadAudioFile,
@@ -26,6 +28,30 @@ public class OpenAiTranscriptionResult {
                                      List<LyricToken> lyricTokens,
                                      boolean fromCache,
                                      File cacheFile) {
+        this(sourceAudioFile,
+                uploadAudioFile,
+                sourceTag,
+                transcriptText,
+                words,
+                segments,
+                lyricTokens,
+                fromCache,
+                cacheFile,
+                sourceTag,
+                sourceTag);
+    }
+
+    public OpenAiTranscriptionResult(File sourceAudioFile,
+                                     File uploadAudioFile,
+                                     String sourceTag,
+                                     String transcriptText,
+                                     List<OpenAiTranscriptWord> words,
+                                     List<OpenAiTranscriptSegment> segments,
+                                     List<LyricToken> lyricTokens,
+                                     boolean fromCache,
+                                     File cacheFile,
+                                     String textSourceTag,
+                                     String timingSourceTag) {
         this.sourceAudioFile = sourceAudioFile;
         this.uploadAudioFile = uploadAudioFile;
         this.sourceTag = sourceTag;
@@ -35,6 +61,8 @@ public class OpenAiTranscriptionResult {
         this.lyricTokens = lyricTokens == null ? Collections.emptyList() : List.copyOf(lyricTokens);
         this.fromCache = fromCache;
         this.cacheFile = cacheFile;
+        this.textSourceTag = textSourceTag == null ? sourceTag : textSourceTag;
+        this.timingSourceTag = timingSourceTag == null ? sourceTag : timingSourceTag;
     }
 
     public File getSourceAudioFile() {
@@ -71,5 +99,27 @@ public class OpenAiTranscriptionResult {
 
     public File getCacheFile() {
         return cacheFile;
+    }
+
+    public String getTextSourceTag() {
+        return textSourceTag;
+    }
+
+    public String getTimingSourceTag() {
+        return timingSourceTag;
+    }
+
+    public OpenAiTranscriptionResult withTextSourceTag(String textSourceTag) {
+        return new OpenAiTranscriptionResult(sourceAudioFile,
+                uploadAudioFile,
+                sourceTag,
+                transcriptText,
+                words,
+                segments,
+                lyricTokens,
+                fromCache,
+                cacheFile,
+                textSourceTag,
+                timingSourceTag);
     }
 }
