@@ -25,8 +25,8 @@ import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import yass.*;
-import yass.analysis.SubtitleParser;
 import yass.alignment.TranscriptNoteRebuildService;
+import yass.analysis.SubtitleParser;
 import yass.integration.transcription.SubtitleTranscriptionAdapter;
 import yass.integration.transcription.openai.OpenAiTranscriptionResult;
 
@@ -354,7 +354,7 @@ public class Lyrics extends JPanel {
             lyrics = gapLyricsPair.getRight();
             gap = gapLyricsPair.getLeft();
         } else {
-            lyrics = yassUtils.splitLyricsToLines(getText().split("\n"), 0);
+            lyrics = yassUtils.splitLyricsToLines(getText().split("\n"), 0, true);
             gap = 0;
         }
         outputStream.println("#TITLE:Unknown");

@@ -66,6 +66,8 @@ public class YassUtils {
     
     private int defaultLength = 2;
     private boolean spacingAfter = true;
+    private static final Pattern WIZARD_EXPLICIT_SEPARATOR_PATTERN =
+            Pattern.compile("\\s*(?:\u2022|\\+)\\s*");
 
     private static final String[] SONG_PARTS = {"intro", "chorus", "bridge", "verse", "outro"};
     private static final Pattern SONG_PART_PATTERN;
@@ -1198,12 +1200,24 @@ public class YassUtils {
      * @return
      */
     public List<String> splitLyricsToLines(String[] lines, int startBeat) {
+        return splitLyricsToLines(lines, startBeat, false);
+    }
+
+    /**
+     * Creates txt rows from lyrics. The lyrics must be pre-split into an array of lines
+     * @param lines A whole line of lyrics
+     * @return
+     */
+    public List<String> splitLyricsToLines(String[] lines, int startBeat, boolean useExplicitWizardSeparators) {
         List<String> textLines = new ArrayList<>();
         for (String line : lines) {
             if (isSongPartLine(line)) {
                 continue;
             }
-            List<String> rows = createRowsFromLine(line, startBeat);
+            List<String> rows = createRowsFromLine(line, startBeat, useExplicitWizardSeparators);
+            if (rows.isEmpty()) {
+                continue;
+            }
             textLines.addAll(rows);
             YassRow tempRow = new YassRow(rows.get(rows.size() -1));
             startBeat = tempRow.getBeatInt() + tempRow.getLengthInt() + 2;
@@ -1235,6 +1249,13 @@ public class YassUtils {
      * @return
      */
     private List<String> createRowsFromLine(String line, int startBeat) {
+        return createRowsFromLine(line, startBeat, false);
+    }
+
+    private List<String> createRowsFromLine(String line, int startBeat, boolean useExplicitWizardSeparators) {
+        if (useExplicitWizardSeparators && hasExplicitWizardSeparators(line)) {
+            return createRowsFromExplicitSeparatorLine(line, startBeat);
+        }
         String[] words = line.split(" ");
         List<String> rows = new ArrayList<>();
         for (String word : words) {
@@ -1245,6 +1266,38 @@ public class YassUtils {
             rows.addAll(syllables);
             YassRow tempRow = new YassRow(syllables.get(syllables.size() - 1));
             startBeat = tempRow.getBeatInt() + tempRow.getLengthInt() + 1;
+        }
+        return rows;
+    }
+
+    public static boolean hasExplicitWizardSeparators(String line) {
+        return line != null && (line.indexOf('\u2022') >= 0 || line.indexOf('+') >= 0);
+    }
+
+    private List<String> createRowsFromExplicitSeparatorLine(String line, int startBeat) {
+        String[] fragments = WIZARD_EXPLICIT_SEPARATOR_PATTERN.split(line, -1);
+        List<String> lyrics = new ArrayList<>();
+        for (String fragment : fragments) {
+            String lyric = fragment.trim();
+            if (!lyric.isEmpty()) {
+                lyrics.add(lyric);
+            }
+        }
+
+        List<String> rows = new ArrayList<>();
+        for (int i = 0; i < lyrics.size(); i++) {
+            String lyric = lyrics.get(i);
+            if (YassTable.FIXED_UPPERCASE.contains(lyric.trim())) {
+                lyric = StringUtils.capitalize(lyric);
+            }
+            if (!isSpacingAfter() && i == 0) {
+                lyric = " " + lyric;
+            }
+            if (isSpacingAfter() && i == lyrics.size() - 1) {
+                lyric += " ";
+            }
+            rows.add(createRow(lyric, startBeat));
+            startBeat = startBeat + getDefaultLength() + 1;
         }
         return rows;
     }
@@ -1260,22 +1313,26 @@ public class YassUtils {
         String[] syllables = hyphenator.hyphenateWord(word).split("­");
         int i = 0;
         for (String syllable : syllables) {
-            StringJoiner row = new StringJoiner("	");
-            row.add(":");
-            row.add(Integer.toString(startBeat));
-            row.add(Integer.toString(getDefaultLength()));
-            row.add("6");
             if (!isSpacingAfter() && i == 0) {
                 syllable = " " + syllable;
             }
             if (isSpacingAfter() && (++i == syllables.length)) {
                 syllable += " ";
             }
-            row.add(syllable);
-            rows.add(row.toString());
+            rows.add(createRow(syllable, startBeat));
             startBeat = startBeat + getDefaultLength() + 1;
         }
         return rows;
+    }
+
+    private String createRow(String lyric, int startBeat) {
+        StringJoiner row = new StringJoiner("	");
+        row.add(":");
+        row.add(Integer.toString(startBeat));
+        row.add(Integer.toString(getDefaultLength()));
+        row.add("6");
+        row.add(lyric);
+        return row.toString();
     }
 
     public void setHyphenator(YassHyphenator hyphenator) {
