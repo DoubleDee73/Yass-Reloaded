@@ -40,6 +40,7 @@ Missing for implementation:
 - Queue dialog labels and mode text that make sense for both import and
   separation-only jobs.
 - Duplicate active-job detection for library song files.
+- Detection and display for songs that already have separated stems assigned.
 - A non-destructive tag assignment rule for quiet queued separation so existing
   valid `#VOCALS` and `#INSTRUMENTAL` values are not silently overwritten.
 - Focused tests for queueing, state transitions, duplicate handling, and
@@ -58,17 +59,16 @@ Missing for implementation:
 8. Each successful job refreshes its Library entry.
 9. Failed jobs stay visible with their error; later queued jobs continue.
 
-The queue should also be openable directly, for example through the Library or
-Extras menu as `Queue anzeigen` / `Open Queue`. This action should not require
-USDB login or an active USDB Search dialog.
+The queue should also be openable directly through both the Library context menu
+and the Library/Extras main menu as `Queue anzeigen` / `Open Queue`. This action
+should not require USDB login or an active USDB Search dialog.
 
 ## Recommended Technical Direction
 
 Prefer evolving the existing USDB import queue into a more generic song-work
-queue rather than creating a second dialog.
-
-The first implementation can keep the existing class names if a broad rename
-would create churn, but the domain model should gain an explicit job mode:
+queue rather than creating a second dialog. Keep the existing
+`UsdbImportQueue*` class names for the first implementation to avoid broad
+rename churn, but add an explicit job mode to the domain model:
 
 - `IMPORT`
 - `IMPORT_AND_SEPARATE`
@@ -102,6 +102,9 @@ to `YassActions`.
   remove-finished action.
 - Adding the same song while it already has a non-terminal queue job should be
   ignored or reported as already queued.
+- Jobs for songs that already have separated stems assigned should remain
+  queueable, but the queue row or detail log should show a clear hint before
+  processing starts.
 - Existing valid `#VOCALS` and `#INSTRUMENTAL` assignments should not be
   overwritten silently by quiet queued separation.
 
@@ -117,10 +120,10 @@ enabled when:
 If no separation provider is configured, the action should show the same kind of
 clear warning used by editor separation.
 
-The direct queue-open action should be visible outside USDB Search, likely in
-the Library `Extras` menu near USDB Search/Compare or in the Library menu near
-import-related actions. It should open the existing queue dialog even when the
-queue is empty.
+The direct queue-open action should be visible outside USDB Search in both the
+Library context menu and the Library `Extras` main menu near USDB
+Search/Compare. It should open the existing queue dialog even when the queue is
+empty.
 
 The queue dialog mode column should show:
 
@@ -167,17 +170,18 @@ Add focused tests for:
 - separation-only jobs use the single-thread separation executor
 - failed separation marks only that job failed and lets following jobs continue
 - successful separation refreshes the Library entry
+- already separated songs get a visible queue hint before processing starts
 - existing valid `#VOCALS` and `#INSTRUMENTAL` tags are preserved during quiet
   queued separation
 - queue dialog mode text distinguishes `Import`, `Import + Separation`, and
   `Separation`
 - direct queue-open action opens the queue dialog without USDB Search
 
-## Open Questions
+## Decisions
 
-- Should already queued duplicate songs be silently skipped, or should the queue
-  dialog/status line report how many were skipped?
-- Should the direct queue-open action live in Library `Extras`, Library `File`,
-  or both context menu and main menu?
-- Should the generic queue classes be renamed now, or should the first
-  implementation keep existing `UsdbImportQueue*` names to minimize churn?
+- Songs that already have separated stems assigned remain queueable, but their
+  queue entry should show a clear hint.
+- The direct queue-open action should be available from both the Library context
+  menu and the Library `Extras` main menu.
+- Keep the existing `UsdbImportQueue*` class names during the first
+  implementation.
