@@ -6557,8 +6557,9 @@ public class YassActions implements DropTargetListener {
         menu.add(createSyncerTags);
         menu.add(searchFanartTvCover);
         menu.add(editHyphenations);
+        menu.addSeparator();
+        menu.add(openSongQueue);
         if (hasUsdbStoredUsername()) {
-            menu.addSeparator();
             menu.add(searchUsdb);
             menu.add(compareUsdb);
         }
@@ -12328,15 +12329,47 @@ public class YassActions implements DropTargetListener {
             throw new IOException("Song file could not be loaded: " + songFile);
         }
         SeparationResult result = runPreferredQuietSeparation(localTable, statusConsumer);
+        File songDirectory = songTextFile.getParentFile();
         File vocalsFile = result.getVocalsFile();
-        if (vocalsFile != null) {
+        if (vocalsFile != null && shouldAssignQuietSeparatedTrack(songDirectory, localTable.getVocals(), vocalsFile)) {
             localTable.setVocals(vocalsFile.getName());
+        } else if (vocalsFile != null && statusConsumer != null) {
+            statusConsumer.accept("Audio-Separation: existing #VOCALS kept.");
         }
         File preferredInstrumental = result.getPreferredInstrumentalFile(prop.getProperty("mvsep-instrumental-default"));
-        if (preferredInstrumental != null) {
+        if (preferredInstrumental != null
+                && shouldAssignQuietSeparatedTrack(songDirectory, localTable.getInstrumental(), preferredInstrumental)) {
             localTable.setInstrumental(preferredInstrumental.getName());
+        } else if (preferredInstrumental != null && statusConsumer != null) {
+            statusConsumer.accept("Audio-Separation: existing #INSTRUMENTAL kept.");
         }
         localTable.storeFile(songFile);
+    }
+
+    public static boolean hasExistingSeparatedStemAssignments(YassSong song) {
+        if (song == null) {
+            return false;
+        }
+        File directory = new File(StringUtils.defaultString(song.getDirectory()));
+        return hasExistingSongLocalFile(directory, song.getVocals())
+                || hasExistingSongLocalFile(directory, song.getInstrumental());
+    }
+
+    private static boolean hasExistingSongLocalFile(File directory, String filename) {
+        return directory != null
+                && StringUtils.isNotBlank(filename)
+                && new File(directory, filename).isFile();
+    }
+
+    static boolean shouldAssignQuietSeparatedTrack(File songDirectory, String currentValue, File selectedFile) {
+        if (selectedFile == null) {
+            return false;
+        }
+        if (StringUtils.isBlank(currentValue)) {
+            return true;
+        }
+        File currentFile = new File(songDirectory, currentValue);
+        return !currentFile.isFile() || currentFile.getName().equalsIgnoreCase(selectedFile.getName());
     }
 
     private SeparationResult runPreferredQuietSeparation(YassTable table, Consumer<String> statusConsumer) throws Exception {
@@ -13758,6 +13791,35 @@ public class YassActions implements DropTargetListener {
             dialog.setVisible(true);
         }
     };
+
+    public final Action openSongQueue = new AbstractAction(I18.get("usdb_queue_open")) {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            showSongQueue();
+        }
+    };
+
+    public void showSongQueue() {
+        getUsdbImportQueueService().showDialog(createOwnerFrame());
+    }
+
+    public void enqueueLibrarySongSeparation(List<YassSong> songs) {
+        if (songs == null || songs.isEmpty()) {
+            JOptionPane.showMessageDialog(getFrame(tab),
+                                          I18.get("lib_separate_audio_no_selection"),
+                                          I18.get("edit_audio_separate"),
+                                          JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        if (!hasConfiguredSeparation()) {
+            JOptionPane.showMessageDialog(getFrame(tab),
+                                          I18.get("create_lyrics_separate_transcribe_requires_mvsep"),
+                                          I18.get("edit_audio_separate"),
+                                          JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        getUsdbImportQueueService().enqueueExistingSongSeparation(songs);
+    }
 
     private String getLibrarySearchTerm() {
         if (currentView != VIEW_LIBRARY || filterEditor == null) {

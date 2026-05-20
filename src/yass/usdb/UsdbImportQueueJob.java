@@ -8,6 +8,12 @@ import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 
 public class UsdbImportQueueJob {
+    public enum Mode {
+        IMPORT,
+        IMPORT_AND_SEPARATE,
+        SEPARATE_EXISTING_SONG
+    }
+
     public enum State {
         QUEUED,
         IMPORTING,
@@ -22,10 +28,14 @@ public class UsdbImportQueueJob {
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private final String id = UUID.randomUUID().toString();
+    private final Mode mode;
     private final UsdbSongSummary summary;
     private final boolean separateAfterImport;
     private final UsdbImportConflictChoice conflictChoice;
     private final String displayName;
+    private final String artist;
+    private final String title;
+    private final boolean existingSeparationAssigned;
     private final StringBuilder generalLog = new StringBuilder();
     private final StringBuilder detailLog = new StringBuilder();
     private volatile State state = State.QUEUED;
@@ -37,16 +47,51 @@ public class UsdbImportQueueJob {
     private volatile long lastUpdatedAt = System.currentTimeMillis();
 
     public UsdbImportQueueJob(UsdbSongSummary summary, boolean separateAfterImport, UsdbImportConflictChoice conflictChoice) {
+        this.mode = separateAfterImport ? Mode.IMPORT_AND_SEPARATE : Mode.IMPORT;
         this.summary = summary;
         this.separateAfterImport = separateAfterImport;
         this.conflictChoice = conflictChoice;
-        this.displayName = StringUtils.defaultString(summary.artist()) + " - " + StringUtils.defaultString(summary.title());
+        this.artist = summary != null ? StringUtils.defaultString(summary.artist()) : "";
+        this.title = summary != null ? StringUtils.defaultString(summary.title()) : "";
+        this.displayName = artist + " - " + title;
+        this.existingSeparationAssigned = false;
         appendGeneral("Queued " + displayName);
         appendDetail("Created queue job for " + displayName);
     }
 
+    public static UsdbImportQueueJob forExistingSongSeparation(Path songFile,
+                                                               String displayName,
+                                                               String artist,
+                                                               String title,
+                                                               boolean existingSeparationAssigned) {
+        return new UsdbImportQueueJob(songFile, displayName, artist, title, existingSeparationAssigned);
+    }
+
+    private UsdbImportQueueJob(Path songFile,
+                               String displayName,
+                               String artist,
+                               String title,
+                               boolean existingSeparationAssigned) {
+        this.mode = Mode.SEPARATE_EXISTING_SONG;
+        this.summary = null;
+        this.separateAfterImport = false;
+        this.conflictChoice = null;
+        this.displayName = StringUtils.defaultIfBlank(displayName,
+                songFile != null ? songFile.getFileName().toString() : "");
+        this.artist = StringUtils.defaultString(artist);
+        this.title = StringUtils.defaultString(title);
+        this.existingSeparationAssigned = existingSeparationAssigned;
+        this.songFile = songFile;
+        appendGeneral("Queued " + this.displayName);
+        appendDetail("Created separation queue job for " + this.displayName);
+    }
+
     public String getId() {
         return id;
+    }
+
+    public Mode getMode() {
+        return mode;
     }
 
     public UsdbSongSummary getSummary() {
@@ -63,6 +108,26 @@ public class UsdbImportQueueJob {
 
     public String getDisplayName() {
         return displayName;
+    }
+
+    public String getArtist() {
+        return artist;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public boolean isExistingSeparationAssigned() {
+        return existingSeparationAssigned;
+    }
+
+    public boolean isImportJob() {
+        return mode == Mode.IMPORT || mode == Mode.IMPORT_AND_SEPARATE;
+    }
+
+    public boolean isSeparationJob() {
+        return mode == Mode.IMPORT_AND_SEPARATE || mode == Mode.SEPARATE_EXISTING_SONG;
     }
 
     public synchronized void appendGeneral(String message) {

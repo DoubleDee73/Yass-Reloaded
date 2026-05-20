@@ -36,7 +36,7 @@ public class UsdbImportQueueDialog extends JDialog {
     private boolean sortAscending = true;
 
     public UsdbImportQueueDialog(Window owner, UsdbImportQueueService service) {
-        super(owner, I18.get("lib_usdb_import_song"), ModalityType.MODELESS);
+        super(owner, I18.get("usdb_queue_title"), ModalityType.MODELESS);
         this.service = service;
         setDefaultCloseOperation(HIDE_ON_CLOSE);
         setLayout(new BorderLayout(10, 10));
@@ -232,7 +232,7 @@ public class UsdbImportQueueDialog extends JDialog {
     }
 
     private MatchStatus getMatchStatus(UsdbImportQueueJob job) {
-        if (job == null) {
+        if (job == null || !job.isImportJob()) {
             return MatchStatus.NONE;
         }
         YassActions actions = service.getActions();
@@ -258,6 +258,17 @@ public class UsdbImportQueueDialog extends JDialog {
         NONE,
         TITLE_ARTIST,
         EXACT
+    }
+
+    static String modeTextFor(UsdbImportQueueJob job) {
+        if (job == null) {
+            return "";
+        }
+        return switch (job.getMode()) {
+            case IMPORT -> I18.get("usdb_queue_mode_import");
+            case IMPORT_AND_SEPARATE -> I18.get("usdb_queue_mode_import_separate");
+            case SEPARATE_EXISTING_SONG -> I18.get("usdb_queue_mode_separation");
+        };
     }
 
     private final class QueueCellRenderer extends DefaultTableCellRenderer {
@@ -348,7 +359,7 @@ public class UsdbImportQueueDialog extends JDialog {
         }
 
         public String modeText(UsdbImportQueueJob job) {
-            return job.isSeparateAfterImport() ? I18.get("usdb_queue_mode_import_separate") : I18.get("usdb_queue_mode_import");
+            return UsdbImportQueueDialog.modeTextFor(job);
         }
 
         public String stateText(UsdbImportQueueJob job) {

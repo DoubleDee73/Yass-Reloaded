@@ -141,14 +141,18 @@ public class YassSongList extends JTable {
             setCalcMedley();
         }
     };
-    Action separateAudio = new AbstractAction(I18.get("edit_audio_separate")) {
+    Action separateAudio = new AbstractAction(I18.get("lib_audio_separate_queue")) {
         public void actionPerformed(ActionEvent e) {
             Vector<YassSong> selection = getSelectedSongs();
-            if (selection.size() != 1) {
+            if (selection == null || selection.isEmpty()) {
                 return;
             }
-            YassSong song = selection.firstElement();
-            actions.startSeparateAudioForSongFile(song.getDirectory() + File.separator + song.getFilename());
+            actions.enqueueLibrarySongSeparation(new ArrayList<>(selection));
+        }
+    };
+    Action openSongQueue = new AbstractAction(I18.get("usdb_queue_open")) {
+        public void actionPerformed(ActionEvent e) {
+            actions.showSongQueue();
         }
     };
     Action createDuet = new AbstractAction(I18.get("edit_tracks_create_duet")) {
@@ -334,15 +338,13 @@ public class YassSongList extends JTable {
         menuItem.addActionListener(e -> undoSelection());
         combinedPopup.add(menuItem = new JMenuItem(I18.get("lib_save_selected")));
         menuItem.addActionListener(e -> storeSelection());
+        combinedPopup.addSeparator();
+        combinedPopup.add(separateAudioMenuItem = new JMenuItem(separateAudio));
+        combinedPopup.add(new JMenuItem(openSongQueue));
+        combinedPopup.addSeparator();
+        combinedPopup.add(compareUsdbMenuItem);
         if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-            combinedPopup.addSeparator();
-            combinedPopup.add(separateAudioMenuItem = new JMenuItem(separateAudio));
-            combinedPopup.addSeparator();
-            combinedPopup.add(compareUsdbMenuItem);
             combinedPopup.add(visitUrl);
-        } else {
-            combinedPopup.addSeparator();
-            combinedPopup.add(compareUsdbMenuItem);
         }
         languagePopup = new JMenu(I18.get("lib_language"));
 
@@ -583,7 +585,7 @@ public class YassSongList extends JTable {
                             }
                             Vector<YassSong> selectedSongs = getSelectedSongs();
                             if (separateAudioMenuItem != null) {
-                                separateAudioMenuItem.setEnabled(selectedSongs.size() == 1 && actions.hasMvsepApiToken());
+                                separateAudioMenuItem.setEnabled(!selectedSongs.isEmpty() && actions.hasConfiguredSeparation());
                             }
                             if (createDuetMenuItem != null) {
                                 boolean canCreateDuet = false;

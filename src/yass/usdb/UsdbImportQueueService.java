@@ -1,8 +1,9 @@
 package yass.usdb;
 
 import org.apache.commons.lang3.StringUtils;
+import yass.I18;
 import yass.YassActions;
-import yass.integration.separation.audioseparator.AudioSeparatorSeparationService;
+import yass.YassSong;
 
 import javax.swing.*;
 import java.awt.*;
@@ -32,14 +33,28 @@ public class UsdbImportQueueService {
     private final YassActions actions;
     private final List<UsdbImportQueueJob> jobs = new ArrayList<>();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
-    private final ExecutorService importExecutor = Executors.newSingleThreadExecutor(r -> new Thread(r, "usdb-import-queue"));
-    private final ExecutorService separationExecutor = Executors.newSingleThreadExecutor(r -> new Thread(r, "usdb-separation-queue"));
+    private final ExecutorService importExecutor;
+    private final ExecutorService separationExecutor;
+    private final boolean autoShowDialog;
     private final Map<String, Future<?>> importTasks = new ConcurrentHashMap<>();
     private final Map<String, Future<?>> separationTasks = new ConcurrentHashMap<>();
     private UsdbImportQueueDialog dialog;
 
     public UsdbImportQueueService(YassActions actions) {
+        this(actions,
+                Executors.newSingleThreadExecutor(r -> new Thread(r, "usdb-import-queue")),
+                Executors.newSingleThreadExecutor(r -> new Thread(r, "usdb-separation-queue")),
+                true);
+    }
+
+    UsdbImportQueueService(YassActions actions,
+                           ExecutorService importExecutor,
+                           ExecutorService separationExecutor,
+                           boolean autoShowDialog) {
         this.actions = actions;
+        this.importExecutor = importExecutor;
+        this.separationExecutor = separationExecutor;
+        this.autoShowDialog = autoShowDialog;
     }
 
     public UsdbImportQueueJob enqueue(UsdbSongSummary summary,
@@ -52,8 +67,51 @@ public class UsdbImportQueueService {
         fireQueueChanged();
         Future<?> future = importExecutor.submit(() -> runImport(job));
         importTasks.put(job.getId(), future);
-        SwingUtilities.invokeLater(() -> showDialog(actions.createOwnerFrame()));
+        if (autoShowDialog && actions != null) {
+            SwingUtilities.invokeLater(() -> showDialog(actions.createOwnerFrame()));
+        }
         return job;
+    }
+
+    public List<UsdbImportQueueJob> enqueueExistingSongSeparation(List<YassSong> songs) {
+        if (songs == null || songs.isEmpty()) {
+            return List.of();
+        }
+        List<UsdbImportQueueJob> queued = new ArrayList<>();
+        for (YassSong song : songs) {
+            if (song == null) {
+                continue;
+            }
+            Path songFile = Path.of(song.getDirectory(), song.getFilename());
+            if (hasActiveSeparationJobFor(songFile)) {
+                continue;
+            }
+            String displayName = StringUtils.defaultString(song.getArtist()) + " - " + StringUtils.defaultString(song.getTitle());
+            UsdbImportQueueJob job = UsdbImportQueueJob.forExistingSongSeparation(
+                    songFile,
+                    displayName,
+                    song.getArtist(),
+                    song.getTitle(),
+                    YassActions.hasExistingSeparatedStemAssignments(song));
+            synchronized (jobs) {
+                jobs.add(job);
+            }
+            updateState(job,
+                    UsdbImportQueueJob.State.WAITING_SEPARATION,
+                    "Queued audio separation for " + job.getDisplayName(),
+                    buildSeparationQueueStatus(job));
+            if (job.isExistingSeparationAssigned()) {
+                job.appendDetail(I18.get("usdb_queue_existing_separation_hint"));
+            }
+            Future<?> separationFuture = separationExecutor.submit(() -> runSeparation(job, songFile));
+            separationTasks.put(job.getId(), separationFuture);
+            queued.add(job);
+        }
+        fireQueueChanged();
+        if (!queued.isEmpty() && autoShowDialog && actions != null) {
+            SwingUtilities.invokeLater(() -> showDialog(actions.createOwnerFrame()));
+        }
+        return queued;
     }
 
     public List<UsdbImportQueueJob> snapshot() {
@@ -70,6 +128,22 @@ public class UsdbImportQueueService {
         return findActiveJobFor(summary) != null;
     }
 
+    public boolean hasActiveSeparationJobFor(Path songFile) {
+        Path normalized = normalizeSongFile(songFile);
+        synchronized (jobs) {
+            return jobs.stream()
+                    .filter(job -> !job.isTerminal())
+                    .filter(UsdbImportQueueJob::isSeparationJob)
+                    .map(UsdbImportQueueJob::getSongFile)
+                    .map(this::normalizeSongFile)
+                    .anyMatch(normalized::equals);
+        }
+    }
+
+    private Path normalizeSongFile(Path songFile) {
+        return songFile == null ? Path.of("") : songFile.toAbsolutePath().normalize();
+    }
+
     public UsdbImportQueueJob findActiveJobFor(UsdbSongSummary summary) {
         if (summary == null) {
             return null;
@@ -77,6 +151,7 @@ public class UsdbImportQueueService {
         synchronized (jobs) {
             return jobs.stream()
                     .filter(job -> !job.isTerminal())
+                    .filter(UsdbImportQueueJob::isImportJob)
                     .filter(job -> sameSong(job.getSummary(), summary))
                     .findFirst()
                     .orElse(null);
@@ -98,10 +173,13 @@ public class UsdbImportQueueService {
         if (separationFuture != null) {
             separationFuture.cancel(true);
         }
-        if (job.getState() == UsdbImportQueueJob.State.QUEUED) {
+        if (job.getState() == UsdbImportQueueJob.State.QUEUED
+                || job.getState() == UsdbImportQueueJob.State.WAITING_SEPARATION) {
             updateState(job, UsdbImportQueueJob.State.CANCELED, "Cancelled " + job.getDisplayName(), "Queued job cancelled.");
         }
-        maybeDeleteUnfinishedFolder(job, parent);
+        if (job.isImportJob()) {
+            maybeDeleteUnfinishedFolder(job, parent);
+        }
         fireQueueChanged();
     }
 
@@ -133,6 +211,9 @@ public class UsdbImportQueueService {
     }
 
     private boolean sameSong(UsdbSongSummary left, UsdbSongSummary right) {
+        if (left == null || right == null) {
+            return false;
+        }
         return left.songId() == right.songId()
                 || (StringUtils.equalsIgnoreCase(StringUtils.trimToEmpty(left.artist()), StringUtils.trimToEmpty(right.artist()))
                 && StringUtils.equalsIgnoreCase(StringUtils.trimToEmpty(left.title()), StringUtils.trimToEmpty(right.title())));
@@ -155,7 +236,7 @@ public class UsdbImportQueueService {
             updateState(job, UsdbImportQueueJob.State.FINALIZING, "Finalizing " + job.getDisplayName(), "Refreshing library entry...");
             actions.refreshImportedSongInLibrary(result.songFile().toFile(), true);
 
-            if (job.isSeparateAfterImport()) {
+            if (job.isSeparationJob()) {
                 updateState(job,
                             UsdbImportQueueJob.State.WAITING_SEPARATION,
                             "Queued audio separation for " + job.getDisplayName(),
@@ -191,7 +272,10 @@ public class UsdbImportQueueService {
                 fireQueueChanged();
             });
             actions.refreshImportedSongInLibrary(songFile.toFile(), true);
-            updateState(job, UsdbImportQueueJob.State.DONE, "Finished " + job.getDisplayName(), "Import and audio separation finished.");
+            String doneMessage = job.getMode() == UsdbImportQueueJob.Mode.IMPORT_AND_SEPARATE
+                    ? "Import and audio separation finished."
+                    : "Audio separation finished.";
+            updateState(job, UsdbImportQueueJob.State.DONE, "Finished " + job.getDisplayName(), doneMessage);
         } catch (CancellationException ex) {
             updateState(job, UsdbImportQueueJob.State.CANCELED, "Cancelled " + job.getDisplayName(), "Audio separation cancelled.");
         } catch (Exception ex) {
@@ -210,7 +294,7 @@ public class UsdbImportQueueService {
     private String buildSeparationQueueStatus(UsdbImportQueueJob job) {
         synchronized (jobs) {
             List<UsdbImportQueueJob> separationJobs = jobs.stream()
-                    .filter(UsdbImportQueueJob::isSeparateAfterImport)
+                    .filter(UsdbImportQueueJob::isSeparationJob)
                     .filter(candidate -> candidate.getState() == UsdbImportQueueJob.State.WAITING_SEPARATION
                             || candidate.getState() == UsdbImportQueueJob.State.SEPARATING)
                     .toList();
