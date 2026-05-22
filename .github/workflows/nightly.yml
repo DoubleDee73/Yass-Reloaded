@@ -91,7 +91,6 @@ jobs:
           & "C:\Program Files (x86)\NSIS\makensis.exe" nsis-installer.nsi
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item yass.exe dist\yass-nightly-installer.exe
-          Copy-Item package-input\Yass-Reloaded.jar dist\Yass-Reloaded-nightly.jar
 
       - name: Build Linux/macOS Package
         if: matrix.os != 'windows-latest'
@@ -123,7 +122,8 @@ jobs:
           mv "$GENERATED_FILE" "$TARGET_FILE"
 
           if [ "${{ matrix.os }}" == "ubuntu-22.04" ]; then
-            cp package-input/Yass-Reloaded.jar dist/Yass-Reloaded-nightly.jar
+            NIGHTLY_STAMP=$(date -u +'%Y-%m-%d-%H%M%SZ')
+            cp package-input/Yass-Reloaded.jar "dist/Yass-Reloaded-nightly-${NIGHTLY_STAMP}-linux-x64.jar"
           fi
 
       - name: Upload Nightly Artifacts
