@@ -420,6 +420,26 @@ class YassTableSpec extends Specification {
         yassTable.getRowAt(3).getType() == ':'
     }
 
+    def 'suggestGoldenNotes does not build pitch leap candidates across page breaks'() {
+        given:
+        YassTable yassTable = tableForGoldenSuggestions([
+                note(':', 0, 2, 0, 'not '),
+                note(':', 3, 2, 7, 'across '),
+                new YassRow('-', '5', '', '', ''),
+                note(':', 6, 2, 0, 'page '),
+                note(':', 9, 2, 0, 'risk '),
+                note(':', 12, 2, 7, 'it '),
+                note(':', 15, 2, 3, 'all ')
+        ])
+        yassTable.setGoldenPoints(0, 1250, 250, 0, 6, '+6')
+
+        when:
+        yassTable.suggestGoldenNotes()
+
+        then:
+        noteTypes(yassTable) == [':', ':', ':', '*', '*', '*']
+    }
+
     def 'isSongWithTrailingSpaces should check, if a song has trailing spaces'() {
         given:
         YassTableModel ytm = new YassTableModel()
@@ -1000,6 +1020,61 @@ class YassTableSpec extends Specification {
         'hello b c d\ne f g h\n'      | 5        || ['One', '~ ', 'two ', 'he', 'lo ', 'b ', 'c ', 'd ', '_', 'e ', 'f ', 'g ', 'h ', '_', 'Four ', 'five', '~ ']
     }
 
+    def 'blank insert note creates a tilde placeholder with inherited pitch and capped length'() {
+        given:
+        YassTable yassTable = tableForInsertedLyrics([
+                note(':', 0, 4, 7, 'one '),
+                note(':', 9, 4, 12, 'two ')
+        ], [:])
+        int firstNoteRow = firstRowIndex(yassTable) { it.note }
+        yassTable.setRowSelectionInterval(firstNoteRow, firstNoteRow)
+
+        when:
+        invokeInsertNoteWithOptionalText(yassTable, '')
+
+        then:
+        noteTexts(yassTable) == ['one ', '~', 'two ']
+        noteBeats(yassTable) == [0, 4, 9]
+        noteLengths(yassTable) == [4, 3, 4]
+        notePitches(yassTable) == [7, 7, 12]
+        yassTable.getRowAt(yassTable.selectedRow).text == '~'
+    }
+
+    def 'blank insert note is blocked on comment rows'() {
+        given:
+        YassTable yassTable = tableForInsertedLyrics([
+                new YassRow('#', 'COMMENT:', 'key=C', '', ''),
+                note(':', 0, 4, 7, 'one ')
+        ], [:])
+        int commentRow = firstRowIndex(yassTable) { it.comment && it.headerCommentTag == 'COMMENT:' }
+        int originalRowCount = yassTable.rowCount
+        yassTable.setRowSelectionInterval(commentRow, commentRow)
+
+        when:
+        invokeInsertNoteWithOptionalText(yassTable, '')
+
+        then:
+        yassTable.rowCount == originalRowCount
+        noteTexts(yassTable) == ['one ']
+    }
+
+    def 'blank insert note is blocked when no beat space remains before the next note'() {
+        given:
+        YassTable yassTable = tableForInsertedLyrics([
+                note(':', 0, 4, 7, 'one '),
+                note(':', 4, 4, 12, 'two ')
+        ], [:])
+        int firstNoteRow = firstRowIndex(yassTable) { it.note }
+        yassTable.setRowSelectionInterval(firstNoteRow, firstNoteRow)
+
+        when:
+        invokeInsertNoteWithOptionalText(yassTable, '')
+
+        then:
+        noteTexts(yassTable) == ['one ', 'two ']
+        noteBeats(yassTable) == [0, 4]
+    }
+
     def 'insertLyricsWithVocalPitchAtBeat replaces the local note with aligned syllables inside the next-note gap'() {
         given:
         YassTable yassTable = tableForInsertedLyrics([
@@ -1372,6 +1447,21 @@ class YassTableSpec extends Specification {
         yassTable
     }
 
+    private static void invokeInsertNoteWithOptionalText(YassTable table, String noteText) {
+        def method = YassTable.getDeclaredMethod('insertNoteWithOptionalText', String)
+        method.accessible = true
+        method.invoke(table, noteText)
+    }
+
+    private static int firstRowIndex(YassTable table, Closure<Boolean> predicate) {
+        for (int index = 0; index < table.rowCount; index++) {
+            if (predicate.call(table.getRowAt(index))) {
+                return index
+            }
+        }
+        throw new AssertionError('No matching row found')
+    }
+
     private static List<String> noteTexts(YassTable table) {
         (0..<table.rowCount)
                 .collect { table.getRowAt(it) }
@@ -1398,6 +1488,13 @@ class YassTableSpec extends Specification {
                 .collect { table.getRowAt(it) }
                 .findAll { it?.note }
                 .collect { it.heightInt }
+    }
+
+    private static List<String> noteTypes(YassTable table) {
+        (0..<table.rowCount)
+                .collect { table.getRowAt(it) }
+                .findAll { it?.note }
+                .collect { it.type }
     }
 
     private static List<Integer> pageBreakBeats(YassTable table) {

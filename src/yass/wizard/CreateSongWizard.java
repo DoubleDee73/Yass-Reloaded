@@ -26,6 +26,7 @@ import org.apache.commons.lang3.StringUtils;
 import yass.*;
 import yass.alignment.TranscriptTruthRewriteService;
 import yass.ffmpeg.FFMPEGLocator;
+import yass.integration.lyrics.lrc.LrcTranscriptionAdapter;
 import yass.integration.lyrics.lrclib.*;
 import yass.integration.separation.SeparationPreference;
 import yass.integration.separation.SeparationRequest;
@@ -43,6 +44,7 @@ import yass.musicbrainz.MusicBrainz;
 import yass.musicbrainz.MusicBrainzInfo;
 
 import javax.swing.*;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
@@ -640,6 +642,11 @@ public class CreateSongWizard extends Wizard {
         return wizardTranscriptionState;
     }
 
+    enum LrcLyricsSourceAction {
+        SEARCH_LRCLIB,
+        IMPORT_LRC_FILE
+    }
+
     private void pasteLyricsFromClipboard() {
         String clipboardText = readClipboardText();
         if (clipboardText == null) {
@@ -676,6 +683,18 @@ public class CreateSongWizard extends Wizard {
     }
 
     private void startLrcLibSearchFromLyrics() {
+        LrcLyricsSourceAction action = promptForLrcLyricsSourceAction();
+        if (action == null) {
+            return;
+        }
+        if (action == LrcLyricsSourceAction.IMPORT_LRC_FILE) {
+            importLrcFileFromLyrics();
+            return;
+        }
+        startOnlineLrcLibSearchFromLyrics();
+    }
+
+    private void startOnlineLrcLibSearchFromLyrics() {
         LrcLibSearchQuery initialQuery = buildInitialLrcLibQuery();
         persistSuggestedArtistAndTitle(initialQuery);
         LrcLibSearchQuery query = new LrcLibSearchQuery(
@@ -686,6 +705,73 @@ public class CreateSongWizard extends Wizard {
             return;
         }
         promptForLrcLibSearch(initialQuery);
+    }
+
+    private LrcLyricsSourceAction promptForLrcLyricsSourceAction() {
+        Object[] options = {
+                I18.get("create_lyrics_lrclib_choice_search"),
+                I18.get("create_lyrics_lrclib_choice_import_lrc"),
+                I18.get("create_lyrics_lrclib_choice_cancel")
+        };
+        int choice = JOptionPane.showOptionDialog(
+                getDialog(),
+                I18.get("create_lyrics_lrclib_choice_prompt"),
+                I18.get("create_lyrics_lrclib_query_title"),
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                options,
+                options[0]);
+        return toLrcLyricsSourceAction(choice);
+    }
+
+    static LrcLyricsSourceAction toLrcLyricsSourceAction(int choice) {
+        return switch (choice) {
+            case 0 -> LrcLyricsSourceAction.SEARCH_LRCLIB;
+            case 1 -> LrcLyricsSourceAction.IMPORT_LRC_FILE;
+            default -> null;
+        };
+    }
+
+    private void importLrcFileFromLyrics() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileFilter(new FileNameExtensionFilter("LRC lyrics (*.lrc)", "lrc"));
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        File initialDirectory = resolveInitialLyricsImportDirectory();
+        if (initialDirectory != null) {
+            chooser.setCurrentDirectory(initialDirectory);
+        }
+        if (chooser.showOpenDialog(getDialog()) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        try {
+            OpenAiTranscriptionResult result = toImportedLrcTranscriptionResult(chooser.getSelectedFile());
+            wizardTranscriptionState = new WizardTranscriptionState(null, null, null, null, result);
+            applyWizardTranscriptionState(wizardTranscriptionState);
+            if (lyrics != null) {
+                lyrics.setWizardStatusText(I18.get("create_lyrics_lrc_import_status_ready"));
+                lyrics.refreshIntegrationAvailability();
+            }
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(getDialog(),
+                    StringUtils.defaultIfBlank(ex.getMessage(), ex.toString()),
+                    I18.get("create_lyrics_lrc_import"),
+                    JOptionPane.WARNING_MESSAGE);
+        }
+    }
+
+    private File resolveInitialLyricsImportDirectory() {
+        String path = StringUtils.firstNonBlank(getValue("filename"), getValue("video"));
+        if (StringUtils.isBlank(path)) {
+            return null;
+        }
+        File file = new File(path);
+        File directory = file.isDirectory() ? file : file.getParentFile();
+        return directory != null && directory.isDirectory() ? directory : null;
+    }
+
+    static OpenAiTranscriptionResult toImportedLrcTranscriptionResult(File lrcFile) throws IOException {
+        return new LrcTranscriptionAdapter().fromFile(lrcFile, 0);
     }
 
     private void maybePromptLrcLibSearchOnFirstLyricsDisplay() {

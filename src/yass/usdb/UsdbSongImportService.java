@@ -11,7 +11,6 @@ import org.apache.commons.lang3.StringUtils;
 import yass.UsdbFile;
 import yass.UsdbSyncerMetaFile;
 import yass.YassProperties;
-import yass.YassSong;
 import yass.YassTable;
 import yass.YassUtils;
 import yass.YtDlpSupport;
@@ -829,16 +828,32 @@ public class UsdbSongImportService {
         return trimmed;
     }
 
-    private String buildFolderName(String artist, String title) {
-        return YassSong.toFilename(StringUtils.defaultIfBlank(artist, "UnknownArtist")
-                + " - " + StringUtils.defaultIfBlank(title, "UnknownTitle"));
+    static String buildFolderName(String artist, String title) {
+        return safeFilenamePart(artist, "UnknownArtist") + " - " + safeFilenamePart(title, "UnknownTitle");
+    }
+
+    private static String safeFilenamePart(String value, String fallback) {
+        String source = StringUtils.defaultIfBlank(value, fallback);
+        StringBuilder result = new StringBuilder();
+        String illegal = "/\\?*:<>";
+        for (int i = 0; i < source.length(); i++) {
+            char ch = source.charAt(i);
+            if (illegal.indexOf(ch) < 0) {
+                result.append(ch);
+            }
+        }
+        String cleaned = StringUtils.normalizeSpace(result.toString());
+        while (cleaned.endsWith(".") || cleaned.endsWith(" ")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1);
+        }
+        return StringUtils.defaultIfBlank(cleaned, fallback);
     }
 
     private String nextAvailableFolderName(Path songsRoot, String artist, String title) {
         String baseName = buildFolderName(artist, title);
         int version = 2;
         while (true) {
-            String candidate = YassSong.toFilename(artist + " - " + title + " (" + version + ")");
+            String candidate = baseName + " (" + version + ")";
             Path candidateTxt = songsRoot.resolve(candidate).resolve(candidate + ".txt");
             if (!Files.exists(candidateTxt)) {
                 return candidate;

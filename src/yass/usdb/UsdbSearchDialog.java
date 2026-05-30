@@ -15,7 +15,9 @@ import java.awt.event.MouseEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -72,7 +74,9 @@ public class UsdbSearchDialog extends JDialog {
         detailsArea.setWrapStyleWord(true);
         separateAfterImportCheck.setEnabled(actions.hasConfiguredSeparation());
         separateAfterImportCheck.setSelected(actions.hasConfiguredSeparation());
-        resultTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        resultTable.setSelectionMode(compareContext == null
+                ? ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
+                : ListSelectionModel.SINGLE_SELECTION);
         resultTable.getSelectionModel().addListSelectionListener(this::onSelectionChanged);
         resultTable.setAutoCreateRowSorter(true);
         resultTable.setRowHeight(20);
@@ -208,7 +212,7 @@ public class UsdbSearchDialog extends JDialog {
             return;
         }
         int row = resultTable.rowAtPoint(e.getPoint());
-        if (row >= 0) {
+        if (row >= 0 && !resultTable.isRowSelected(row)) {
             resultTable.setRowSelectionInterval(row, row);
         }
         updateActionState();
@@ -305,10 +309,15 @@ public class UsdbSearchDialog extends JDialog {
     }
 
     private void onImportButtonPressed() {
-        UsdbSongSummary selected = getSelectedSong();
-        if (selected == null) {
+        List<UsdbSongSummary> selectedSongs = getSelectedSongs();
+        if (selectedSongs.isEmpty()) {
             return;
         }
+        if (selectedSongs.size() > 1) {
+            importSelectedSongs(selectedSongs);
+            return;
+        }
+        UsdbSongSummary selected = selectedSongs.get(0);
         MatchStatus status = getMatchStatus(selected);
         if (status != MatchStatus.NONE) {
             actions.getUsdbImportQueueService().showDialog(actions.createOwnerFrame());
@@ -318,7 +327,12 @@ public class UsdbSearchDialog extends JDialog {
     }
 
     private void importSelectedSongFromContext() {
-        UsdbSongSummary selected = getSelectedSong();
+        List<UsdbSongSummary> selectedSongs = getSelectedSongs();
+        if (selectedSongs.size() > 1) {
+            importSelectedSongs(selectedSongs);
+            return;
+        }
+        UsdbSongSummary selected = selectedSongs.isEmpty() ? null : selectedSongs.get(0);
         if (selected == null) {
             return;
         }
@@ -361,6 +375,30 @@ public class UsdbSearchDialog extends JDialog {
         enqueueSong(selected, null);
     }
 
+    private void importSelectedSongs(List<UsdbSongSummary> selectedSongs) {
+        if (selectedSongs == null || selectedSongs.isEmpty()) {
+            return;
+        }
+        List<UsdbSongSummary> candidates = importCandidates(selectedSongs, this::getMatchStatus);
+        if (candidates.isEmpty()) {
+            actions.getUsdbImportQueueService().showDialog(actions.createOwnerFrame());
+            return;
+        }
+        if (shouldConfirmBulkImport(selectedSongs.size()) && !confirmBulkImport(selectedSongs.size())) {
+            return;
+        }
+        enqueueSongs(candidates, null);
+    }
+
+    private boolean confirmBulkImport(int selectionCount) {
+        int option = JOptionPane.showConfirmDialog(this,
+                I18.get("usdb_search_import_many_confirm").replace("{0}", String.valueOf(selectionCount)),
+                I18.get("lib_usdb_import_song"),
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+        return option == JOptionPane.OK_OPTION;
+    }
+
     private void cancelSelectedImport() {
         UsdbSongSummary selected = getSelectedSong();
         if (selected == null) {
@@ -390,12 +428,23 @@ public class UsdbSearchDialog extends JDialog {
     }
 
     private void enqueueSong(UsdbSongSummary selected, UsdbImportConflictChoice conflictChoice) {
-        statusLabel.setText("Adding import to queue...");
+        enqueueSongs(List.of(selected), conflictChoice);
+    }
+
+    private void enqueueSongs(List<UsdbSongSummary> selectedSongs, UsdbImportConflictChoice conflictChoice) {
+        if (selectedSongs == null || selectedSongs.isEmpty()) {
+            return;
+        }
+        statusLabel.setText(selectedSongs.size() == 1
+                ? "Adding import to queue..."
+                : I18.get("usdb_search_import_many_queueing").replace("{0}", String.valueOf(selectedSongs.size())));
         boolean separateAfterImport = separateAfterImportCheck.isSelected();
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
             @Override
             protected Void doInBackground() throws Exception {
-                actions.enqueueUsdbSongImport(selected, separateAfterImport, conflictChoice);
+                for (UsdbSongSummary selected : selectedSongs) {
+                    actions.enqueueUsdbSongImport(selected, separateAfterImport, conflictChoice);
+                }
                 return null;
             }
 
@@ -403,11 +452,13 @@ public class UsdbSearchDialog extends JDialog {
             protected void done() {
                 try {
                     get();
-                    statusLabel.setText("Import queued.");
+                    statusLabel.setText(selectedSongs.size() == 1
+                            ? "Import queued."
+                            : I18.get("usdb_search_import_many_queued").replace("{0}", String.valueOf(selectedSongs.size())));
                     updateActionState();
                 } catch (Exception ex) {
                     Throwable root = ex.getCause() != null ? ex.getCause() : ex;
-                    LOGGER.log(Level.WARNING, "USDB song import failed for song id=" + selected.songId(), root);
+                    LOGGER.log(Level.WARNING, "USDB song import queueing failed for " + selectedSongs.size() + " selected songs", root);
                     statusLabel.setText("Queueing failed.");
                     JOptionPane.showMessageDialog(UsdbSearchDialog.this,
                             root.getMessage(),
@@ -463,9 +514,11 @@ public class UsdbSearchDialog extends JDialog {
     }
 
     private void updateActionState() {
-        UsdbSongSummary selected = getSelectedSong();
+        List<UsdbSongSummary> selectedSongs = getSelectedSongs();
+        int selectionCount = selectedSongs.size();
+        UsdbSongSummary selected = selectionCount > 0 ? selectedSongs.get(0) : null;
         MatchStatus status = getMatchStatus(selected);
-        boolean hasSelection = selected != null;
+        boolean hasSelection = selectionCount > 0;
         if (compareContext != null) {
             compareButton.setEnabled(hasSelection);
             createMetaTagsButton.setEnabled(true);
@@ -473,8 +526,10 @@ public class UsdbSearchDialog extends JDialog {
             return;
         }
         importButton.setEnabled(hasSelection);
-        importButton.setText(status == MatchStatus.NONE ? I18.get("lib_usdb_import_song") : I18.get("usdb_search_open_queue"));
-        contextImportItem.setEnabled(hasSelection && status != MatchStatus.QUEUED);
+        importButton.setText(selectionCount > 1 || status == MatchStatus.NONE
+                ? I18.get("lib_usdb_import_song")
+                : I18.get("usdb_search_open_queue"));
+        contextImportItem.setEnabled(hasSelection && (selectionCount > 1 || status != MatchStatus.QUEUED));
         contextCompareUsdbItem.setVisible(shouldShowCompareWithUsdb(status));
         contextCompareUsdbItem.setEnabled(hasSelection && shouldShowCompareWithUsdb(status));
         contextOpenUsdbItem.setEnabled(hasSelection);
@@ -487,6 +542,21 @@ public class UsdbSearchDialog extends JDialog {
             return null;
         }
         return currentResults.get(index);
+    }
+
+    private List<UsdbSongSummary> getSelectedSongs() {
+        int[] viewRows = resultTable.getSelectedRows();
+        if (viewRows == null || viewRows.length == 0) {
+            return List.of();
+        }
+        List<UsdbSongSummary> selectedSongs = new ArrayList<>();
+        for (int viewRow : viewRows) {
+            int modelIndex = resultTable.convertRowIndexToModel(viewRow);
+            if (modelIndex >= 0 && modelIndex < currentResults.size()) {
+                selectedSongs.add(currentResults.get(modelIndex));
+            }
+        }
+        return selectedSongs;
     }
 
     private int getSelectedModelIndex() {
@@ -599,6 +669,24 @@ public class UsdbSearchDialog extends JDialog {
 
     static boolean shouldShowCompareWithUsdb(MatchStatus status) {
         return status == MatchStatus.EXACT || status == MatchStatus.TITLE_ARTIST;
+    }
+
+    static boolean shouldConfirmBulkImport(int selectionCount) {
+        return selectionCount > 10;
+    }
+
+    static List<UsdbSongSummary> importCandidates(List<UsdbSongSummary> selectedSongs,
+                                                  Function<UsdbSongSummary, MatchStatus> statusLookup) {
+        if (selectedSongs == null || selectedSongs.isEmpty()) {
+            return List.of();
+        }
+        List<UsdbSongSummary> candidates = new ArrayList<>();
+        for (UsdbSongSummary song : selectedSongs) {
+            if (song != null && statusLookup.apply(song) != MatchStatus.QUEUED) {
+                candidates.add(song);
+            }
+        }
+        return candidates;
     }
 
     enum MatchStatus {

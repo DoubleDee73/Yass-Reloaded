@@ -81,6 +81,7 @@ and offers an editor action that marks suitable notes automatically.
   - rap Pitch Leap candidates are converted from `R` to `G`
   - freestyle and already-golden notes are not changed by suggestions
   - leading-space word boundaries are honored when trailing-space mode is off
+  - Pitch Leap candidates do not cross page breaks
 - `YassAutoCorrectSpec`
   - `UNCOMMON_GOLDEN` correction support is offered only below the target
   - correction adds suggested golden notes below the target
@@ -97,5 +98,4 @@ and offers an editor action that marks suitable notes automatically.
   phrase position, or user intent.
 - If undo support is added, create an explicit undo snapshot before changing
   note types.
-- Useful future tests: undo behavior and more mixed spacing/page-boundary
-  examples around suggestion candidates.
+- Useful future tests: undo behavior for automatic golden-note suggestions.

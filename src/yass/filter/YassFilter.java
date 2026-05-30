@@ -19,12 +19,12 @@
 package yass.filter;
 
 import yass.I18;
+import yass.YassSearchNormalizer;
 import yass.YassSong;
 import yass.YassSongList;
 import yass.YassUtils;
 
 import java.io.File;
-import java.text.Normalizer;
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -167,14 +167,10 @@ public class YassFilter implements Cloneable {
      * @return Description of the Return Value
      */
     public static boolean containsIgnoreCase(String f, String str) {
-        if (f == null) {
+        if (f == null || str == null) {
             return false;
         }
-        f = Normalizer.normalize(f.toLowerCase(), Normalizer.Form.NFKD).replaceAll("\\p{M}", "");
-        if (str.contains("'")) {
-            f = f.replace("’", "'");
-        }
-        return f.contains(Normalizer.normalize(str, Normalizer.Form.NFKD).replaceAll("\\p{M}", ""));
+        return YassSearchNormalizer.normalizeForSearch(f).contains(YassSearchNormalizer.normalizeForSearch(str));
     }
 
     /**

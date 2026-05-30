@@ -87,6 +87,43 @@ class EditorShortcutBindingsSpec extends Specification {
         actionsSource.contains('KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK), "insertNote", insertNote')
     }
 
+    def 'vocal-aware insert falls back to legacy insert unless vocals and pitch data are active'() {
+        given:
+        String actionsSource = Files.readString(Path.of('src/yass/YassActions.java'))
+        String eligibilityBlock = sourceBetween(actionsSource,
+                'private boolean shouldUseVocalAwareInsertNote() {',
+                'private List<PitchDetector.PitchData> currentPitchDataForEditorAlignment()')
+        String actionBlock = sourceBetween(actionsSource,
+                'private final Action insertNoteWithVocalPitch = new AbstractAction(I18.get("edit_add")) {',
+                'private final Action removeRows = new AbstractAction')
+
+        expect:
+        eligibilityBlock.contains('UltrastarHeaderTag.VOCALS.toString().equals(header.getSelectedAudio())')
+        eligibilityBlock.contains('mp3.getPitchDataList() != null')
+        eligibilityBlock.contains('!mp3.getPitchDataList().isEmpty()')
+        actionBlock.contains('if (shouldUseVocalAwareInsertNote())')
+        actionBlock.contains('table.insertNoteWithVocalPitch(currentPitchDataForEditorAlignment());')
+        actionBlock.contains('} else {\n                table.insertNote();')
+    }
+
+    def 'insert note dialog uses ok as default and cancel or escape as non-mutating paths'() {
+        given:
+        String tableSource = Files.readString(Path.of('src/yass/YassTable.java'))
+        String promptBlock = sourceBetween(tableSource,
+                'private String promptForInsertedLyrics() {',
+                'private int resolveInsertCursorBeat()')
+
+        expect:
+        promptBlock.contains('new JDialog(owner, I18.get("edit_insert_notes_title"), Dialog.ModalityType.APPLICATION_MODAL)')
+        promptBlock.contains('new JLabel(I18.get("edit_insert_notes_prompt"))')
+        promptBlock.contains('dialog.getRootPane().setDefaultButton(okButton);')
+        promptBlock.contains('cancelButton.addActionListener(e -> {')
+        promptBlock.contains('result[0] = null;')
+        promptBlock.contains('KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0)')
+        promptBlock.contains('textField.requestFocusInWindow();')
+        promptBlock.contains('textField.selectAll();')
+    }
+
     def 'align timing and pitch labels are localized in every supported language'() {
         expect:
         localeLabels.every { fileName, expected ->

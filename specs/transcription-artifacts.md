@@ -22,6 +22,8 @@ originated.
   artifact is present.
 - LRCLib lyrics can be compared against an existing transcript and can replace
   transcript text while preserving timing.
+- The wizard LRCLib action first lets the user either search LRCLib online or
+  import an existing `.lrc` file with the same synced-lyrics format.
 - Obsolete transcript pseudo-tags are removed from `#COMMENT`; transcript
   provenance is not duplicated in the song header.
 
@@ -38,6 +40,8 @@ originated.
   but editor reuse should prefer the canonical artifact.
 - Subtitle cues are converted into transcript segments and word timestamps by
   distributing cue duration across tokens.
+- Local `.lrc` files are converted at the source edge into the same transcript
+  segment and word-timing model, tagged as `#LRC`.
 - Rolling YouTube captions are collapsed before conversion.
 - Vocal-aware refinement can adjust transcript timing before alignment when a
   vocal pitch/energy signal is close enough to transcript anchors.
@@ -62,6 +66,8 @@ originated.
   - removes obsolete transcript pseudo-tags from `#COMMENT`
 - `src/yass/integration/transcription/SubtitleTranscriptionAdapter.java`
   - subtitle cue to transcript conversion
+- `src/yass/integration/lyrics/lrc/LrcTranscriptionAdapter.java`
+  - local `.lrc` file to transcript conversion
 - `src/yass/alignment/TranscriptTruthRewriteService.java`
   - applies corrected/clean lyric text to transcript structure
 - `src/yass/alignment/TranscriptTimingRefinementService.java`
@@ -87,6 +93,8 @@ originated.
   - finds transcript artifacts and mentions them in post-wizard prompts
 - `LrcLibSearchServiceSpec`
   - converts LRCLib results into the canonical transcript model
+- `LrcTranscriptionAdapterSpec` and `CreateSongWizardSpec`
+  - convert local `.lrc` files and route the wizard choice dialog
 
 ## Extension Notes
 

@@ -56,6 +56,7 @@ Important behavior:
 
 If LrcLib is used from this page:
 
+- Yass Reloaded first asks whether to search LrcLib online or import an existing `.lrc` file
 - the previously confirmed artist/title values are reused automatically
 - Yass Reloaded can import either plain lyric text or already timed lyric lines when available
 - the result is meant as a lightweight lyrics source, not as a full replacement for every transcription workflow

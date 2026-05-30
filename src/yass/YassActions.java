@@ -11579,6 +11579,14 @@ public class YassActions implements DropTargetListener {
         return tables;
     }
 
+    static boolean isSameSongFileForUsdbReload(Path savedSongPath, String tableDir, String tableFilename) {
+        if (savedSongPath == null || StringUtils.isBlank(tableDir) || StringUtils.isBlank(tableFilename)) {
+            return false;
+        }
+        Path openSongPath = Path.of(tableDir, tableFilename).toAbsolutePath().normalize();
+        return savedSongPath.toAbsolutePath().normalize().equals(openSongPath);
+    }
+
     public void filterLibrary() {
         String s = filterEditor.getText();
         if (s.equals(I18.get("tool_lib_find_empty"))) {
@@ -12895,12 +12903,49 @@ public class YassActions implements DropTargetListener {
         Files.writeString(Path.of(songFile), String.join("\n", mergedLocal), StandardCharsets.UTF_8);
         ensureUsdbMetaFileExists(songFile, usdbSongId);
         refreshImportedSongInLibrary(new File(songFile), true);
+        SwingUtilities.invokeLater(() -> reloadOpenEditorSongAfterUsdbLocalSave(songFile));
         if (showSuccessMessage) {
             JOptionPane.showMessageDialog(getFrame(tab),
                     I18.get("usdb_edit_save_local_success"),
                     I18.get("usdb_edit_compare"),
                     JOptionPane.INFORMATION_MESSAGE);
         }
+    }
+
+    private void reloadOpenEditorSongAfterUsdbLocalSave(String songFile) {
+        if (currentView != VIEW_EDIT || StringUtils.isBlank(songFile)) {
+            return;
+        }
+        Path songPath = Path.of(songFile);
+        boolean isOpenEditorSong = false;
+        for (YassTable openTable : openTables) {
+            if (isSameSongFileForUsdbReload(songPath, openTable.getDir(), openTable.getFilename())) {
+                isOpenEditorSong = true;
+                break;
+            }
+        }
+        if (!isOpenEditorSong && table != null) {
+            isOpenEditorSong = isSameSongFileForUsdbReload(songPath, table.getDir(), table.getFilename());
+        }
+        if (!isOpenEditorSong) {
+            return;
+        }
+
+        int selectRow = table != null ? table.getSelectionModel().getMinSelectionIndex() : -1;
+        if (!openFiles(songFile, false)) {
+            return;
+        }
+        openEditor(selectRow >= 0);
+        SwingUtilities.invokeLater(() -> {
+            if (table == null || selectRow < 0 || selectRow >= table.getRowCount()) {
+                return;
+            }
+            lyrics.setPreventFireUpdate(true);
+            table.setRowSelectionInterval(selectRow, selectRow);
+            table.zoomPage();
+            table.updatePlayerPosition();
+            lyrics.setPreventFireUpdate(false);
+        });
     }
 
     private boolean isLocallyOverwritableUsdbEditTag(String tag) {

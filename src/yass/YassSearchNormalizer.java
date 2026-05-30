@@ -11,6 +11,7 @@ public final class YassSearchNormalizer {
 
     public static String normalizeForSearch(String value) {
         String normalized = StringUtils.defaultString(value);
+        normalized = foldSpecialLatinLetters(normalized);
         normalized = normalized
                 .replace('\u2018', '\'')
                 .replace('\u2019', '\'')
@@ -26,5 +27,32 @@ public final class YassSearchNormalizer {
         normalized = normalized.replace("'", "");
         normalized = normalized.replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}]+", " ");
         return StringUtils.normalizeSpace(normalized);
+    }
+
+    private static String foldSpecialLatinLetters(String value) {
+        return value
+                .replace("Æ", "AE")
+                .replace("Ǽ", "AE")
+                .replace("æ", "ae")
+                .replace("ǽ", "ae")
+                .replace("Œ", "OE")
+                .replace("œ", "oe")
+                .replace("Ø", "O")
+                .replace("ø", "o")
+                .replace("Ł", "L")
+                .replace("ł", "l")
+                .replace("Đ", "D")
+                .replace("đ", "d")
+                .replace("Ð", "D")
+                .replace("ð", "d")
+                .replace("Þ", "TH")
+                .replace("þ", "th")
+                .replace("Ħ", "H")
+                .replace("ħ", "h")
+                .replace("ı", "i")
+                .replace("Ŋ", "N")
+                .replace("ŋ", "n")
+                .replace("ẞ", "SS")
+                .replace("ß", "ss");
     }
 }

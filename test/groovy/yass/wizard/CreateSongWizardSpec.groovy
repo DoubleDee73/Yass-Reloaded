@@ -56,4 +56,32 @@ class CreateSongWizardSpec extends Specification {
         !source.contains("getDialog().setLocationRelativeTo(null)")
         source.contains("YassUtils.resolveDialogOwner(parent)")
     }
+
+    def "maps lyrics source choice dialog result"() {
+        expect:
+        CreateSongWizard.toLrcLyricsSourceAction(choice) == action
+
+        where:
+        choice || action
+        0      || CreateSongWizard.LrcLyricsSourceAction.SEARCH_LRCLIB
+        1      || CreateSongWizard.LrcLyricsSourceAction.IMPORT_LRC_FILE
+        2      || null
+        -1     || null
+    }
+
+    def "imports local lrc file as wizard transcription source"() {
+        given:
+        def lrc = File.createTempFile("wizard-import", ".lrc")
+        lrc.deleteOnExit()
+        lrc.text = "[00:01.00]First line\n[00:03.00]Second line"
+
+        when:
+        def result = CreateSongWizard.toImportedLrcTranscriptionResult(lrc)
+
+        then:
+        result.sourceTag == "#LRC"
+        result.transcriptText == "First line\nSecond line"
+        result.segments*.startMs == [1000, 3000]
+        result.words*.text == ["First", "line", "Second", "line"]
+    }
 }

@@ -325,13 +325,13 @@ public class UsdbSongEditDiffDialog extends JDialog {
 
         List<ComparedLine> leftHeaderLines = extractComparedHeaderLines(usdbArea.getText());
         List<ComparedLine> rightHeaderLines = extractComparedHeaderLines(localArea.getText());
-        collectComparedLinePairDiffs(leftHeaderLines, rightHeaderLines, newDiffBlocks);
+        collectComparedLinePairDiffs(leftHeaderLines, rightHeaderLines, DiffSection.HEADER, newDiffBlocks);
         highlightChangedHeaderFields(leftHeaderLines, rightHeaderLines);
 
         List<ComparedBodyLine> leftBodyLines = extractComparedBodyLines(usdbArea.getText());
         List<ComparedBodyLine> rightBodyLines = extractComparedBodyLines(localArea.getText());
         List<AlignedBodyPair> alignedBodyPairs = alignBodyLines(leftBodyLines, rightBodyLines);
-        collectComparedBodyLinePairDiffs(alignedBodyPairs, newDiffBlocks);
+        collectComparedBodyLinePairDiffs(alignedBodyPairs, DiffSection.BODY, newDiffBlocks);
         highlightChangedBodyFields(alignedBodyPairs);
         rebuildLineMaps(leftHeaderLines, rightHeaderLines, alignedBodyPairs);
 
@@ -370,7 +370,25 @@ public class UsdbSongEditDiffDialog extends JDialog {
         area.getHighlighter().removeAllHighlights();
     }
 
-    private List<String> splitLines(String text) {
+    static List<String> describeDiffBlocksForTest(String usdbText, String localText) {
+        return buildDiffBlocks(usdbText, localText).stream()
+                .map(DiffBlock::describeForTest)
+                .toList();
+    }
+
+    private static List<DiffBlock> buildDiffBlocks(String usdbText, String localText) {
+        List<DiffBlock> blocks = new ArrayList<>();
+        List<ComparedLine> leftHeaderLines = extractComparedHeaderLines(usdbText);
+        List<ComparedLine> rightHeaderLines = extractComparedHeaderLines(localText);
+        collectComparedLinePairDiffs(leftHeaderLines, rightHeaderLines, DiffSection.HEADER, blocks);
+
+        List<ComparedBodyLine> leftBodyLines = extractComparedBodyLines(usdbText);
+        List<ComparedBodyLine> rightBodyLines = extractComparedBodyLines(localText);
+        collectComparedBodyLinePairDiffs(alignBodyLines(leftBodyLines, rightBodyLines), DiffSection.BODY, blocks);
+        return mergeDiffBlocks(blocks);
+    }
+
+    private static List<String> splitLines(String text) {
         String normalized = StringUtils.defaultString(text).replace("\r\n", "\n").replace('\r', '\n');
         String[] parts = normalized.split("\\n", -1);
         List<String> result = new ArrayList<>(parts.length);
@@ -380,31 +398,36 @@ public class UsdbSongEditDiffDialog extends JDialog {
         return result;
     }
 
-    private void collectComparedLinePairDiffs(List<ComparedLine> leftLines, List<ComparedLine> rightLines, List<DiffBlock> target) {
+    private static void collectComparedLinePairDiffs(List<ComparedLine> leftLines,
+                                                     List<ComparedLine> rightLines,
+                                                     DiffSection section,
+                                                     List<DiffBlock> target) {
         int max = Math.max(leftLines.size(), rightLines.size());
         for (int i = 0; i < max; i++) {
             ComparedLine left = i < leftLines.size() ? leftLines.get(i) : null;
             ComparedLine right = i < rightLines.size() ? rightLines.get(i) : null;
             if (left == null && right != null) {
-                target.add(DiffBlock.rightOnly(right.originalLineIndex()));
+                target.add(DiffBlock.rightOnly(section, right.originalLineIndex()));
             } else if (right == null && left != null) {
-                target.add(DiffBlock.leftOnly(left.originalLineIndex()));
+                target.add(DiffBlock.leftOnly(section, left.originalLineIndex()));
             } else if (left != null && right != null && !StringUtils.equals(left.text(), right.text())) {
-                target.add(DiffBlock.both(left.originalLineIndex(), right.originalLineIndex()));
+                target.add(DiffBlock.both(section, left.originalLineIndex(), right.originalLineIndex()));
             }
         }
     }
 
-    private void collectComparedBodyLinePairDiffs(List<AlignedBodyPair> alignedPairs, List<DiffBlock> target) {
+    private static void collectComparedBodyLinePairDiffs(List<AlignedBodyPair> alignedPairs,
+                                                         DiffSection section,
+                                                         List<DiffBlock> target) {
         for (AlignedBodyPair pair : alignedPairs) {
             ComparedBodyLine left = pair.left();
             ComparedBodyLine right = pair.right();
             if (left == null && right != null) {
-                target.add(DiffBlock.rightOnly(right.originalLineIndex()));
+                target.add(DiffBlock.rightOnly(section, right.originalLineIndex()));
             } else if (right == null && left != null) {
-                target.add(DiffBlock.leftOnly(left.originalLineIndex()));
+                target.add(DiffBlock.leftOnly(section, left.originalLineIndex()));
             } else if (left != null && right != null && !left.semanticEquals(right)) {
-                target.add(DiffBlock.both(left.originalLineIndex(), right.originalLineIndex()));
+                target.add(DiffBlock.both(section, left.originalLineIndex(), right.originalLineIndex()));
             }
         }
     }
@@ -422,7 +445,7 @@ public class UsdbSongEditDiffDialog extends JDialog {
         }
     }
 
-    private List<AlignedBodyPair> alignBodyLines(List<ComparedBodyLine> leftLines, List<ComparedBodyLine> rightLines) {
+    private static List<AlignedBodyPair> alignBodyLines(List<ComparedBodyLine> leftLines, List<ComparedBodyLine> rightLines) {
         int leftSize = leftLines.size();
         int rightSize = rightLines.size();
         int[][] score = new int[leftSize + 1][rightSize + 1];
@@ -475,7 +498,7 @@ public class UsdbSongEditDiffDialog extends JDialog {
         return result;
     }
 
-    private int alignmentScore(ComparedBodyLine left, ComparedBodyLine right) {
+    private static int alignmentScore(ComparedBodyLine left, ComparedBodyLine right) {
         if (left.semanticEquals(right)) {
             return 8;
         }
@@ -619,7 +642,7 @@ public class UsdbSongEditDiffDialog extends JDialog {
         return null;
     }
 
-    private List<ComparedLine> extractComparedHeaderLines(String text) {
+    private static List<ComparedLine> extractComparedHeaderLines(String text) {
         List<String> allLines = splitLines(text);
         List<ComparedLine> result = new ArrayList<>();
         int bodyStartIndex = firstBodyLineIndex(allLines);
@@ -633,7 +656,7 @@ public class UsdbSongEditDiffDialog extends JDialog {
         return result;
     }
 
-    private List<ComparedBodyLine> extractComparedBodyLines(String text) {
+    private static List<ComparedBodyLine> extractComparedBodyLines(String text) {
         List<String> allLines = splitLines(text);
         List<ComparedBodyLine> result = new ArrayList<>();
         int bodyStartIndex = firstBodyLineIndex(allLines);
@@ -648,7 +671,7 @@ public class UsdbSongEditDiffDialog extends JDialog {
         return result;
     }
 
-    private int firstBodyLineIndex(List<String> lines) {
+    private static int firstBodyLineIndex(List<String> lines) {
         for (int i = 0; i < lines.size(); i++) {
             if (!StringUtils.trimToEmpty(lines.get(i)).startsWith("#")) {
                 return i;
@@ -657,7 +680,7 @@ public class UsdbSongEditDiffDialog extends JDialog {
         return lines.size();
     }
 
-    private boolean shouldCompareHeader(String trimmedLine) {
+    private static boolean shouldCompareHeader(String trimmedLine) {
         if (!trimmedLine.startsWith("#")) {
             return false;
         }
@@ -705,7 +728,7 @@ public class UsdbSongEditDiffDialog extends JDialog {
         }
     }
 
-    private List<DiffBlock> mergeDiffBlocks(List<DiffBlock> rawBlocks) {
+    private static List<DiffBlock> mergeDiffBlocks(List<DiffBlock> rawBlocks) {
         List<DiffBlock> merged = new ArrayList<>();
         for (DiffBlock block : rawBlocks) {
             if (merged.isEmpty()) {
@@ -978,10 +1001,15 @@ public class UsdbSongEditDiffDialog extends JDialog {
         COMPLETE_VERIFICATION
     }
 
+    private enum DiffSection {
+        HEADER,
+        BODY
+    }
+
     private record ComparedLine(int originalLineIndex, String text) {
     }
 
-    private ParsedBodyLine parseBodyLine(String trimmedLine) {
+    private static ParsedBodyLine parseBodyLine(String trimmedLine) {
         if (StringUtils.isEmpty(trimmedLine)) {
             return new ParsedBodyLine("EMPTY", null, null, null, "", "");
         }
@@ -1004,11 +1032,11 @@ public class UsdbSongEditDiffDialog extends JDialog {
         return new ParsedBodyLine("RAW", null, null, null, trimmedLine, normalizeBodyText(trimmedLine));
     }
 
-    private String normalizeBodyText(String text) {
+    private static String normalizeBodyText(String text) {
         return StringUtils.lowerCase(StringUtils.trimToEmpty(text));
     }
 
-    private Integer parseInteger(String value) {
+    private static Integer parseInteger(String value) {
         try {
             return Integer.parseInt(StringUtils.trimToEmpty(value));
         } catch (NumberFormatException ignored) {
@@ -1039,20 +1067,21 @@ public class UsdbSongEditDiffDialog extends JDialog {
         LEFT
     }
 
-    private record DiffBlock(Integer leftStartLineIndex,
+    private record DiffBlock(DiffSection section,
+                             Integer leftStartLineIndex,
                              Integer leftEndLineIndex,
                              Integer rightStartLineIndex,
                              Integer rightEndLineIndex) {
-        static DiffBlock both(int leftLineIndex, int rightLineIndex) {
-            return new DiffBlock(leftLineIndex, leftLineIndex, rightLineIndex, rightLineIndex);
+        static DiffBlock both(DiffSection section, int leftLineIndex, int rightLineIndex) {
+            return new DiffBlock(section, leftLineIndex, leftLineIndex, rightLineIndex, rightLineIndex);
         }
 
-        static DiffBlock leftOnly(int leftLineIndex) {
-            return new DiffBlock(leftLineIndex, leftLineIndex, null, null);
+        static DiffBlock leftOnly(DiffSection section, int leftLineIndex) {
+            return new DiffBlock(section, leftLineIndex, leftLineIndex, null, null);
         }
 
-        static DiffBlock rightOnly(int rightLineIndex) {
-            return new DiffBlock(null, null, rightLineIndex, rightLineIndex);
+        static DiffBlock rightOnly(DiffSection section, int rightLineIndex) {
+            return new DiffBlock(section, null, null, rightLineIndex, rightLineIndex);
         }
 
         boolean hasLeft() {
@@ -1064,7 +1093,8 @@ public class UsdbSongEditDiffDialog extends JDialog {
         }
 
         boolean canMergeWith(DiffBlock other) {
-            return isAdjacent(leftEndLineIndex, other.leftStartLineIndex)
+            return section == other.section
+                    && isAdjacent(leftEndLineIndex, other.leftStartLineIndex)
                     && isAdjacent(rightEndLineIndex, other.rightStartLineIndex);
         }
 
@@ -1080,11 +1110,24 @@ public class UsdbSongEditDiffDialog extends JDialog {
 
         DiffBlock mergeWith(DiffBlock other) {
             return new DiffBlock(
+                    section,
                     hasLeft() ? leftStartLineIndex : other.leftStartLineIndex,
                     other.hasLeft() ? other.leftEndLineIndex : leftEndLineIndex,
                     hasRight() ? rightStartLineIndex : other.rightStartLineIndex,
                     other.hasRight() ? other.rightEndLineIndex : rightEndLineIndex
             );
+        }
+
+        String describeForTest() {
+            return section + ":L" + describeRange(leftStartLineIndex, leftEndLineIndex)
+                    + ":R" + describeRange(rightStartLineIndex, rightEndLineIndex);
+        }
+
+        private String describeRange(Integer start, Integer end) {
+            if (start == null || end == null) {
+                return "-";
+            }
+            return start + "-" + end;
         }
     }
 }
