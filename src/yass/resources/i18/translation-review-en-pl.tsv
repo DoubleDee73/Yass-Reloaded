@@ -1,0 +1,271 @@
+# Polish translation review: skipped keys where Polish still matches English because German also matches English.
+# Keep rows here as accepted exceptions, or translate Polish later if desired.
+key	en	pl
+yass_title	Yass Reloaded - Karaoke Editor	Yass Reloaded - Karaoke Editor
+yass_title_appendix	- Yass Reloaded	- Yass Reloaded
+options_yass_languages	Default|English|German|French|Spanish|Hungarian|Polish|Swedish	Default|English|German|French|Spanish|Hungarian|Polish|Swedish
+songlist_col_1	V	V
+songlist_col_10	Album	Album
+songlist_col_12	ID	ID
+groups_drop_title	Drop	Drop
+lib_extras	Extras	Extras
+mplayer_pause	Pause	Pause
+mpop_export_genre	Genre	Genre
+mpop_export_edition	Edition	Edition
+mpop_export_album	Album	Album
+mpop_export_id	ID	ID
+mpop_export_filename	data.csv	data.csv
+mpop_import_genre	Genre	Genre
+mpop_import_edition	Edition	Edition
+mpop_import_album	Album	Album
+mpop_import_id	ID	ID
+mpop_import_filename	data.csv	data.csv
+lib_usdb_login	USDB Login	USDB Login
+lib_usdb_browser	Browser	Browser
+lib_usdb_imported_txt	USDB TXT	USDB TXT
+lib_usdb_replace	Replace	Replace
+lib_encoding_utf8	UTF-8	UTF-8
+lib_encoding_ansi	ANSI	ANSI
+tool_prefs_songs	Songs:	Songs:
+tool_prefs_covers	Covers:	Covers:
+tool_prefs_ffmpeg_title	FFmpeg	FFmpeg
+lib_details_toggle	Details	Details
+lib_playlist_toggle	Playlist	Playlist
+edit_extras	Extras	Extras
+edit_merge_bpm_text	<html>The multi-track BPM will use the highest BPM.<br>Attention: Beats are rounded to the next integer!	<html>The multi-track BPM will use the highest BPM.<br>Attention: Beats are rounded to the next integer!
+edit_bpm_title	Beats:	Beats:
+edit_audio	Audio	Audio
+edit_vocals	Vocals	Vocals
+edit_instrumental	Instrumental	Instrumental
+mpop_correct_songs	Songs:	Songs:
+tool_playlist	Playlist	Playlist
+tool_playlist_transfer	Playlist	Playlist
+tool_lib_find	Filter	Filter
+tool_genre	Genre	Genre
+tool_edition	Edition	Edition
+tool_album	Album	Album
+tool_errors_col_2	Note	Note
+tool_errors_col_4	Text	Text
+tool_video	Video	Video
+err_missing_spaces_msg	The spell checker found missing spaces.	The spell checker found missing spaces.
+err_wrong_spelling_msg	The spell checker found false words.	The spell checker found false words.
+err_wrong_length_msg	Compared with the MIDI clicks, note duration seem to be false.	Compared with the MIDI clicks, note duration seem to be false.
+err_wrong_height_msg	Compared with the MIDI clicks, note pitch seem to be false.	Compared with the MIDI clicks, note pitch seem to be false.
+err_wrong_text_msg	Compared with the song lyrics, this line seems to be false.	Compared with the song lyrics, this line seems to be false.
+err_misused_hyphenation_msg	The spell checker found false hyphenation.	The spell checker found false hyphenation.
+err_invalid_note_length_msg	Note length must be 1 or greater.	Note length must be 1 or greater.
+options_editor	Editor	Editor
+options_tags	Tags	Tags
+options_errors_bonus	Bonus	Bonus
+options_design	Design	Design
+options_wizard	Wizard	Wizard
+options_wizard_ytdlp_not_found	yt-dlp is not installed.<br>Consider installing it for downloading audio and videos from YouTube.<br>Make sure, that yt-dlp is in your system PATH.	yt-dlp is not installed.<br>Consider installing it for downloading audio and videos from YouTube.<br>Make sure, that yt-dlp is in your system PATH.
+options_wizard_ytdlp	yt-dlp	yt-dlp
+options_wizard_ytdlp_version	Version:	Version:
+options_wizard_ytdlp_audio_format	Format:	Format:
+options_wizard_ytdlp_audio_bitrate	Bitrate:	Bitrate:
+options_wizard_ytdlp_video_codec	Container/Codec	Container/Codec
+options_wizard_ytdlp_video_codec_best	Best available Codec/Container	Best available Codec/Container
+options_wizard_ytdlp_video_codec_mp4_best	.mp4 (Best available codec)	.mp4 (Best available codec)
+options_wizard_ytdlp_video_codec_mp4_av1	.mp4 (AV1 codec)	.mp4 (AV1 codec)
+options_wizard_ytdlp_video_codec_mp4_avc	.mp4 (AVC/H.264 codec)	.mp4 (AVC/H.264 codec)
+options_wizard_ytdlp_video_codec_mp4_vp9	.mp4 (VP9 codec)	.mp4 (VP9 codec)
+options_wizard_ytdlp_video_codec_webm_vp9	.webm (VP9 codec)	.webm (VP9 codec)
+options_wizard_ytdlp_video_resolution	Max. Resolution	Max. Resolution
+options_wizard_ytdlp_video_resolution_2160	2160p (4K UHD)	2160p (4K UHD)
+options_wizard_ytdlp_video_resolution_1440	1440p (2K)	1440p (2K)
+options_wizard_ytdlp_video_resolution_1080	1080p (Full HD)	1080p (Full HD)
+options_wizard_ytdlp_video_resolution_720	720p (HD)	720p (HD)
+options_wizard_ytdlp_video_resolution_480	480p	480p
+options_wizard_ytdlp_video_resolution_360	360p	360p
+options_wizard_ytdlp_video_fps	Max. FPS	Max. FPS
+options_advanced_audio	Audio/Video	Audio/Video
+options_advanced_debug	Debug	Debug
+options_audio	Audio	Audio
+options_video	Video	Video
+options_debug_editor	Editor:	Editor:
+options_dbfs	dBFS	dBFS
+options_seek_in	Seek-In:	Seek-In:
+options_seek_out	Seek-Out:	Seek-Out:
+options_locations_cache	Cache	Cache
+options_locations_cache_songs	Songs:	Songs:
+options_locations_ffmpeg	FFmpeg:	FFmpeg:
+options_locations_ytdlp	yt-dlp:	yt-dlp:
+options_locations_aubio	Aubio:	Aubio:
+options_control_mic_title	Mic:	Mic:
+options_dir_songs	Songs:	Songs:
+options_dir_covers	Covers:	Covers:
+options_filetypes_songs	Songs:	Songs:
+options_filetypes_audio	Audio:	Audio:
+options_filetypes_videos	Videos:	Videos:
+options_group1_genre	Genre:	Genre:
+options_group1_edition	Edition:	Edition:
+options_group2_album	Album:	Album:
+options_group2_plugins	Plugins:	Plugins:
+options_print_pdf	PDF:	PDF:
+options_print_plugins	Plugins:	Plugins:
+options_control_hover	Hover:	Hover:
+options_tags_duetsinger_p	P	P
+options_tags_duetsinger_duetsingerp	DUETSINGERP	DUETSINGERP
+print_block_format	Format:	Format:
+print_block_format_0	A4	A4
+print_block_format_1	A5	A5
+print_block_format_2	Letter	Letter
+print_block_date_text	dd.MM.yyyy	dd.MM.yyyy
+print_block_group_2	Edition	Edition
+print_block_group_3	Genre	Genre
+print_block_add_0	A-Z	A-Z
+print_block_add_1	#	#
+print_block_add_2	Video	Video
+print_block_second_0	None	None
+print_block_second_3	Edition	Edition
+print_block_second_4	Genre	Genre
+print_block_video	Video	Video
+print_details_title	Details	Details
+print_details_format	Format:	Format:
+print_details_format_0	A4	A4
+print_details_format_1	A5	A5
+print_details_format_2	Letter	Letter
+print_details_date_text	dd.MM.yyyy	dd.MM.yyyy
+print_details_sort_2	Video	Video
+print_details_sort_3	Version	Version
+print_details_sort_4	Genre	Genre
+print_details_sort_5	Edition	Edition
+print_details_sort_9	(Z-A)	(Z-A)
+print_details_add	Add:	Add:
+print_details_add_1	Cover	Cover
+print_details_video	Video	Video
+print_details_title_2	Video	Video
+print_details_title_3	Version	Version
+print_details_title_4	Genre	Genre
+print_details_title_5	Edition	Edition
+print_plain_format	Format:	Format:
+print_plain_format_0	A4	A4
+print_plain_format_1	A5	A5
+print_plain_format_2	Letter	Letter
+print_plain_date_text	dd.MM.yyyy	dd.MM.yyyy
+print_plain_sort_3	Edition	Edition
+print_plain_sort_4	Genre	Genre
+print_plain_add_0	-1-	-1-
+print_plain_add_1	V/b	V/b
+print_plain_add_2	Cover	Cover
+print_plain_second_0	-2-	-2-
+print_plain_second_2	Edition	Edition
+print_plain_second_3	Genre	Genre
+print_plain_index	Index:	Index:
+print_plain_index_0	---	---
+print_plain_index_1	A-Z	A-Z
+print_plain_index_2	A-Z (Duplex)	A-Z (Duplex)
+print_plain_title_3	Edition	Edition
+print_plain_title_4	Genre	Genre
+print_land_format	Format:	Format:
+print_land_format_0	A4	A4
+print_land_format_1	A5	A5
+print_land_format_2	Letter	Letter
+print_land_date_text	dd.MM.yyyy	dd.MM.yyyy
+print_land_sort_3	Edition	Edition
+print_land_sort_4	Genre	Genre
+print_land_sort_7	Video	Video
+print_land_sort_8	Version	Version
+print_land_sort_9	Z-A	Z-A
+print_land_add_0	-1-	-1-
+print_land_add_1	V/b	V/b
+print_land_add_2	Cover	Cover
+print_land_second_0	-2-	-2-
+print_land_second_2	Edition	Edition
+print_land_second_3	Genre	Genre
+print_land_title_3	Edition	Edition
+print_land_title_4	Genre	Genre
+group_genre_title	Genre	Genre
+group_edition_title	Edition	Edition
+group_album_title	Album	Album
+group_format_title	Format	Format
+group_tags_title	Tags	Tags
+group_instrument_title	Keyboards	Keyboards
+group_files_video	Video	Video
+group_duets_solos	Solos	Solos
+group_duets_trios	Trios	Trios
+group_format_encoding_utf8	UTF-8	UTF-8
+group_format_encoding_ansi	ANSI	ANSI
+group_tags_previewstart	PreviewStart	PreviewStart
+group_tags_medleystartbeat	MedleyStartBeat	MedleyStartBeat
+group_tags_start	Start	Start
+group_tags_end	End	End
+group_tags_relative	Relative	Relative
+group_tags_gap<5	Gap < 5s	Gap < 5s
+group_tags_gap<10	Gap < 10s	Gap < 10s
+group_tags_gap>30	Gap > 30s	Gap > 30s
+group_tags_gap>60	Gap > 60s	Gap > 60s
+group_tags_bpm<200	BPM < 200	BPM < 200
+group_tags_bpm>400	BPM > 400	BPM > 400
+stats_rap_title	% Rap	% Rap
+group_stats_golden_golden_3-20	3-20 Gold	3-20 Gold
+group_stats_rap_rap_1-	Rap	Rap
+group_stats_pitchrange_monoton	Monoton	Monoton
+create_edition	Edition	Edition
+create_edition_edition	Edition:	Edition:
+create_header_genre	Genre	Genre
+create_header_bpm	BPM	BPM
+import_dialog_close	Close	Close
+import_dialog_cancel	Cancel	Cancel
+import_dialog_execute	Execute	Execute
+import_dialog_title	Import Files	Import Files
+import_dialog_songdir_error	Please specify a song directory in the preferences.	Please specify a song directory in the preferences.
+convert_bpm_3	,	,
+convert_bpm_4	...)	...)
+convert_bpm_5	)	)
+convert_bpm_6	{0} BPM.	{0} BPM.
+session_rating_0	???	???
+screen_start_title		
+screen_highscore_title	Highscore	Highscore
+screen_credits_title	Credits	Credits
+screen_selectdifficulty_standard	Standard	Standard
+screen_selectgame_keyboard	Keyboard	Keyboard
+screen_selectgroup_random	ROULETTE	ROULETTE
+screen_selectsong_random	ROULETTE	ROULETTE
+screen_selectcontrol_test	Test	Test
+screen_selectcontrol_ok	OK	OK
+screen_selectcontrol_key_0	ESCAPE	ESCAPE
+screen_selectcontrol_key_1	PAUSE	PAUSE
+screen_selectcontrol_Fingerstick	Finger: 	Finger: 
+screen_selectcontrol_Stick	Stick: 	Stick: 
+screen_selectcontrol_Gamepad	Gamepad: 	Gamepad: 
+screen_selectcontrol_Trackball	Trackball: 	Trackball: 
+screen_selectcontrol_Trackpad	Trackpad: 	Trackpad: 
+screen_highscore_standard	Standard	Standard
+usdb_syncer_title	USDB Syncer Meta Tags	USDB Syncer Meta Tags
+usdb_syncer_video_url	Video URL (v)	Video URL (v)
+usdb_syncer_audio_url	Audio URL (a)	Audio URL (a)
+usdb_syncer_cover	Cover	Cover
+usdb_syncer_cover_url	URL (co)	URL (co)
+usdb_syncer_cover_rotation	Rotation (co-rotate)	Rotation (co-rotate)
+usdb_syncer_cover_contrast_auto	auto	auto
+usdb_syncer_cover_resize	Resize (co-resize)	Resize (co-resize)
+usdb_syncer_cover_crop	Crop (co-crop)	Crop (co-crop)
+usdb_syncer_crop_top	Top	Top
+usdb_syncer_background_url	URL (bg)	URL (bg)
+usdb_syncer_background_resize	Resize (bg-resize)	Resize (bg-resize)
+usdb_syncer_background_crop	Crop (bg-crop)	Crop (bg-crop)
+usdb_syncer_duet_p1	Player 1 (p1)	Player 1 (p1)
+usdb_syncer_duet_p2	Player 2 (p2)	Player 2 (p2)
+usdb_syncer_medley	Medley	Medley
+usdb_syncer_tags	Tags	Tags
+usdb_syncer_tags_label	Tags (tags)	Tags (tags)
+options_external_tools_mvsep	MVSEP	MVSEP
+options_external_tools_audiosep	audio-separator	audio-separator
+options_external_tools_audiosep_status_label	Status	Status
+options_external_tools_status_ok	OK	OK
+options_external_tools_whisperx_status_label	Status	Status
+create_lyrics_lrclib_insecure_prompt	The LRCLib certificate is not trusted on this system. Retry once without certificate validation? Only do this if you trust your network connection.	The LRCLib certificate is not trusted on this system. Retry once without certificate validation? Only do this if you trust your network connection.
+create_youtube_existing_files_prompt	Existing temporary files were found for this video.\nAudio: {0}\nVideo: {1}\nSubtitles: {2}\nHow should Yass continue?	Existing temporary files were found for this video.\nAudio: {0}\nVideo: {1}\nSubtitles: {2}\nHow should Yass continue?
+create_youtube_existing_files_reuse	Reuse existing	Reuse existing
+create_youtube_existing_files_missing	Download missing only	Download missing only
+create_youtube_existing_files_redownload	Redownload all	Redownload all
+create_youtube_existing_files_present	Present	Present
+create_youtube_existing_files_missing_state	Missing	Missing
+options_locations_syncer	USDB Syncer:	USDB Syncer:
+usdb_queue_col_song	Song	Song
+usdb_queue_mode_import	Import	Import
+usdb_search_col_id	ID	ID
+usdb_search_col_golden	Golden	Golden
+usdb_compare_search_title	Compare {0} - {1} with...	Compare {0} - {1} with...

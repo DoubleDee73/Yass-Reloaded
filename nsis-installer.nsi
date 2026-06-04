@@ -1,4 +1,4 @@
-﻿Name "Yass Reloaded 2026.5"
+﻿Name "Yass Reloaded 2026.6"
 OutFile "yass.exe"
 
 Unicode true

@@ -10048,43 +10048,6 @@ public class YassActions implements DropTargetListener {
                    .addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK |
                            AWTEvent.KEY_EVENT_MASK);
         }
-        if (false) {
-
-            Object[] options = {"Ja", "Nein", "Weiter"};
-            int legacyChoice = JOptionPane.showOptionDialog(
-                    tab,
-                    "<html>Du hast die Aufnahme unterbrochen.<br>Möchtest Du alles bis hier behalten?</html>",
-                    I18.get("edit_record_title"),
-                    JOptionPane.DEFAULT_OPTION,
-                    JOptionPane.QUESTION_MESSAGE,
-                    null,
-                    options,
-                    options[2]
-            );
-            recordingPauseForPrompt = false;
-            recordingInterruptDialogOpen = false;
-            if (legacyChoice == 0) {
-                completeRecordingSession(true, true);
-            } else if (legacyChoice == 1) {
-                completeRecordingSession(false, false);
-            } else if (legacyChoice == 2) {
-                // Guard against late playerStopped events from the interrupted run
-                // while we are starting continuation playback.
-                recordingIgnoreNextPlayerStopped = true;
-                recordingIgnorePlayerStoppedUntilMs = System.currentTimeMillis() + 1500L;
-                resumeInterruptedRecording();
-                SwingUtilities.invokeLater(() -> Toolkit.getDefaultToolkit()
-                                                        .addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK |
-                                                                AWTEvent.MOUSE_MOTION_EVENT_MASK |
-                                                                AWTEvent.KEY_EVENT_MASK));
-            } else {
-                recordingIgnoreNextPlayerStopped = false;
-                recordingIgnorePlayerStoppedUntilMs = 0L;
-                Toolkit.getDefaultToolkit()
-                       .addAWTEventListener(awt, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK |
-                               AWTEvent.KEY_EVENT_MASK);
-            }
-        }
     }
 
     private int showRecordingInterruptDialog() {
@@ -10096,14 +10059,13 @@ public class YassActions implements DropTargetListener {
 
         JPanel content = new JPanel(new BorderLayout(10, 10));
         content.setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
-        JLabel message = new JLabel(
-                "<html>Du hast die Aufnahme unterbrochen.<br>Möchtest Du alles bis hier behalten?</html>");
+        JLabel message = new JLabel(I18.get("edit_record_interrupt_msg"));
         content.add(message, BorderLayout.CENTER);
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        JButton yesButton = new JButton("Ja");
-        JButton noButton = new JButton("Nein");
-        JButton continueButton = new JButton("Weiter");
+        JButton yesButton = new JButton(I18.get("edit_record_interrupt_keep"));
+        JButton noButton = new JButton(I18.get("edit_record_interrupt_discard"));
+        JButton continueButton = new JButton(I18.get("edit_record_interrupt_continue"));
         buttons.add(yesButton);
         buttons.add(noButton);
         buttons.add(continueButton);
