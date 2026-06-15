@@ -6,6 +6,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Yass Reloaded is a Java 21 karaoke editor for UltraStar/UltraStar Deluxe song files. It provides a GUI (Swing + JavaFX) for editing notes, timing, and lyrics, managing song libraries, and detecting errors in karaoke files. It is a fork of Yass 2.4.3, modernized from Java 8 to Java 21.
 
+## Documentation Layout
+
+- `specs/` contains current-state specs for implemented or accepted features.
+- `docs/specs/` contains open feature specs and implementation ideas that are
+  not done yet.
+- When a feature from `docs/specs/` is implemented, move its spec into `specs/`
+  and rewrite it as a current-state spec.
+- Completed feature specs must follow the template in `specs/README.md`.
+- Public GitHub Pages documentation lives under `docs/`; do not treat
+  `specs/` as end-user documentation.
+
+## Feature And Bugfix Workflow
+
+- When working on an existing feature or bugfix, first check whether a matching
+  current-state spec already exists in `specs/`.
+- If no matching spec exists, point that out before making broad changes and
+  suggest a Deep Explore pass to document the feature or bug area first.
+- A Deep Explore pass should identify current behavior, code entry points,
+  relevant tests, edge cases, and missing regression coverage, then create or
+  update the appropriate spec.
+- Small, obvious fixes may still proceed without a full Deep Explore, but note
+  the missing documentation in the final response so it can be backfilled.
+
 ## Build Commands
 
 ```bash

@@ -4878,6 +4878,159 @@ public class YassTable extends JTable {
         return histogram;
     }
 
+    private LeadInPitchRange findLeadInPitchRangeForFirstNoteAfterPageBreak(YassRow row,
+                                                                            List<PitchDetector.PitchData> pitchData,
+                                                                            Set<Integer> occupiedBeats) {
+        if (row == null || !row.isNote() || pitchData == null || pitchData.isEmpty()) {
+            return null;
+        }
+        int rowIndex = findModelRowIndex(row);
+        if (rowIndex < 0) {
+            return null;
+        }
+        int pageBreakIndex = findPageBreakImmediatelyBeforeRow(rowIndex);
+        if (pageBreakIndex < 0) {
+            return null;
+        }
+        int previousNoteIndex = findPreviousNoteBefore(pageBreakIndex);
+        YassRow previousNote = previousNoteIndex >= 0 ? getRowAt(previousNoteIndex) : null;
+        YassRow pageBreak = getRowAt(pageBreakIndex);
+        int pageBreakBeat = pageBreak == null ? Integer.MIN_VALUE : pageBreak.getBeatInt();
+        int searchStartBeat = previousNote == null
+                ? 0
+                : previousNote.getBeatInt() + Math.max(1, previousNote.getLengthInt()) + 1;
+        int searchEndBeat = row.getBeatInt() - 1;
+        if (searchEndBeat < searchStartBeat) {
+            return null;
+        }
+
+        int clusterStartBeat = -1;
+        int clusterEndBeat = -1;
+        Map<Integer, Integer> pitchHistogram = new HashMap<>();
+        for (int beat = searchStartBeat; beat <= searchEndBeat; beat++) {
+            if (occupiedBeats != null && occupiedBeats.contains(beat)) {
+                if (clusterStartBeat >= 0) {
+                    break;
+                }
+                continue;
+            }
+            Map<Integer, Integer> beatHistogram = computePitchHistogramForBeat(beat, pitchData);
+            if (beatHistogram.isEmpty()) {
+                if (clusterStartBeat >= 0) {
+                    break;
+                }
+                continue;
+            }
+            if (!isLeadInBeatStrongEnough(beat, row, pitchData)) {
+                if (clusterStartBeat >= 0) {
+                    break;
+                }
+                continue;
+            }
+            if (clusterStartBeat < 0) {
+                clusterStartBeat = beat;
+            }
+            clusterEndBeat = beat;
+            for (Map.Entry<Integer, Integer> entry : beatHistogram.entrySet()) {
+                pitchHistogram.merge(entry.getKey(), entry.getValue(), Integer::sum);
+            }
+        }
+        if (clusterStartBeat < 0 || clusterEndBeat < clusterStartBeat || pitchHistogram.isEmpty()) {
+            return null;
+        }
+        if (isPreviousPageTailLeadIn(clusterStartBeat, pageBreakBeat)) {
+            return null;
+        }
+        Integer pitch = pitchHistogram.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(null);
+        return pitch == null ? null : new LeadInPitchRange(clusterStartBeat,
+                clusterEndBeat - clusterStartBeat + 1,
+                pitch);
+    }
+
+    private boolean isPreviousPageTailLeadIn(int clusterStartBeat, int pageBreakBeat) {
+        return pageBreakBeat != Integer.MIN_VALUE
+                && clusterStartBeat < pageBreakBeat - 1;
+    }
+
+    private boolean isLeadInBeatStrongEnough(int leadInBeat,
+                                             YassRow row,
+                                             List<PitchDetector.PitchData> pitchData) {
+        double referenceEnergy = computeAveragePitchEnergyForBeat(row.getBeatInt(), pitchData);
+        double leadInEnergy = computeAveragePitchEnergyForBeat(leadInBeat, pitchData);
+        return !Double.isFinite(referenceEnergy)
+                || !Double.isFinite(leadInEnergy)
+                || leadInEnergy >= referenceEnergy * 0.4d;
+    }
+
+    private int findModelRowIndex(YassRow row) {
+        for (int index = 0; index < getRowCount(); index++) {
+            if (getRowAt(index) == row) {
+                return index;
+            }
+        }
+        String rowValue = row.toString();
+        for (int index = 0; index < getRowCount(); index++) {
+            YassRow candidate = getRowAt(index);
+            if (candidate != null && StringUtils.equals(candidate.toString(), rowValue)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private int findPageBreakImmediatelyBeforeRow(int rowIndex) {
+        for (int index = rowIndex - 1; index >= 0; index--) {
+            YassRow previous = getRowAt(index);
+            if (previous == null) {
+                continue;
+            }
+            if (previous.isNote()) {
+                return -1;
+            }
+            if (previous.isPageBreak()) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private Map<Integer, Integer> computePitchHistogramForBeat(int beat, List<PitchDetector.PitchData> pitchData) {
+        Map<Integer, Integer> histogram = new HashMap<>();
+        if (pitchData == null || pitchData.isEmpty()) {
+            return histogram;
+        }
+        double beatStartMs = beatToMs(beat);
+        double beatEndMs = beatToMs(beat + 1);
+        for (PitchDetector.PitchData pd : pitchData) {
+            double frameMs = pd.time() * 1000.0;
+            if (frameMs >= beatStartMs && frameMs < beatEndMs) {
+                histogram.merge(pd.pitch(), 1, Integer::sum);
+            }
+        }
+        return histogram;
+    }
+
+    private double computeAveragePitchEnergyForBeat(int beat, List<PitchDetector.PitchData> pitchData) {
+        if (pitchData == null || pitchData.isEmpty()) {
+            return Double.NaN;
+        }
+        double beatStartMs = beatToMs(beat);
+        double beatEndMs = beatToMs(beat + 1);
+        double energySum = 0d;
+        int energyCount = 0;
+        for (PitchDetector.PitchData pd : pitchData) {
+            double frameMs = pd.time() * 1000.0;
+            if (frameMs >= beatStartMs && frameMs < beatEndMs && Double.isFinite(pd.energy())) {
+                energySum += pd.energy();
+                energyCount++;
+            }
+        }
+        return energyCount > 0 ? energySum / energyCount : Double.NaN;
+    }
+
     private MusicalKeyEnum getPreferredAlignmentKey() {
         String keyFromComment = getKeyFromComment();
         if (StringUtils.isBlank(keyFromComment)) {
@@ -4953,7 +5106,21 @@ public class YassTable extends JTable {
             if (!row.isNote()) {
                 continue;
             }
-            Integer prevalentPitch = prevalentPitches.get(row);
+            boolean mayUseLeadInPitchRange = effectiveMode.adjustsLength()
+                    && effectiveContext.origin() != AlignToMelodyOrigin.MANUAL;
+            LeadInPitchRange leadInPitchRange = mayUseLeadInPitchRange
+                    ? findLeadInPitchRangeForFirstNoteAfterPageBreak(row, pitchData, occupiedBeats)
+                    : null;
+            if (debugAlignToMelody && effectiveMode.adjustsLength()
+                    && effectiveContext.origin() == AlignToMelodyOrigin.MANUAL
+                    && findPageBreakImmediatelyBeforeRow(findModelRowIndex(row)) >= 0) {
+                LOGGER.fine(String.format(Locale.ROOT,
+                        "[AlignToMelody] lead-in skipped row beat=%d length=%d text=\"%s\" reason=manual alignment uses original note pitch window first",
+                        row.getBeatInt(),
+                        row.getLengthInt(),
+                        row.getText()));
+            }
+            Integer prevalentPitch = leadInPitchRange != null ? Integer.valueOf(leadInPitchRange.pitch()) : prevalentPitches.get(row);
             if (prevalentPitch == null) {
                 if (debugAlignToMelody) {
                     LOGGER.fine(String.format(Locale.ROOT,
@@ -5054,6 +5221,11 @@ public class YassTable extends JTable {
             int curLength = row.getLengthInt();
             for (int b = curBeat; b < curBeat + curLength; b++) {
                 occupiedBeats.remove(b);
+            }
+            if (leadInPitchRange != null) {
+                curBeat = leadInPitchRange.startBeat();
+                curLength = leadInPitchRange.length();
+                changed = true;
             }
 
             // Count voiced frames per beat across the note
@@ -5517,6 +5689,9 @@ public class YassTable extends JTable {
     }
 
     private record BeatRange(int startIndex, int endIndex) {
+    }
+
+    private record LeadInPitchRange(int startBeat, int length, int pitch) {
     }
 
     public enum AlignToMelodyOrigin {

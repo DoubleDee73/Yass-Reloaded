@@ -82,7 +82,7 @@ public class MvsepPanel extends OptionsPanel {
         lab.setHorizontalAlignment(JLabel.LEFT);
         lab.setPreferredSize(new Dimension(getLabelWidth(), 20));
 
-        MvsepModel[] models = MvsepModel.values();
+        MvsepModel[] models = MvsepModel.separationValues().toArray(MvsepModel[]::new);
         String[] labels = new String[models.length];
         String[] keys = new String[models.length];
         for (int i = 0; i < models.length; i++) {
@@ -163,7 +163,7 @@ public class MvsepPanel extends OptionsPanel {
             protected void done() {
                 try {
                     algorithms = get();
-                    MvsepModel[] models = MvsepModel.values();
+                    MvsepModel[] models = MvsepModel.separationValues().toArray(MvsepModel[]::new);
                     int idx = modelComboBox.getSelectedIndex();
                     if (idx >= 0 && idx < models.length) {
                         updateModelTypeOptions(models[idx]);

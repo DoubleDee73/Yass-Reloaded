@@ -2,6 +2,7 @@ package yass.analysis
 
 import spock.lang.Specification
 
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 
 class SubtitleParserSpec extends Specification {
@@ -47,7 +48,7 @@ Hello timing
         Files.deleteIfExists(subtitleFile)
     }
 
-    def "parse normalizes subtitles that are almost entirely all caps"() {
+    def "parse normalizes all-caps lyric subtitles to sentence case"() {
         given:
         def subtitleFile = Files.createTempFile("all-caps", ".srt")
         subtitleFile.toFile().text = """1
@@ -56,7 +57,7 @@ THIS IS THE CHORUS
 
 2
 00:00:03,000 --> 00:00:04,000
-AND THIS IS THE NEXT LINE
+AND I'LL KEEP I IN PRONOUN CASE. I'M READY
 
 """
 
@@ -64,7 +65,27 @@ AND THIS IS THE NEXT LINE
         def parsed = SubtitleParser.parse(subtitleFile.toFile())
 
         then:
-        parsed.values().toList() == ["This Is the Chorus", "And This Is the Next Line"]
+        parsed.values().toList() == ["This is the chorus", "And I'll keep I in pronoun case. I'm ready"]
+
+        cleanup:
+        Files.deleteIfExists(subtitleFile)
+    }
+
+    def "parse reads youtube subtitles as UTF-8"() {
+        given:
+        def subtitleFile = Files.createTempFile("utf8-subtitles", ".vtt")
+        Files.writeString(subtitleFile, """WEBVTT
+
+00:00:01.000 --> 00:00:02.000
+I CAN\u2019T TELL YOU WHY
+
+""", StandardCharsets.UTF_8)
+
+        when:
+        def parsed = SubtitleParser.parse(subtitleFile.toFile())
+
+        then:
+        parsed.values().toList() == ["I can\u2019t tell you why"]
 
         cleanup:
         Files.deleteIfExists(subtitleFile)

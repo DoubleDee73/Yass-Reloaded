@@ -39,7 +39,7 @@ public final class MvsepStartDialog {
                                                Map<Integer, MvsepAlgorithmInfo> algorithms,
                                                Integer planQueue,
                                                Icon logoIcon) {
-        MvsepModel[] availableModels = Arrays.stream(MvsepModel.values())
+        MvsepModel[] availableModels = MvsepModel.separationValues().stream()
                                              .filter(model -> model.isAllowedFor(accountInfo, algorithms))
                                              .toArray(MvsepModel[]::new);
         if (availableModels.length == 0) {

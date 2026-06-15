@@ -20,13 +20,12 @@
 package yass.analysis;
 
 import org.apache.commons.lang3.StringUtils;
-import yass.titlecase.TitleCaseConverter;
-import yass.titlecase.PhrasalVerbManager;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -65,7 +64,7 @@ public class SubtitleParser {
             return cues;
         }
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(subtitleFile))) {
+        try (BufferedReader reader = Files.newBufferedReader(subtitleFile.toPath(), StandardCharsets.UTF_8)) {
             String line;
             String previousCleanedText = null;
             int previousEndMillis = -1;
@@ -140,7 +139,7 @@ public class SubtitleParser {
             return false;
         }
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(subtitleFile))) {
+        try (BufferedReader reader = Files.newBufferedReader(subtitleFile.toPath(), StandardCharsets.UTF_8)) {
             String line;
             int cuesWithSettings = 0;
             int totalCues = 0;
@@ -270,9 +269,8 @@ public class SubtitleParser {
         if (subtitles.isEmpty() || !shouldNormalizeAllCaps(subtitles)) {
             return;
         }
-        PhrasalVerbManager.getInstance(null);
         for (Map.Entry<Integer, String> entry : subtitles.entrySet()) {
-            entry.setValue(TitleCaseConverter.toApTitleCase(StringUtils.lowerCase(entry.getValue())));
+            entry.setValue(toLyricsSentenceCase(entry.getValue()));
         }
     }
 
@@ -280,12 +278,31 @@ public class SubtitleParser {
         if (cues.isEmpty() || !shouldNormalizeAllCaps(cues)) {
             return;
         }
-        PhrasalVerbManager.getInstance(null);
         for (int i = 0; i < cues.size(); i++) {
             SubtitleCue cue = cues.get(i);
-            cues.set(i, new SubtitleCue(cue.startMs(), cue.endMs(),
-                    TitleCaseConverter.toApTitleCase(StringUtils.lowerCase(cue.text()))));
+            cues.set(i, new SubtitleCue(cue.startMs(), cue.endMs(), toLyricsSentenceCase(cue.text())));
         }
+    }
+
+    private static String toLyricsSentenceCase(String value) {
+        String lower = StringUtils.lowerCase(StringUtils.defaultString(value));
+        StringBuilder result = new StringBuilder(lower.length());
+        boolean sentenceStart = true;
+        for (int i = 0; i < lower.length(); i++) {
+            char ch = lower.charAt(i);
+            if (sentenceStart && Character.isLetter(ch)) {
+                result.append(Character.toTitleCase(ch));
+                sentenceStart = false;
+            } else {
+                result.append(ch);
+            }
+            if (ch == '.' || ch == '!' || ch == '?') {
+                sentenceStart = true;
+            } else if (Character.isLetterOrDigit(ch)) {
+                sentenceStart = false;
+            }
+        }
+        return result.toString().replaceAll("(?<![\\p{L}\\p{N}])i(?=($|[^\\p{L}\\p{N}]))", "I");
     }
 
     private static boolean shouldNormalizeAllCaps(Map<Integer, String> subtitles) {

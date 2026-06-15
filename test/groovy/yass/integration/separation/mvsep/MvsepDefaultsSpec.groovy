@@ -60,6 +60,12 @@ class MvsepDefaultsSpec extends Specification {
         MvsepOutputFormat.fromValue("unknown") == MvsepOutputFormat.M4A
     }
 
+    def "reverb removal is available internally but hidden from general separation choices"() {
+        expect:
+        MvsepModel.fromValue("reverb_removal") == MvsepModel.REVERB_REMOVAL
+        !MvsepModel.separationValues().contains(MvsepModel.REVERB_REMOVAL)
+    }
+
     def "fresh defaults enable waveform and use m4a for mvsep"() {
         given:
         def properties = new YassProperties()

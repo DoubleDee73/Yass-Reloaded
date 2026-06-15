@@ -33,10 +33,10 @@ then be used to align tapped notes to the detected melody.
   using table BPM, GAP, and playrate timebase.
 - Odd trailing tap timestamps are discarded.
 - For normal playback speed, reaction-time compensation is applied.
-- If recording starts at the first note of the song, the first completed tap is
-  treated as the song-start anchor and shifted so the first processed note lands
-  at beat `0`.
-- First-note anchoring means the real audio start of the first note is `#GAP`.
+- If recording starts at the first note of the song, the first completed tap sets
+  `#GAP` and the first processed note lands at beat `0`.
+- First-note anchoring means the real audio start of the first note is stored in
+  `#GAP`.
 - If recording starts at a later note, absolute timing relative to `#GAP` is
   preserved.
 - Post-recording Align To Melody uses
@@ -67,7 +67,8 @@ then be used to align tapped notes to the detected melody.
 ## Regression Coverage
 
 - `YassTapNotesSpec`
-  - recording from first song note anchors first tapped note at beat `0`
+  - recording from first song note sets `#GAP` and anchors first tapped note at
+    beat `0`
   - recording from later song note keeps absolute timing relative to `#GAP`
 - `AlignToMelodySpec`
   - recording context preserves detected octave during post-processing

@@ -48,6 +48,7 @@ import yass.integration.separation.mvsep.MvsepAccountInfo;
 import yass.integration.separation.mvsep.MvsepAlgorithmInfo;
 import yass.integration.separation.mvsep.MvsepSeparationService;
 import yass.integration.separation.mvsep.MvsepStartDialog;
+import yass.integration.transcription.SubtitleTranscriptionAdapter;
 import yass.integration.transcription.TranscriptionEngine;
 import yass.integration.transcription.TranscriptArtifactService;
 import yass.integration.transcription.TranscriptSourceComment;
@@ -923,7 +924,7 @@ public class YassActions implements DropTargetListener {
         if (transpose != 0 && pitchData != null) {
             pitchData = pitchData.stream()
                                  .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose,
-                                                                        pd.noteName(), pd.rawFrequency()))
+                                                                        pd.noteName(), pd.rawFrequency(), pd.energy()))
                                  .collect(Collectors.toList());
         }
         table.alignToMelody(rows, pitchData, YassTable.AlignToMelodyContext.manual(), mode);
@@ -3716,6 +3717,191 @@ public class YassActions implements DropTargetListener {
         }
     };
 
+    private final Action removeReverbMvsep = new AbstractAction(I18.get("edit_audio_remove_reverb_mvsep")) {
+        public void actionPerformed(ActionEvent e) {
+            startRemoveReverbForCurrentVocals();
+        }
+    };
+
+    public void startRemoveReverbForCurrentVocals() {
+        try {
+            if (!hasMvsepApiToken()) {
+                JOptionPane.showMessageDialog(tab,
+                                              I18.get("edit_audio_separate_missing_token"),
+                                              I18.get("edit_audio_remove_reverb_mvsep"),
+                                              JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (table == null) {
+                JOptionPane.showMessageDialog(tab,
+                                              I18.get("edit_audio_separate_missing_song"),
+                                              I18.get("edit_audio_remove_reverb_mvsep"),
+                                              JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (!hasCurrentVocalsFile()) {
+                JOptionPane.showMessageDialog(tab,
+                                              I18.get("edit_audio_remove_reverb_missing_vocals"),
+                                              I18.get("edit_audio_remove_reverb_mvsep"),
+                                              JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            MvsepSeparationService separationService = new MvsepSeparationService(prop);
+            SeparationRequest request = separationService.createReverbRemovalRequest(table);
+            openReverbRemovalStatusDialog(separationService, request);
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            JOptionPane.showMessageDialog(tab,
+                                          ex.getMessage(),
+                                          I18.get("edit_audio_remove_reverb_mvsep"),
+                                          JOptionPane.WARNING_MESSAGE);
+        }
+    }
+
+    private void openReverbRemovalStatusDialog(MvsepSeparationService separationService,
+                                               SeparationRequest request) {
+        JLabel statusLabel = new JLabel(I18.get("edit_audio_remove_reverb_running"));
+        JTextArea statusHistory = new JTextArea(14, 68);
+        statusHistory.setEditable(false);
+        statusHistory.setLineWrap(true);
+        statusHistory.setWrapStyleWord(true);
+        statusHistory.setText(statusLabel.getText());
+
+        JLabel hintLabel = new JLabel("<html>" + I18.get("edit_audio_remove_reverb_hint") + "</html>");
+        hintLabel.setVerticalAlignment(SwingConstants.TOP);
+
+        JProgressBar statusBar = new JProgressBar();
+        statusBar.setIndeterminate(true);
+
+        JButton cancelButton = new JButton(I18.get("edit_audio_separate_cancel"));
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttonPanel.add(cancelButton);
+
+        JPanel bottomPanel = new JPanel(new BorderLayout(0, 8));
+        bottomPanel.add(statusBar, BorderLayout.NORTH);
+        bottomPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        JPanel panel = new JPanel(new BorderLayout(0, 12));
+        panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        panel.add(hintLabel, BorderLayout.NORTH);
+        panel.add(new JScrollPane(statusHistory), BorderLayout.CENTER);
+        panel.add(bottomPanel, BorderLayout.SOUTH);
+
+        JDialog statusDialog = new JDialog(getFrame(tab), I18.get("edit_audio_remove_reverb_mvsep"), false);
+        statusDialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        ImageIcon dialogIcon = getOptionalResizedIcon("mvsep24Icon", 32);
+        if (dialogIcon != null) {
+            statusDialog.setIconImage(dialogIcon.getImage());
+        }
+        statusDialog.setContentPane(panel);
+        statusDialog.pack();
+        statusDialog.setMinimumSize(new Dimension(700, 360));
+        statusDialog.setLocationRelativeTo(tab);
+
+        separationRunning = true;
+        updateActions();
+
+        final String[] lastStatus = {statusLabel.getText()};
+        final String[] jobHash = {null};
+        SwingWorker<SeparationResult, String> worker = new SwingWorker<>() {
+            @Override
+            protected SeparationResult doInBackground() throws Exception {
+                return separationService.startSeparation(request, this::publish, hash -> jobHash[0] = hash);
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                if (chunks.isEmpty()) {
+                    return;
+                }
+                String status = chunks.get(chunks.size() - 1);
+                statusLabel.setText(status);
+                if (!status.equals(lastStatus[0])) {
+                    statusHistory.append("\n" + status);
+                    lastStatus[0] = status;
+                }
+                statusHistory.setCaretPosition(statusHistory.getDocument().getLength());
+            }
+
+            @Override
+            protected void done() {
+                separationRunning = false;
+                updateActions();
+                statusDialog.dispose();
+                if (isCancelled()) {
+                    return;
+                }
+                try {
+                    handleReverbRemovalResult(get());
+                } catch (CancellationException ignored) {
+                } catch (Exception ex) {
+                    Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+                    JOptionPane.showMessageDialog(tab,
+                                                  StringUtils.defaultIfBlank(cause.getMessage(), cause.toString()),
+                                                  I18.get("edit_audio_remove_reverb_mvsep"),
+                                                  JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        };
+
+        cancelButton.addActionListener(e -> {
+            cancelButton.setEnabled(false);
+            worker.cancel(true);
+            String hash = jobHash[0];
+            if (StringUtils.isNotBlank(hash)) {
+                statusHistory.append("\n" + I18.get("edit_audio_separate_cancelling"));
+                new SwingWorker<Void, Void>() {
+                    @Override
+                    protected Void doInBackground() {
+                        try {
+                            separationService.cancelSeparation(hash);
+                        } catch (IOException ex) {
+                            LOGGER.log(Level.WARNING, "Could not cancel MVSEP reverb removal job " + hash, ex);
+                        }
+                        return null;
+                    }
+                }.execute();
+            }
+        });
+        statusDialog.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                cancelButton.doClick();
+            }
+        });
+        statusDialog.setVisible(true);
+        worker.execute();
+    }
+
+    private void handleReverbRemovalResult(SeparationResult result) {
+        File vocalsFile = result == null ? null : result.getVocalsFile();
+        if (vocalsFile == null || !vocalsFile.isFile()) {
+            JOptionPane.showMessageDialog(tab,
+                                          I18.get("edit_audio_remove_reverb_no_output"),
+                                          I18.get("edit_audio_remove_reverb_mvsep"),
+                                          JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        int choice = JOptionPane.showConfirmDialog(tab,
+                                                   MessageFormat.format(
+                                                           I18.get("edit_audio_remove_reverb_assign_prompt"),
+                                                           vocalsFile.getName()),
+                                                   I18.get("edit_audio_remove_reverb_mvsep"),
+                                                   JOptionPane.YES_NO_OPTION,
+                                                   JOptionPane.QUESTION_MESSAGE);
+        String messageKey;
+        if (choice == JOptionPane.YES_OPTION) {
+            boolean linked = applySeparatedTrack(vocalsFile, true, true);
+            messageKey = linked ? "edit_audio_remove_reverb_assigned" : "edit_audio_remove_reverb_assign_failed";
+        } else {
+            messageKey = "edit_audio_remove_reverb_kept";
+        }
+        JOptionPane.showMessageDialog(tab,
+                                      MessageFormat.format(I18.get(messageKey), vocalsFile.getName()),
+                                      I18.get("edit_audio_remove_reverb_mvsep"),
+                                      JOptionPane.INFORMATION_MESSAGE);
+    }
+
     public void startLocalSeparateAudioForCurrentSong() {
         if (table == null) {
             JOptionPane.showMessageDialog(tab,
@@ -4338,15 +4524,30 @@ public class YassActions implements DropTargetListener {
 
     private boolean applyWizardTranscriptionOutputs(String songFile, WizardTranscriptionState state,
      String correctedLyrics) {
-        if (StringUtils.isBlank(songFile) || state == null || state.getTranscriptionResult() == null) {
+        if (StringUtils.isBlank(songFile)) {
+            LOGGER.info("[WizardSubtitleTranscript] apply skipped: song file is blank");
+            return false;
+        }
+        if (state == null) {
+            LOGGER.info("[WizardSubtitleTranscript] apply skipped for " + songFile + ": no wizard transcription state");
+            return false;
+        }
+        if (state.getTranscriptionResult() == null) {
+            LOGGER.info("[WizardSubtitleTranscript] apply skipped for " + songFile + ": no transcription result in wizard state");
             return false;
         }
         File songTextFile = new File(songFile);
         File destinationDir = songTextFile.getParentFile();
         if (destinationDir == null || !destinationDir.isDirectory()) {
+            LOGGER.info("[WizardSubtitleTranscript] apply skipped for " + songFile
+                    + ": destination directory is unavailable");
             return false;
         }
         try {
+            LOGGER.info("[WizardSubtitleTranscript] apply start songFile=" + songFile
+                    + " destinationDir=" + destinationDir.getAbsolutePath()
+                    + " runDirectory=" + describeOptionalFile(state.getRunDirectory())
+                    + " result=" + describeTranscriptionResult(state.getTranscriptionResult()));
             YassTable createdTable = new YassTable();
             createdTable.init(prop);
             createdTable.setDir(destinationDir.getAbsolutePath());
@@ -4359,13 +4560,18 @@ public class YassActions implements DropTargetListener {
 
             OpenAiTranscriptionResult transcriptionResult =
                     applyCorrectedLyricsToTranscript(state.getTranscriptionResult(), correctedLyrics);
-            Lyrics.configureTranscriptHyphenator(prop, createdTable, createdTable.getLanguage());
-            new TranscriptNoteRebuildService().transcript(createdTable, transcriptionResult);
-            createdTable.setCommentTag(TranscriptSourceComment.merge(createdTable.getCommentTag(), transcriptionResult));
             File copiedVocals = copyWizardSeparationFiles(destinationDir, createdTable, state);
-            logTranscriptTimingRefinement(createdTable, transcriptionResult, copiedVocals);
+            List<PitchDetector.PitchData> rebuildPitchData = loadWizardVocalPitchData(copiedVocals);
+            transcriptionResult = refineWizardTranscriptForRebuild(createdTable, transcriptionResult, rebuildPitchData);
+            Lyrics.configureTranscriptHyphenator(prop, createdTable, createdTable.getLanguage());
+            new TranscriptNoteRebuildService().transcript(createdTable, transcriptionResult, rebuildPitchData);
+            createdTable.setCommentTag(TranscriptSourceComment.merge(createdTable.getCommentTag(), transcriptionResult));
+            logTranscriptTimingRefinement(createdTable, transcriptionResult, copiedVocals, rebuildPitchData);
             copyWizardTranscriptCache(destinationDir, state);
-            new TranscriptArtifactService().save(destinationDir, transcriptionResult);
+            File transcriptArtifact = new TranscriptArtifactService().save(destinationDir, transcriptionResult);
+            LOGGER.info("[WizardSubtitleTranscript] saved transcript artifact "
+                    + describeOptionalFile(transcriptArtifact)
+                    + " result=" + describeTranscriptionResult(transcriptionResult));
             createdTable.storeFile(songTextFile.getAbsolutePath());
             LOGGER.info("Applied wizard separation and transcription outputs to " + songFile);
             return true;
@@ -4379,6 +4585,39 @@ public class YassActions implements DropTargetListener {
             OpenAiTranscriptionResult original, String correctedLyrics) {
         OpenAiTranscriptionResult rewritten = new TranscriptTruthRewriteService().rewrite(original, correctedLyrics);
         return rewritten != null && original != null ? rewritten.withTextSourceTag(original.getTextSourceTag()) : rewritten;
+    }
+
+    static OpenAiTranscriptionResult refineWizardTranscriptForRebuild(YassTable createdTable,
+                                                                      OpenAiTranscriptionResult transcriptionResult,
+                                                                      List<PitchDetector.PitchData> vocalFrames) {
+        if (createdTable == null || transcriptionResult == null || vocalFrames == null || vocalFrames.isEmpty()) {
+            return transcriptionResult;
+        }
+        TranscriptTimingRefinementService refinementService = new TranscriptTimingRefinementService();
+        if (!refinementService.shouldRefineForAlignment(transcriptionResult)) {
+            return transcriptionResult;
+        }
+        return refinementService.refineForAlignment(transcriptionResult,
+                vocalFrames,
+                (int) Math.round(createdTable.getGap()),
+                UltrastarHeaderTag.VOCALS.toString(),
+                createdTable.getBPM());
+    }
+
+    private List<PitchDetector.PitchData> loadWizardVocalPitchData(File vocalsFile) {
+        if (vocalsFile == null || !vocalsFile.isFile()) {
+            return Collections.emptyList();
+        }
+        try {
+            PitchDetector.PitchDetectionResult pitchDetection =
+                    PitchDetector.detectPitchWithRaw(vocalsFile, prop, MusicalKeyEnum.UNDEFINED);
+            return pitchDetection.rawPitchData();
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO,
+                       "[TranscriptTimingRefinement] analysis skipped for " + vocalsFile.getAbsolutePath(),
+                       ex);
+            return Collections.emptyList();
+        }
     }
 
     private File copyWizardSeparationFiles(File destinationDir, YassTable createdTable,
@@ -4416,14 +4655,13 @@ public class YassActions implements DropTargetListener {
 
     private void logTranscriptTimingRefinement(YassTable createdTable,
                                                OpenAiTranscriptionResult transcriptionResult,
-                                               File vocalsFile) {
-        if (createdTable == null || transcriptionResult == null || vocalsFile == null || !vocalsFile.isFile()) {
+                                               File vocalsFile,
+                                               List<PitchDetector.PitchData> vocalFrames) {
+        if (createdTable == null || transcriptionResult == null || vocalsFile == null || !vocalsFile.isFile()
+                || vocalFrames == null || vocalFrames.isEmpty()) {
             return;
         }
         try {
-            PitchDetector.PitchDetectionResult pitchDetection =
-                    PitchDetector.detectPitchWithRaw(vocalsFile, prop, MusicalKeyEnum.UNDEFINED);
-            List<PitchDetector.PitchData> vocalFrames = pitchDetection.rawPitchData();
             TranscriptTimingRefinementService.TimingRefinementAnalysis analysis =
                     new TranscriptTimingRefinementService().analyze(transcriptionResult,
                                                                     vocalFrames,
@@ -4533,6 +4771,61 @@ public class YassActions implements DropTargetListener {
         }
         File transcriptFile = new File(destinationDir, TranscriptArtifactService.FILE_NAME);
         return transcriptFile.isFile() ? transcriptFile : null;
+    }
+
+    static WizardTranscriptionState withSubtitleTranscriptFallback(WizardTranscriptionState state,
+                                                                   String subtitlePath) {
+        if (state != null && state.getTranscriptionResult() != null) {
+            LOGGER.info("[WizardSubtitleTranscript] fallback skipped: wizard already has transcript result="
+                    + describeTranscriptionResult(state.getTranscriptionResult()));
+            return state;
+        }
+        if (StringUtils.isBlank(subtitlePath)) {
+            LOGGER.info("[WizardSubtitleTranscript] fallback skipped: subtitle path is blank");
+            return state;
+        }
+        File subtitleFile = new File(subtitlePath);
+        if (!subtitleFile.isFile()) {
+            LOGGER.info("[WizardSubtitleTranscript] fallback skipped: subtitle file not found "
+                    + describeOptionalFile(subtitleFile));
+            return state;
+        }
+        LOGGER.info("[WizardSubtitleTranscript] fallback converting subtitle "
+                + describeOptionalFile(subtitleFile)
+                + " preservedState=" + (state != null));
+        OpenAiTranscriptionResult transcriptionResult =
+                new SubtitleTranscriptionAdapter().fromSubtitles(subtitleFile);
+        if (transcriptionResult == null) {
+            LOGGER.info("[WizardSubtitleTranscript] fallback skipped: subtitle conversion produced no transcript for "
+                    + subtitleFile.getAbsolutePath());
+            return state;
+        }
+        LOGGER.info("[WizardSubtitleTranscript] fallback created transcript "
+                + describeTranscriptionResult(transcriptionResult)
+                + " from " + subtitleFile.getAbsolutePath());
+        if (state != null) {
+            return state.withTranscriptionResult(transcriptionResult);
+        }
+        return new WizardTranscriptionState(null, null, null, null, transcriptionResult);
+    }
+
+    private static String describeTranscriptionResult(OpenAiTranscriptionResult result) {
+        if (result == null) {
+            return "<none>";
+        }
+        return "sourceTag=" + StringUtils.defaultString(result.getSourceTag(), "<blank>")
+                + " textSourceTag=" + StringUtils.defaultString(result.getTextSourceTag(), "<blank>")
+                + " timingSourceTag=" + StringUtils.defaultString(result.getTimingSourceTag(), "<blank>")
+                + " segments=" + result.getSegments().size()
+                + " words=" + result.getWords().size()
+                + " textLength=" + StringUtils.defaultString(result.getTranscriptText()).length();
+    }
+
+    private static String describeOptionalFile(File file) {
+        if (file == null) {
+            return "<none>";
+        }
+        return file.getAbsolutePath() + " exists=" + file.isFile();
     }
 
     static String buildPostWizardSeparationPrompt(boolean hasTranscriptArtifact) {
@@ -5626,19 +5919,7 @@ public class YassActions implements DropTargetListener {
         updateActions();
 
         sheet.setActiveTable(table);
-        String bg = table.getBackgroundTag();
-        if (bg != null) {
-            File file = new File(table.getDir() + File.separator + bg);
-            BufferedImage img = null;
-            if (file.exists()) {
-                try {
-                    img = YassUtils.readImage(file);
-                } catch (Exception ignored) {
-                }
-            }
-            sheet.setBackgroundImage(img);
-            mp3.setBackgroundImage(img);
-        }
+        updateBackgroundImage(table);
         updateTitle();
         lyrics.setTable(table);
         isUpdating = true;
@@ -5658,6 +5939,27 @@ public class YassActions implements DropTargetListener {
 
     public ImageIcon getIcon(String s) {
         return icons.get(s);
+    }
+
+    private void updateBackgroundImage(YassTable sourceTable) {
+        BufferedImage img = resolveBackgroundImage(sourceTable);
+        sheet.setBackgroundImage(img);
+        mp3.setBackgroundImage(img);
+    }
+
+    static BufferedImage resolveBackgroundImage(YassTable sourceTable) {
+        if (sourceTable == null || StringUtils.isBlank(sourceTable.getBackgroundTag())) {
+            return null;
+        }
+        File file = new File(sourceTable.getDir() + File.separator + sourceTable.getBackgroundTag());
+        if (!file.exists()) {
+            return null;
+        }
+        try {
+            return YassUtils.readImage(file);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public YassAutoCorrect getAutoCorrect() {
@@ -6203,6 +6505,7 @@ public class YassActions implements DropTargetListener {
         ImageIcon separateAudioIcon = getOptionalResizedIcon("mvsep24Icon", 16);
         if (separateAudioIcon != null) {
             separateAudio.putValue(AbstractAction.SMALL_ICON, separateAudioIcon);
+            removeReverbMvsep.putValue(AbstractAction.SMALL_ICON, separateAudioIcon);
         }
         ImageIcon separateAudioLocalIcon = getOptionalResizedIcon("audiosep24Icon", 16);
         if (separateAudioLocalIcon != null) {
@@ -6441,6 +6744,7 @@ public class YassActions implements DropTargetListener {
         menu.add(alignNotesWithTranscription);
         menu.add(separateAudio);
         menu.add(separateAudioLocal);
+        menu.add(removeReverbMvsep);
         menu.add(queryMusicBrainz);
         menu.add(compareUsdb);
         menu.add(suggestGoldenNotes);
@@ -8192,6 +8496,7 @@ public class YassActions implements DropTargetListener {
         separateAudio.setEnabled(hasMvsepApiToken() && isOpened && !separationRunning && canSeparateCurrentSong());
         separateAudioLocal.setEnabled(
                 new AudioSeparatorSeparationService(prop).isConfigured() && isOpened && !separationRunning);
+        removeReverbMvsep.setEnabled(hasMvsepApiToken() && isOpened && !separationRunning && hasCurrentVocalsFile());
         autoCorrectTransposed.setEnabled(isOpened);
         autoCorrectSpacing.setEnabled(isOpened);
 
@@ -8264,6 +8569,13 @@ public class YassActions implements DropTargetListener {
                 || trackedSeparationJob.matchesSong(buildSeparationSongKey(table))
                 || trackedSeparationJob.state == SeparationJobState.DONE
                 || trackedSeparationJob.state == SeparationJobState.CANCELLED;
+    }
+
+    private boolean hasCurrentVocalsFile() {
+        if (table == null || StringUtils.isBlank(table.getDir()) || StringUtils.isBlank(table.getVocals())) {
+            return false;
+        }
+        return new File(table.getDir(), table.getVocals()).isFile();
     }
 
     private boolean applySeparatedTrack(File downloadedFile, boolean vocals) {
@@ -10706,19 +11018,7 @@ public class YassActions implements DropTargetListener {
                 table.setCover(temp.getName());
             }
         }
-        String bg = table.getBackgroundTag();
-        if (bg != null) {
-            file = new File(table.getDir() + File.separator + bg);
-            BufferedImage img = null;
-            if (file.exists()) {
-                try {
-                    img = YassUtils.readImage(file);
-                } catch (Exception ignored) {
-                }
-            }
-            sheet.setBackgroundImage(img);
-            mp3.setBackgroundImage(img);
-        }
+        updateBackgroundImage(table);
 
         sheet.revalidate();
         main.revalidate();
@@ -11483,19 +11783,7 @@ public class YassActions implements DropTargetListener {
             if (videoDialog != null && vd != null) {
                 videoDialog.setVideo(table.getDir() + File.separator + vd);
             }
-            String bg = table.getBackgroundTag();
-            if (bg != null) {
-                File file = new File(table.getDir() + File.separator + bg);
-                BufferedImage img = null;
-                if (file.exists()) {
-                    try {
-                        img = YassUtils.readImage(file);
-                    } catch (Exception ignored) {
-                    }
-                }
-                sheet.setBackgroundImage(img);
-                mp3.setBackgroundImage(img);
-            }
+            updateBackgroundImage(table);
         }
         sheet.repaint();
         sheet.requestFocus();
@@ -11654,7 +11942,17 @@ public class YassActions implements DropTargetListener {
                     }
                 }
             }
-            wizardAssetsApplied = applyWizardTranscriptionOutputs(file, wiz.getWizardTranscriptionState(),
+            WizardTranscriptionState wizardTranscriptionState =
+                    withSubtitleTranscriptFallback(wiz.getWizardTranscriptionState(),
+                                                   (String) hash.get("subtitle"));
+            LOGGER.info("[WizardSubtitleTranscript] finish file=" + file
+                    + " subtitle=" + StringUtils.defaultString((String) hash.get("subtitle"), "<blank>")
+                    + " autoGenerated=" + StringUtils.defaultString((String) hash.get("subtitles-auto-generated"), "<blank>")
+                    + " stateHasTranscript=" + (wizardTranscriptionState != null
+                    && wizardTranscriptionState.getTranscriptionResult() != null)
+                    + " result=" + describeTranscriptionResult(
+                    wizardTranscriptionState != null ? wizardTranscriptionState.getTranscriptionResult() : null));
+            wizardAssetsApplied = applyWizardTranscriptionOutputs(file, wizardTranscriptionState,
                                                                   (String) hash.get("lyrics"));
         }
         refreshLibrary();

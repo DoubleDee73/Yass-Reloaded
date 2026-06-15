@@ -292,6 +292,76 @@ class AlignToMelodySpec extends Specification {
         note.getHeightInt() == 5
     }
 
+    def 'alignToMelody uses free lead-in pitch frames for first note after a page break'() {
+        given:
+        def previous = new YassRow(':', '58', '23', '0', 'why ')
+        def pageBreak = new YassRow('-', '91', '', '', '')
+        def lateStart = new YassRow(':', '106', '8', '6', 'But ')
+        def next = new YassRow(':', '122', '9', '-2', 'some')
+        YassTable yassTable = tableWithRows(previous, pageBreak, lateStart, next)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(58, 4, 0, 1.0d))
+        pitchData.addAll(framesForBeat(90, 4, -4, 1.0d))
+        pitchData.addAll(framesForBeat(91, 4, -4, 1.0d))
+        pitchData.addAll(framesForBeat(106, 4, 1, 1.0d))
+        pitchData.addAll(framesForBeat(122, 4, -2, 1.0d))
+
+        when:
+        yassTable.alignToMelody([lateStart], pitchData, YassTable.AlignToMelodyContext.createWizard())
+
+        then:
+        lateStart.getBeatInt() == 90
+        lateStart.getLengthInt() == 2
+        lateStart.getHeightInt() == -4
+    }
+
+    def 'alignToMelody does not pull first note after a page break into previous page tail'() {
+        given:
+        def previous = new YassRow(':', '712', '16', '5', '~ ')
+        def pageBreak = new YassRow('-', '734', '', '', '')
+        def and = new YassRow(':', '736', '3', '23', 'And ')
+        def next = new YassRow(':', '753', '3', '8', 'I ')
+        YassTable yassTable = tableWithRows(previous, pageBreak, and, next)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(712, 4, 5, 1.0d))
+        pitchData.addAll(framesForBeat(730, 4, 23, 1.0d))
+        pitchData.addAll(framesForBeat(731, 4, 23, 1.0d))
+        pitchData.addAll(framesForBeat(736, 4, 8, 1.0d))
+        pitchData.addAll(framesForBeat(753, 4, 8, 1.0d))
+
+        when:
+        yassTable.alignToMelody([and], pitchData, YassTable.AlignToMelodyContext.createWizard())
+
+        then:
+        and.getBeatInt() == 736
+        and.getLengthInt() == 1
+        and.getHeightInt() == 8
+    }
+
+    def 'manual alignToMelody keeps first note after page break on pitch prevalent inside original note'() {
+        given:
+        def previous = new YassRow(':', '1315', '5', '4', '~ng ')
+        def pageBreak = new YassRow('-', '1320', '', '', '')
+        def oh = new YassRow(':', '1322', '21', '7', 'Oh, ')
+        def next = new YassRow(':', '1350', '5', '3', 'your ')
+        YassTable yassTable = tableWithRows(previous, pageBreak, oh, next)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(1315, 4, 4, 1.0d))
+        pitchData.addAll(framesForBeat(1321, 4, 5, 1.0d))
+        (1322..1342).each { beat ->
+            pitchData.addAll(framesForBeat(beat, 4, 7, 1.0d))
+        }
+        pitchData.addAll(framesForBeat(1350, 4, 3, 1.0d))
+
+        when:
+        yassTable.alignToMelody([oh], pitchData, YassTable.AlignToMelodyContext.manual())
+
+        then:
+        oh.getBeatInt() == 1322
+        oh.getLengthInt() == 21
+        oh.getHeightInt() == 7
+    }
+
     def 'recording alignment lowers C6-or-higher outliers when neighboring notes are much lower'() {
         given:
         def previous = new YassRow(':', '0', '4', '0', 'Prev ')

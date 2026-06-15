@@ -57,6 +57,8 @@ public class MvsepSeparationService implements SeparationService {
     private static final int MAX_POLLS = 1_440;
     private static final int TRANSCODE_TIMEOUT_SECONDS = 600;
     private static final int DEFAULT_AUDIO_BITRATE_KBPS = 192;
+    private static final String REVERB_REMOVAL_MODEL_TYPE = "7";
+    private static final String REVERB_REMOVAL_DE_REVERBED_KEY = "dereverb-vocals";
 
     private final YassProperties properties;
 
@@ -89,6 +91,42 @@ public class MvsepSeparationService implements SeparationService {
         MvsepOutputFormat outputFormat = MvsepOutputFormat.fromValue(properties.getProperty("mvsep-output-format"));
         LOGGER.info("MVSEP wizard request prepared for " + baseName + " using model " + model.getValue() + " and format " + outputFormat.getValue());
         return new SeparationRequest(outputDirectory.getAbsolutePath(), audioFile, model.getValue(), outputFormat.getValue(), baseName);
+    }
+
+    public SeparationRequest createReverbRemovalRequest(YassTable table) {
+        if (table == null) {
+            throw new IllegalArgumentException("No song is currently open.");
+        }
+        if (!isConfigured()) {
+            throw new IllegalStateException("The MVSEP API token is missing.");
+        }
+        String vocals = table.getVocals();
+        if (StringUtils.isBlank(vocals)) {
+            throw new IllegalStateException("The current song has no #VOCALS file configured.");
+        }
+        File vocalsFile = new File(table.getDir(), vocals);
+        return createReverbRemovalRequest(new File(table.getDir()), vocalsFile, buildSongBaseName(table, vocalsFile));
+    }
+
+    public SeparationRequest createReverbRemovalRequest(File outputDirectory, File vocalsFile, String songBaseName) {
+        if (outputDirectory == null) {
+            throw new IllegalArgumentException("No song directory was provided for the reverb removal output.");
+        }
+        if (vocalsFile == null || !vocalsFile.isFile()) {
+            throw new IllegalArgumentException("The configured #VOCALS file could not be found.");
+        }
+        if (!isConfigured()) {
+            throw new IllegalStateException("The MVSEP API token is missing.");
+        }
+        MvsepOutputFormat outputFormat = MvsepOutputFormat.fromValue(properties.getProperty("mvsep-output-format"));
+        String baseName = StringUtils.defaultIfBlank(songBaseName, stripExtension(vocalsFile.getName()));
+        LOGGER.info("MVSEP reverb removal request prepared for " + baseName + " using " + vocalsFile.getName());
+        return new SeparationRequest(outputDirectory.getAbsolutePath(),
+                                     vocalsFile,
+                                     MvsepModel.REVERB_REMOVAL.getValue(),
+                                     outputFormat.getValue(),
+                                     baseName,
+                                     REVERB_REMOVAL_MODEL_TYPE);
     }
 
     public SeparationRequest createRequest(YassTable table, String modelValue, String outputFormatValue) {
@@ -532,7 +570,8 @@ public class MvsepSeparationService implements SeparationService {
                 writeFormField(data, boundary, "add_opt1", model.getAddOpt1());
             }
             if (StringUtils.isNotBlank(model.getAddOpt2())) {
-                writeFormField(data, boundary, "add_opt2", model.getAddOpt2());
+                String addOpt2Field = model.isReverbRemoval() ? "extract_type" : "add_opt2";
+                writeFormField(data, boundary, addOpt2Field, model.getAddOpt2());
             }
             writeFormField(data, boundary, "output_format", outputFormat.getRemoteApiValue());
             writeFileField(data, boundary, "audiofile", request.getAudioFile());
@@ -692,6 +731,7 @@ public class MvsepSeparationService implements SeparationService {
     }
 
     private String resolveStemTypeLabel(Map<String, DownloadDescriptor> stems, DownloadDescriptor candidate) {
+        if (candidate.equals(stems.get(REVERB_REMOVAL_DE_REVERBED_KEY))) return "Vocals De-Reverb";
         if (candidate.equals(stems.get("vocals"))) return "Vocals";
         if (candidate.equals(stems.get("lead"))) return "Lead";
         if (candidate.equals(stems.get("instrumental"))) return "Instrumental";
@@ -758,6 +798,9 @@ public class MvsepSeparationService implements SeparationService {
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine("MVSEP raw response: " + response);
         }
+        if (model.isReverbRemoval()) {
+            return extractReverbRemovalStems(candidates);
+        }
         return model.isKaraokeThreeStem() ? extractKaraokeStems(candidates) : extractTwoStemResult(candidates);
     }
 
@@ -796,6 +839,29 @@ public class MvsepSeparationService implements SeparationService {
             stems.put("instrumental", instrumental);
         }
         return stems;
+    }
+
+    private LinkedHashMap<String, DownloadDescriptor> extractReverbRemovalStems(List<DownloadDescriptor> candidates) {
+        LinkedHashMap<String, DownloadDescriptor> stems = new LinkedHashMap<>();
+        DownloadDescriptor deReverbed = findBestReverbRemovalCandidate(candidates);
+        if (deReverbed != null) {
+            stems.put(REVERB_REMOVAL_DE_REVERBED_KEY, deReverbed);
+            stems.put("vocals", deReverbed);
+        }
+        return stems;
+    }
+
+    private DownloadDescriptor findBestReverbRemovalCandidate(List<DownloadDescriptor> candidates) {
+        DownloadDescriptor best = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (DownloadDescriptor candidate : candidates) {
+            int score = scoreReverbRemovalCandidate(candidate);
+            if (score > bestScore) {
+                best = candidate;
+                bestScore = score;
+            }
+        }
+        return bestScore > 0 ? best : null;
     }
 
     private LinkedHashMap<String, DownloadDescriptor> extractKaraokeStems(List<DownloadDescriptor> candidates) {
@@ -916,6 +982,22 @@ public class MvsepSeparationService implements SeparationService {
         return score;
     }
 
+    private int scoreReverbRemovalCandidate(DownloadDescriptor candidate) {
+        String haystack = (candidate.name() + " " + candidate.url()).toLowerCase(Locale.ROOT);
+        String compact = haystack.replace("_", "").replace("-", "").replace(" ", "");
+        int score = 0;
+        if (compact.contains("noreverb")) score += 20;
+        if (compact.contains("dereverb")) score += 20;
+        if (haystack.contains("no reverb")) score += 18;
+        if (haystack.contains("dry")) score += 10;
+        if (haystack.contains("vocals") || haystack.contains("vocal")) score += 3;
+        if (haystack.contains("reverb") && !compact.contains("noreverb") && !compact.contains("dereverb")) {
+            score -= 12;
+        }
+        if (haystack.contains("wet") || haystack.contains("tail")) score -= 6;
+        return score;
+    }
+
     private boolean containsBackingKeywords(String haystack) {
         return haystack.contains("backing")
                 || haystack.contains("back vocals")
@@ -996,7 +1078,12 @@ public class MvsepSeparationService implements SeparationService {
         if (haystack.contains("input_file") || haystack.contains("original") || haystack.contains("source")) {
             return false;
         }
-        return url.contains("/storage/processed/") || name.contains("vocals") || name.contains("other") || name.contains("instrumental");
+        return url.contains("/storage/processed/")
+                || name.contains("vocals")
+                || name.contains("other")
+                || name.contains("instrumental")
+                || name.contains("noreverb")
+                || name.contains("dereverb");
     }
 
     private File downloadStem(String url,

@@ -2,6 +2,9 @@ package yass.wizard
 
 import spock.lang.Specification
 import yass.I18
+import yass.integration.transcription.openai.OpenAiTranscriptSegment
+import yass.integration.transcription.openai.OpenAiTranscriptWord
+import yass.integration.transcription.openai.OpenAiTranscriptionResult
 
 class CreateSongWizardSpec extends Specification {
 
@@ -83,5 +86,67 @@ class CreateSongWizardSpec extends Specification {
         result.transcriptText == "First line\nSecond line"
         result.segments*.startMs == [1000, 3000]
         result.words*.text == ["First", "line", "Second", "line"]
+    }
+
+    def "adopts subtitle transcription result when the wizard has no transcript yet"() {
+        given:
+        def subtitleResult = transcriptResult("#SUBTITLES", "From captions")
+
+        when:
+        def state = CreateSongWizard.mergeLyricsTranscriptionResult(null, subtitleResult)
+
+        then:
+        state.transcriptionResult.is(subtitleResult)
+    }
+
+    def "keeps existing wizard transcript when subtitle lyrics are only a fallback"() {
+        given:
+        def existingResult = transcriptResult("#VOCALS", "From transcription")
+        def subtitleResult = transcriptResult("#SUBTITLES", "From captions")
+        def existingState = new WizardTranscriptionState(
+                new File("run"),
+                new File("source.mp3"),
+                new File("source.wav"),
+                null,
+                existingResult)
+
+        when:
+        def state = CreateSongWizard.mergeLyricsTranscriptionResult(existingState, subtitleResult)
+
+        then:
+        state.is(existingState)
+        state.transcriptionResult.is(existingResult)
+    }
+
+    def "preserves wizard assets when adding subtitle transcript to an existing state"() {
+        given:
+        def subtitleResult = transcriptResult("#SUBTITLES", "From captions")
+        def runDirectory = new File("run")
+        def sourceAudio = new File("source.mp3")
+        def sourceConverted = new File("source.wav")
+        def existingState = new WizardTranscriptionState(runDirectory, sourceAudio, sourceConverted, null, null)
+
+        when:
+        def state = CreateSongWizard.mergeLyricsTranscriptionResult(existingState, subtitleResult)
+
+        then:
+        state.runDirectory == runDirectory
+        state.sourceAudioFile == sourceAudio
+        state.sourceConvertedFile == sourceConverted
+        state.transcriptionResult.is(subtitleResult)
+    }
+
+    private static OpenAiTranscriptionResult transcriptResult(String sourceTag, String text) {
+        def word = new OpenAiTranscriptWord(text, text.toLowerCase(), 0, 1000)
+        new OpenAiTranscriptionResult(
+                null,
+                null,
+                sourceTag,
+                text,
+                [word],
+                [new OpenAiTranscriptSegment(0, 1000, text, [word])],
+                [],
+                false,
+                null)
     }
 }

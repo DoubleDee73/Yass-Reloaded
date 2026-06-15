@@ -21,6 +21,7 @@ package yass.integration.separation.mvsep;
 
 import yass.YassEnum;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +44,7 @@ public enum MvsepModel implements YassEnum {
     MEDLEY_VOX("medley_vox", "Medley Vox (Multi-singer separation)", 53, null, null, false, false),
     MVSEP_MULTICHANNEL_BS("mvsep_multichannel_bs", "MVSep Multichannel BS (vocals, instrumental)", 43, null, null, false, false),
     MVSEP_MALE_FEMALE("mvsep_male_female", "MVSep Male/Female separation", 57, null, null, false, false),
+    REVERB_REMOVAL("reverb_removal", "Reverb Removal (noreverb)", 22, null, "1", false, false, false),
     DEMUCS3_MODEL("demucs3_model", "Demucs3 Model (vocals, drums, bass, other)", 10, null, null, false, false),
     MDX_A_B("mdx_a_b", "MDX A/B (vocals, drums, bass, other)", 7, null, null, false, false),
     VIT_LARGE_23("vit_large_23", "Vit Large 23 (vocals, instrum)", 33, null, null, false, false),
@@ -59,6 +61,7 @@ public enum MvsepModel implements YassEnum {
     private final String addOpt2;
     private final boolean karaokeThreeStem;
     private final boolean premiumOnly;
+    private final boolean generalSeparation;
 
     MvsepModel(String value,
                String label,
@@ -67,6 +70,17 @@ public enum MvsepModel implements YassEnum {
                String addOpt2,
                boolean karaokeThreeStem,
                boolean premiumOnly) {
+        this(value, label, sepType, addOpt1, addOpt2, karaokeThreeStem, premiumOnly, true);
+    }
+
+    MvsepModel(String value,
+               String label,
+               int sepType,
+               String addOpt1,
+               String addOpt2,
+               boolean karaokeThreeStem,
+               boolean premiumOnly,
+               boolean generalSeparation) {
         this.value = value;
         this.label = label;
         this.sepType = sepType;
@@ -74,6 +88,7 @@ public enum MvsepModel implements YassEnum {
         this.addOpt2 = addOpt2;
         this.karaokeThreeStem = karaokeThreeStem;
         this.premiumOnly = premiumOnly;
+        this.generalSeparation = generalSeparation;
     }
 
     public static MvsepModel fromValue(String value) {
@@ -83,6 +98,10 @@ public enum MvsepModel implements YassEnum {
             }
         }
         return MELBAND_ROFORMER;
+    }
+
+    public static List<MvsepModel> separationValues() {
+        return Arrays.stream(values()).filter(MvsepModel::isGeneralSeparation).toList();
     }
 
     public int getSepType() {
@@ -99,6 +118,14 @@ public enum MvsepModel implements YassEnum {
 
     public boolean isKaraokeThreeStem() {
         return karaokeThreeStem;
+    }
+
+    public boolean isReverbRemoval() {
+        return this == REVERB_REMOVAL;
+    }
+
+    public boolean isGeneralSeparation() {
+        return generalSeparation;
     }
 
     public boolean isAllowedFor(MvsepAccountInfo accountInfo, Map<Integer, MvsepAlgorithmInfo> algorithms) {
@@ -122,7 +149,7 @@ public enum MvsepModel implements YassEnum {
 
     @Override
     public List<YassEnum> listElements() {
-        return Arrays.asList(values());
+        return new ArrayList<YassEnum>(separationValues());
     }
 
     @Override

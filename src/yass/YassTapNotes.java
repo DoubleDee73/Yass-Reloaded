@@ -54,7 +54,10 @@ public class YassTapNotes {
             t++;
         }
         boolean anchorFirstTapToGap = t == getFirstNoteRow(table);
-        double tapOffsetMs = anchorFirstTapToGap ? toBeatRelativeMillis(taps.elementAt(0), gap, timebase) : 0d;
+        if (anchorFirstTapToGap) {
+            gap = toCompensatedTapMillis(taps.elementAt(0), timebase);
+            table.setGap(gap);
+        }
 
         int k = 0;
         int i = 0;
@@ -70,8 +73,8 @@ public class YassTapNotes {
                 }
                 long tapBeat = taps.elementAt(k++).longValue();
                 long tapBeat2 = taps.elementAt(k++).longValue();
-                double ms = toBeatRelativeMillis(tapBeat, gap, timebase) - tapOffsetMs;
-                double ms2 = toBeatRelativeMillis(tapBeat2, gap, timebase) - tapOffsetMs;
+                double ms = toBeatRelativeMillis(tapBeat, gap, timebase);
+                double ms2 = toBeatRelativeMillis(tapBeat2, gap, timebase);
                 int beat = (int) Math.round((4 * bpm * ms / (60 * 1000)));
                 int beat2 = (int) Math.round((4 * bpm * ms2 / (60 * 1000)));
 
@@ -111,10 +114,14 @@ public class YassTapNotes {
     }
 
     private static double toBeatRelativeMillis(long tapMicros, double gap, Timebase timebase) {
-        double ms = tapMicros / 1000.0 - gap;
+        return toCompensatedTapMillis(tapMicros, timebase) - gap;
+    }
+
+    private static double toCompensatedTapMillis(long tapMicros, Timebase timebase) {
+        double ms = tapMicros / 1000.0;
         if (timebase == Timebase.NORMAL) {
             ms = ms - REACTION_TIME;
         }
-        return ms;
+        return Math.max(0d, ms);
     }
 }

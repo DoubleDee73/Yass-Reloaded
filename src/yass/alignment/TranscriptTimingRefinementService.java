@@ -25,13 +25,15 @@ public class TranscriptTimingRefinementService {
     private static final int MIN_GRID_STEP_MS = 10;
     private static final int DEBUG_PHRASE_LIMIT = 6;
     private static final int ONSET_BUCKET_MS = 25;
+    private static final int ONSET_SIGNAL_START_SNAP_MS = 45;
     private static final int MIN_ONSET_GAP_MS = 120;
-    private static final int PITCH_SPLIT_THRESHOLD_SEMITONES = 3;
+    private static final int PITCH_SPLIT_THRESHOLD_SEMITONES = 2;
     private static final double ENERGY_THRESHOLD_RATIO = 0.25d;
     private static final double END_ENERGY_THRESHOLD_RATIO = 0.45d;
     private static final double WINDOW_ENERGY_THRESHOLD_RATIO = 0.20d;
     private static final double ONSET_ENERGY_THRESHOLD_RATIO = 0.18d;
     private static final double ONSET_ENERGY_RISE_RATIO = 0.10d;
+    private static final double REJECTED_CLUSTER_ONSET_THRESHOLD_RATIO = 0.45d;
 
     public TimingRefinementAnalysis analyze(OpenAiTranscriptionResult transcript,
                                             List<PitchDetector.PitchData> vocalFrames,
@@ -63,6 +65,18 @@ public class TranscriptTimingRefinementService {
         int proposedGapMs = firstVocalOnsetMs;
         String rejectionReason = "";
 
+        List<Integer> localPhraseStartsMs = new ArrayList<>(phrases.size());
+        for (OpenAiTranscriptSegment phrase : phrases) {
+            int transcriptStartMs = phraseStartMs(phrase);
+            int adjustedStartMs = accepted ? transcriptStartMs + transcriptToAudioOffsetMs : transcriptStartMs;
+            int transcriptEndMs = phraseEndMs(phrase);
+            int adjustedEndMs = accepted ? transcriptEndMs + transcriptToAudioOffsetMs : transcriptEndMs;
+            localPhraseStartsMs.add(detectPhraseStartNearTranscriptAnchor(usableFrames,
+                    transcriptStartMs,
+                    adjustedStartMs,
+                    adjustedEndMs));
+        }
+
         List<PhraseTiming> phraseTimings = new ArrayList<>();
         for (int index = 0; index < phrases.size(); index++) {
             OpenAiTranscriptSegment phrase = phrases.get(index);
@@ -71,7 +85,11 @@ public class TranscriptTimingRefinementService {
             int transcriptEndMs = phraseEndMs(phrase);
             int adjustedEndMs = accepted ? transcriptEndMs + transcriptToAudioOffsetMs : transcriptEndMs;
             Integer nextAnchorMs = null;
-            Integer detectedStartMs = findPhraseStartAfterAnchor(significantFrames, adjustedStartMs, adjustedEndMs);
+            Integer detectedStartMs = localPhraseStartsMs.get(index);
+            boolean hasLocalPhraseStart = detectedStartMs != null;
+            if (detectedStartMs == null) {
+                detectedStartMs = findPhraseStartAfterAnchor(significantFrames, adjustedStartMs, adjustedEndMs);
+            }
             if (index == 0) {
                 Integer detectedOpeningStartMs = detectOpeningPhraseStart(usableFrames,
                         transcriptStartMs,
@@ -80,7 +98,7 @@ public class TranscriptTimingRefinementService {
                 if (detectedOpeningStartMs != null) {
                     detectedStartMs = detectedOpeningStartMs;
                 }
-            } else if (!phraseTimings.isEmpty()) {
+            } else if (!hasLocalPhraseStart && !phraseTimings.isEmpty()) {
                 PhraseTiming previousTiming = phraseTimings.get(phraseTimings.size() - 1);
                 int previousPhraseEndMs = previousTiming.detectedVocalEndMs() != null
                         ? previousTiming.detectedVocalEndMs()
@@ -97,7 +115,16 @@ public class TranscriptTimingRefinementService {
             String decision = "no following phrase anchor";
             Integer nextTranscriptAnchorMs = findNextTimingAnchor(timingAnchorsMs, transcriptStartMs);
             if (nextTranscriptAnchorMs != null) {
-                nextAnchorMs = accepted ? nextTranscriptAnchorMs + transcriptToAudioOffsetMs : nextTranscriptAnchorMs;
+                Integer nextLocalPhraseStartMs = index + 1 < localPhraseStartsMs.size()
+                        ? localPhraseStartsMs.get(index + 1)
+                        : null;
+                int adjustedNextAnchorMs = accepted ? nextTranscriptAnchorMs + transcriptToAudioOffsetMs
+                        : nextTranscriptAnchorMs;
+                nextAnchorMs = nextLocalPhraseStartMs != null
+                        && nextLocalPhraseStartMs > adjustedStartMs
+                        && nextLocalPhraseStartMs < adjustedNextAnchorMs
+                        ? nextLocalPhraseStartMs
+                        : adjustedNextAnchorMs;
                 VocalEndDetection detection = findVocalEndBeforeNextAnchor(usableFrames, adjustedStartMs, nextAnchorMs);
                 detectedEndMs = detection.endMs();
                 decision = detection.decision();
@@ -114,11 +141,38 @@ public class TranscriptTimingRefinementService {
             List<Integer> onsetAnchorsMs = rawOnsetAnchorsMs;
             if (bpm > 0d && phrase.getWords() != null && !phrase.getWords().isEmpty()) {
                 int wordCount = phrase.getWords().size();
+                signalWindows = trimTrailingNextPhraseWindows(signalWindows, wordCount, nextAnchorMs);
+                List<SignalWindow> weakSupportWindows = findWeakSupportWindows(signalWindows, usableFrames);
+                if (!weakSupportWindows.isEmpty()
+                        && canRemoveWeakSupportWindows(rawOnsetAnchorsMs,
+                        weakSupportWindows,
+                        signalWindowStartMs,
+                        wordCount)) {
+                    signalWindows = removeWindows(signalWindows, weakSupportWindows);
+                    rawOnsetAnchorsMs = removeOnsetsInsideWindows(rawOnsetAnchorsMs, weakSupportWindows);
+                }
+                rawOnsetAnchorsMs = trimTrailingNextPhraseOnsets(rawOnsetAnchorsMs, wordCount, nextAnchorMs);
+                rawOnsetAnchorsMs = snapOnsetsToFollowingSignalStarts(rawOnsetAnchorsMs, signalWindows);
+                rawOnsetAnchorsMs = collapseDuplicateOnsetsPerSignalWindow(rawOnsetAnchorsMs,
+                        signalWindows,
+                        wordCount);
+                rawOnsetAnchorsMs = leadInternalOnsetsByOneBeat(rawOnsetAnchorsMs,
+                        signalWindows,
+                        wordCount,
+                        bpm);
+                onsetAnchorsMs = rawOnsetAnchorsMs;
                 List<SignalWindow> occupancyWindows = detectBeatOccupancyWindows(usableFrames,
                         signalWindowStartMs,
                         signalWindowEndMs,
                         bpm);
-                boolean occupancyChosen = shouldUseOccupancyWindows(wordCount,
+                boolean occupancyContainsNextPhraseCluster = hasUnsafeTrailingNextPhraseCluster(occupancyWindows,
+                        wordCount,
+                        nextAnchorMs);
+                occupancyWindows = trimTrailingNextPhraseWindows(occupancyWindows, wordCount, nextAnchorMs);
+                if (!weakSupportWindows.isEmpty()) {
+                    occupancyWindows = removeWindowsOverlapping(occupancyWindows, weakSupportWindows);
+                }
+                boolean occupancyChosen = !occupancyContainsNextPhraseCluster && shouldUseOccupancyWindows(wordCount,
                         occupancyWindows,
                         signalWindows,
                         onsetAnchorsMs.size());
@@ -196,8 +250,13 @@ public class TranscriptTimingRefinementService {
         if (occupancyWindows.size() == wordCount) {
             return true;
         }
+        if (occupancyWindows.size() < wordCount && onsetCount >= wordCount) {
+            return false;
+        }
+        int minimumUndercoveredWindowCount = Math.max(2, (wordCount + 1) / 2);
         if (occupancyWindows.size() >= 2
                 && occupancyWindows.size() < wordCount
+                && occupancyWindows.size() >= minimumUndercoveredWindowCount
                 && ((signalWindows != null && signalWindows.size() == 1)
                 || occupancyWindows.size() < onsetCount)) {
             return true;
@@ -210,6 +269,346 @@ public class TranscriptTimingRefinementService {
             return true;
         }
         return false;
+    }
+
+    private List<SignalWindow> trimTrailingNextPhraseWindows(List<SignalWindow> windows,
+                                                             int wordCount,
+                                                             Integer nextAnchorMs) {
+        int clusterStart = findTrailingNextPhraseWindowClusterStart(windows, nextAnchorMs);
+        if (clusterStart < 0 || clusterStart < wordCount) {
+            return windows;
+        }
+        return new ArrayList<>(windows.subList(0, clusterStart));
+    }
+
+    private boolean hasUnsafeTrailingNextPhraseCluster(List<SignalWindow> windows,
+                                                       int wordCount,
+                                                       Integer nextAnchorMs) {
+        int clusterStart = findTrailingNextPhraseWindowClusterStart(windows, nextAnchorMs);
+        return clusterStart >= 0 && clusterStart < wordCount;
+    }
+
+    private int findTrailingNextPhraseWindowClusterStart(List<SignalWindow> windows,
+                                                         Integer nextAnchorMs) {
+        if (windows == null || windows.size() < 2 || nextAnchorMs == null) {
+            return -1;
+        }
+        SignalWindow trailing = windows.get(windows.size() - 1);
+        if (!isNearNextAnchor(trailing.startMs(), nextAnchorMs)) {
+            return -1;
+        }
+        int clusterStart = windows.size() - 1;
+        while (clusterStart > 0) {
+            SignalWindow previous = windows.get(clusterStart - 1);
+            SignalWindow current = windows.get(clusterStart);
+            if (current.startMs() - previous.endMs() > CONTINUOUS_SIGNAL_GAP_MS) {
+                break;
+            }
+            clusterStart--;
+        }
+        if (clusterStart <= 0) {
+            return -1;
+        }
+        SignalWindow previous = windows.get(clusterStart - 1);
+        SignalWindow firstClusterWindow = windows.get(clusterStart);
+        return isLikelyNextPhraseCluster(previous.endMs(), firstClusterWindow.startMs(), nextAnchorMs)
+                ? clusterStart
+                : -1;
+    }
+
+    private List<SignalWindow> findWeakSupportWindows(List<SignalWindow> windows,
+                                                      List<PitchDetector.PitchData> frames) {
+        if (windows == null || windows.size() < 3 || frames == null || frames.isEmpty()) {
+            return List.of();
+        }
+        List<Double> averageEnergies = new ArrayList<>(windows.size());
+        for (SignalWindow window : windows) {
+            averageEnergies.add(averageEnergyInWindow(frames, window));
+        }
+        List<SignalWindow> weakWindows = new ArrayList<>();
+        for (int index = 1; index < windows.size() - 1; index++) {
+            SignalWindow window = windows.get(index);
+            int lengthMs = window.endMs() - window.startMs();
+            if (lengthMs <= 0 || lengthMs > 250) {
+                continue;
+            }
+            double currentEnergy = averageEnergies.get(index);
+            double neighborEnergy = Math.max(averageEnergies.get(index - 1), averageEnergies.get(index + 1));
+            if (neighborEnergy <= 0d) {
+                continue;
+            }
+            if (currentEnergy <= neighborEnergy * 0.40d) {
+                weakWindows.add(window);
+            }
+        }
+        return weakWindows;
+    }
+
+    private boolean canRemoveWeakSupportWindows(List<Integer> onsetAnchorsMs,
+                                                List<SignalWindow> weakSupportWindows,
+                                                int refinedStartMs,
+                                                int wordCount) {
+        if (weakSupportWindows == null || weakSupportWindows.isEmpty()) {
+            return false;
+        }
+        List<Integer> filteredOnsets = removeOnsetsInsideWindows(onsetAnchorsMs, weakSupportWindows);
+        return estimatedNormalizedOnsetCount(filteredOnsets, refinedStartMs) >= wordCount;
+    }
+
+    private int estimatedNormalizedOnsetCount(List<Integer> onsetAnchorsMs,
+                                              int refinedStartMs) {
+        if (onsetAnchorsMs == null || onsetAnchorsMs.isEmpty()) {
+            return 0;
+        }
+        int count = onsetAnchorsMs.size();
+        Integer firstAnchor = onsetAnchorsMs.get(0);
+        if (firstAnchor != null && firstAnchor > refinedStartMs) {
+            count++;
+        }
+        return count;
+    }
+
+    private List<Integer> snapOnsetsToFollowingSignalStarts(List<Integer> onsetAnchorsMs,
+                                                            List<SignalWindow> signalWindows) {
+        if (onsetAnchorsMs == null || onsetAnchorsMs.isEmpty()
+                || signalWindows == null || signalWindows.isEmpty()) {
+            return onsetAnchorsMs;
+        }
+        List<Integer> snapped = new ArrayList<>(onsetAnchorsMs.size());
+        for (Integer onsetMs : onsetAnchorsMs) {
+            if (onsetMs == null) {
+                continue;
+            }
+            snapped.add(findFollowingSignalStart(onsetMs, signalWindows));
+        }
+        return snapped;
+    }
+
+    private int findFollowingSignalStart(int onsetMs,
+                                         List<SignalWindow> signalWindows) {
+        int bestStartMs = onsetMs;
+        int bestDeltaMs = Integer.MAX_VALUE;
+        for (SignalWindow window : signalWindows) {
+            int deltaMs = window.startMs() - onsetMs;
+            if (deltaMs <= 0 || deltaMs > ONSET_SIGNAL_START_SNAP_MS) {
+                continue;
+            }
+            if (deltaMs < bestDeltaMs) {
+                bestDeltaMs = deltaMs;
+                bestStartMs = window.startMs();
+            }
+        }
+        return bestStartMs;
+    }
+
+    private List<Integer> collapseDuplicateOnsetsPerSignalWindow(List<Integer> onsetAnchorsMs,
+                                                                 List<SignalWindow> signalWindows,
+                                                                 int wordCount) {
+        if (onsetAnchorsMs == null || onsetAnchorsMs.isEmpty()
+                || signalWindows == null || signalWindows.size() < wordCount) {
+            return onsetAnchorsMs;
+        }
+        List<Integer> collapsed = new ArrayList<>(onsetAnchorsMs.size());
+        SignalWindow previousWindow = null;
+        for (Integer onsetMs : onsetAnchorsMs) {
+            if (onsetMs == null) {
+                continue;
+            }
+            SignalWindow window = findContainingSignalWindow(onsetMs, signalWindows);
+            if (window != null && window.equals(previousWindow)) {
+                continue;
+            }
+            collapsed.add(onsetMs);
+            previousWindow = window;
+        }
+        return collapsed;
+    }
+
+    private SignalWindow findContainingSignalWindow(int onsetMs,
+                                                    List<SignalWindow> signalWindows) {
+        for (SignalWindow window : signalWindows) {
+            if (onsetMs == window.startMs()) {
+                return window;
+            }
+        }
+        for (SignalWindow window : signalWindows) {
+            if (onsetMs > window.startMs() && onsetMs <= window.endMs()) {
+                return window;
+            }
+        }
+        return null;
+    }
+
+    private List<Integer> leadInternalOnsetsByOneBeat(List<Integer> onsetAnchorsMs,
+                                                      List<SignalWindow> signalWindows,
+                                                      int wordCount,
+                                                      double bpm) {
+        if (onsetAnchorsMs == null || onsetAnchorsMs.isEmpty()
+                || signalWindows == null || signalWindows.size() < wordCount || bpm <= 0d) {
+            return onsetAnchorsMs;
+        }
+        int internalBeatMs = Math.max(1, (int) Math.round(60000d / (4d * bpm)));
+        List<Integer> adjusted = new ArrayList<>(onsetAnchorsMs.size());
+        Integer previous = null;
+        for (Integer onsetMs : onsetAnchorsMs) {
+            if (onsetMs == null) {
+                continue;
+            }
+            int adjustedOnsetMs = onsetMs;
+            SignalWindow window = findContainingSignalWindow(onsetMs, signalWindows);
+            if (window != null && onsetMs - window.startMs() >= internalBeatMs * 3) {
+                int candidateMs = Math.max(window.startMs(), onsetMs - internalBeatMs);
+                if (previous == null || candidateMs - previous >= MIN_ONSET_GAP_MS) {
+                    adjustedOnsetMs = candidateMs;
+                }
+            }
+            adjusted.add(adjustedOnsetMs);
+            previous = adjustedOnsetMs;
+        }
+        return adjusted;
+    }
+
+    private double averageEnergyInWindow(List<PitchDetector.PitchData> frames,
+                                         SignalWindow window) {
+        if (frames == null || frames.isEmpty() || window == null) {
+            return 0d;
+        }
+        double sum = 0d;
+        int count = 0;
+        for (PitchDetector.PitchData frame : frames) {
+            int frameMs = frameStartMs(frame);
+            if (frameMs < window.startMs()) {
+                continue;
+            }
+            if (frameMs >= window.endMs()) {
+                break;
+            }
+            if (Double.isFinite(frame.energy())) {
+                sum += frame.energy();
+                count++;
+            }
+        }
+        return count == 0 ? 0d : sum / count;
+    }
+
+    private List<SignalWindow> removeWindows(List<SignalWindow> windows,
+                                             List<SignalWindow> windowsToRemove) {
+        if (windows == null || windows.isEmpty() || windowsToRemove == null || windowsToRemove.isEmpty()) {
+            return windows;
+        }
+        List<SignalWindow> filtered = new ArrayList<>();
+        for (SignalWindow window : windows) {
+            if (!windowsToRemove.contains(window)) {
+                filtered.add(window);
+            }
+        }
+        return filtered;
+    }
+
+    private List<SignalWindow> removeWindowsOverlapping(List<SignalWindow> windows,
+                                                        List<SignalWindow> windowsToRemove) {
+        if (windows == null || windows.isEmpty() || windowsToRemove == null || windowsToRemove.isEmpty()) {
+            return windows;
+        }
+        List<SignalWindow> filtered = new ArrayList<>();
+        for (SignalWindow window : windows) {
+            boolean overlapsRemovedWindow = false;
+            for (SignalWindow removedWindow : windowsToRemove) {
+                if (windowsOverlap(window, removedWindow)) {
+                    overlapsRemovedWindow = true;
+                    break;
+                }
+            }
+            if (!overlapsRemovedWindow) {
+                filtered.add(window);
+            }
+        }
+        return filtered;
+    }
+
+    private boolean windowsOverlap(SignalWindow left,
+                                   SignalWindow right) {
+        return left != null
+                && right != null
+                && left.startMs() < right.endMs()
+                && right.startMs() < left.endMs();
+    }
+
+    private List<Integer> removeOnsetsInsideWindows(List<Integer> onsetAnchorsMs,
+                                                    List<SignalWindow> windowsToRemove) {
+        if (onsetAnchorsMs == null || onsetAnchorsMs.isEmpty()
+                || windowsToRemove == null || windowsToRemove.isEmpty()) {
+            return onsetAnchorsMs;
+        }
+        List<Integer> filtered = new ArrayList<>();
+        for (Integer onsetMs : onsetAnchorsMs) {
+            if (onsetMs == null || isInsideAnyWindow(onsetMs, windowsToRemove)) {
+                continue;
+            }
+            filtered.add(onsetMs);
+        }
+        return filtered;
+    }
+
+    private boolean isInsideAnyWindow(int onsetMs,
+                                      List<SignalWindow> windows) {
+        for (SignalWindow window : windows) {
+            if (onsetMs >= window.startMs() && onsetMs <= window.endMs()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<Integer> trimTrailingNextPhraseOnsets(List<Integer> onsetAnchorsMs,
+                                                       int wordCount,
+                                                       Integer nextAnchorMs) {
+        int clusterStart = findTrailingNextPhraseOnsetClusterStart(onsetAnchorsMs, nextAnchorMs);
+        if (clusterStart < 0 || clusterStart < wordCount) {
+            return onsetAnchorsMs;
+        }
+        return new ArrayList<>(onsetAnchorsMs.subList(0, clusterStart));
+    }
+
+    private int findTrailingNextPhraseOnsetClusterStart(List<Integer> onsetAnchorsMs,
+                                                        Integer nextAnchorMs) {
+        if (onsetAnchorsMs == null || onsetAnchorsMs.size() < 2 || nextAnchorMs == null) {
+            return -1;
+        }
+        int trailingStartMs = onsetAnchorsMs.get(onsetAnchorsMs.size() - 1);
+        if (!isNearNextAnchor(trailingStartMs, nextAnchorMs)) {
+            return -1;
+        }
+        int clusterStart = onsetAnchorsMs.size() - 1;
+        while (clusterStart > 0) {
+            int previous = onsetAnchorsMs.get(clusterStart - 1);
+            int current = onsetAnchorsMs.get(clusterStart);
+            if (current - previous > CONTINUOUS_SIGNAL_GAP_MS) {
+                break;
+            }
+            clusterStart--;
+        }
+        if (clusterStart <= 0) {
+            return -1;
+        }
+        int previous = onsetAnchorsMs.get(clusterStart - 1);
+        int firstClusterOnset = onsetAnchorsMs.get(clusterStart);
+        return isLikelyNextPhraseCluster(previous, firstClusterOnset, nextAnchorMs) ? clusterStart : -1;
+    }
+
+    private boolean isLikelyNextPhraseCluster(int previousEndMs,
+                                              int trailingStartMs,
+                                              int nextAnchorMs) {
+        return trailingStartMs > previousEndMs
+                && trailingStartMs - previousEndMs > CONTINUOUS_SIGNAL_GAP_MS
+                && nextAnchorMs - trailingStartMs >= 0
+                && nextAnchorMs - trailingStartMs <= NEXT_ANCHOR_PRE_ROLL_MS;
+    }
+
+    private boolean isNearNextAnchor(int startMs,
+                                     int nextAnchorMs) {
+        return nextAnchorMs - startMs >= 0
+                && nextAnchorMs - startMs <= NEXT_ANCHOR_PRE_ROLL_MS;
     }
 
     private String describeOccupancyDecision(int wordCount,
@@ -357,6 +756,112 @@ public class TranscriptTimingRefinementService {
         return null;
     }
 
+    private Integer detectPhraseStartNearTranscriptAnchor(List<PitchDetector.PitchData> usableFrames,
+                                                         int transcriptStartMs,
+                                                         int adjustedStartMs,
+                                                         int adjustedEndMs) {
+        int searchStartMs = Math.max(0, Math.min(transcriptStartMs, adjustedStartMs) - 1_000);
+        int searchEndMs = Math.max(adjustedEndMs, Math.max(transcriptStartMs, adjustedStartMs) + 1_000);
+        List<PitchDetector.PitchData> searchFrames = collectFramesInRange(usableFrames, searchStartMs, searchEndMs);
+        if (searchFrames.isEmpty()) {
+            return null;
+        }
+        List<PitchDetector.PitchData> localSignificantFrames = collectLocallySignificantFrames(searchFrames,
+                transcriptStartMs,
+                LOCAL_ANCHOR_WINDOW_MS);
+        if (localSignificantFrames.isEmpty()) {
+            return null;
+        }
+        int nextIndex = findFirstFrameIndexAfter(localSignificantFrames, transcriptStartMs);
+        if (nextIndex >= 0) {
+            int nextMs = frameStartMs(localSignificantFrames.get(nextIndex));
+            if (nextMs - transcriptStartMs <= 1_000) {
+                int clusterStartMs = clusterStartMs(localSignificantFrames, nextIndex);
+                if (isAcceptableLocalClusterStart(clusterStartMs, transcriptStartMs)) {
+                    return clusterStartMs;
+                }
+                Integer followingClusterStartMs = nextClusterStartMs(localSignificantFrames, nextIndex);
+                if (followingClusterStartMs != null && followingClusterStartMs - transcriptStartMs <= 1_000) {
+                    return followingClusterStartMs;
+                }
+                followingClusterStartMs = nextOnsetStartAfterRejectedCluster(searchFrames, transcriptStartMs);
+                if (followingClusterStartMs != null) {
+                    return followingClusterStartMs;
+                }
+                followingClusterStartMs = nextSignificantClusterStartAfterRejectedCluster(searchFrames,
+                        localSignificantFrames,
+                        nextIndex,
+                        transcriptStartMs);
+                if (followingClusterStartMs != null) {
+                    return followingClusterStartMs;
+                }
+            }
+        }
+        int closestIndex = findClosestFrameIndex(localSignificantFrames, transcriptStartMs, LOCAL_ANCHOR_WINDOW_MS);
+        if (closestIndex >= 0) {
+            int clusterStartMs = clusterStartMs(localSignificantFrames, closestIndex);
+            if (isAcceptableLocalClusterStart(clusterStartMs, transcriptStartMs)) {
+                return clusterStartMs;
+            }
+            Integer followingClusterStartMs = nextClusterStartMs(localSignificantFrames, closestIndex);
+            if (followingClusterStartMs != null && followingClusterStartMs - transcriptStartMs <= 1_000) {
+                return followingClusterStartMs;
+            }
+            followingClusterStartMs = nextOnsetStartAfterRejectedCluster(searchFrames, transcriptStartMs);
+            if (followingClusterStartMs != null) {
+                return followingClusterStartMs;
+            }
+            followingClusterStartMs = nextSignificantClusterStartAfterRejectedCluster(searchFrames,
+                    localSignificantFrames,
+                    closestIndex,
+                    transcriptStartMs);
+            if (followingClusterStartMs != null) {
+                return followingClusterStartMs;
+            }
+        }
+        return null;
+    }
+
+    private boolean isAcceptableLocalClusterStart(int clusterStartMs, int transcriptStartMs) {
+        return clusterStartMs >= transcriptStartMs
+                || transcriptStartMs - clusterStartMs <= LOCAL_ANCHOR_WINDOW_MS;
+    }
+
+    private Integer nextOnsetStartAfterRejectedCluster(List<PitchDetector.PitchData> searchFrames,
+                                                       int transcriptStartMs) {
+        List<Integer> onsets = detectOnsetAnchors(searchFrames, transcriptStartMs, transcriptStartMs + 1_000);
+        double postAnchorMaxEnergy = maxEnergyInRange(searchFrames, transcriptStartMs, transcriptStartMs + 1_000);
+        double minimumOnsetEnergy = postAnchorMaxEnergy * REJECTED_CLUSTER_ONSET_THRESHOLD_RATIO;
+        for (Integer onsetMs : onsets) {
+            if (onsetMs != null
+                    && onsetMs - transcriptStartMs >= MIN_ONSET_GAP_MS) {
+                Integer supportedFrameMs = firstFrameAtOrAboveEnergy(searchFrames,
+                        onsetMs,
+                        onsetMs + MIN_ONSET_GAP_MS,
+                        minimumOnsetEnergy);
+                if (supportedFrameMs != null) {
+                    return supportedFrameMs;
+                }
+            }
+        }
+        return null;
+    }
+
+    private Integer nextSignificantClusterStartAfterRejectedCluster(List<PitchDetector.PitchData> searchFrames,
+                                                                   List<PitchDetector.PitchData> clusterFrames,
+                                                                   int clusterIndex,
+                                                                   int transcriptStartMs) {
+        if (searchFrames == null || searchFrames.isEmpty() || clusterFrames == null || clusterIndex < 0) {
+            return null;
+        }
+        int clusterEndMs = clusterEndMs(clusterFrames, clusterIndex);
+        int searchStartMs = Math.max(transcriptStartMs, clusterEndMs + MIN_ONSET_GAP_MS);
+        int searchEndMs = transcriptStartMs + 1_000;
+        List<PitchDetector.PitchData> followingFrames = collectFramesInRange(searchFrames, searchStartMs, searchEndMs);
+        List<PitchDetector.PitchData> significantFollowingFrames = collectSignificantFrames(followingFrames);
+        return significantFollowingFrames.isEmpty() ? null : frameStartMs(significantFollowingFrames.get(0));
+    }
+
     private Integer detectOpeningPhraseStart(List<PitchDetector.PitchData> usableFrames,
                                              int transcriptStartMs,
                                              int adjustedEndMs,
@@ -490,6 +995,56 @@ public class TranscriptTimingRefinementService {
         return inRange;
     }
 
+    private Integer firstFrameAtOrAboveEnergy(List<PitchDetector.PitchData> frames,
+                                              int startMs,
+                                              int endMs,
+                                              double minimumEnergy) {
+        if (frames == null || frames.isEmpty() || endMs < startMs) {
+            return null;
+        }
+        for (PitchDetector.PitchData frame : frames) {
+            if (frame == null) {
+                continue;
+            }
+            int frameMs = frameStartMs(frame);
+            if (frameMs < startMs) {
+                continue;
+            }
+            if (frameMs > endMs) {
+                break;
+            }
+            if (Double.isFinite(frame.energy()) && frame.energy() >= minimumEnergy) {
+                return frameMs;
+            }
+        }
+        return null;
+    }
+
+    private double maxEnergyInRange(List<PitchDetector.PitchData> frames,
+                                    int startMs,
+                                    int endMs) {
+        if (frames == null || frames.isEmpty() || endMs < startMs) {
+            return 0d;
+        }
+        double maxEnergy = 0d;
+        for (PitchDetector.PitchData frame : frames) {
+            if (frame == null) {
+                continue;
+            }
+            int frameMs = frameStartMs(frame);
+            if (frameMs < startMs) {
+                continue;
+            }
+            if (frameMs > endMs) {
+                break;
+            }
+            if (frame != null && Double.isFinite(frame.energy())) {
+                maxEnergy = Math.max(maxEnergy, frame.energy());
+            }
+        }
+        return maxEnergy;
+    }
+
     private List<PitchDetector.PitchData> collectLocallySignificantFrames(List<PitchDetector.PitchData> frames,
                                                                           int anchorMs,
                                                                           int localWindowMs) {
@@ -571,6 +1126,33 @@ public class TranscriptTimingRefinementService {
         return frameStartMs(frames.get(startIndex));
     }
 
+    private int clusterEndMs(List<PitchDetector.PitchData> frames, int index) {
+        int endIndex = index;
+        while (endIndex + 1 < frames.size()) {
+            int currentMs = frameStartMs(frames.get(endIndex));
+            int nextMs = frameStartMs(frames.get(endIndex + 1));
+            if (nextMs - currentMs >= MIN_ONSET_GAP_MS) {
+                break;
+            }
+            endIndex++;
+        }
+        return frameStartMs(frames.get(endIndex));
+    }
+
+    private Integer nextClusterStartMs(List<PitchDetector.PitchData> frames, int index) {
+        if (frames == null || index < 0) {
+            return null;
+        }
+        for (int cursor = index + 1; cursor < frames.size(); cursor++) {
+            int currentMs = frameStartMs(frames.get(cursor));
+            int previousMs = frameStartMs(frames.get(cursor - 1));
+            if (currentMs - previousMs > CONTINUOUS_SIGNAL_GAP_MS) {
+                return currentMs;
+            }
+        }
+        return null;
+    }
+
     private VocalEndDetection findVocalEndBeforeNextAnchor(List<PitchDetector.PitchData> frames,
                                                            int startMs,
                                                            int nextAnchorMs) {
@@ -608,21 +1190,32 @@ public class TranscriptTimingRefinementService {
         int extendedTailIndex = extendContinuousTail(phraseFrames, confidentTailIndex);
         int confidentTailMs = frameStartMs(phraseFrames.get(confidentTailIndex));
         int extendedTailMs = frameStartMs(phraseFrames.get(extendedTailIndex));
+        if (extendedTailIndex > confidentTailIndex && nextAnchorMs - extendedTailMs < MIN_ONSET_GAP_MS) {
+            return new VocalEndDetection(clampVocalEndBeforeNextAnchor(confidentTailMs + FRAME_TAIL_MS, nextAnchorMs),
+                    "detected vocal end before next phrase bridge");
+        }
         if (nextAnchorMs - extendedTailMs >= LONG_SILENCE_MS
                 && nextAnchorMs - extendedTailMs <= NEXT_ANCHOR_PRE_ROLL_MS
                 && extendedTailIndex > confidentTailIndex) {
-            return new VocalEndDetection(confidentTailMs + FRAME_TAIL_MS, "detected vocal end before long silence");
+            return new VocalEndDetection(clampVocalEndBeforeNextAnchor(confidentTailMs + FRAME_TAIL_MS, nextAnchorMs),
+                    "detected vocal end before long silence");
         }
         for (int index = extendedTailIndex; index > 0; index--) {
             int rightMs = frameStartMs(phraseFrames.get(index));
             int leftMs = frameStartMs(phraseFrames.get(index - 1));
             if (rightMs - leftMs >= LONG_SILENCE_MS
                     && nextAnchorMs - rightMs <= NEXT_ANCHOR_PRE_ROLL_MS) {
-                return new VocalEndDetection(leftMs + FRAME_TAIL_MS, "detected vocal end before long silence");
+                return new VocalEndDetection(clampVocalEndBeforeNextAnchor(leftMs + FRAME_TAIL_MS, nextAnchorMs),
+                        "detected vocal end before long silence");
             }
         }
         PitchDetector.PitchData candidate = phraseFrames.get(extendedTailIndex);
-        return new VocalEndDetection(frameStartMs(candidate) + FRAME_TAIL_MS, "detected vocal end");
+        return new VocalEndDetection(clampVocalEndBeforeNextAnchor(frameStartMs(candidate) + FRAME_TAIL_MS,
+                nextAnchorMs), "detected vocal end");
+    }
+
+    private int clampVocalEndBeforeNextAnchor(int endMs, int nextAnchorMs) {
+        return Math.min(endMs, Math.max(0, nextAnchorMs - 1));
     }
 
     private int extendContinuousTail(List<PitchDetector.PitchData> phraseFrames, int startIndex) {
@@ -796,6 +1389,18 @@ public class TranscriptTimingRefinementService {
             }
         }
         if (!onsetWords.isEmpty()) {
+            List<OpenAiTranscriptWord> signalWindowWords = refineWordsFromSignalWindows(words,
+                    timing.signalWindows(),
+                    refinedStartMs,
+                    refinedEndMs,
+                    timing.rawOnsetAnchorsMs());
+            if (!signalWindowWords.isEmpty()
+                    && shouldPreferSignalWindowsOverOnsets(words, timing.signalWindows(), onsetWords,
+                    signalWindowWords)) {
+                anchorWordsToPhraseBounds(signalWindowWords, refinedStartMs, refinedEndMs);
+                logPhraseRefinement(timing, "signal-windows-over-onsets", signalWindowWords);
+                return signalWindowWords;
+            }
             anchorWordsToPhraseBounds(onsetWords, refinedStartMs, refinedEndMs);
             logPhraseRefinement(timing, "onset-anchors", onsetWords);
             return onsetWords;
@@ -916,7 +1521,7 @@ public class TranscriptTimingRefinementService {
             return refinedWords;
         }
 
-        List<Integer> windowsPerWord = distributeEvenly(windowCount, wordCount);
+        List<Integer> windowsPerWord = distributeWindowsAcrossWords(words, signalWindows);
         int windowCursor = 0;
         for (int wordIndex = 0; wordIndex < wordCount; wordIndex++) {
             int count = windowsPerWord.get(wordIndex);
@@ -927,6 +1532,67 @@ public class TranscriptTimingRefinementService {
         }
         anchorWordsToPhraseBounds(refinedWords, refinedStartMs, refinedEndMs);
         return refinedWords;
+    }
+
+    private boolean shouldPreferSignalWindowsOverOnsets(List<OpenAiTranscriptWord> words,
+                                                        List<SignalWindow> signalWindows,
+                                                        List<OpenAiTranscriptWord> onsetWords,
+                                                        List<OpenAiTranscriptWord> signalWindowWords) {
+        if (words == null || signalWindows == null || onsetWords == null || signalWindowWords == null) {
+            return false;
+        }
+        if (words.size() < 2 || signalWindows.size() <= words.size()
+                || onsetWords.size() != words.size() || signalWindowWords.size() != words.size()) {
+            return false;
+        }
+        for (int index = 1; index < words.size(); index++) {
+            int onsetStartMs = onsetWords.get(index).getStartMs();
+            int signalStartMs = signalWindowWords.get(index).getStartMs();
+            if (onsetStartMs - signalStartMs >= MIN_ONSET_GAP_MS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<Integer> distributeWindowsAcrossWords(List<OpenAiTranscriptWord> words,
+                                                       List<SignalWindow> signalWindows) {
+        int wordCount = words == null ? 0 : words.size();
+        int windowCount = signalWindows == null ? 0 : signalWindows.size();
+        if (wordCount <= 0 || windowCount <= 0) {
+            return List.of();
+        }
+        if (windowCount <= wordCount) {
+            return distributeEvenly(windowCount, wordCount);
+        }
+        List<Integer> windowsPerWord = new ArrayList<>(wordCount);
+        for (int index = 0; index < wordCount; index++) {
+            windowsPerWord.add(1);
+        }
+        int remaining = windowCount - wordCount;
+        while (remaining-- > 0) {
+            int targetIndex = findBestWordForExtraWindow(words, windowsPerWord);
+            windowsPerWord.set(targetIndex, windowsPerWord.get(targetIndex) + 1);
+        }
+        return windowsPerWord;
+    }
+
+    private int findBestWordForExtraWindow(List<OpenAiTranscriptWord> words,
+                                           List<Integer> windowsPerWord) {
+        int bestIndex = 0;
+        int bestDeficit = Integer.MIN_VALUE;
+        int bestSyllables = Integer.MIN_VALUE;
+        for (int index = 0; index < words.size(); index++) {
+            int syllables = estimateSyllableCount(words.get(index));
+            int deficit = syllables - windowsPerWord.get(index);
+            if (deficit > bestDeficit
+                    || (deficit == bestDeficit && syllables > bestSyllables)) {
+                bestIndex = index;
+                bestDeficit = deficit;
+                bestSyllables = syllables;
+            }
+        }
+        return bestIndex;
     }
 
     private List<OpenAiTranscriptWord> refineWordsFromOnsetAnchors(List<OpenAiTranscriptWord> words,

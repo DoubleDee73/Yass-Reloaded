@@ -14,10 +14,10 @@ These release notes summarize the **user-facing changes** planned for `2026.6_re
 ## Keyboard Handling
 
 - Improved editor shortcut handling for keyboard-layout dependent keys
-  - `Split Rows` now reacts to the typed `-` character instead of relying only on a physical key code
-  - `Join Rows` now reacts to the typed `+` character instead of relying only on a physical key code
-  - `Insert Minus` now reacts to the typed `_` character instead of relying only on a physical key code
-  - the leading-tilde toggle now reacts to the typed `~` character, with dead-key fallbacks kept for layouts that emit dead tilde/circumflex key presses
+  - `Split Rows` now reacts to the typed <kbd>-</kbd> character instead of relying only on a physical key code
+  - `Join Rows` now reacts to the typed <kbd>+</kbd> character instead of relying only on a physical key code
+  - `Insert Minus` now reacts to the typed <kbd>_</kbd> character instead of relying only on a physical key code
+  - the leading-tilde toggle now reacts to the typed <kbd>~</kbd> character, with dead-key fallbacks kept for layouts that emit dead tilde/circumflex key presses
   - this makes symbol shortcuts more reliable on layouts where the visible character is not produced by the same physical key, such as UK keyboards
 - Shortcut handling is more context-aware
   - editor shortcuts are ignored while focus is in song header fields
@@ -26,12 +26,12 @@ These release notes summarize the **user-facing changes** planned for `2026.6_re
 
 ## Alignment
 
-- **Align to Melody** remains available on `M`
+- **Align to Melody** remains available on <kbd>M</kbd>
   - this keeps the existing behavior: align selected notes to both detected pitch and detected timing
-- New **Align Timing** action on `Ctrl+M`
+- New **Align Timing** action on <kbd>Ctrl</kbd>+<kbd>M</kbd>
   - adjusts selected note timing and length against the detected melody
   - keeps the current note pitch unchanged
-- New **Align Pitch** action on `Shift+M`
+- New **Align Pitch** action on <kbd>Shift</kbd>+<kbd>M</kbd>
   - adjusts selected note pitch against the detected melody
   - keeps note start and length unchanged
   - follows the same octave behavior as **Align to Melody**, including the repeated-align behavior for snapping to the exact pitch line
@@ -84,10 +84,10 @@ These release notes summarize the **user-facing changes** planned for `2026.6_re
 
 ## Editor Authoring
 
-- Insert Note/Add Syllable now uses a modal text prompt with clearer OK, Cancel, Escape, and focus behavior.
+- Insert Note/Add Syllable now uses a modal text prompt with clearer OK, Cancel, <kbd>Escape</kbd>, and focus behavior.
 - Blank Insert Note input creates a single `~` placeholder note when there is safe beat space.
-- `Ctrl+Enter` can use a vocal-aware insert path when the selected editor audio is `#VOCALS` and pitch data is loaded.
-  - `Shift+Enter` keeps the legacy Insert Note behavior
+- <kbd>Ctrl</kbd>+<kbd>Enter</kbd> can use a vocal-aware insert path when the selected editor audio is `#VOCALS` and pitch data is loaded.
+  - <kbd>Shift</kbd>+<kbd>Enter</kbd> keeps the legacy Insert Note behavior
   - non-vocal or no-pitch cases fall back to the legacy path
 - Editor split can use detected pitch data to split obvious multi-pitch syllables more accurately.
   - ambiguous cases fall back to the legacy split
@@ -95,7 +95,7 @@ These release notes summarize the **user-facing changes** planned for `2026.6_re
 - Tapping recording behavior is more predictable.
   - recording can start from the first processable selected note
   - interrupted sessions with completed taps can still be applied
-  - recording from the first song note anchors the first tapped note at beat `0`
+  - recording from the first song note sets `#GAP` and anchors the first tapped note at beat `0`
   - optional post-recording melody alignment preserves the detected octave
 - Golden-note suggestions no longer create Pitch Leap candidates across page breaks.
 - Unsafe timing tags are cleaned more conservatively when songs are opened or after touched editor sessions.

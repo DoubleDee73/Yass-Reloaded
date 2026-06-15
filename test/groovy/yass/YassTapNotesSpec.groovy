@@ -4,7 +4,7 @@ import spock.lang.Specification
 
 class YassTapNotesSpec extends Specification {
 
-    def "recording from the first song note anchors the first tapped note at the song gap"() {
+    def "recording from the first song note sets gap and anchors the first tapped note at beat zero"() {
         given:
         YassTable table = tableWithNotes()
         table.setGap(1000)
@@ -22,6 +22,8 @@ class YassTapNotesSpec extends Specification {
 
         then:
         processed == 2
+        table.getGap() == 2000
+        table.getCommentRow('GAP:').getHeaderComment() == '2000'
         List<YassRow> notes = noteRows(table).collect { table.getRowAt(it) }
         notes[0].getBeatInt() == 0
         notes[0].getLengthInt() == 4
@@ -46,6 +48,7 @@ class YassTapNotesSpec extends Specification {
 
         then:
         processed == 1
+        table.getGap() == 1000
         YassRow secondNote = table.getRowAt(secondNoteRow)
         secondNote.getBeatInt() == 8
         secondNote.getLengthInt() == 4

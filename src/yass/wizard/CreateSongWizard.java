@@ -188,6 +188,9 @@ public class CreateSongWizard extends Wizard {
                 }
                 setValue("lyrics", lyrics.getText());
                 setValue("melodytable", lyrics.getTable());
+                wizardTranscriptionState = mergeLyricsTranscriptionResult(
+                        wizardTranscriptionState,
+                        lyrics.getTranscriptionResult());
             }
         });
         initWizardFooterButtons();
@@ -640,6 +643,20 @@ public class CreateSongWizard extends Wizard {
 
     public WizardTranscriptionState getWizardTranscriptionState() {
         return wizardTranscriptionState;
+    }
+
+    static WizardTranscriptionState mergeLyricsTranscriptionResult(WizardTranscriptionState currentState,
+                                                                   OpenAiTranscriptionResult lyricsResult) {
+        if (lyricsResult == null) {
+            return currentState;
+        }
+        if (currentState != null && currentState.getTranscriptionResult() != null) {
+            return currentState;
+        }
+        if (currentState != null) {
+            return currentState.withTranscriptionResult(lyricsResult);
+        }
+        return new WizardTranscriptionState(null, null, null, null, lyricsResult);
     }
 
     enum LrcLyricsSourceAction {

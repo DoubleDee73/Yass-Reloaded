@@ -19,6 +19,7 @@
 
 package yass.integration.separation.mvsep
 
+import com.google.gson.JsonParser
 import spock.lang.Specification
 import spock.lang.TempDir
 import yass.YassProperties
@@ -30,6 +31,51 @@ import java.nio.file.Path
 class MvsepSeparationServiceSpec extends Specification {
     @TempDir
     Path tempDir
+
+    def 'reverb removal request uses current vocals file and noreverb defaults'() {
+        given:
+        def properties = new TestProperties()
+        properties.setProperty('mvsep-api-token', 'token')
+        properties.setProperty('mvsep-output-format', 'wav')
+        def service = new MvsepSeparationService(properties)
+        def songDir = Files.createDirectories(tempDir.resolve('song')).toFile()
+        def vocalsFile = new File(songDir, 'Artist - Title (Vocals).wav')
+        vocalsFile.text = 'vocals'
+
+        when:
+        def request = service.createReverbRemovalRequest(songDir, vocalsFile, 'Artist - Title')
+
+        then:
+        request.songDirectory == songDir.absolutePath
+        request.audioFile == vocalsFile
+        request.model == MvsepModel.REVERB_REMOVAL.value
+        request.modelType == '7'
+        request.outputFormat == 'wav'
+        request.songBaseName == 'Artist - Title'
+    }
+
+    def 'reverb removal maps noreverb download to vocals'() {
+        given:
+        def properties = new TestProperties()
+        def service = new MvsepSeparationService(properties)
+        def response = JsonParser.parseString('''
+            {
+              "data": {
+                "files": [
+                  {"name": "song_reverb.wav", "url": "https://example.test/song_reverb.wav"},
+                  {"name": "song_noreverb.wav", "url": "https://example.test/song_noreverb.wav"}
+                ]
+              }
+            }
+        ''').asJsonObject
+
+        when:
+        def stems = invokeExtractStemDownloads(service, response, MvsepModel.REVERB_REMOVAL)
+
+        then:
+        stems['vocals'].name() == 'song_noreverb.wav'
+        stems['dereverb-vocals'].name() == 'song_noreverb.wav'
+    }
 
     def 'opus transcoding uses yt-dlp audio bitrate setting'() {
         given:
@@ -94,6 +140,16 @@ class MvsepSeparationServiceSpec extends Specification {
         def method = MvsepSeparationService.getDeclaredMethod('moveIntermediateStemToTempCache', File, File)
         method.accessible = true
         method.invoke(service, intermediate, finalAudio) as File
+    }
+
+    private static Map invokeExtractStemDownloads(MvsepSeparationService service,
+                                                  def response,
+                                                  MvsepModel model) {
+        def method = MvsepSeparationService.getDeclaredMethod('extractStemDownloads',
+                Class.forName('com.google.gson.JsonObject'),
+                MvsepModel)
+        method.accessible = true
+        method.invoke(service, response, model) as Map
     }
 
     private static class TestProperties extends YassProperties {

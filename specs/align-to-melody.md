@@ -39,7 +39,15 @@ wizard generation, tapping recording, or transcription-based note creation.
   - trim weak trailing beats
   - ignore weak onset tails when they are much quieter than the kept note body
   - stop at real internal voice gaps instead of bridging across silence
+  - avoid treating a previous page's vocal tail as the first note after a page
+    break
   - avoid collisions between selected notes by tracking occupied beats
+- Manual editor alignment determines pitch from the selected note's original
+  beat range before applying timing heuristics. It does not let a free lead-in
+  beat immediately before the note replace that pitch decision.
+- Generated-note contexts can still use a free lead-in vocal pitch island before
+  the first note after a page break so wizard or recording output does not leave
+  detected vocals unassigned.
 - If a key from `#COMMENT:key=...` is available and pitch detection is exactly
   between two notes, the in-key pitch is a tie-breaker only.
 
@@ -70,6 +78,8 @@ wizard generation, tapping recording, or transcription-based note creation.
   - low-energy tail trimming
   - weak onset rejection
   - internal voice-gap handling
+  - manual page-start alignment preserving the pitch prevalent inside the
+    original note range
   - octave-shifted manual pitch alignment
   - recording and wizard contexts preserving detected octave
   - `LENGTH_ONLY` preserving pitch

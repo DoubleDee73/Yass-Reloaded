@@ -22,6 +22,10 @@ shared separation interface.
   - audio-separator only
 - Editor separation chooses configured services according to the current
   preference and availability.
+- The editor exposes **Remove Reverb (MVSEP)** for existing `#VOCALS` files.
+  It uploads the configured vocal file to MVSEP Reverb Removal, downloads the
+  de-reverbed result into the song folder, and asks whether the result should
+  replace the current `#VOCALS` assignment.
 - The wizard can run separation before transcription when **Separate Vocals +
   Transcribe** is available.
 - USDB import can queue audio separation after import when separation is
@@ -37,6 +41,9 @@ shared separation interface.
 - `SeparationResult` carries vocals/lead/instrumental/backing files.
 - MVSEP requires an API token and performs remote upload, job creation, polling,
   result download, and optional local transcode.
+- MVSEP reverb removal is a separate post-processing action, not part of the
+  normal separation model list. It uses the current `#VOCALS` file as input and
+  maps MVSEP `noreverb`/de-reverbed output back to a vocal file.
 - audio-separator requires a working Python environment and health check.
 - Quiet/background separation should report status through a consumer/listener
   and keep the UI responsive.
@@ -90,11 +97,12 @@ shared separation interface.
 ## Regression Coverage
 
 - `MvsepSeparationServiceSpec`
-  - FFmpeg transcode arguments and intermediate cache handling
+  - FFmpeg transcode arguments, intermediate cache handling, and reverb-removal
+    request/result mapping
 - `MvsepOutputFormatSpec`
   - output format parsing and local-transcode metadata
 - `MvsepDefaultsSpec`
-  - default model/output behavior
+  - default model/output behavior and hidden internal reverb-removal model
 - `AudioSeparatorHealthCheckServiceSpec`
   - managed environment and health detection
 - `AudioSeparatorModelSpec`
