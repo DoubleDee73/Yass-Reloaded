@@ -49,9 +49,9 @@ import yass.integration.separation.mvsep.MvsepAlgorithmInfo;
 import yass.integration.separation.mvsep.MvsepSeparationService;
 import yass.integration.separation.mvsep.MvsepStartDialog;
 import yass.integration.transcription.SubtitleTranscriptionAdapter;
-import yass.integration.transcription.TranscriptionEngine;
 import yass.integration.transcription.TranscriptArtifactService;
 import yass.integration.transcription.TranscriptSourceComment;
+import yass.integration.transcription.TranscriptionEngine;
 import yass.integration.transcription.openai.OpenAiTranscriptionRequest;
 import yass.integration.transcription.openai.OpenAiTranscriptionResult;
 import yass.integration.transcription.openai.OpenAiTranscriptionService;
@@ -12770,6 +12770,22 @@ public class YassActions implements DropTargetListener {
                 }
                 UsdbSongEditService service = new UsdbSongEditService(usdbSessionService);
                 UsdbSongEditService.UsdbEditableSong editableSong = service.loadEditableSong(usdbSongId);
+                boolean localDuet = hasUsdbCompareDuetStructure(localTxt);
+                boolean remoteDuet = hasUsdbCompareDuetStructure(editableSong.remoteTxt());
+                if (localDuet != remoteDuet) {
+                    LOGGER.info("USDB compare duet mismatch for songFile=" + songFile
+                            + ", usdbSongId=" + usdbSongId
+                            + ", localDuet=" + localDuet
+                            + ", remoteDuet=" + remoteDuet
+                            + ", forcedSelection=" + (forcedUsdbSongId != null && forcedUsdbSongId > 0));
+                    if (forcedUsdbSongId != null && forcedUsdbSongId > 0) {
+                        throw new IOException(I18.get("usdb_edit_duet_mismatch"));
+                    }
+                    throw new UsdbCompareSearchRequiredException(songFile,
+                            StringUtils.trimToEmpty(lookupTable.getArtist()),
+                            StringUtils.trimToEmpty(lookupTable.getTitle()),
+                            0);
+                }
                 MergedUsdbEditText mergedLocalTxt = mergeUsdbAndLocalSongText(editableSong.remoteTxt(), localTxt);
                 return new UsdbEditComparisonContext(editableSong, songFile, localTxt, mergedLocalTxt);
             }
@@ -13335,6 +13351,47 @@ public class YassActions implements DropTargetListener {
         private int pendingSongId() {
             return pendingSongId;
         }
+    }
+
+    static boolean hasUsdbCompareDuetMismatch(String localText, String remoteText) {
+        return hasUsdbCompareDuetStructure(localText) != hasUsdbCompareDuetStructure(remoteText);
+    }
+
+    static boolean hasUsdbCompareDuetStructure(String songText) {
+        String normalized = StringUtils.defaultString(songText).replace("\r\n", "\n").replace('\r', '\n');
+        return Arrays.stream(normalized.split("\n", -1))
+                .map(StringUtils::trimToEmpty)
+                .anyMatch(YassActions::isUsdbCompareDuetMarkerLine);
+    }
+
+    private static boolean isUsdbCompareDuetMarkerLine(String line) {
+        String upper = StringUtils.upperCase(StringUtils.trimToEmpty(line));
+        if (StringUtils.startsWith(upper, "#DUETSINGERP")) {
+            return true;
+        }
+        if (StringUtils.startsWith(upper, "#P")) {
+            return isUsdbCompareDuetSingerHeader(upper);
+        }
+        if (StringUtils.startsWith(upper, "P")) {
+            return isUsdbCompareDuetTrackLine(upper);
+        }
+        return false;
+    }
+
+    private static boolean isUsdbCompareDuetSingerHeader(String line) {
+        int colon = line.indexOf(':');
+        if (colon <= 2) {
+            return false;
+        }
+        String singerIndex = line.substring(2, colon).trim();
+        return StringUtils.isNotBlank(singerIndex)
+                && singerIndex.chars().allMatch(Character::isDigit);
+    }
+
+    private static boolean isUsdbCompareDuetTrackLine(String line) {
+        String trackIndex = line.substring(1).trim();
+        return StringUtils.isNotBlank(trackIndex)
+                && trackIndex.chars().allMatch(Character::isDigit);
     }
 
     private MergedUsdbEditText mergeUsdbAndLocalSongText(String usdbText, String localText) {

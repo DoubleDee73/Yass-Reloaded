@@ -19,4 +19,29 @@ class YassActionsUsdbEditSpec extends Specification {
                 "C:\\Songs\\Artist - Title",
                 "Other.txt")
     }
+
+    def "USDB compare rejects duet mismatch between local and remote txt"() {
+        given:
+        String solo = """#TITLE:Song
+#ARTIST:Artist
+: 0 4 0 Hello
+E
+"""
+        String duet = """#TITLE:Song
+#ARTIST:Artist
+#DUETSINGERP1:Alice
+#DUETSINGERP2:Bob
+P1
+: 0 4 0 Hello
+P2
+: 4 4 0 There
+E
+"""
+
+        expect:
+        YassActions.hasUsdbCompareDuetMismatch(solo, duet)
+        YassActions.hasUsdbCompareDuetMismatch(duet, solo)
+        !YassActions.hasUsdbCompareDuetMismatch(duet, duet)
+        !YassActions.hasUsdbCompareDuetMismatch(solo, solo)
+    }
 }
