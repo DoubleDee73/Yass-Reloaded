@@ -32,6 +32,8 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import yass.alignment.*;
 import yass.analysis.PitchDetector;
+import yass.analysis.PitchShiftBakeService;
+import yass.analysis.PitchShiftRenderer;
 import yass.autocorrect.YassAutoCorrect;
 import yass.extras.UsdbSyncerMetaTagCreator;
 import yass.hyphenator.HyphenatorDictionary;
@@ -106,6 +108,8 @@ import java.util.stream.Collectors;
 public class YassActions implements DropTargetListener {
     private static final Gson USDB_META_GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final int FANART_IMAGE_TIMEOUT_MS = 8000;
+    private static final boolean IS_MAC =
+            System.getProperty("os.name", "").toLowerCase().contains("mac");
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public static final int FREESTYLE_NOTE = Integer.MIN_VALUE + 1;
@@ -369,12 +373,57 @@ public class YassActions implements DropTargetListener {
 
     private void applyEditorShortcutBindings(InputMap im, ActionMap am, List<EditorShortcutBinding> bindings) {
         for (EditorShortcutBinding binding : bindings) {
-            im.put(binding.keyStroke(), binding.actionKey());
+            im.put(remapForPlatform(binding.keyStroke()), binding.actionKey());
             am.put(binding.actionKey(), binding.action());
             if (binding.accelerator() != null) {
-                binding.action().putValue(AbstractAction.ACCELERATOR_KEY, binding.accelerator());
+                binding.action().putValue(AbstractAction.ACCELERATOR_KEY, remapForPlatform(binding.accelerator()));
             }
         }
+    }
+
+    /**
+     * Remap the Windows-style modifiers used in our shortcut tables to their macOS equivalents.
+     * <p>
+     * The Windows layout uses Ctrl (left of the space bar) for the left-side actions and Alt (right
+     * of the space bar) for the right-side actions, so on Mac we mirror that by physical side:
+     * Alt becomes Command (right), and Ctrl becomes a left-side key. For non-arrow shortcuts Ctrl
+     * simply stays Control and Shift is left unchanged.
+     * <p>
+     * Arrow keys need special handling because macOS reserves several arrow chords for the system
+     * and never delivers them to the JVM: Option+Left/Right is word navigation and Control+Left/Right
+     * (as well as Control+Up/Down) drives Mission Control and Spaces switching. Control+Option+arrow
+     * is the one combo macOS lets through, so the left-side Ctrl role maps to Control+Option for all
+     * four arrow keys (keeping pitch and note-edge shortcuts symmetric). Non-Mac platforms keep the
+     * original keystroke.
+     */
+    private static KeyStroke remapForPlatform(KeyStroke keyStroke) {
+        if (!IS_MAC || keyStroke == null) {
+            return keyStroke;
+        }
+        int modifiers = keyStroke.getModifiers();
+        boolean hasCtrl = (modifiers & (InputEvent.CTRL_DOWN_MASK | InputEvent.CTRL_MASK)) != 0;
+        boolean hasAlt = (modifiers & (InputEvent.ALT_DOWN_MASK | InputEvent.ALT_MASK)) != 0;
+        if (!hasCtrl && !hasAlt) {
+            return keyStroke;
+        }
+        int keyCode = keyStroke.getKeyCode();
+        boolean isArrow = keyCode == KeyEvent.VK_LEFT || keyCode == KeyEvent.VK_RIGHT
+                || keyCode == KeyEvent.VK_UP || keyCode == KeyEvent.VK_DOWN;
+        int remapped = modifiers
+                & ~(InputEvent.ALT_DOWN_MASK | InputEvent.ALT_MASK
+                    | InputEvent.CTRL_DOWN_MASK | InputEvent.CTRL_MASK);
+        if (hasAlt) {
+            remapped |= InputEvent.META_DOWN_MASK;
+        }
+        if (hasCtrl) {
+            remapped |= isArrow
+                    ? InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK
+                    : InputEvent.CTRL_DOWN_MASK;
+        }
+        if (keyCode == KeyEvent.VK_UNDEFINED) {
+            return KeyStroke.getKeyStroke(keyStroke.getKeyChar(), remapped);
+        }
+        return KeyStroke.getKeyStroke(keyCode, remapped, keyStroke.isOnKeyRelease());
     }
 
     private List<EditorShortcutBinding> getEditorGlobalShortcutBindings() {
@@ -902,6 +951,244 @@ public class YassActions implements DropTargetListener {
         }
     };
 
+    /**
+     * The song-local global pitch-shift correction in cents for the current song,
+     * or 0 when none is stored. This drives only the audio path (the live playback
+     * temp-WAV filter in {@link #applyPitchShiftToPlayback()} and the permanent bake):
+     * the correction is baked into the temp WAV, so pitch detection runs on already
+     * corrected audio and the rendered/aligned pitch lines need no further cents shift.
+     */
+    private double currentPitchShiftCents() {
+        return table == null ? 0.0 : table.getPitchShiftCents().orElse(0.0);
+    }
+
+    /**
+     * Opens the {@code Extras > Pitch Shift...} dialog. Analysis is offered when Aubio is
+     * configured and an audio track is loaded; it runs on whichever track the header's audio
+     * selector points at (not only {@code #VOCALS}), since a stem-separated vocal is often
+     * re-tuned toward the grid and the full mix can carry the true offset better. When analysis
+     * is unavailable the dialog still lets the user view, edit, apply, or remove a manual
+     * song-local correction (the Analyze button is disabled with an explanatory tooltip rather
+     * than hidden).
+     */
+    private void openPitchShiftDialog() {
+        if (table == null) {
+            return;
+        }
+        interruptPlay();
+        boolean aubioConfigured = prop != null && StringUtils.isNotEmpty(prop.getProperty("aubioPath"));
+        boolean audioAvailable = resolvePreferredTuningAnalysisFile() != null;
+        boolean analysisAvailable = aubioConfigured && audioAvailable;
+        String unavailableReason = analysisAvailable ? null
+                : !aubioConfigured ? I18.get("pitch_shift_unavailable_aubio")
+                : I18.get("pitch_shift_unavailable_no_audio");
+
+        boolean renderBackendAvailable = PitchShiftRenderer.isFfmpegAvailable();
+        PitchShiftDialog dialog = new PitchShiftDialog(
+                YassUtils.resolveDialogOwnerWindow(tab),
+                table,
+                analysisAvailable ? this::analyzeCurrentAudioTuningOffset : null,
+                analysisAvailable,
+                unavailableReason,
+                changedTable -> {
+                    changedTable.setSaved(false);
+                    // Push the new correction to the player and re-convert so playback is heard
+                    // shifted (slice 4a). The temp-WAV cache key includes the cents value, so this
+                    // produces a fresh WAV for the new value and replays a cached one instantly if
+                    // the value was used before.
+                    applyPitchShiftToPlayback();
+                    updateActions();
+                    if (sheet != null) {
+                        // Applying/removing the correction can insert or drop the #COMMENT header
+                        // row. sheet.init() rebuilds the rectangle vector to match the row count;
+                        // a bare repaint() would paint against a stale vector and could render the
+                        // header row as a note. init() repaints internally.
+                        sheet.init();
+                    }
+                },
+                renderBackendAvailable ? this::bakePitchShiftToAudioFiles : null,
+                renderBackendAvailable);
+        dialog.setVisible(true);
+    }
+
+    /**
+     * Re-applies the song's stored pitch-shift correction to the playback engine and re-converts
+     * the current audio so the change is audible (slice 4a). No-op when nothing is loaded. The
+     * temp-WAV cache keys on the cents value, so an already-seen value replays from cache.
+     */
+    private void applyPitchShiftToPlayback() {
+        if (mp3 == null) {
+            return;
+        }
+        double cents = currentPitchShiftCents();
+        if (cents == mp3.getPitchShiftCents()) {
+            return;
+        }
+        mp3.setPitchShiftCents(cents);
+        String currentFile = mp3.getFilename();
+        if (StringUtils.isNotBlank(currentFile)) {
+            interruptPlay();
+            mp3.openMP3(currentFile);
+        }
+    }
+
+    /**
+     * Bakes the song's stored pitch-shift correction permanently into new audio files (slice 4b).
+     * Collects the modern audio tags ({@code #AUDIO}, {@code #VOCALS}, {@code #INSTRUMENTAL}; the
+     * legacy {@code #MP3} tag is intentionally not baked),
+     * renders a shifted copy of each referenced file via FFmpeg off the EDT, and — only if every
+     * render succeeds — repoints the tags at the copies, removes the {@code pitchShiftCents}
+     * comment, saves the song, and reloads playback against the now-unshifted audio so the
+     * correction is not applied twice. Cancellation or any failure leaves files, tags, and the
+     * comment untouched. Delegates the all-or-nothing orchestration to {@link PitchShiftBakeService}.
+     */
+    private void bakePitchShiftToAudioFiles() {
+        if (table == null) {
+            return;
+        }
+        double cents = currentPitchShiftCents();
+        String dir = table.getDir();
+        if (StringUtils.isBlank(dir)) {
+            showPitchShiftBakeMessage("pitch_shift_bake_no_dir");
+            return;
+        }
+        Map<String, String> audioTags = collectAudioTags();
+        if (audioTags.isEmpty()) {
+            showPitchShiftBakeMessage("pitch_shift_bake_no_audio");
+            return;
+        }
+
+        interruptPlay();
+        File songDir = new File(dir);
+        Window owner = YassUtils.resolveDialogOwnerWindow(tab);
+        JDialog progress = new JDialog(owner, I18.get("pitch_shift_title"), Dialog.ModalityType.APPLICATION_MODAL);
+        progress.add(new JLabel(I18.get("pitch_shift_rendering")));
+        progress.pack();
+        progress.setLocationRelativeTo(owner);
+
+        SwingWorker<PitchShiftBakeService.Outcome, Void> worker = new SwingWorker<>() {
+            @Override
+            protected PitchShiftBakeService.Outcome doInBackground() {
+                return PitchShiftBakeService.bake(songDir, audioTags, cents,
+                                                  PitchShiftRenderer::renderToFile,
+                                                  this::isCancelled);
+            }
+
+            @Override
+            protected void done() {
+                progress.dispose();
+                PitchShiftBakeService.Outcome outcome;
+                try {
+                    outcome = get();
+                } catch (Exception ex) {
+                    LOGGER.log(Level.WARNING, "[PitchShiftBake] worker failed", ex);
+                    showPitchShiftBakeMessage("pitch_shift_bake_render_failed");
+                    return;
+                }
+                if (outcome.success()) {
+                    applyPitchShiftBakeResult(outcome);
+                }
+                showPitchShiftBakeMessage(outcome.reasonKey());
+            }
+        };
+        worker.execute();
+        progress.setVisible(true);
+    }
+
+    /**
+     * Collects the song's audio tags as an ordered tag-name-to-filename map, skipping blank or
+     * already-baked entries. The tag names are the {@code UltrastarHeaderTag} forms (e.g.
+     * {@code "VOCALS:"}) that {@link YassTable#setAudioByTag(String, String)} understands.
+     */
+    private Map<String, String> collectAudioTags() {
+        Map<String, String> tags = new LinkedHashMap<>();
+        // The legacy #MP3 tag is intentionally not baked; only the modern audio tags are.
+        putAudioTag(tags, UltrastarHeaderTag.AUDIO.getTagName(), table.getAudio());
+        putAudioTag(tags, UltrastarHeaderTag.VOCALS.getTagName(), table.getVocals());
+        putAudioTag(tags, UltrastarHeaderTag.INSTRUMENTAL.getTagName(), table.getInstrumental());
+        return tags;
+    }
+
+    private void putAudioTag(Map<String, String> tags, String tagName, String fileName) {
+        if (StringUtils.isNotBlank(fileName) && !fileName.contains(PitchShiftBakeService.SHIFTED_MARKER)) {
+            tags.put(tagName, fileName);
+        }
+    }
+
+    /**
+     * Applies a successful bake to the song model on the EDT: repoints each audio tag at its
+     * rendered copy, removes the now-baked {@code pitchShiftCents} comment, clears the live
+     * playback shift, saves the song, and reloads the current audio so it plays unshifted.
+     */
+    private void applyPitchShiftBakeResult(PitchShiftBakeService.Outcome outcome) {
+        for (Map.Entry<String, String> update : outcome.tagUpdates().entrySet()) {
+            table.setAudioByTag(update.getKey(), update.getValue());
+        }
+        table.removePitchShiftCents();
+        if (mp3 != null) {
+            mp3.setPitchShiftCents(0.0);
+        }
+        table.setSaved(false);
+        Vector<YassTable> toSave = new Vector<>();
+        toSave.add(table);
+        save(toSave);
+        if (sheet != null) {
+            sheet.init();
+        }
+        updateActions();
+    }
+
+    private void showPitchShiftBakeMessage(String reasonKey) {
+        JOptionPane.showMessageDialog(YassUtils.resolveDialogOwnerWindow(tab),
+                                      I18.get(reasonKey), I18.get("pitch_shift_title"),
+                                      JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    /**
+     * Runs tuning-offset analysis for the current song, preferring the {@code #INSTRUMENTAL} track
+     * as the tuning reference. Fixed-pitch instruments (guitars, bass, keys) hold their tuning far
+     * better than a sung vocal, and stem-separation tends to re-tune an isolated vocal toward the
+     * grid — so the instrumental gives the most reliable global offset. When no instrumental file
+     * exists, falls back to the currently loaded audio track. Intended to run off the EDT.
+     * <p>
+     * Analysis uses the RAW pitch frames: the processed/Viterbi-smoothed list snaps each frame's
+     * frequency onto the equal-tempered grid, which would make every frame read ~0 cents off and
+     * hide the very offset being measured. {@code detectPitchWithRaw} runs its own ffmpeg downmix
+     * so it accepts any source file (not only the pre-decoded temp WAV) and preserves the raw
+     * frames that {@code analyzeTuningOffset(PitchDetectionResult)} reads.
+     */
+    private PitchDetector.TuningOffsetAnalysis analyzeCurrentAudioTuningOffset() {
+        File analysisSource = resolvePreferredTuningAnalysisFile();
+        if (analysisSource == null) {
+            return PitchDetector.TuningOffsetAnalysis.unavailable("No audio loaded for analysis.");
+        }
+        MusicalKeyEnum key = mp3 != null ? mp3.getKey() : MusicalKeyEnum.UNDEFINED;
+        PitchDetector.PitchDetectionResult result =
+                PitchDetector.detectPitchWithRaw(analysisSource, prop, key);
+        PitchDetector.TuningOffsetAnalysis analysis = PitchDetector.analyzeTuningOffset(result);
+        LOGGER.info(String.format(java.util.Locale.US,
+                "[PitchShift] source=%s available=%b estimatedOffset=%.2f cents correction=%.2f cents "
+                        + "concentration=%.3f mad=%.2f samples=%d reason=\"%s\"",
+                analysisSource.getName(), analysis.available(), analysis.estimatedOffsetCents(),
+                analysis.suggestedCorrectionCents(), analysis.concentration(),
+                analysis.medianAbsoluteDeviationCents(), analysis.sampleCount(), analysis.reason()));
+        return analysis;
+    }
+
+    /**
+     * Picks the best available source file for tuning analysis: the song's {@code #INSTRUMENTAL}
+     * file when present, otherwise the currently loaded audio temp file.
+     */
+    private File resolvePreferredTuningAnalysisFile() {
+        if (table != null && StringUtils.isNotEmpty(table.getInstrumental()) && StringUtils.isNotEmpty(table.getDir())) {
+            File instrumental = new File(table.getDir(), table.getInstrumental());
+            if (instrumental.isFile()) {
+                return instrumental;
+            }
+        }
+        return mp3 != null ? mp3.getTempFile() : null;
+    }
+
     private void applyMelodyAlignment(YassTable.AlignToMelodyMode mode) {
         if (lyrics.isEditable() || isFocusInSongHeader()) {
             return;
@@ -921,12 +1208,7 @@ public class YassActions implements DropTargetListener {
                 + " pitchFrames=" + (pitchData == null ? 0 : pitchData.size())
                 + " pitchWaveformTranspose=" + transpose
                 + " absolutePitchView=" + (sheet != null && sheet.isAbsolutePitchViewEnabled()));
-        if (transpose != 0 && pitchData != null) {
-            pitchData = pitchData.stream()
-                                 .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose,
-                                                                        pd.noteName(), pd.rawFrequency(), pd.energy()))
-                                 .collect(Collectors.toList());
-        }
+        pitchData = PitchDetector.applyPitchShift(pitchData, 0.0, transpose);
         table.alignToMelody(rows, pitchData, YassTable.AlignToMelodyContext.manual(), mode);
         // Restore selection lost due to fireTableDataChanged
         for (int rowIndex : selectedRows) {
@@ -951,16 +1233,7 @@ public class YassActions implements DropTargetListener {
         }
         List<PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
         int transpose = mp3.getPitchWaveformTranspose();
-        if (transpose == 0) {
-            return pitchData;
-        }
-        return pitchData.stream()
-                        .map(pd -> new PitchDetector.PitchData(pd.time(),
-                                                               pd.pitch() + transpose,
-                                                               pd.noteName(),
-                                                               pd.rawFrequency(),
-                                                               pd.energy()))
-                        .collect(Collectors.toList());
+        return PitchDetector.applyPitchShift(pitchData, 0.0, transpose);
     }
 
     private final Action alignToMelody = new AbstractAction(I18.get("edit_align_to_melody")) {
@@ -976,6 +1249,11 @@ public class YassActions implements DropTargetListener {
     private final Action alignPitch = new AbstractAction(I18.get("edit_align_pitch")) {
         public void actionPerformed(ActionEvent e) {
             applyMelodyAlignment(YassTable.AlignToMelodyMode.PITCH_ONLY);
+        }
+    };
+    private final Action pitchShift = new AbstractAction(I18.get("edit_pitch_shift")) {
+        public void actionPerformed(ActionEvent e) {
+            openPitchShiftDialog();
         }
     };
     private final Action findLyrics = new AbstractAction(I18.get("edit_lyrics_find")) {
@@ -2292,13 +2570,8 @@ public class YassActions implements DropTargetListener {
                     + " pitchWaveformTranspose=" + (mp3 == null ? 0 : mp3.getPitchWaveformTranspose()));
             if (isVocalTrack && hasPitchData) {
                 int transpose = mp3.getPitchWaveformTranspose();
-                List<PitchDetector.PitchData> pitchData = mp3.getPitchDataList();
-                if (transpose != 0) {
-                    pitchData = pitchData.stream()
-                                         .map(pd -> new PitchDetector.PitchData(pd.time(), pd.pitch() + transpose,
-                                                                                pd.noteName(), pd.rawFrequency()))
-                                         .collect(Collectors.toList());
-                }
+                List<PitchDetector.PitchData> pitchData =
+                        PitchDetector.applyPitchShift(mp3.getPitchDataList(), 0.0, transpose);
                 table.splitRowsByPitch(pitchData);
             } else {
                 table.splitRows();
@@ -6748,6 +7021,7 @@ public class YassActions implements DropTargetListener {
         menu.add(queryMusicBrainz);
         menu.add(compareUsdb);
         menu.add(suggestGoldenNotes);
+        menu.add(pitchShift);
         menu.add(showOptions);
 
         menu = new JMenu(I18.get("edit_help"));
@@ -10283,15 +10557,8 @@ public class YassActions implements DropTargetListener {
                         }
                         if (!rows.isEmpty()) {
                             int transpose = mp3.getPitchWaveformTranspose();
-                            List<PitchDetector.PitchData> alignData = postRecordingPitchData;
-                            if (transpose != 0) {
-                                alignData = alignData.stream()
-                                                     .map(pd -> new PitchDetector.PitchData(pd.time(),
-                                                                                            pd.pitch() + transpose,
-                                                                                            pd.noteName(),
-                                                                                            pd.rawFrequency()))
-                                                     .collect(Collectors.toList());
-                            }
+                            List<PitchDetector.PitchData> alignData =
+                                    PitchDetector.applyPitchShift(postRecordingPitchData, 0.0, transpose);
                             table.alignToMelody(rows, alignData, YassTable.AlignToMelodyContext.recording());
                             for (Integer rowIndex : alignedRowIndices) {
                                 table.addRowSelectionInterval(rowIndex, rowIndex);
@@ -10979,6 +11246,8 @@ public class YassActions implements DropTargetListener {
                 mp3.emptyMp3(table);
             } else {
                 try {
+                    // Apply the song's stored pitch-shift correction to the playback temp WAV (slice 4a).
+                    mp3.setPitchShiftCents(currentPitchShiftCents());
                     mp3.openMP3(resolvedPlaybackPath);
                 } catch (Exception ex) {
                     LOGGER.log(Level.WARNING, "Could not open audio for editor: " + resolvedPlaybackPath, ex);

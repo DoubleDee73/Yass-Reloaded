@@ -25,6 +25,8 @@ sections:
     links:
       - title: External Tools
         url: /tools/overview.html
+      - title: Pitch Shift
+        url: /tools/pitch-shift.html
       - title: Wizard
         url: /wizard/overview.html
       - title: Library

@@ -148,7 +148,10 @@ public class UsdbSongImportService {
         }
         Path path = Path.of(songsDir);
         if (!Files.isDirectory(path)) {
-            throw new IOException("Configured song directory does not exist: " + songsDir);
+            if (Files.exists(path)) {
+                throw new IOException("Configured song directory is not a directory: " + songsDir);
+            }
+            Files.createDirectories(path);
         }
         return path;
     }
@@ -259,9 +262,15 @@ public class UsdbSongImportService {
                                                                     UsdbImportProgressListener progressListener,
                                                                     ExecutorService executor) {
         String normalizedSource = normalizeMediaSource(source);
-        CompletableFuture<String> audioFuture = CompletableFuture.supplyAsync(() -> {
+        // Audio and video are downloaded sequentially (audio first, then video) rather than
+        // concurrently. Two simultaneous yt-dlp pulls of the same YouTube URL from one IP get
+        // rate-limited with "HTTP Error 403: Forbidden" on the media download; running them
+        // one after another avoids the self-inflicted collision. See specs/usdb-media-download.md.
+        return CompletableFuture.supplyAsync(() -> {
             try {
-                return downloadAudio(normalizedSource, targetDirectory, baseName, progressListener);
+                String audioFileName = downloadAudio(normalizedSource, targetDirectory, baseName, progressListener);
+                String videoFileName = downloadVideo(normalizedSource, targetDirectory, baseName, progressListener);
+                return new MediaImport(videoFileName, audioFileName);
             } catch (IOException ex) {
                 throw new StageImportRuntimeException(ex);
             } catch (InterruptedException ex) {
@@ -269,17 +278,6 @@ public class UsdbSongImportService {
                 throw new StageImportRuntimeException(ex);
             }
         }, executor);
-        CompletableFuture<String> videoFuture = CompletableFuture.supplyAsync(() -> {
-            try {
-                return downloadVideo(normalizedSource, targetDirectory, baseName, progressListener);
-            } catch (IOException ex) {
-                throw new StageImportRuntimeException(ex);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                throw new StageImportRuntimeException(ex);
-            }
-        }, executor);
-        return audioFuture.thenCombine(videoFuture, (audioFileName, videoFileName) -> new MediaImport(videoFileName, audioFileName));
     }
 
     private CompletableFuture<String> startCoverImport(UsdbMetaTagParser.UsdbParsedMetaTags metaTags,

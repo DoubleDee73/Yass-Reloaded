@@ -37,7 +37,18 @@ public class PitchDetector {
     private static final double A4_FREQ = 440.0;
     private static final double C4_FREQ = A4_FREQ * Math.pow(2.0, -9.0 / 12.0); // approx 261.626 Hz
     private static final int MIN_TUNING_ANALYSIS_SAMPLES = 24;
-    private static final double DEFAULT_TUNING_OUTLIER_GATE_CENTS = 12.0;
+    private static final double TWO_PI = 2.0 * Math.PI;
+    /** One semitone in cents; the period of the tuning-offset circle. */
+    private static final double CENTS_PER_OCTAVE_STEP = 100.0;
+    /**
+     * Hard floor on circular concentration (resultant length R) below which no offset is reported
+     * at all: the per-frame offsets have no dominant tuning, so any estimate would be pure noise.
+     * Between this floor and {@link PitchShiftMetadata#CONFIDENCE_CONCENTRATION_THRESHOLD} an offset
+     * is returned but flagged low-confidence by the UI. Empirically a noisy-but-real rock
+     * instrumental sits around R=0.20 (AC/DC "T.N.T", offset ~-29c); a vocal stem of the same song
+     * is pure noise at R~0.07.
+     */
+    private static final double MIN_TUNING_CONCENTRATION = 0.15;
 
     public static List<PitchData> detectPitch(File tempWavFile, YassProperties properties) {
         return detectPitchWithRaw(tempWavFile, properties, MusicalKeyEnum.UNDEFINED).processedPitchData();
@@ -65,63 +76,83 @@ public class PitchDetector {
             return TuningOffsetAnalysis.unavailable("No pitch frames available.");
         }
 
-        List<Double> centsOffsets = new ArrayList<>(pitchData.size());
+        // Each frame's offset from its nearest equal-tempered note is an angle on a circle whose
+        // full turn is one semitone (100 cents): +50 cents and -50 cents are the SAME point. A
+        // plain median of "cents to nearest note" folds at that +/-50 boundary, so noise straddling
+        // it is dragged toward 0 -- which made audibly-detuned songs read ~0. The circular mean has
+        // no such boundary. Its resultant length R (0..1) doubles as a confidence measure: R~1 means
+        // the frames agree on one tuning, R~0 means there is no dominant tuning (noise, or relative
+        // detuning that no single global shift can correct).
+        double sumSin = 0d;
+        double sumCos = 0d;
+        int n = 0;
         for (PitchData frame : pitchData) {
             if (frame == null || frame.rawFrequency() <= 0d) {
                 continue;
             }
-            double centsOffset = centsToNearestEqualTemperedNote(frame.rawFrequency());
-            if (Double.isFinite(centsOffset)) {
-                centsOffsets.add(centsOffset);
+            double cents = centsToNearestEqualTemperedNote(frame.rawFrequency());
+            if (!Double.isFinite(cents)) {
+                continue;
             }
+            double angle = TWO_PI * (cents / CENTS_PER_OCTAVE_STEP);
+            sumSin += Math.sin(angle);
+            sumCos += Math.cos(angle);
+            n++;
         }
 
-        if (centsOffsets.size() < MIN_TUNING_ANALYSIS_SAMPLES) {
+        if (n < MIN_TUNING_ANALYSIS_SAMPLES) {
             return TuningOffsetAnalysis.unavailable(
                     "Not enough stable pitch frames for tuning analysis.",
-                    centsOffsets.size(),
-                    0,
-                    0d,
-                    0d
-            );
+                    n, 0, 0d, 0d, 0d);
         }
 
-        double medianOffset = median(centsOffsets);
-        List<Double> absDeviation = new ArrayList<>(centsOffsets.size());
-        for (double centsOffset : centsOffsets) {
-            absDeviation.add(Math.abs(centsOffset - medianOffset));
-        }
-        double mad = median(absDeviation);
-        double outlierGate = Math.max(DEFAULT_TUNING_OUTLIER_GATE_CENTS, mad * 3.0);
+        double concentration = Math.sqrt(sumSin * sumSin + sumCos * sumCos) / n;
+        double meanAngle = Math.atan2(sumSin / n, sumCos / n);
+        double estimatedOffset = meanAngle / TWO_PI * CENTS_PER_OCTAVE_STEP; // wrapped to (-50, +50]
 
-        List<Double> inliers = new ArrayList<>(centsOffsets.size());
-        for (double centsOffset : centsOffsets) {
-            if (Math.abs(centsOffset - medianOffset) <= outlierGate) {
-                inliers.add(centsOffset);
+        // MAD about the circular mean, measured as the shortest signed distance on the semitone
+        // circle, as a secondary spread/diagnostic figure.
+        List<Double> deviations = new ArrayList<>(n);
+        for (PitchData frame : pitchData) {
+            if (frame == null || frame.rawFrequency() <= 0d) {
+                continue;
             }
+            double cents = centsToNearestEqualTemperedNote(frame.rawFrequency());
+            if (!Double.isFinite(cents)) {
+                continue;
+            }
+            deviations.add(Math.abs(wrapToSemitone(cents - estimatedOffset)));
         }
+        double mad = median(deviations);
 
-        if (inliers.size() < MIN_TUNING_ANALYSIS_SAMPLES / 2) {
+        if (concentration < MIN_TUNING_CONCENTRATION) {
             return TuningOffsetAnalysis.unavailable(
                     "Pitch frames are too inconsistent for a reliable global tuning offset.",
-                    centsOffsets.size(),
-                    inliers.size(),
-                    mad,
-                    medianOffset
-            );
+                    n, n, mad, estimatedOffset, concentration);
         }
 
-        double estimatedOffset = median(inliers);
         return new TuningOffsetAnalysis(
                 true,
                 estimatedOffset,
                 -estimatedOffset,
                 Math.pow(2.0, (-estimatedOffset) / 1200.0),
-                centsOffsets.size(),
-                inliers.size(),
+                n,
+                n,
                 mad,
-                "Computed from raw Aubio pitch frequencies."
+                concentration,
+                "Computed from raw Aubio pitch frequencies (circular mean)."
         );
+    }
+
+    /** Wraps a cents value to the shortest signed distance within one semitone, i.e. (-50, +50]. */
+    private static double wrapToSemitone(double cents) {
+        double wrapped = cents % CENTS_PER_OCTAVE_STEP;
+        if (wrapped > CENTS_PER_OCTAVE_STEP / 2.0) {
+            wrapped -= CENTS_PER_OCTAVE_STEP;
+        } else if (wrapped <= -CENTS_PER_OCTAVE_STEP / 2.0) {
+            wrapped += CENTS_PER_OCTAVE_STEP;
+        }
+        return wrapped;
     }
 
     public static PitchDetectionResult detectPitchWithRaw(File tempWavFile,
@@ -798,6 +829,61 @@ public class PitchDetector {
         return normalized;
     }
 
+    /**
+     * Applies a song-local global pitch-shift correction to a list of detected pitch
+     * frames, composing it with the existing integer display transpose. This is the
+     * single canonical "corrected pitch view" producer: both pitch-line rendering and
+     * melody alignment route through it (or its scalar sibling
+     * {@link #correctedPitch(PitchData, double, int)}) so the correction is applied
+     * exactly once and the two consumers always agree.
+     * <p>
+     * The correction is applied as a <em>delta</em>: a frame's integer pitch changes
+     * only when {@code correctionCents} pushes the frame's sub-semitone residual past a
+     * chromatic-grid boundary. When {@code correctionCents == 0} the result is exactly
+     * {@code pitch() + transpose}, preserving prior behavior for songs without a shift.
+     *
+     * @param frames          the source pitch frames (typically {@code mp3.getPitchDataList()})
+     * @param correctionCents the stored correction in cents (positive = shift sharp)
+     * @param transpose       the existing whole-semitone display transpose
+     * @return a new list with corrected integer pitches, or {@code frames} unchanged when
+     * there is nothing to apply
+     */
+    public static List<PitchData> applyPitchShift(List<PitchData> frames,
+                                                  double correctionCents,
+                                                  int transpose) {
+        if (frames == null || frames.isEmpty()) {
+            return frames;
+        }
+        if (correctionCents == 0.0 && transpose == 0) {
+            return frames;
+        }
+        List<PitchData> corrected = new ArrayList<>(frames.size());
+        for (PitchData frame : frames) {
+            corrected.add(new PitchData(frame.time(),
+                                        correctedPitch(frame, correctionCents, transpose),
+                                        frame.noteName(),
+                                        frame.rawFrequency(),
+                                        frame.energy()));
+        }
+        return corrected;
+    }
+
+    /**
+     * Returns the corrected display pitch for a single frame, composing a song-local
+     * pitch-shift correction with the integer display transpose. See
+     * {@link #applyPitchShift(List, double, int)} for the delta semantics; this scalar
+     * form exists for hot rendering loops that cannot allocate a per-frame list copy.
+     */
+    public static int correctedPitch(PitchData frame, double correctionCents, int transpose) {
+        int delta = 0;
+        if (correctionCents != 0.0 && frame.rawFrequency() > 0) {
+            double residualCents = centsToNearestEqualTemperedNote(frame.rawFrequency());
+            delta = (int) Math.round((residualCents + correctionCents) / 100.0)
+                    - (int) Math.round(residualCents / 100.0);
+        }
+        return frame.pitch() + delta + transpose;
+    }
+
     private static double centsToNearestEqualTemperedNote(double frequency) {
         int midiNote = frequencyToMidi(frequency);
         double referenceFrequency = midiToFrequency(midiNote);
@@ -841,6 +927,15 @@ public class PitchDetector {
         }
     }
 
+    /**
+     * Result of estimating a recording's global tuning offset.
+     *
+     * @param concentration the resultant length R of the circular mean, in [0,1]: 1.0 means every
+     *                       frame agrees on the same offset (perfectly consistent tuning), values
+     *                       near 0 mean the per-frame offsets are scattered with no dominant tuning
+     *                       (noise, or relative/drifting detuning that no single shift can fix).
+     *                       This is the primary confidence signal — see {@link PitchShiftMetadata}.
+     */
     public record TuningOffsetAnalysis(boolean available,
                                        double estimatedOffsetCents,
                                        double suggestedCorrectionCents,
@@ -848,16 +943,18 @@ public class PitchDetector {
                                        int sampleCount,
                                        int inlierCount,
                                        double medianAbsoluteDeviationCents,
+                                       double concentration,
                                        String reason) {
         public static TuningOffsetAnalysis unavailable(String reason) {
-            return unavailable(reason, 0, 0, 0d, 0d);
+            return unavailable(reason, 0, 0, 0d, 0d, 0d);
         }
 
         public static TuningOffsetAnalysis unavailable(String reason,
                                                        int sampleCount,
                                                        int inlierCount,
                                                        double medianAbsoluteDeviationCents,
-                                                       double estimatedOffsetCents) {
+                                                       double estimatedOffsetCents,
+                                                       double concentration) {
             return new TuningOffsetAnalysis(
                     false,
                     estimatedOffsetCents,
@@ -866,6 +963,7 @@ public class PitchDetector {
                     sampleCount,
                     inlierCount,
                     medianAbsoluteDeviationCents,
+                    concentration,
                     reason
             );
         }

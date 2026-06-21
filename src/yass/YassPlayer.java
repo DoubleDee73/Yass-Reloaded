@@ -45,6 +45,7 @@ import org.jaudiotagger.tag.FieldKey;
 import org.jaudiotagger.tag.Tag;
 import org.jaudiotagger.tag.TagException;
 import yass.analysis.PitchDetector.PitchData;
+import yass.analysis.PitchShiftRenderer;
 import yass.ffmpeg.FFMPEGLocator;
 import yass.musicalkey.MusicalKeyEnum;
 import yass.renderer.YassNote;
@@ -131,6 +132,13 @@ public class YassPlayer {
     private List<SourceDataLine> lineList = new ArrayList<>();
 
     private MusicalKeyEnum key;
+    /**
+     * Song-local global pitch-shift correction in cents applied to the playback temp WAV (slice 4a).
+     * 0 means no shift, in which case the conversion and its cache key are byte-identical to before.
+     * Set by the editor from the song's {@code #COMMENT:pitchShiftCents}; folded into the temp-WAV
+     * cache key so a different correction produces a different cached file.
+     */
+    private double pitchShiftCents = 0.0;
     private double targetDbfs;
     private double replayGain;
 
@@ -1192,6 +1200,11 @@ public class YassPlayer {
                     }
                     playbackAudioBytes = audioBytes;
                     playbackAudioFormat = audioBytesFormat;
+                    LOGGER.info("[PitchShift] PLAYBACK cents=" + pitchShiftCents
+                            + " playbackSource=" + playbackSource
+                            + " filename=" + filename
+                            + " usingFile=" + mp3File
+                            + " audioBytes=" + (audioBytes == null ? "null" : audioBytes.length + "B"));
                 } else {
                     try (AudioInputStream in = AudioSystem.getAudioInputStream(mp3File)) {
                         playbackAudioFormat = in.getFormat();
@@ -1523,7 +1536,13 @@ public class YassPlayer {
     }
 
     private String buildTempAudioHash(File sourceFile, Timebase timeBase) {
-        String fingerprint = sourceFile.getAbsolutePath() + "|" + sourceFile.length() + "|" + sourceFile.lastModified() + "|" + timeBase.getId();
+        // Only append the pitch-shift segment when a correction is active, so un-corrected songs
+        // keep the exact same cache key (and cached WAV) as before this feature existed.
+        String pitchSegment = pitchShiftCents == 0.0
+                ? ""
+                : "|ps" + String.format(Locale.ROOT, "%.2f", pitchShiftCents);
+        String fingerprint = sourceFile.getAbsolutePath() + "|" + sourceFile.length() + "|" + sourceFile.lastModified()
+                + "|" + timeBase.getId() + pitchSegment;
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-1");
             byte[] bytes = digest.digest(fingerprint.getBytes(StandardCharsets.UTF_8));
@@ -1535,6 +1554,24 @@ public class YassPlayer {
         } catch (NoSuchAlgorithmException ex) {
             return Integer.toHexString(fingerprint.hashCode());
         }
+    }
+
+    /**
+     * Combines the playback-speed filter and the pitch-shift filter (slice 4a) into a single
+     * FFmpeg filter chain for the temp-WAV conversion. Either part may be empty; returns an empty
+     * string when neither applies, so the conversion stays byte-identical to before for an
+     * un-corrected song played at normal speed.
+     */
+    private String buildPlaybackAudioFilter(Timebase timeBase) {
+        String speedFilter = timeBase != yass.Timebase.NORMAL ? timeBase.getFilter() : "";
+        String pitchFilter = PitchShiftRenderer.audioFilter(pitchShiftCents);
+        if (StringUtils.isBlank(speedFilter)) {
+            return pitchFilter;
+        }
+        if (StringUtils.isBlank(pitchFilter)) {
+            return speedFilter;
+        }
+        return speedFilter + "," + pitchFilter;
     }
 
     public File generateTemp(String source, Timebase timeBase, String filename) throws IOException {
@@ -1566,11 +1603,15 @@ public class YassPlayer {
             Files.createDirectories(parentDir.toPath());
         }
         if (tempFile.isFile() && tempFile.length() > 0) {
-            LOGGER.fine("YassPlayer: reusing cached temp audio " + tempFile.getAbsolutePath());
+            LOGGER.info("[PitchShift] reusing cached temp audio (no reconvert) cents=" + pitchShiftCents
+                    + " file=" + tempFile.getName());
             return tempFile;
         }
-        if (timeBase != yass.Timebase.NORMAL) {
-            fFmpegBuilder.setAudioFilter(timeBase.getFilter());
+        String audioFilter = buildPlaybackAudioFilter(timeBase);
+        LOGGER.info("[PitchShift] converting cents=" + pitchShiftCents + " timebase=" + timeBase
+                + " audioFilter=\"" + audioFilter + "\" out=" + tempFile.getName());
+        if (StringUtils.isNotBlank(audioFilter)) {
+            fFmpegBuilder.setAudioFilter(audioFilter);
         }
         int channels = 2;
         if (filename.contains("samples") && (filename.contains("longnotes") || filename.contains("shortnotes"))) {
@@ -1581,6 +1622,11 @@ public class YassPlayer {
                      .setAudioChannels(channels)
                      .setAudioSampleRate(44100)
                      .done();
+        try {
+            LOGGER.info("[PitchShift] ffmpeg args: " + String.join(" ", fFmpegBuilder.build()));
+        } catch (Exception ex) {
+            LOGGER.info("[PitchShift] could not dump ffmpeg args: " + ex);
+        }
         FFmpegExecutor executor = new FFmpegExecutor(ffmpeg, fFprobe);
         final AtomicReference<Progress> progressHolder = new AtomicReference<>();
         FFmpegJob job = executor.createJob(fFmpegBuilder, progress -> {
@@ -1809,6 +1855,19 @@ public class YassPlayer {
 
     public void setKey(MusicalKeyEnum musicalKeyEnum) {
         this.key = musicalKeyEnum;
+    }
+
+    public double getPitchShiftCents() {
+        return pitchShiftCents;
+    }
+
+    /**
+     * Sets the song-local pitch-shift correction applied to the playback temp WAV. Callers that
+     * change this must re-open/re-convert the audio for it to take effect, since the converted WAV
+     * is cached by a key that now includes the cents value.
+     */
+    public void setPitchShiftCents(double cents) {
+        this.pitchShiftCents = cents;
     }
 
     public void saveKey(MusicalKeyEnum musicalKeyEnum) {

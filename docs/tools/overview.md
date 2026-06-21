@@ -140,6 +140,7 @@ This section will gradually expand into dedicated setup guides for each supporte
 ## Related Pages
 
 - [Installation](../installation.md)
+- [Pitch Shift](pitch-shift.md)
 - [Settings Overview](../settings/overview.md)
 - [Wizard Overview](../wizard/overview.md)
 - [Troubleshooting](../reference/troubleshooting.md)

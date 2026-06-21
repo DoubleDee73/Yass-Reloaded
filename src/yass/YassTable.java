@@ -26,6 +26,7 @@ import org.apache.commons.math3.util.Precision;
 import org.mozilla.universalchardet.Constants;
 import unicode.UnicodeReader;
 import yass.analysis.PitchDetector;
+import yass.analysis.PitchShiftMetadata;
 import yass.autocorrect.YassAutoCorrect;
 import yass.autocorrect.YassAutoCorrectApostrophes;
 import yass.hyphenator.HyphenatorDictionary;
@@ -1385,17 +1386,50 @@ public class YassTable extends JTable {
         setCommentTag(String.join(",", parts));
     }
 
+    /**
+     * Reads the song-local global pitch-shift correction (in cents) from #COMMENT,
+     * or empty if no {@code pitchShiftCents} property is stored.
+     *
+     * @see PitchShiftMetadata
+     */
+    public OptionalDouble getPitchShiftCents() {
+        return PitchShiftMetadata.parse(getCommentTag());
+    }
+
+    /**
+     * Writes or updates the {@code pitchShiftCents} property in #COMMENT, preserving
+     * all other comment properties (e.g. {@code key=}).
+     */
+    public void setPitchShiftCents(double cents) {
+        setCommentTag(PitchShiftMetadata.upsert(getCommentTag(), cents));
+    }
+
+    /**
+     * Removes only the {@code pitchShiftCents} property from #COMMENT, preserving
+     * all other comment properties. No-op when no comment or no such property exists.
+     */
+    public void removePitchShiftCents() {
+        String existing = getCommentTag();
+        if (existing == null || existing.isBlank()) {
+            return;
+        }
+        setCommentTag(PitchShiftMetadata.remove(existing));
+    }
+
     public boolean setCommentTag(String comment) {
         YassRow r = tm.getCommentRow(COMMENT);
-        int rowToInsert = 0;
         if (r == null) {
             r = new YassRow("#", COMMENT.getTagName(), comment, "", "");
-        } else {
-            r.setComment(comment);
+            appendHeaderTag(r);
+            // Inserting a header row shifts every following row down by one. Without firing a
+            // table event the sheet's rectangle vector and the JTable selection stay stale, and
+            // a later repaint can paint this #COMMENT header row as a selected note (parsing
+            // "COMMENT:" as a beat). Fire so rectangles and selection are rebuilt.
             tm.fireTableDataChanged();
             return true;
         }
-        appendHeaderTag(r);
+        r.setComment(comment);
+        tm.fireTableDataChanged();
         return true;
     }
 
