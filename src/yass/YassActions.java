@@ -6755,6 +6755,7 @@ public class YassActions implements DropTargetListener {
         icons.put("quantize16Icon", new ImageIcon(getClass().getResource("/yass/resources/img/quantize_16.png")));
         icons.put("quantize24Icon", new ImageIcon(getClass().getResource("/yass/resources/img/quantize_24.png")));
         icons.put("createDuetIcon", new ImageIcon(getClass().getResource("/yass/resources/img/create_duet.png")));
+        icons.put("pitchShiftIcon", new ImageIcon(getClass().getResource("/yass/resources/img/pitch_shift.png")));
         icons.put("alignTranscriptIcon",
                   new ImageIcon(getClass().getResource("/yass/resources/img/alignTranscript.png")));
         icons.put("alignToMelodyIcon", new ImageIcon(getClass().getResource("/yass/resources/img/alignToMelody.png")));
@@ -6798,6 +6799,10 @@ public class YassActions implements DropTargetListener {
         ImageIcon createDuetActionIcon = getOptionalResizedIcon("createDuetIcon", 16);
         if (createDuetActionIcon != null) {
             createDuet.putValue(AbstractAction.SMALL_ICON, createDuetActionIcon);
+        }
+        ImageIcon pitchShiftActionIcon = getOptionalResizedIcon("pitchShiftIcon", 16);
+        if (pitchShiftActionIcon != null) {
+            pitchShift.putValue(AbstractAction.SMALL_ICON, pitchShiftActionIcon);
         }
         openVideo.putValue(AbstractAction.SMALL_ICON, getIcon("movie16Icon"));
         updateActions();
