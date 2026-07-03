@@ -121,7 +121,7 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         checkExistingUsdbSyncerTags();
         setModal(true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-        setSize(700, 660);
+        setSize(760, 720);
         setLocationRelativeTo(YassUtils.resolveDialogOwner(a.getTab()));
         setTitle(I18.get("usdb_syncer_title"));
         setLayout(new BorderLayout());
@@ -129,7 +129,12 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         initPrefilledMap();
         initSpinners();
         initTextFields();
-        add(initPanel(), BorderLayout.PAGE_START);
+        JScrollPane metaScrollPane = new JScrollPane(initPanel(),
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+                JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        metaScrollPane.setBorder(BorderFactory.createEmptyBorder());
+        metaScrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        add(metaScrollPane, BorderLayout.CENTER);
         updateResultline();
         getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
                      .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "close");
@@ -621,8 +626,8 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         line = tagsLine(gbc, line, main);
         // --------------------------------------------------------
         line = resultLine(gbc, line, main);
-        main.setSize(1200, 620);
-        main.setPreferredSize(new Dimension(1300, 620));
+        // Let the panel keep its natural (content) height. Forcing a too-small preferred height made
+        // GridBagLayout center the grid and clip the top row (the Video URL field) off-screen.
         main.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
         return main;
     }

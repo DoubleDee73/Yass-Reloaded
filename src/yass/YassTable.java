@@ -91,8 +91,8 @@ public class YassTable extends JTable {
     private boolean isRelative = false;
     private int maxP = 0;
     private Color myColor = null;
-    private boolean saved = true;
-    private boolean autosaved = true;
+    private volatile boolean saved = true;
+    private volatile boolean autosaved = true;
     private boolean timingTagSanityTouched = false;
     private boolean isLoading = false;
     private String encoding = null;
@@ -129,6 +129,9 @@ public class YassTable extends JTable {
 
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     private static final int ALIGN_TO_MELODY_RENDER_SHIFT_SEMITONES = 0;
+    // When a note's exact span has no in-band pitch (e.g. a short note on a consonant transient),
+    // widen the pitch-histogram window by this much on each side to pick up the nearby sung note.
+    private static final int ALIGN_PITCH_WIDEN_MS = 250;
     private static final int SEMITONES_PER_OCTAVE = 12;
     private static final int RECORDING_OUTLIER_HIGH_PITCH = 24; // C6 relative to C4
     private static final int RECORDING_OUTLIER_LOW_PITCH = -12; // C3 relative to C4
@@ -2217,18 +2220,22 @@ public class YassTable extends JTable {
         if (removeRelative) {
             removeRelative();
         }
-        YassTable verify = new YassTable();
-        verify.init(prop);
-        verify.loadFile(filename);
-        if (!equalsData(verify)) {
-            LOGGER.info("###############################################");
-            LOGGER.info("Write Error: Written data could not be verified.");
-            LOGGER.info("File: " + filename);
-            LOGGER.info("Encoding: " + encoding);
-            LOGGER.info("###############################################");
-            JOptionPane.showMessageDialog(YassUtils.resolveDialogOwner(this),
-                                          "<html>Write Error: Written data could not be verified.<br>File: "
-                                                  + filename, "Error", JOptionPane.ERROR_MESSAGE);
+        // Autosave (.bak) skips verify-reload: re-reading and comparing against the
+        // live table races with concurrent edits and produced spurious dialogs.
+        if (!filename.endsWith(".bak")) {
+            YassTable verify = new YassTable();
+            verify.init(prop);
+            verify.loadFile(filename);
+            if (!equalsData(verify)) {
+                LOGGER.info("###############################################");
+                LOGGER.info("Write Error: Written data could not be verified.");
+                LOGGER.info("File: " + filename);
+                LOGGER.info("Encoding: " + encoding);
+                LOGGER.info("###############################################");
+                JOptionPane.showMessageDialog(YassUtils.resolveDialogOwner(this),
+                                              "<html>Write Error: Written data could not be verified.<br>File: "
+                                                      + filename, "Error", JOptionPane.ERROR_MESSAGE);
+            }
         }
         if (prop.getBooleanProperty("usdbsyncer-always-pin")) {
             pinUsdbSyncer();
@@ -4873,7 +4880,14 @@ public class YassTable extends JTable {
         Map<Integer, Integer> histogram = computePitchHistogramForRow(row, pitchData);
         MusicalKeyEnum commentKey = getPreferredAlignmentKey();
         if (histogram.isEmpty()) {
-            return null;
+            // A short or slightly mis-timed note can fall entirely on a consonant transient that the
+            // pitch-band filter removed, leaving no in-band pitch in its exact span. Widen the search
+            // window and retry so the note picks up the nearby sung fundamental instead of being left
+            // at its default height.
+            histogram = computePitchHistogramForRow(row, pitchData, ALIGN_PITCH_WIDEN_MS);
+            if (histogram.isEmpty()) {
+                return null;
+            }
         }
         return histogram.entrySet().stream()
                 .max((left, right) -> {
@@ -4897,12 +4911,18 @@ public class YassTable extends JTable {
     }
 
     private Map<Integer, Integer> computePitchHistogramForRow(YassRow row, List<PitchDetector.PitchData> pitchData) {
+        return computePitchHistogramForRow(row, pitchData, 0);
+    }
+
+    private Map<Integer, Integer> computePitchHistogramForRow(YassRow row,
+                                                              List<PitchDetector.PitchData> pitchData,
+                                                              int padMs) {
         Map<Integer, Integer> histogram = new HashMap<>();
         if (row == null || !row.isNote() || pitchData == null || pitchData.isEmpty()) {
             return histogram;
         }
-        double noteStartMs = beatToMs(row.getBeatInt());
-        double noteEndMs = beatToMs(row.getBeatInt() + row.getLengthInt());
+        double noteStartMs = beatToMs(row.getBeatInt()) - padMs;
+        double noteEndMs = beatToMs(row.getBeatInt() + row.getLengthInt()) + padMs;
         for (PitchDetector.PitchData pd : pitchData) {
             double frameMs = pd.time() * 1000.0;
             if (frameMs >= noteStartMs && frameMs < noteEndMs) {
@@ -10179,7 +10199,7 @@ public class YassTable extends JTable {
         int periodMillis = Math.min(period, 600) * 1000;
         LOGGER.info("Autosave initialized with " + Math.min(period, 600) + "s intervals.");
         YassAutoSave autoSave = new YassAutoSave(this);
-        timer.scheduleAtFixedRate(autoSave, 30000, periodMillis);
+        timer.schedule(autoSave, 30000, periodMillis);
     }
 
     public void removeAutoSave() {

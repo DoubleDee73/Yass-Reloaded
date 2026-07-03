@@ -50,6 +50,26 @@ shift can only fix a uniform offset.
 The correction is stored with the song so it travels with the `.txt` file. Other
 song comment data is preserved.
 
+## Quick Adjust from the Toolbar
+
+Once a song has a correction, a small **cents box** appears next to the key icon
+in the editor toolbar (for example `+23 ct`). It is a fast way to nudge the
+correction without reopening the dialog.
+
+- The box is **only shown when the song has a non-zero correction**. It appears
+  after you apply a value in the dialog and disappears when the correction is
+  cleared.
+- Adjust the value with the up/down arrows or by typing.
+- The change is applied when you press **Enter** or click away (focus loss).
+  Each apply re-converts the playback audio, so adjusting is "set, then hear"
+  rather than continuous — this matches the dialog's live preview.
+- Setting the value to **0** removes the correction; the box then hides itself.
+- Values follow the same convention as the dialog: negative is flat, positive is
+  sharp, in cents (`100 cents = 1 semitone`).
+
+The box and the dialog edit the same stored value, so changes made in one are
+reflected in the other.
+
 ## Hearing the Correction
 
 Hearing the correction happens in two stages.

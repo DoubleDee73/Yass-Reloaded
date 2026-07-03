@@ -87,6 +87,18 @@ public class TranscriptNoteRebuildService {
             LOGGER.info("[TranscriptAlignToMelody] pitchFrames=" + pitchData.size()
                     + " notes=" + rebuiltNotes.size()
                     + " changedNotes=" + changedNotes);
+            // Reclaim unused stable-pitch runs (split held words / move notes off transients), then
+            // extend notes that end too early into their trailing stable signal. Re-align after any
+            // change so the affected notes get correct pitch.
+            int reclaimed = reclaimUnusedRuns(table, pitchData);
+            int extendedNotes = extendNotesIntoTrailingSignal(table, pitchData);
+            if (reclaimed > 0 || extendedNotes > 0) {
+                List<YassRow> refreshedNotes = collectNoteRows(table);
+                table.alignToMelody(refreshedNotes, pitchData, YassTable.AlignToMelodyContext.createWizard());
+                LOGGER.info("[TranscriptReclaim] reclaimed " + reclaimed
+                        + " run(s), extended " + extendedNotes
+                        + " note(s); re-aligned " + refreshedNotes.size() + " notes.");
+            }
         } else {
             LOGGER.info("[TranscriptAlignToMelody] skipped pitchFrames="
                     + (pitchData == null ? 0 : pitchData.size())
@@ -773,6 +785,139 @@ public class TranscriptNoteRebuildService {
             this.beat = beat;
             this.length = Math.max(MIN_NOTE_LENGTH, length);
             this.text = text;
+        }
+    }
+
+    private List<YassRow> collectNoteRows(YassTable table) {
+        List<YassRow> rows = new ArrayList<>();
+        for (int index = 0; index < table.getRowCount(); index++) {
+            YassRow row = table.getRowAt(index);
+            if (row != null && row.isNote()) {
+                rows.add(row);
+            }
+        }
+        return rows;
+    }
+
+    private int reclaimUnusedRuns(YassTable table, List<PitchDetector.PitchData> pitchData) {
+        try {
+            YassTableNoteLine line = new YassTableNoteLine(table);
+            if (line.notes().isEmpty()) {
+                return 0;
+            }
+            int applied = new NoteReclaimService().reclaim(line, pitchData);
+            if (applied > 0) {
+                line.writeBack();
+            }
+            return applied;
+        } catch (RuntimeException ex) {
+            LOGGER.log(java.util.logging.Level.INFO, "[TranscriptReclaim] skipped due to error", ex);
+            return 0;
+        }
+    }
+
+    private int extendNotesIntoTrailingSignal(YassTable table, List<PitchDetector.PitchData> pitchData) {
+        try {
+            YassTableNoteLine line = new YassTableNoteLine(table);
+            if (line.notes().isEmpty()) {
+                return 0;
+            }
+            int extended = new NoteExtensionService().extend(line, pitchData);
+            if (extended > 0) {
+                line.writeBack();
+            }
+            return extended;
+        } catch (RuntimeException ex) {
+            LOGGER.log(java.util.logging.Level.INFO, "[TranscriptExtend] skipped due to error", ex);
+            return 0;
+        }
+    }
+
+    /**
+     * Bridges a {@link YassTable}'s note rows to {@link NoteReclaimService.NoteLine}. Notes are read
+     * into a mutable model; {@link #writeBack()} rebuilds the table's note rows (page breaks and
+     * headers are preserved) from the possibly split/moved model.
+     */
+    private static final class YassTableNoteLine implements NoteReclaimService.NoteLine {
+        private final YassTable table;
+        private final List<NoteReclaimService.Note> notes = new ArrayList<>();
+        private final List<Integer> rowIndices = new ArrayList<>();
+
+        private YassTableNoteLine(YassTable table) {
+            this.table = table;
+            for (int index = 0; index < table.getRowCount(); index++) {
+                YassRow row = table.getRowAt(index);
+                if (row != null && row.isNote()) {
+                    int origin = notes.size();
+                    notes.add(new NoteReclaimService.Note(row.getBeatInt(), row.getLengthInt(),
+                            row.getHeightInt(), row.getText(), origin));
+                    rowIndices.add(index);
+                }
+            }
+        }
+
+        @Override
+        public List<NoteReclaimService.Note> notes() {
+            return notes;
+        }
+
+        @Override
+        public int msToBeat(double ms) {
+            return table.msToBeat(ms);
+        }
+
+        @Override
+        public double beatToMs(int beat) {
+            return table.beatToMs(beat);
+        }
+
+        @Override
+        public List<String> hyphenate(String bareWord) {
+            if (table.getHyphenator() == null || StringUtils.isBlank(bareWord)) {
+                return List.of(StringUtils.defaultString(bareWord));
+            }
+            String hyphenated = table.getHyphenator().hyphenateWord(bareWord);
+            if (!StringUtils.contains(hyphenated, SOFT_HYPHEN)) {
+                return List.of(bareWord);
+            }
+            List<String> syllables = new ArrayList<>();
+            for (String syllable : hyphenated.split(SOFT_HYPHEN)) {
+                if (StringUtils.isNotBlank(syllable)) {
+                    syllables.add(syllable);
+                }
+            }
+            return syllables.isEmpty() ? List.of(bareWord) : syllables;
+        }
+
+        private void writeBack() {
+            // Page-break safe: update each surviving original note row in place, then insert any
+            // split-created notes immediately after their origin row. This never moves notes across
+            // page breaks (the reclaim only edits a note or inserts one next to its sibling).
+            for (NoteReclaimService.Note note : notes) {
+                if (note.originIndex >= 0 && note.originIndex < rowIndices.size()) {
+                    YassRow row = table.getRowAt(rowIndices.get(note.originIndex));
+                    if (row != null && row.isNote()) {
+                        row.setBeat(note.beat);
+                        row.setLength(Math.max(1, note.length));
+                        row.setText(note.text);
+                    }
+                }
+            }
+            // Insert split notes after their origin row. Do it back-to-front so earlier row indices
+            // stay valid while inserting.
+            List<NoteReclaimService.Note> inserted = new ArrayList<>();
+            for (NoteReclaimService.Note note : notes) {
+                if (note.originIndex < 0 && note.splitFromOrigin >= 0) {
+                    inserted.add(note);
+                }
+            }
+            inserted.sort((a, b) -> Integer.compare(b.splitFromOrigin, a.splitFromOrigin));
+            for (NoteReclaimService.Note note : inserted) {
+                int originRow = rowIndices.get(note.splitFromOrigin);
+                YassRow row = new YassRow(":", Integer.toString(note.beat),
+                        Integer.toString(Math.max(1, note.length)), Integer.toString(note.height), note.text);
+                table.getModelData().insertElementAt(row, originRow + 1);
+            }
         }
     }
 }

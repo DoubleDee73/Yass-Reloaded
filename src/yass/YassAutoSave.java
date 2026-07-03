@@ -19,16 +19,18 @@
 
 package yass;
 
+import javax.swing.SwingUtilities;
 import java.util.Date;
 import java.util.List;
 import java.util.TimerTask;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class YassAutoSave extends TimerTask {
     private final static Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
-    private YassTable yassTable;
-    private boolean locked;
-    
+    private final YassTable yassTable;
+    private volatile boolean locked;
+
     public YassAutoSave(YassTable yassTable) {
         this.yassTable = yassTable;
         locked = false;
@@ -40,11 +42,25 @@ public class YassAutoSave extends TimerTask {
             return;
         }
         locked = true;
+        try {
+            // Run the write on the EDT so it cannot interleave with active edits.
+            // The .bak path skips verify-reload and dialogs, so this stays cheap.
+            SwingUtilities.invokeAndWait(this::saveBackup);
+        } catch (Exception e) {
+            LOGGER.log(Level.INFO, "Autosave failed: " + e.getMessage(), e);
+        } finally {
+            locked = false;
+        }
+    }
+
+    private void saveBackup() {
+        if (yassTable.isSaved() || yassTable.isAutosaved()) {
+            return;
+        }
         List<YassTable> saved = yassTable.getActions().mergeTableAndSave(yassTable, true);
         if (!saved.isEmpty()) {
             yassTable.setAutosaved(true);
             LOGGER.info(new Date() + ": Performed autosave " + saved.get(0).getDirFilename() + ".bak");
         }
-        locked = false;
     }
 }

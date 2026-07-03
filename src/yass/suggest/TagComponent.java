@@ -41,24 +41,33 @@ public class TagComponent extends JPanel {
     public TagComponent(String text, Consumer<String> removeCallback,
                         Color fontColor, Color backgroundColor) {
         this.text = text;
-        setLayout(new BorderLayout(4, 0));
+        // Left-aligned flow so the label and the remove button always sit snug together; a stretching
+        // layout (e.g. BorderLayout CENTER/EAST) pushed the "x" to the far edge on lower-DPI screens.
+        setLayout(new FlowLayout(FlowLayout.LEFT, 4, 0));
         setOpaque(false);
-        setBorder(new EmptyBorder(0, 5, 0, 4));
+        setBorder(new EmptyBorder(1, 8, 1, 6));
 
         this.fontColor = fontColor;
         this.backgroundColor = backgroundColor;
         JLabel label = new JLabel(text);
         label.setForeground(this.fontColor);
 
-        JButton removeButton = new JButton("x");
+        JButton removeButton = new JButton("×");   // multiplication sign renders as a clean, centered ×
         removeButton.setMargin(new Insets(0, 0, 0, 0));
+        removeButton.setBorder(null);
         removeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         removeButton.setOpaque(false);
         removeButton.setContentAreaFilled(false);
         removeButton.setBorderPainted(false);
         removeButton.setFocusPainted(false);
-        removeButton.setForeground(Color.WHITE);
+        removeButton.setForeground(this.fontColor);
         removeButton.setFont(getFont().deriveFont(Font.BOLD));
+        // Keep the button tight to its glyph so it does not reserve a wide default button width.
+        int glyphWidth = removeButton.getFontMetrics(removeButton.getFont()).stringWidth("×") + 2;
+        int glyphHeight = label.getPreferredSize().height;
+        Dimension removeSize = new Dimension(glyphWidth, glyphHeight);
+        removeButton.setPreferredSize(removeSize);
+        removeButton.setMinimumSize(removeSize);
         removeButton.addActionListener(e -> removeCallback.accept(text));
 
         // Hover effect for the remove button
@@ -70,12 +79,12 @@ public class TagComponent extends JPanel {
 
             @Override
             public void mouseExited(MouseEvent e) {
-                removeButton.setForeground(Color.WHITE);
+                removeButton.setForeground(fontColor);
             }
         });
 
-        add(label, BorderLayout.CENTER);
-        add(removeButton, BorderLayout.EAST);
+        add(label);
+        add(removeButton);
     }
 
     @Override

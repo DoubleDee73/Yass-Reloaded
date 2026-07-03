@@ -73,6 +73,7 @@ import yass.wizard.WizardTranscriptionState;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.event.HyperlinkEvent;
+import javax.swing.event.ListSelectionListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.plaf.basic.BasicComboBoxRenderer;
 import javax.swing.text.html.HTMLDocument;
@@ -195,6 +196,7 @@ public class YassActions implements DropTargetListener {
     private JCheckBoxMenuItem playAllVideoCBI = null;
     private JCheckBoxMenuItem alignCBI = null;
     private JCheckBoxMenuItem absolutePitchViewCBI = null;
+    private JCheckBoxMenuItem shiftArrowEscalationCBI = null;
     private JCheckBoxMenuItem showCopyCBI = null;
     private JToggleButton filterAll = null;
     private JButton playToggle;
@@ -214,6 +216,9 @@ public class YassActions implements DropTargetListener {
     private JComboBox<String> plBox = null, filter = null;
     private JTextField filterEditor = null;
     private JComponent editTools = null;
+    private JSpinner pitchShiftCentsSpinner = null;
+    private JComponent pitchShiftCentsBox = null;
+    private boolean updatingPitchShiftSpinner = false;
     private boolean soonStarting = false;
     private boolean separationRunning = false;
     private SeparationJob trackedSeparationJob = null;
@@ -234,6 +239,7 @@ public class YassActions implements DropTargetListener {
     private final EditorKeyBindingRegistry editorKeyBindingRegistry = new EditorKeyBindingRegistry();
     private final KeySequenceTracker editorKeySequenceTracker = new KeySequenceTracker(350L);
     private EditorKeyDispatcher editorKeyDispatcher;
+    private MicPitchSession micPitchSession;
 
     private record EditorShortcutBinding(KeyStroke keyStroke, String actionKey, Action action, KeyStroke accelerator) {
     }
@@ -326,7 +332,8 @@ public class YassActions implements DropTargetListener {
                 () -> currentView == VIEW_EDIT,
                 this::buildEditorInputContext,
                 editorKeyBindingRegistry,
-                editorKeySequenceTracker
+                editorKeySequenceTracker,
+                () -> prop == null || prop.getBooleanProperty("shift-arrow-escalation")
         );
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(editorKeyDispatcher);
     }
@@ -407,6 +414,26 @@ public class YassActions implements DropTargetListener {
             return keyStroke;
         }
         int keyCode = keyStroke.getKeyCode();
+        boolean hasShift = (modifiers & (InputEvent.SHIFT_DOWN_MASK | InputEvent.SHIFT_MASK)) != 0;
+        // Left-edge resize is Ctrl+Left/Right on Win/Linux, but on Mac the usual
+        // Ctrl->Ctrl+Option arrow mapping collides with Mission Control's Spaces
+        // switching, and plain Option+arrow is swallowed by macOS (word-jump) and
+        // never reaches the JVM. Cmd+Shift+Left/Right is delivered cleanly, so map
+        // to that (right-edge resize is Cmd+Left/Right, so the two stay distinct).
+        if (hasCtrl && !hasAlt && !hasShift
+                && (keyCode == KeyEvent.VK_LEFT || keyCode == KeyEvent.VK_RIGHT)) {
+            return KeyStroke.getKeyStroke(keyCode,
+                    InputEvent.META_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK, keyStroke.isOnKeyRelease());
+        }
+        // Pitch up/down is Ctrl+Up/Down (+Shift for octave) on Win/Linux, but on
+        // Mac the Ctrl->Ctrl+Option arrow mapping collides with Mission Control /
+        // App Expose. Map the non-audition pitch shifts (no Alt) to Cmd+Up/Down
+        // and Cmd+Shift+Up/Down, which reach the JVM cleanly.
+        if (hasCtrl && !hasAlt
+                && (keyCode == KeyEvent.VK_UP || keyCode == KeyEvent.VK_DOWN)) {
+            int m = InputEvent.META_DOWN_MASK | (hasShift ? InputEvent.SHIFT_DOWN_MASK : 0);
+            return KeyStroke.getKeyStroke(keyCode, m, keyStroke.isOnKeyRelease());
+        }
         boolean isArrow = keyCode == KeyEvent.VK_LEFT || keyCode == KeyEvent.VK_RIGHT
                 || keyCode == KeyEvent.VK_UP || keyCode == KeyEvent.VK_DOWN;
         int remapped = modifiers
@@ -447,7 +474,10 @@ public class YassActions implements DropTargetListener {
                                           "openFolder", openFolder,
                                           KeyStroke.getKeyStroke(KeyEvent.VK_E, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_MASK)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK), "gotoLibrary", gotoLibrary,
-                                          KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK))
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_F8, 0), "toggleShiftArrowEscalation",
+                                          toggleShiftArrowEscalation,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_F8, 0))
         );
     }
 
@@ -523,7 +553,10 @@ public class YassActions implements DropTargetListener {
                                           KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.ALT_MASK)),
                 new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
                                           "toggleCase", toggleCase,
-                                          KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK))
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_U, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK)),
+                new EditorShortcutBinding(KeyStroke.getKeyStroke(KeyEvent.VK_M, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),
+                                          "setPitchFromMicrophone", setPitchFromMicrophone,
+                                          KeyStroke.getKeyStroke(KeyEvent.VK_M, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK))
         );
     }
 
@@ -1029,6 +1062,35 @@ public class YassActions implements DropTargetListener {
         if (StringUtils.isNotBlank(currentFile)) {
             interruptPlay();
             mp3.openMP3(currentFile);
+            // openMP3 clears the detected pitch list and re-converts the temp WAV
+            // with the new shift. Re-run detection on that shifted WAV so the
+            // pitch lines reappear (now reflecting the corrected pitch).
+            redetectPitchAfterShift();
+        }
+    }
+
+    /**
+     * Re-runs vocal pitch detection on the current (shifted) temp WAV, mirroring
+     * SongHeader.determinePitches, so the detected pitch lines are restored after a
+     * pitch-shift change. Only acts when debug-waveform is on and #VOCALS is the
+     * selected track; otherwise leaves the (empty) list as openMP3 set it.
+     */
+    private void redetectPitchAfterShift() {
+        if (mp3 == null || prop == null || !prop.getBooleanProperty("debug-waveform")) {
+            return;
+        }
+        SongHeader header = sheet == null ? null : sheet.getSongHeader();
+        boolean vocalsSelected = header != null
+                && UltrastarHeaderTag.VOCALS.toString().equals(header.getSelectedAudio());
+        if (!vocalsSelected || mp3.getTempFile() == null) {
+            return;
+        }
+        PitchDetector.PitchDetectionResult result =
+                PitchDetector.detectPitchWithRaw(mp3.getTempFile(), prop, mp3.getKey());
+        mp3.setRawPitchDataList(result.rawPitchData());
+        mp3.setPitchDataList(result.processedPitchData());
+        if (sheet != null) {
+            sheet.repaint();
         }
     }
 
@@ -3295,6 +3357,423 @@ public class YassActions implements DropTargetListener {
             }
         }
     };
+    private final Action setPitchFromMicrophone = new AbstractAction(I18.get("edit_pitch_from_microphone")) {
+        public void actionPerformed(ActionEvent e) {
+            toggleMicPitchCapture();
+        }
+    };
+
+    /** True while a "Set Pitch From Microphone" listen session is active. */
+    public boolean isMicPitchActive() {
+        return micPitchSession != null;
+    }
+
+    /** Same as the Ctrl-Shift-M shortcut: arm mic pitch on the selection, or commit/stop if active. */
+    public void toggleMicPitch() {
+        setPitchFromMicrophone.actionPerformed(null);
+    }
+
+    /** True when repeated Shift-Arrow escalates selection to word/page boundaries. */
+    public boolean isShiftArrowEscalationEnabled() {
+        return prop == null || prop.getBooleanProperty("shift-arrow-escalation");
+    }
+
+    /**
+     * Holds the live state of a "Set Pitch From Microphone" listen session: the
+     * capture service, the note being edited, its original height (for revert),
+     * the active one-octave detection window, an EDT timer that pulls the latest
+     * stable pitch, and a temporary key dispatcher that owns Up/Down/Enter/Esc
+     * while listening.
+     */
+    private final class MicPitchSession {
+        private final YassMicPitchCapture capture = new YassMicPitchCapture();
+        private int[] rows;
+        private int[] originalHeights;
+        private int windowLow;
+        private boolean sawStablePitch;
+        private int lastAppliedHeight;
+        private javax.swing.Timer timer;
+        private KeyEventDispatcher keyDispatcher;
+        private ListSelectionListener selectionListener;
+        private boolean reArming;
+        private String bannerText = "";
+
+        private void bind(int[] rows, int[] originalHeights, int windowLow) {
+            this.rows = rows;
+            this.originalHeights = originalHeights;
+            this.windowLow = windowLow;
+            this.sawStablePitch = false;
+            this.lastAppliedHeight = originalHeights.length > 0 ? originalHeights[0] : 0;
+        }
+    }
+
+    /**
+     * Toggles microphone pitch capture. While off, arms listen mode on the
+     * current note selection. While on, toggling acts as "accept" (the detected
+     * pitch is kept) and turns the mode off.
+     */
+    private void toggleMicPitchCapture() {
+        if (micPitchSession != null) {
+            acceptAndStopMicPitchCapture();
+            return;
+        }
+        if (table == null || lyrics.isEditable() || isFocusInSongHeader() || isFilterEditing()) {
+            return;
+        }
+        int[] selection = selectedNoteRows();
+        if (selection.length == 0) {
+            if (sheet != null) {
+                sheet.setErrorMessage(I18.get("edit_mic_select_one_note"));
+                sheet.repaint();
+            }
+            return;
+        }
+
+        MicPitchSession session = new MicPitchSession();
+        String device = prop != null ? prop.getProperty("control-mic") : null;
+        if (!session.capture.start(device, 0.04, micPitchGain())) {
+            if (sheet != null) {
+                sheet.setErrorMessage(I18.get("edit_mic_no_device"));
+                sheet.repaint();
+            }
+            return;
+        }
+
+        micPitchSession = session;
+        bindMicPitchSelection(session, selection);
+        installMicPitchKeyDispatcher(session);
+        installMicPitchSelectionListener(session);
+        session.timer = new javax.swing.Timer(50, e -> onMicPitchTick());
+        session.timer.start();
+        updateActions();
+        if (sheet != null) {
+            sheet.firePropsChanged();
+        }
+    }
+
+    /** Binds the session to a fresh note selection and resets per-note state. */
+    private void bindMicPitchSelection(MicPitchSession session, int[] rows) {
+        int[] heights = new int[rows.length];
+        int min = Integer.MAX_VALUE;
+        int max = Integer.MIN_VALUE;
+        for (int i = 0; i < rows.length; i++) {
+            heights[i] = table.getRowAt(rows[i]).getHeightInt();
+        }
+        int[] range = pageHeightRange(rows[0]);
+        session.bind(rows, heights, YassMicPitchCapture.octaveWindowLow(range[0], range[1]));
+        // Discard the previous note's buffered readings so the new note keeps its
+        // own pitch until a fresh stable pitch is sung.
+        session.capture.reset();
+        setMicPitchBanner(session, I18.get("edit_mic_listening") + "   " + I18.get("edit_mic_hint"));
+    }
+
+    /** Mic input gain from properties (>= 1); default 4. Higher = more sensitive. */
+    private double micPitchGain() {
+        if (prop == null) {
+            return 4.0;
+        }
+        String s = prop.getProperty("control-mic-sensitivity");
+        if (s == null || s.isBlank()) {
+            return 4.0;
+        }
+        try {
+            return Math.max(1.0, Double.parseDouble(s.trim()));
+        } catch (NumberFormatException e) {
+            return 4.0;
+        }
+    }
+
+    private void setMicPitchBanner(MicPitchSession session, String text) {
+        session.bannerText = text;
+        if (sheet != null) {
+            sheet.setMessage(text);
+            sheet.repaint();
+        }
+    }
+
+    private void onMicPitchTick() {
+        MicPitchSession session = micPitchSession;
+        if (session == null) {
+            return;
+        }
+        // Don't mutate notes or repaint the sheet while the playhead is running;
+        // live tracking resumes when playback stops.
+        if (mp3 != null && mp3.isPlaying()) {
+            return;
+        }
+        // Re-assert the banner: other components clear the sheet message (e.g. on
+        // mouse press or after playback), so keep restoring it while armed.
+        if (sheet != null && !session.bannerText.equals(sheet.getMessage())) {
+            sheet.setMessage(session.bannerText);
+            sheet.repaint();
+        }
+        OptionalInt pitchClass = session.capture.stablePitchClass();
+        if (pitchClass.isEmpty()) {
+            return;
+        }
+        int height = YassMicPitchCapture.resolveHeight(pitchClass.getAsInt(), session.windowLow);
+        session.sawStablePitch = true;
+        applyMicPitchHeight(session, height);
+    }
+
+    /** Applies a live (undo-suppressed) height to every note in the selection. */
+    private void applyMicPitchHeight(MicPitchSession session, int height) {
+        session.lastAppliedHeight = height;
+        boolean oldPrevent = table.getPreventUndo();
+        table.setPreventUndo(true);
+        for (int row : session.rows) {
+            YassRow r = table.getRowAt(row);
+            if (r != null && r.isNote()) {
+                r.setHeight(height);
+            }
+        }
+        table.setPreventUndo(oldPrevent);
+        if (sheet != null) {
+            session.bannerText = I18.get("edit_mic_detected") + " " + sheet.formatHeightName(height)
+                    + "   " + I18.get("edit_mic_hint");
+            sheet.setMessage(session.bannerText);
+            sheet.init();
+            sheet.update();
+            sheet.repaint();
+        }
+    }
+
+    private void shiftMicPitchWindow(int octaves) {
+        MicPitchSession session = micPitchSession;
+        if (session == null) {
+            return;
+        }
+        session.windowLow += octaves * 12;
+        OptionalInt pitchClass = session.capture.stablePitchClass();
+        if (pitchClass.isPresent()) {
+            int height = YassMicPitchCapture.resolveHeight(pitchClass.getAsInt(), session.windowLow);
+            session.sawStablePitch = true;
+            applyMicPitchHeight(session, height);
+        }
+    }
+
+    /**
+     * Commits the detected pitch for the currently bound notes as a single undo
+     * step. No-op (notes left at their original height) if no stable pitch was
+     * detected. Does not tear the session down.
+     */
+    private void commitMicPitchSelection(MicPitchSession session) {
+        if (!session.sawStablePitch) {
+            // restore originals quietly; nothing was really chosen
+            restoreMicPitchOriginals(session);
+            return;
+        }
+        boolean oldPrevent = table.getPreventUndo();
+        table.setPreventUndo(true);
+        for (int i = 0; i < session.rows.length; i++) {
+            YassRow r = table.getRowAt(session.rows[i]);
+            if (r != null && r.isNote()) {
+                r.setHeight(session.originalHeights[i]);
+            }
+        }
+        table.setPreventUndo(false);
+        for (int row : session.rows) {
+            YassRow r = table.getRowAt(row);
+            if (r != null && r.isNote()) {
+                r.setHeight(session.lastAppliedHeight);
+            }
+        }
+        int lo = session.rows[0];
+        int hi = session.rows[session.rows.length - 1];
+        table.fireTableRowsUpdated(Math.min(lo, hi), Math.max(lo, hi));
+        table.setPreventUndo(oldPrevent);
+    }
+
+    /** Toggle-off / move-away path: accept the pitch, stop, clear the banner. */
+    private void acceptAndStopMicPitchCapture() {
+        MicPitchSession session = micPitchSession;
+        if (session == null) {
+            return;
+        }
+        teardownMicPitchSession(session);
+        commitMicPitchSelection(session);
+        clearMicPitchBanner();
+        updateActions();
+    }
+
+    private void restoreMicPitchOriginals(MicPitchSession session) {
+        boolean oldPrevent = table.getPreventUndo();
+        table.setPreventUndo(true);
+        for (int i = 0; i < session.rows.length; i++) {
+            YassRow r = table.getRowAt(session.rows[i]);
+            if (r != null && r.isNote()) {
+                r.setHeight(session.originalHeights[i]);
+            }
+        }
+        table.setPreventUndo(oldPrevent);
+        if (sheet != null) {
+            sheet.init();
+            sheet.update();
+            sheet.repaint();
+        }
+    }
+
+    private void clearMicPitchBanner() {
+        if (sheet != null) {
+            sheet.setMessage("");
+            sheet.init();
+            sheet.update();
+            sheet.repaint();
+        }
+    }
+
+    private void teardownMicPitchSession(MicPitchSession session) {
+        micPitchSession = null;
+        if (session.timer != null) {
+            session.timer.stop();
+        }
+        if (session.keyDispatcher != null) {
+            KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(session.keyDispatcher);
+        }
+        if (session.selectionListener != null && table != null) {
+            table.getSelectionModel().removeListSelectionListener(session.selectionListener);
+        }
+        session.capture.stop();
+        if (sheet != null) {
+            sheet.firePropsChanged();
+        }
+    }
+
+    /**
+     * Re-arm on selection change: commit the notes currently bound, then bind to
+     * the new note selection and keep listening. If the new selection has no
+     * note rows, accept and turn the mode off.
+     */
+    private void installMicPitchSelectionListener(MicPitchSession session) {
+        session.selectionListener = e -> {
+            if (e.getValueIsAdjusting() || session.reArming || micPitchSession != session) {
+                return;
+            }
+            // During playback the playhead drives selection changes (and clears
+            // it between notes); those are not user navigation, so ignore them.
+            if (mp3 != null && mp3.isPlaying()) {
+                return;
+            }
+            int[] selection = selectedNoteRows();
+            if (Arrays.equals(selection, session.rows)) {
+                return;
+            }
+            session.reArming = true;
+            try {
+                commitMicPitchSelection(session);
+                if (selection.length == 0) {
+                    acceptAndStopMicPitchCapture();
+                } else {
+                    bindMicPitchSelection(session, selection);
+                    // Play the newly selected note's audio (no MIDI/clicks) so the
+                    // user can hear the target pitch before singing.
+                    playMicPitchAudio(selection[0]);
+                }
+            } finally {
+                session.reArming = false;
+            }
+        };
+        table.getSelectionModel().addListSelectionListener(session.selectionListener);
+    }
+
+    private void installMicPitchKeyDispatcher(MicPitchSession session) {
+        session.keyDispatcher = e -> {
+            if (e.getID() != KeyEvent.KEY_PRESSED) {
+                return false;
+            }
+            switch (e.getKeyCode()) {
+                case KeyEvent.VK_UP -> {
+                    shiftMicPitchWindow(+1);
+                    e.consume();
+                    return true;
+                }
+                case KeyEvent.VK_DOWN -> {
+                    shiftMicPitchWindow(-1);
+                    e.consume();
+                    return true;
+                }
+                case KeyEvent.VK_ESCAPE -> {
+                    // Esc accepts the detected pitch and exits (same as toggling
+                    // off). To discard, use undo afterwards.
+                    acceptAndStopMicPitchCapture();
+                    e.consume();
+                    return true;
+                }
+                default -> {
+                    return false;
+                }
+            }
+        };
+        KeyboardFocusManager kfm = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+        kfm.addKeyEventDispatcher(session.keyDispatcher);
+        // Dispatchers fire in registration order and the permanent editor
+        // dispatcher (registered at startup) binds Esc to interruptPlay, so it
+        // would consume Esc before the mic dispatcher. Re-register it after the
+        // mic dispatcher so the mic gesture sees Up/Down/Esc first while armed.
+        if (editorKeyDispatcher != null) {
+            kfm.removeKeyEventDispatcher(editorKeyDispatcher);
+            kfm.addKeyEventDispatcher(editorKeyDispatcher);
+        }
+    }
+
+    /** Returns the selected rows that are notes, in ascending order. */
+    private int[] selectedNoteRows() {
+        if (table == null) {
+            return new int[0];
+        }
+        int[] rows = table.getSelectedRows();
+        if (rows == null || rows.length == 0) {
+            return new int[0];
+        }
+        int[] tmp = new int[rows.length];
+        int n = 0;
+        for (int row : rows) {
+            YassRow r = table.getRowAt(row);
+            if (r != null && r.isNote()) {
+                tmp[n++] = row;
+            }
+        }
+        return Arrays.copyOf(tmp, n);
+    }
+
+    /**
+     * Returns {min,max} note height across the page containing {@code row}, by
+     * scanning to the surrounding page breaks. Falls back to the row's own
+     * height if no neighbouring notes are found.
+     */
+    private int[] pageHeightRange(int row) {
+        int min = Integer.MAX_VALUE;
+        int max = Integer.MIN_VALUE;
+        int n = table.getRowCount();
+        int start = row;
+        while (start > 0) {
+            YassRow prev = table.getRowAt(start - 1);
+            if (prev == null || prev.isPageBreak() || prev.isEnd()) {
+                break;
+            }
+            start--;
+        }
+        for (int i = start; i < n; i++) {
+            YassRow r = table.getRowAt(i);
+            if (r == null) {
+                break;
+            }
+            if (i != start && (r.isPageBreak() || r.isEnd())) {
+                break;
+            }
+            if (r.isNote()) {
+                int h = r.getHeightInt();
+                min = Math.min(min, h);
+                max = Math.max(max, h);
+            }
+        }
+        if (min == Integer.MAX_VALUE) {
+            int h = table.getRowAt(row).getHeightInt();
+            return new int[]{h, h};
+        }
+        return new int[]{min, max};
+    }
+
     private final Action incLeft = new AbstractAction(I18.get("edit_length_left_inc")) {
         public void actionPerformed(ActionEvent e) {
             if (isFocusInSongHeader()) {
@@ -4617,6 +5096,11 @@ public class YassActions implements DropTargetListener {
             }
             if (sheet != null) {
                 sheet.repaint();
+                // Recenter the absolute pitch view on the rebuilt notes so it does not stay parked
+                // at the previous (often octave-0) scroll position. Deferred to a second EDT cycle
+                // so gotoPageNumber's zoomPage()/revalidate() layout is applied first; otherwise the
+                // centering math runs against a stale viewport extent and has no effect.
+                SwingUtilities.invokeLater(sheet::autoCenterAbsolutePitchView);
             }
         });
     }
@@ -4631,11 +5115,18 @@ public class YassActions implements DropTargetListener {
             return Collections.emptyList();
         }
         try {
+            // Note heights come from the real aubio pitch track via alignToMelody's own histogram /
+            // window logic. Apply the same dominant-pitch-band filter used by the timing path so
+            // octave-error frames (consonant transients, breath) cannot pull a note two octaves above
+            // the voice; the in-band fundamental for that note survives and wins the histogram.
             List<PitchDetector.PitchData> rawPitchData =
-                    PitchDetector.detectPitchWithRaw(timingAudioFile, prop, MusicalKeyEnum.UNDEFINED).rawPitchData();
-            LOGGER.info("[TranscriptAlignToMelody] loaded pitch frames=" + rawPitchData.size()
-                    + " from " + timingAudioFile.getName());
-            return rawPitchData;
+                    PitchDetector.detectPitchWithRaw(timingAudioFile, prop, MusicalKeyEnum.UNDEFINED)
+                            .rawPitchData();
+            List<PitchDetector.PitchData> pitchData =
+                    TranscriptTimingRefinementService.dominantPitchBandFilter(rawPitchData);
+            LOGGER.info("[TranscriptAlignToMelody] loaded pitch frames=" + pitchData.size()
+                    + " (from " + rawPitchData.size() + " raw) from " + timingAudioFile.getName());
+            return pitchData;
         } catch (Exception ex) {
             LOGGER.log(Level.INFO,
                     "[TranscriptTimingRefinement] skipping post-rebuild alignToMelody because pitch detection failed for "
@@ -4658,6 +5149,9 @@ public class YassActions implements DropTargetListener {
             return result;
         }
         try {
+            // Refine transcript word timing with the onset/energy heuristics on band-filtered vocal
+            // frames (the dominant-pitch-band filter inside refineForAlignment removes octave-error
+            // noise before onset/window detection).
             PitchDetector.PitchDetectionResult pitchDetection =
                     PitchDetector.detectPitchWithRaw(timingAudioFile, prop, MusicalKeyEnum.UNDEFINED);
             OpenAiTranscriptionResult refined = refinementService.refineForAlignment(result,
@@ -5598,6 +6092,31 @@ public class YassActions implements DropTargetListener {
             setAbsolutePitchView(enabled, true);
         }
     };
+    private final Action toggleShiftArrowEscalation = new AbstractAction(I18.get("edit_shift_arrow_escalation")) {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (lyrics.isEditable() || songList.isEditing()
+                    || isFilterEditing() || isFocusInSongHeader()) {
+                return;
+            }
+            setShiftArrowEscalation(!prop.getBooleanProperty("shift-arrow-escalation"));
+        }
+    };
+
+    /** Persists the escalation flag and refreshes the menu checkbox and status bar. */
+    public void setShiftArrowEscalation(boolean enabled) {
+        if (prop == null) {
+            return;
+        }
+        prop.setProperty("shift-arrow-escalation", String.valueOf(enabled));
+        prop.store();
+        if (shiftArrowEscalationCBI != null) {
+            shiftArrowEscalationCBI.setState(enabled);
+        }
+        if (sheet != null) {
+            sheet.firePropsChanged();
+        }
+    }
 
     public YassActions(YassSheet s, YassPlayer m, YassLyrics lyr) {
         sheet = s;
@@ -6856,6 +7375,8 @@ public class YassActions implements DropTargetListener {
         menu.add(selectAll);
         menu.add(selectNextBeat);
         menu.add(selectPrevBeat);
+        menu.add(shiftArrowEscalationCBI = new JCheckBoxMenuItem(toggleShiftArrowEscalation));
+        shiftArrowEscalationCBI.setState(prop.getBooleanProperty("shift-arrow-escalation"));
         menu.addSeparator();
         menu.add(decLeft);
         menu.add(incLeft);
@@ -6871,6 +7392,7 @@ public class YassActions implements DropTargetListener {
         menu.add(incHeightOctave);
         menu.add(decHeight);
         menu.add(decHeightOctave);
+        menu.add(setPitchFromMicrophone);
         menu.addSeparator();
         menu.add(copyRows);
         menu.add(pasteRows);
@@ -7436,7 +7958,85 @@ public class YassActions implements DropTargetListener {
         b.setIcon(getIcon("key24Icon"));
         b.setFocusable(false);
         b.setOpaque(false);
+
+        t.add(createPitchShiftCentsBox());
         return t;
+    }
+
+    /**
+     * A compact "+N ct" spinner shown next to the key icon for quick manual
+     * adjustment of the global pitch-shift correction. Visible only when the song
+     * has a non-zero correction (toggled in {@link #updateActions()}). Editing
+     * commits on Enter / focus loss and re-converts playback, mirroring the dialog.
+     */
+    private JComponent createPitchShiftCentsBox() {
+        pitchShiftCentsSpinner = new JSpinner(new SpinnerNumberModel(0, -1200, 1200, 1));
+        JSpinner.NumberEditor editor = new JSpinner.NumberEditor(pitchShiftCentsSpinner, "+0;-0");
+        pitchShiftCentsSpinner.setEditor(editor);
+        editor.getTextField().setColumns(4);
+        pitchShiftCentsSpinner.setToolTipText(I18.get("pitch_shift_cents_tooltip"));
+        pitchShiftCentsSpinner.setFocusable(true);
+        // Commit on Enter or focus loss only (each commit re-converts the audio),
+        // so spinner steps and typing can be done freely before applying.
+        JFormattedTextField tf = editor.getTextField();
+        tf.addActionListener(e -> commitPitchShiftCentsSpinner());
+        tf.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent e) {
+                commitPitchShiftCentsSpinner();
+            }
+        });
+
+        JPanel box = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
+        box.setOpaque(false);
+        box.add(pitchShiftCentsSpinner);
+        box.add(new JLabel(I18.get("pitch_shift_cents_unit")));
+        box.setMaximumSize(box.getPreferredSize());
+        pitchShiftCentsBox = box;
+        pitchShiftCentsBox.setVisible(false);
+        return box;
+    }
+
+    private void commitPitchShiftCentsSpinner() {
+        if (updatingPitchShiftSpinner || table == null || pitchShiftCentsSpinner == null) {
+            return;
+        }
+        try {
+            pitchShiftCentsSpinner.commitEdit();
+        } catch (java.text.ParseException ex) {
+            return; // keep the last valid model value on bad input
+        }
+        double cents = ((Number) pitchShiftCentsSpinner.getValue()).doubleValue();
+        double current = currentPitchShiftCents();
+        if (cents == current) {
+            return;
+        }
+        if (cents == 0.0) {
+            table.removePitchShiftCents();
+        } else {
+            table.setPitchShiftCents(cents);
+        }
+        table.setSaved(false);
+        applyPitchShiftToPlayback();
+        updateActions();
+        if (sheet != null) {
+            sheet.init();
+        }
+    }
+
+    private void refreshPitchShiftCentsBox() {
+        if (pitchShiftCentsBox == null || pitchShiftCentsSpinner == null) {
+            return;
+        }
+        double cents = currentPitchShiftCents();
+        boolean show = table != null && cents != 0.0;
+        pitchShiftCentsBox.setVisible(show);
+        int rounded = (int) Math.round(cents);
+        if (show && ((Number) pitchShiftCentsSpinner.getValue()).intValue() != rounded) {
+            updatingPitchShiftSpinner = true;
+            pitchShiftCentsSpinner.setValue(rounded);
+            updatingPitchShiftSpinner = false;
+        }
     }
 
 
@@ -8732,6 +9332,7 @@ public class YassActions implements DropTargetListener {
         togglePageBreak.setEnabled(isOpened);
         insertNote.setEnabled(isOpened);
         insertNoteWithVocalPitch.setEnabled(isOpened);
+        setPitchFromMicrophone.setEnabled(isOpened);
         removeRows.setEnabled(isOpened);
         removeRowsWithLyrics.setEnabled(isOpened);
         absolute.setEnabled(isOpened);
@@ -8778,6 +9379,7 @@ public class YassActions implements DropTargetListener {
         removeReverbMvsep.setEnabled(hasMvsepApiToken() && isOpened && !separationRunning && hasCurrentVocalsFile());
         autoCorrectTransposed.setEnabled(isOpened);
         autoCorrectSpacing.setEnabled(isOpened);
+        refreshPitchShiftCentsBox();
 
         if (gapSpinner != null) {
             gapSpinner.setEnabled(isOpened);
@@ -9926,6 +10528,23 @@ public class YassActions implements DropTargetListener {
             mp3.setAudioEnabled(true);
         }
         mp3.playSelection(pos < 0 ? inout[0] : pos, inout[1], clicks, playTimebase);
+    }
+
+    /** Plays the given note row's audio only (no MIDI, no clicks). */
+    private void playMicPitchAudio(int row) {
+        if (table == null || mp3 == null || sheet == null) {
+            return;
+        }
+        YassRow r = table.getRowAt(row);
+        if (r == null || !r.isNote()) {
+            return;
+        }
+        long[] inout = new long[2];
+        startPlaying();
+        table.getSelection(row, row, inout, null, false);
+        mp3.setMIDIEnabled(false);
+        mp3.setAudioEnabled(true);
+        mp3.playSelection(inout[0], inout[1], null, playTimebase);
     }
 
     private void playSelectionBefore(int mode) {

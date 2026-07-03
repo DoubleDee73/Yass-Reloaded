@@ -16,6 +16,16 @@ public class TranscriptTimingRefinementService {
     private static final Logger LOGGER = Logger.getLogger(Logger.GLOBAL_LOGGER_NAME);
     public static final int MAX_INITIAL_OFFSET_MS = 5_000;
     public static final int LONG_SILENCE_MS = 700;
+    // Vocal-entry detection used when the GAP is unknown (0): a real first sung note rises from
+    // near-silence into strong, sustained energy. Dialog / instrumental bleed before the song lacks
+    // this silence-then-jump shape, so it is skipped. The silence is checked in a window that ends
+    // a little before the candidate (VOCAL_ENTRY_LEAD_MS), so the note's own attack ramp is not
+    // mistaken for pre-song signal; once a qualifying frame is found, the onset is walked back to the
+    // start of its attack.
+    private static final int VOCAL_ENTRY_QUIET_LOOKBACK_MS = 200;
+    private static final int VOCAL_ENTRY_LEAD_MS = 120;
+    private static final double VOCAL_ENTRY_QUIET_RATIO = 0.15d;
+    private static final double VOCAL_ENTRY_STRONG_RATIO = 0.40d;
     private static final int FRAME_TAIL_MS = 40;
     private static final int NEXT_ANCHOR_PRE_ROLL_MS = 1_000;
     private static final int CONTINUOUS_SIGNAL_GAP_MS = 300;
@@ -27,6 +37,11 @@ public class TranscriptTimingRefinementService {
     private static final int ONSET_BUCKET_MS = 25;
     private static final int ONSET_SIGNAL_START_SNAP_MS = 45;
     private static final int MIN_ONSET_GAP_MS = 120;
+    private static final int OVER_FRAGMENTED_WINDOW_RATIO = 2;
+    private static final int ENERGY_BLOCK_GAP_MS = 60;
+    private static final int PITCH_BAND_OCTAVES = 2;
+    private static final int SEMITONES_PER_OCTAVE = 12;
+    private static final double PITCH_BAND_MIN_COVERAGE = 0.5d;
     private static final int PITCH_SPLIT_THRESHOLD_SEMITONES = 2;
     private static final double ENERGY_THRESHOLD_RATIO = 0.25d;
     private static final double END_ENERGY_THRESHOLD_RATIO = 0.45d;
@@ -50,14 +65,15 @@ public class TranscriptTimingRefinementService {
             return TimingRefinementAnalysis.unavailable(currentGapMs, "no transcript phrases");
         }
         List<Integer> timingAnchorsMs = collectTimingAnchors(transcript);
-        List<PitchDetector.PitchData> usableFrames = collectUsableFrames(vocalFrames);
+        List<PitchDetector.PitchData> bandFrames = filterToDominantPitchBand(vocalFrames);
+        List<PitchDetector.PitchData> usableFrames = collectUsableFrames(bandFrames);
         List<PitchDetector.PitchData> significantFrames = collectSignificantFrames(usableFrames);
         if (significantFrames.isEmpty()) {
             return TimingRefinementAnalysis.unavailable(currentGapMs, "no significant vocal frames");
         }
 
         int firstTranscriptStartMs = findFirstTranscriptStartMs(phrases);
-        PitchDetector.PitchData firstVocalOnset = findInitialVocalOnset(significantFrames, currentGapMs);
+        PitchDetector.PitchData firstVocalOnset = findInitialVocalOnset(significantFrames, usableFrames, currentGapMs);
         int firstVocalOnsetMs = frameStartMs(firstVocalOnset);
         int gapDeltaMs = firstVocalOnsetMs - currentGapMs;
         int transcriptToAudioOffsetMs = firstVocalOnsetMs - firstTranscriptStartMs;
@@ -214,7 +230,21 @@ public class TranscriptTimingRefinementService {
     }
 
     private PitchDetector.PitchData findInitialVocalOnset(List<PitchDetector.PitchData> significantFrames,
+                                                          List<PitchDetector.PitchData> usableFrames,
                                                           int currentGapMs) {
+        // GAP unknown (0): the audio may carry dialog or instrumental before the song (e.g. ripped
+        // from a music video). Trusting the first significant frame would anchor on that noise, so
+        // instead find the first real vocal entry: a frame that rises from near-silence into strong,
+        // sustained energy.
+        if (currentGapMs <= 0) {
+            PitchDetector.PitchData vocalEntry = findFirstVocalEntry(significantFrames, usableFrames);
+            if (vocalEntry != null) {
+                return vocalEntry;
+            }
+            return significantFrames.get(0);
+        }
+        // GAP set: trust the hint and look within a window left and right of it, so the user can
+        // react when the offset is off.
         List<PitchDetector.PitchData> expectedWindowFrames = collectFramesInRange(significantFrames,
                 currentGapMs - MAX_INITIAL_OFFSET_MS,
                 currentGapMs + MAX_INITIAL_OFFSET_MS);
@@ -222,6 +252,102 @@ public class TranscriptTimingRefinementService {
             return expectedWindowFrames.get(0);
         }
         return significantFrames.get(0);
+    }
+
+    /**
+     * Finds the first significant frame that marks a genuine vocal entry: it is strong (energy at
+     * least {@link #VOCAL_ENTRY_STRONG_RATIO} of peak) and the window ending {@link
+     * #VOCAL_ENTRY_LEAD_MS} ms before it (spanning {@link #VOCAL_ENTRY_QUIET_LOOKBACK_MS} ms) is
+     * quiet (under {@link #VOCAL_ENTRY_QUIET_RATIO} of peak). The lead gap keeps the note's own
+     * attack ramp from being read as pre-song signal. The returned onset is walked back to the start
+     * of the attack. Returns {@code null} when no such entry exists (e.g. continuous signal with no
+     * leading silence), letting the caller fall back to the first significant frame.
+     */
+    private PitchDetector.PitchData findFirstVocalEntry(List<PitchDetector.PitchData> significantFrames,
+                                                        List<PitchDetector.PitchData> usableFrames) {
+        if (significantFrames == null || significantFrames.isEmpty()) {
+            return null;
+        }
+        double peakEnergy = 0d;
+        for (PitchDetector.PitchData frame : usableFrames) {
+            if (frame != null && Double.isFinite(frame.energy())) {
+                peakEnergy = Math.max(peakEnergy, frame.energy());
+            }
+        }
+        if (peakEnergy <= 0d) {
+            return null;
+        }
+        double quietThreshold = peakEnergy * VOCAL_ENTRY_QUIET_RATIO;
+        double strongThreshold = peakEnergy * VOCAL_ENTRY_STRONG_RATIO;
+        for (PitchDetector.PitchData candidate : significantFrames) {
+            if (candidate == null || !Double.isFinite(candidate.energy())
+                    || candidate.energy() < strongThreshold) {
+                continue;
+            }
+            int candidateMs = frameStartMs(candidate);
+            if (hasQuietLeadIn(usableFrames, candidateMs, quietThreshold)) {
+                return walkBackToAttackStart(usableFrames, candidateMs, quietThreshold);
+            }
+        }
+        return null;
+    }
+
+    private boolean hasQuietLeadIn(List<PitchDetector.PitchData> usableFrames,
+                                   int candidateMs,
+                                   double quietThreshold) {
+        int windowEndMs = candidateMs - VOCAL_ENTRY_LEAD_MS;
+        int windowStartMs = windowEndMs - VOCAL_ENTRY_QUIET_LOOKBACK_MS;
+        for (PitchDetector.PitchData frame : usableFrames) {
+            int frameMs = frameStartMs(frame);
+            if (frameMs < windowStartMs) {
+                continue;
+            }
+            if (frameMs >= windowEndMs) {
+                break;
+            }
+            if (Double.isFinite(frame.energy()) && frame.energy() > quietThreshold) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Given a strong frame whose lead-in is quiet, returns the frame at the start of its attack: the
+     * earliest contiguous frame before {@code candidateMs} that is still above the quiet threshold.
+     * That is the true note onset, rather than the mid-attack frame that first crossed "strong".
+     */
+    private PitchDetector.PitchData walkBackToAttackStart(List<PitchDetector.PitchData> usableFrames,
+                                                          int candidateMs,
+                                                          double quietThreshold) {
+        PitchDetector.PitchData attackStart = null;
+        for (PitchDetector.PitchData frame : usableFrames) {
+            int frameMs = frameStartMs(frame);
+            if (frameMs > candidateMs) {
+                break;
+            }
+            if (Double.isFinite(frame.energy()) && frame.energy() > quietThreshold) {
+                if (attackStart == null) {
+                    attackStart = frame;
+                }
+            } else {
+                attackStart = null;
+            }
+        }
+        return attackStart != null ? attackStart : nearestFrameAt(usableFrames, candidateMs);
+    }
+
+    private PitchDetector.PitchData nearestFrameAt(List<PitchDetector.PitchData> frames, int targetMs) {
+        PitchDetector.PitchData best = null;
+        int bestDist = Integer.MAX_VALUE;
+        for (PitchDetector.PitchData frame : frames) {
+            int dist = Math.abs(frameStartMs(frame) - targetMs);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = frame;
+            }
+        }
+        return best;
     }
 
     private void logOccupancyCandidate(int phraseIndex,
@@ -634,7 +760,9 @@ public class TranscriptTimingRefinementService {
             return false;
         }
         String timingSource = StringUtils.defaultIfBlank(transcript.getTimingSourceTag(), transcript.getSourceTag());
-        if ("#SUBTITLES".equalsIgnoreCase(timingSource) || "#LRCLIB".equalsIgnoreCase(timingSource)) {
+        if ("#SUBTITLES".equalsIgnoreCase(timingSource)
+                || "#LRCLIB".equalsIgnoreCase(timingSource)
+                || "#LRC".equalsIgnoreCase(timingSource)) {
             return true;
         }
         return transcript.getCacheFile() != null
@@ -949,6 +1077,76 @@ public class TranscriptTimingRefinementService {
         }
         usable.sort(Comparator.comparing(PitchDetector.PitchData::time));
         return usable;
+    }
+
+    private List<PitchDetector.PitchData> filterToDominantPitchBand(List<PitchDetector.PitchData> frames) {
+        return dominantPitchBandFilter(frames);
+    }
+
+    /**
+     * Drops frames whose detected pitch sits outside the two octaves that hold the majority of the
+     * voice. aubio mis-detects note onsets (consonant transients, breath, sibilants) an octave or
+     * more above the true fundamental; those out-of-band frames pull both onset detection and the
+     * assigned note pitch toward noise. The keep-band is the best contiguous {@code
+     * PITCH_BAND_OCTAVES}-wide window of pitched frames. Unpitched (energy-only) frames are always
+     * kept. If the band would retain too little of the signal (unusual register spread), filtering is
+     * skipped so a legitimately wide-range phrase is never starved.
+     *
+     * <p>Shared by the timing path (onset/window detection) and the melody-alignment path (note
+     * heights), so both reject the same octave-error garbage.</p>
+     */
+    public static List<PitchDetector.PitchData> dominantPitchBandFilter(List<PitchDetector.PitchData> frames) {
+        if (frames == null || frames.isEmpty()) {
+            return frames == null ? List.of() : frames;
+        }
+        java.util.Map<Integer, Integer> framesPerOctave = new java.util.HashMap<>();
+        int pitchedCount = 0;
+        for (PitchDetector.PitchData frame : frames) {
+            if (frame == null || frame.rawFrequency() <= 0d) {
+                continue;
+            }
+            int octaveIndex = Math.floorDiv(frame.pitch(), SEMITONES_PER_OCTAVE);
+            framesPerOctave.merge(octaveIndex, 1, Integer::sum);
+            pitchedCount++;
+        }
+        if (pitchedCount == 0 || framesPerOctave.isEmpty()) {
+            return frames;
+        }
+        int minOctave = framesPerOctave.keySet().stream().min(Integer::compareTo).orElse(0);
+        int maxOctave = framesPerOctave.keySet().stream().max(Integer::compareTo).orElse(0);
+        int bestStartOctave = minOctave;
+        int bestCoverage = -1;
+        for (int startOctave = minOctave; startOctave <= maxOctave; startOctave++) {
+            int coverage = 0;
+            for (int offset = 0; offset < PITCH_BAND_OCTAVES; offset++) {
+                coverage += framesPerOctave.getOrDefault(startOctave + offset, 0);
+            }
+            if (coverage > bestCoverage) {
+                bestCoverage = coverage;
+                bestStartOctave = startOctave;
+            }
+        }
+        if (bestCoverage < pitchedCount * PITCH_BAND_MIN_COVERAGE) {
+            return frames;
+        }
+        int lowSemitone = bestStartOctave * SEMITONES_PER_OCTAVE;
+        int highSemitone = (bestStartOctave + PITCH_BAND_OCTAVES) * SEMITONES_PER_OCTAVE - 1;
+        List<PitchDetector.PitchData> banded = new ArrayList<>(frames.size());
+        for (PitchDetector.PitchData frame : frames) {
+            if (frame == null) {
+                continue;
+            }
+            // Keep unpitched frames (energy-only): they still carry the energy envelope used for
+            // onsets/windows and were never the octave-error source.
+            if (frame.rawFrequency() <= 0d
+                    || (frame.pitch() >= lowSemitone && frame.pitch() <= highSemitone)) {
+                banded.add(frame);
+            }
+        }
+        LOGGER.info("[TranscriptPitchBand] keepBand=[" + lowSemitone + "," + highSemitone
+                + "] kept=" + banded.size() + "/" + frames.size()
+                + " pitchedCoverage=" + bestCoverage + "/" + pitchedCount);
+        return banded;
     }
 
     private List<PitchDetector.PitchData> collectSignificantFrames(List<PitchDetector.PitchData> frames) {
@@ -1372,7 +1570,8 @@ public class TranscriptTimingRefinementService {
         List<OpenAiTranscriptWord> onsetWords = refineWordsFromOnsetAnchors(words,
                 timing.onsetAnchorsMs(),
                 refinedStartMs,
-                refinedEndMs);
+                refinedEndMs,
+                timing.signalWindows());
         List<OpenAiTranscriptWord> exactSignalWindowWords = List.of();
         if (timing.signalWindows() != null && timing.signalWindows().size() == words.size()) {
             exactSignalWindowWords = refineWordsFromSignalWindows(words,
@@ -1545,6 +1744,13 @@ public class TranscriptTimingRefinementService {
                 || onsetWords.size() != words.size() || signalWindowWords.size() != words.size()) {
             return false;
         }
+        // When the half-beat grid shatters a line into far more windows than words, the
+        // window->word distribution is a positional guess that ignores onset locations and can
+        // drag a word well past its sung onset. A clean onset-per-word set (guaranteed by the
+        // size checks above) is more reliable here, so keep the onsets.
+        if (signalWindows.size() > words.size() * OVER_FRAGMENTED_WINDOW_RATIO) {
+            return false;
+        }
         for (int index = 1; index < words.size(); index++) {
             int onsetStartMs = onsetWords.get(index).getStartMs();
             int signalStartMs = signalWindowWords.get(index).getStartMs();
@@ -1598,7 +1804,8 @@ public class TranscriptTimingRefinementService {
     private List<OpenAiTranscriptWord> refineWordsFromOnsetAnchors(List<OpenAiTranscriptWord> words,
                                                                    List<Integer> onsetAnchorsMs,
                                                                    int refinedStartMs,
-                                                                   int refinedEndMs) {
+                                                                   int refinedEndMs,
+                                                                   List<SignalWindow> signalWindows) {
         if (words == null || words.isEmpty() || onsetAnchorsMs == null || onsetAnchorsMs.isEmpty()) {
             return List.of();
         }
@@ -1606,6 +1813,30 @@ public class TranscriptTimingRefinementService {
         if (normalizedAnchors.size() != words.size()) {
             return List.of();
         }
+        List<SignalWindow> energyBlocks = coalesceEnergyBlocks(signalWindows);
+        // A melismatic word fills one long energy block with its own internal onsets and steals the
+        // following words. The plain onset placement then crowds extra words into that block and
+        // starves a later one. Detect this by comparing how the onsets group words across blocks
+        // with a syllable-balanced partition: when they disagree, the syllable partition is the
+        // melisma-aware grouping, so regroup the words onto blocks by it.
+        if (energyBlocks.size() >= 2 && energyBlocks.size() < words.size()) {
+            List<Integer> onsetGrouping = countAnchorsPerBlock(normalizedAnchors, energyBlocks);
+            List<Integer> syllableGrouping = partitionWordsAcrossBlocksBySyllables(words, energyBlocks);
+            if (syllableGrouping != null
+                    && onsetGroupingStarvesBlock(onsetGrouping, syllableGrouping)) {
+                List<OpenAiTranscriptWord> blockGrouped = refineWordsByEnergyBlocks(words,
+                        energyBlocks,
+                        onsetAnchorsMs,
+                        syllableGrouping,
+                        refinedStartMs,
+                        refinedEndMs);
+                if (blockGrouped != null) {
+                    anchorWordsToPhraseBounds(blockGrouped, refinedStartMs, refinedEndMs);
+                    return blockGrouped;
+                }
+            }
+        }
+        snapOrphanedAnchorsToUnusedEnergyBlocks(normalizedAnchors, signalWindows);
         List<OpenAiTranscriptWord> refinedWords = new ArrayList<>(words.size());
         for (int index = 0; index < words.size(); index++) {
             int startMs = Math.max(refinedStartMs, normalizedAnchors.get(index));
@@ -1615,11 +1846,296 @@ public class TranscriptTimingRefinementService {
             } else {
                 int nextStartMs = normalizedAnchors.get(index + 1);
                 endMs = startMs + Math.max(1, (nextStartMs - startMs) / 2);
+                // When the next word begins in a separate energy block, the silence between blocks
+                // marks the real note boundary. Hold this word until its own block ends (clamped
+                // before the next word) instead of cutting at the midpoint, which would truncate a
+                // sustained syllable while the singer is still on it.
+                Integer blockEndMs = energyBlockEndForExtension(energyBlocks, startMs, nextStartMs);
+                if (blockEndMs != null && blockEndMs > endMs) {
+                    endMs = Math.min(blockEndMs, nextStartMs - 1);
+                }
             }
             refinedWords.add(copyWord(words.get(index), startMs, endMs));
         }
         anchorWordsToPhraseBounds(refinedWords, refinedStartMs, refinedEndMs);
         return refinedWords;
+    }
+
+    // Groups words onto continuous energy blocks before placing them, so a melismatic word (one word
+    // sung across a long block with several internal onsets) claims its whole block instead of
+    // letting those internal onsets capture the following words. Words are partitioned across blocks
+    // by a syllable-balanced split (a 3-syllable word weighs as much as 3 one-syllable words), then
+    // each block's words are placed with the same onset/ratio subdivision used elsewhere. A single
+    // word in a block starts on its first internal onset (not the block edge) to preserve onset
+    // precision. Returns null when the partition cannot be formed.
+    private List<OpenAiTranscriptWord> refineWordsByEnergyBlocks(List<OpenAiTranscriptWord> words,
+                                                                 List<SignalWindow> energyBlocks,
+                                                                 List<Integer> onsetAnchorsMs,
+                                                                 List<Integer> wordsPerBlock,
+                                                                 int refinedStartMs,
+                                                                 int refinedEndMs) {
+        if (wordsPerBlock == null) {
+            return null;
+        }
+        List<OpenAiTranscriptWord> refined = new ArrayList<>(words.size());
+        int wordCursor = 0;
+        for (int blockIndex = 0; blockIndex < energyBlocks.size(); blockIndex++) {
+            int count = wordsPerBlock.get(blockIndex);
+            if (count <= 0) {
+                continue;
+            }
+            SignalWindow block = energyBlocks.get(blockIndex);
+            int blockStartMs = Math.max(refinedStartMs, block.startMs());
+            int blockEndMs = blockIndex == energyBlocks.size() - 1
+                    ? Math.max(blockStartMs + 1, refinedEndMs)
+                    : block.endMs();
+            List<OpenAiTranscriptWord> bucket = words.subList(wordCursor, wordCursor + count);
+            List<Integer> internalOnsets = filterInternalOnsetAnchors(onsetAnchorsMs, blockStartMs, blockEndMs);
+            if (count == 1) {
+                // Start the word on the first onset at or after the block start: when the block
+                // begins on an onset that is the word's onset; when the block's leading energy has
+                // no onset (e.g. a sustained tail bleeding in), the first real onset inside is.
+                int onsetStartMs = firstOnsetAtOrAfter(onsetAnchorsMs, blockStartMs, blockEndMs, blockStartMs);
+                refined.add(copyWord(bucket.get(0), onsetStartMs, blockEndMs));
+            } else {
+                refined.addAll(subdivideWordsIntoWindow(bucket, blockStartMs, blockEndMs, internalOnsets, false));
+            }
+            wordCursor += count;
+        }
+        return refined.size() == words.size() ? refined : null;
+    }
+
+    // True when the onset grouping over-crowds a block that the syllable-balanced grouping would
+    // keep lighter (by 2+ words) while leaving a later block under-filled. That is the melisma
+    // signature: a sustained word's internal onsets pulled extra words into its block and starved a
+    // later one. An even reshuffle that only shifts a single word between adjacent blocks (dense,
+    // evenly sung lines) does not trip this and is left to the existing onset/window placement.
+    private boolean onsetGroupingStarvesBlock(List<Integer> onsetGrouping, List<Integer> syllableGrouping) {
+        if (onsetGrouping == null || syllableGrouping == null
+                || onsetGrouping.size() != syllableGrouping.size()) {
+            return false;
+        }
+        for (int index = 0; index < onsetGrouping.size(); index++) {
+            int overcrowd = onsetGrouping.get(index) - syllableGrouping.get(index);
+            if (overcrowd < 2) {
+                continue;
+            }
+            for (int laterIndex = index + 1; laterIndex < onsetGrouping.size(); laterIndex++) {
+                if (onsetGrouping.get(laterIndex) < syllableGrouping.get(laterIndex)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // Counts how many word anchors fall in each energy block (anchors before the first block or
+    // after the last are clamped into the nearest block so the totals still sum to the word count).
+    private List<Integer> countAnchorsPerBlock(List<Integer> anchorsMs, List<SignalWindow> energyBlocks) {
+        int[] anchorsPerBlock = new int[energyBlocks.size()];
+        for (Integer anchorMs : anchorsMs) {
+            if (anchorMs == null) {
+                continue;
+            }
+            int blockIndex = indexOfContainingOrNearestBlock(anchorMs, energyBlocks);
+            anchorsPerBlock[blockIndex]++;
+        }
+        List<Integer> counts = new ArrayList<>(energyBlocks.size());
+        for (int count : anchorsPerBlock) {
+            counts.add(count);
+        }
+        return counts;
+    }
+
+    private int indexOfContainingOrNearestBlock(int ms, List<SignalWindow> energyBlocks) {
+        for (int blockIndex = 0; blockIndex < energyBlocks.size(); blockIndex++) {
+            SignalWindow block = energyBlocks.get(blockIndex);
+            if (ms >= block.startMs() && ms < block.endMs()) {
+                return blockIndex;
+            }
+            if (ms < block.startMs()) {
+                return blockIndex;
+            }
+        }
+        return energyBlocks.size() - 1;
+    }
+
+    private int firstOnsetAtOrAfter(List<Integer> onsetAnchorsMs, int fromMs, int toMs, int fallbackMs) {
+        if (onsetAnchorsMs == null) {
+            return fallbackMs;
+        }
+        for (Integer onsetMs : onsetAnchorsMs) {
+            if (onsetMs != null && onsetMs >= fromMs && onsetMs < toMs) {
+                return onsetMs;
+            }
+        }
+        return fallbackMs;
+    }
+
+    // Contiguously partitions words across energy blocks so each block's syllable load tracks its
+    // duration share of the phrase. Dynamic program minimizing summed |groupSyllables - target|.
+    private List<Integer> partitionWordsAcrossBlocksBySyllables(List<OpenAiTranscriptWord> words,
+                                                                List<SignalWindow> energyBlocks) {
+        int wordCount = words.size();
+        int blockCount = energyBlocks.size();
+        if (blockCount > wordCount) {
+            return null;
+        }
+        int[] syllablePrefix = new int[wordCount + 1];
+        for (int index = 0; index < wordCount; index++) {
+            syllablePrefix[index + 1] = syllablePrefix[index] + estimateSyllableCount(words.get(index));
+        }
+        int totalSyllables = syllablePrefix[wordCount];
+        long totalDurationMs = 0;
+        for (SignalWindow block : energyBlocks) {
+            totalDurationMs += Math.max(1, block.endMs() - block.startMs());
+        }
+        double[] targetSyllables = new double[blockCount];
+        for (int blockIndex = 0; blockIndex < blockCount; blockIndex++) {
+            SignalWindow block = energyBlocks.get(blockIndex);
+            double share = (double) Math.max(1, block.endMs() - block.startMs()) / totalDurationMs;
+            targetSyllables[blockIndex] = totalSyllables * share;
+        }
+        double[][] cost = new double[blockCount + 1][wordCount + 1];
+        int[][] back = new int[blockCount + 1][wordCount + 1];
+        for (double[] row : cost) {
+            java.util.Arrays.fill(row, Double.POSITIVE_INFINITY);
+        }
+        cost[0][0] = 0d;
+        for (int blockIndex = 1; blockIndex <= blockCount; blockIndex++) {
+            for (int wordIndex = blockIndex; wordIndex <= wordCount - (blockCount - blockIndex); wordIndex++) {
+                for (int split = blockIndex - 1; split < wordIndex; split++) {
+                    if (Double.isInfinite(cost[blockIndex - 1][split])) {
+                        continue;
+                    }
+                    int groupSyllables = syllablePrefix[wordIndex] - syllablePrefix[split];
+                    double candidate = cost[blockIndex - 1][split]
+                            + Math.abs(groupSyllables - targetSyllables[blockIndex - 1]);
+                    if (candidate < cost[blockIndex][wordIndex]) {
+                        cost[blockIndex][wordIndex] = candidate;
+                        back[blockIndex][wordIndex] = split;
+                    }
+                }
+            }
+        }
+        if (Double.isInfinite(cost[blockCount][wordCount])) {
+            return null;
+        }
+        int[] counts = new int[blockCount];
+        int wordIndex = wordCount;
+        for (int blockIndex = blockCount; blockIndex >= 1; blockIndex--) {
+            int split = back[blockIndex][wordIndex];
+            counts[blockIndex - 1] = wordIndex - split;
+            wordIndex = split;
+        }
+        List<Integer> distribution = new ArrayList<>(blockCount);
+        for (int count : counts) {
+            distribution.add(count);
+        }
+        return distribution;
+    }
+
+    // Onset normalization keeps the earliest onset when it merges a close pair, which can leave a
+    // word stranded inside the previous word's sustained energy block (no onset of its own) while a
+    // genuine, separately-onset energy block right before the next word goes unused. When that
+    // happens, move the stranded word onto the unused block's start so it lands on real vocals.
+    private void snapOrphanedAnchorsToUnusedEnergyBlocks(List<Integer> anchorsMs,
+                                                         List<SignalWindow> signalWindows) {
+        if (anchorsMs == null || anchorsMs.size() < 2) {
+            return;
+        }
+        List<SignalWindow> energyBlocks = coalesceEnergyBlocks(signalWindows);
+        if (energyBlocks.size() < 2) {
+            return;
+        }
+        for (int index = 1; index < anchorsMs.size(); index++) {
+            int currentStartMs = anchorsMs.get(index);
+            int previousStartMs = anchorsMs.get(index - 1);
+            SignalWindow currentBlock = findContainingEnergyBlock(currentStartMs, energyBlocks);
+            SignalWindow previousBlock = findContainingEnergyBlock(previousStartMs, energyBlocks);
+            // Only act when this word shares the previous word's energy block (it has no onset of
+            // its own) and there is room before the next word's anchor.
+            if (currentBlock == null || currentBlock != previousBlock) {
+                continue;
+            }
+            int upperBoundMs = index + 1 < anchorsMs.size() ? anchorsMs.get(index + 1) : Integer.MAX_VALUE;
+            SignalWindow unusedBlock = findUnusedEnergyBlockBetween(energyBlocks,
+                    currentBlock.endMs(),
+                    upperBoundMs,
+                    anchorsMs);
+            if (unusedBlock != null) {
+                anchorsMs.set(index, unusedBlock.startMs());
+            }
+        }
+    }
+
+    private List<SignalWindow> coalesceEnergyBlocks(List<SignalWindow> signalWindows) {
+        if (signalWindows == null || signalWindows.isEmpty()) {
+            return List.of();
+        }
+        List<SignalWindow> blocks = new ArrayList<>();
+        int blockStartMs = signalWindows.get(0).startMs();
+        int blockEndMs = signalWindows.get(0).endMs();
+        for (int index = 1; index < signalWindows.size(); index++) {
+            SignalWindow window = signalWindows.get(index);
+            if (window.startMs() - blockEndMs > ENERGY_BLOCK_GAP_MS) {
+                blocks.add(new SignalWindow(blockStartMs, blockEndMs));
+                blockStartMs = window.startMs();
+            }
+            blockEndMs = Math.max(blockEndMs, window.endMs());
+        }
+        blocks.add(new SignalWindow(blockStartMs, blockEndMs));
+        return blocks;
+    }
+
+    // Returns the end of the energy block that this word starts in, but only when the next word
+    // begins in a later, separate block (so the gap between them is a real note boundary). Returns
+    // null when both words share a block or no block contains the word start.
+    private Integer energyBlockEndForExtension(List<SignalWindow> energyBlocks,
+                                               int wordStartMs,
+                                               int nextWordStartMs) {
+        if (energyBlocks == null || energyBlocks.size() < 2) {
+            return null;
+        }
+        SignalWindow currentBlock = findContainingEnergyBlock(wordStartMs, energyBlocks);
+        SignalWindow nextBlock = findContainingEnergyBlock(nextWordStartMs, energyBlocks);
+        if (currentBlock == null || currentBlock == nextBlock) {
+            return null;
+        }
+        return currentBlock.endMs();
+    }
+
+    private SignalWindow findContainingEnergyBlock(int ms, List<SignalWindow> energyBlocks) {
+        for (SignalWindow block : energyBlocks) {
+            if (ms >= block.startMs() && ms < block.endMs()) {
+                return block;
+            }
+        }
+        return null;
+    }
+
+    private SignalWindow findUnusedEnergyBlockBetween(List<SignalWindow> energyBlocks,
+                                                      int afterMs,
+                                                      int beforeMs,
+                                                      List<Integer> anchorsMs) {
+        for (SignalWindow block : energyBlocks) {
+            if (block.startMs() < afterMs || block.startMs() >= beforeMs) {
+                continue;
+            }
+            if (!energyBlockHoldsAnchor(block, anchorsMs)) {
+                return block;
+            }
+        }
+        return null;
+    }
+
+    private boolean energyBlockHoldsAnchor(SignalWindow block, List<Integer> anchorsMs) {
+        for (Integer anchorMs : anchorsMs) {
+            if (anchorMs != null && anchorMs >= block.startMs() && anchorMs < block.endMs()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private List<Integer> normalizeOnsetAnchorsForWords(List<Integer> onsetAnchorsMs,

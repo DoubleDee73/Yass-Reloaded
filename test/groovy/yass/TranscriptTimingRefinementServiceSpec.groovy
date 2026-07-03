@@ -73,6 +73,57 @@ class TranscriptTimingRefinementServiceSpec extends Specification {
         analysis.rejectionReason == ""
     }
 
+    def "with unknown gap (0) skips pre-song dialog noise and anchors on the first real vocal entry"() {
+        given:
+        // Audio ripped from a video: low-level dialog/bleed for the first ~3s, then silence, then the
+        // song. The real vocal entry at 5.0s rises from a silent lead-in through a short attack ramp.
+        def result = transcript([
+                segment(0, 8000, [word("first", 0, 1000)])
+        ])
+        def pitchData = []
+        // dialog/bleed 0.5-3.0s, all well under the quiet threshold (peak is 0.50)
+        for (float t = 0.5f; t < 3.0f; t += 0.05f) {
+            pitchData.add(frame(t, 0.06d))
+        }
+        // silent gap 3.0 - 5.0 (no frames)
+        // attack ramp + sustained vocal from 5.0s
+        pitchData.add(frame(5.00f, 0.20d))   // attack start (above quiet 0.075, below strong 0.20)
+        pitchData.add(frame(5.02f, 0.26d))
+        pitchData.add(frame(5.04f, 0.37d))
+        pitchData.add(frame(5.06f, 0.48d))   // crosses strong here
+        for (float t = 5.08f; t < 6.5f; t += 0.02f) {
+            pitchData.add(frame(t, 0.50d))
+        }
+
+        when:
+        def analysis = new TranscriptTimingRefinementService().analyze(result, pitchData, 0)
+
+        then:
+        analysis.accepted
+        // anchors on the attack start ~5000, not the dialog (~500-3000) nor mid-attack (~5060)
+        Math.abs(analysis.firstVocalOnsetMs - 5000) <= 40
+    }
+
+    def "with a set gap, still uses the window around it rather than vocal-entry detection"() {
+        given:
+        def result = transcript([
+                segment(30000, 45000, [word("first", 30000, 31000)])
+        ])
+        // A strong early frame at 26s sits within +/-5s of the 30s gap; the gap-window path takes the
+        // first significant frame in that window (26.0s), unlike the vocal-entry path.
+        def pitchData = [
+                frame(26.0f, 0.30d),
+                frame(31.0f, 0.30d)
+        ]
+
+        when:
+        def analysis = new TranscriptTimingRefinementService().analyze(result, pitchData, 30000)
+
+        then:
+        analysis.accepted
+        analysis.firstVocalOnsetMs == 26000
+    }
+
     def "reports unavailable when transcript or vocal frames are missing"() {
         expect:
         !new TranscriptTimingRefinementService().analyze(null, [], 0).accepted
@@ -630,7 +681,8 @@ class TranscriptTimingRefinementServiceSpec extends Specification {
                 List,
                 List,
                 Integer.TYPE,
-                Integer.TYPE)
+                Integer.TYPE,
+                List)
         method.accessible = true
         def words = [
                 word("I", 14310, 14718),
@@ -643,7 +695,8 @@ class TranscriptTimingRefinementServiceSpec extends Specification {
                 words,
                 [14290, 14420, 15690],
                 14140,
-                16390)
+                16390,
+                null)
 
         then:
         refined[0].startMs == 14140
@@ -764,6 +817,300 @@ class TranscriptTimingRefinementServiceSpec extends Specification {
         refined[3].startMs == 14922
         refined[4].startMs == 15147
         refined[5].startMs == 15745
+    }
+
+    // Characterization of the "Hush" first-phrase regression: a #LRC line of 6 words is
+    // split by the half-beat grid into 22 tiny signal windows. shouldPreferSignalWindowsOverOnsets
+    // flips the whole phrase onto those windows because one late word ("cobra") trips the
+    // >=120ms trigger, which drags "closer" ~290ms late. The onset anchors place every word,
+    // including "closer", much closer to the manual reference. Fixture values are the exact
+    // onsets/windows captured in ~/.yass/log.txt for phrase=0.
+    def "over-fragmented signal windows must not override clean onset anchors for #LRC phrases"() {
+        given:
+        def service = new TranscriptTimingRefinementService()
+        def method = TranscriptTimingRefinementService.getDeclaredMethod(
+                "refineWordsForPhrase",
+                List,
+                TranscriptTimingRefinementService.PhraseTiming,
+                OpenAiTranscriptSegment)
+        method.accessible = true
+        def words = [
+                word("It's", 30250, 31068),
+                word("coming", 31068, 31887),
+                word("closer,", 31887, 32705),
+                word("quiet", 32705, 33523),
+                word("the", 33523, 34342),
+                word("cobra", 34342, 35160)
+        ]
+        def onsets = [30331, 30556, 30846, 31056, 31581, 31906, 32082,
+                      32806, 33356, 33506, 33631, 33936, 34056]
+        def timing = new TranscriptTimingRefinementService.PhraseTiming(
+                0,
+                30250,
+                30331,
+                35160,
+                30331,
+                35267,
+                34754,
+                onsets,
+                onsets,
+                [
+                        signalWindow(30331, 30434),
+                        signalWindow(30434, 30537),
+                        signalWindow(30537, 30743),
+                        signalWindow(30743, 30846),
+                        signalWindow(30846, 31052),
+                        signalWindow(31052, 31464),
+                        signalWindow(31567, 31670),
+                        signalWindow(31670, 31876),
+                        signalWindow(31876, 31979),
+                        signalWindow(31979, 32082),
+                        signalWindow(32082, 32288),
+                        signalWindow(32700, 32803),
+                        signalWindow(32803, 32906),
+                        signalWindow(32906, 33215),
+                        signalWindow(33215, 33318),
+                        signalWindow(33318, 33421),
+                        signalWindow(33421, 33524),
+                        signalWindow(33627, 33730),
+                        signalWindow(33730, 33833),
+                        signalWindow(33936, 34039),
+                        signalWindow(34039, 34142),
+                        signalWindow(34142, 34754)
+                ],
+                "It's coming closer, quiet the cobra",
+                "detected vocal end")
+        def segment = segment(30250, 35160, words)
+
+        when:
+        def refined = (List<OpenAiTranscriptWord>) method.invoke(service, words, timing, segment)
+
+        then:
+        // "closer," (index 2) should land on its onset (~31581), not the late window start (31876).
+        Math.abs(refined[2].startMs - 31581) <= 60
+    }
+
+    // Characterization of the "Hush" "the cobra" mis-placement: the energy splits "quiet the cobra"
+    // into three blocks (32700-33524, 33627-33833, 33936-34754), but onset normalization merges the
+    // genuine "the" onset (33631) away and leaves "the" sitting at 33356 inside "quiet"'s sustained
+    // tail. That leaves the strong, clean energy block at 33627 completely unused. "the" should snap
+    // into that empty block. Fixture values are the exact onsets/windows captured for phrase=0.
+    def "an orphaned word snaps into an unused energy block instead of sharing the previous block"() {
+        given:
+        def service = new TranscriptTimingRefinementService()
+        def method = TranscriptTimingRefinementService.getDeclaredMethod(
+                "refineWordsForPhrase",
+                List,
+                TranscriptTimingRefinementService.PhraseTiming,
+                OpenAiTranscriptSegment)
+        method.accessible = true
+        def words = [
+                word("It's", 30250, 31068),
+                word("coming", 31068, 31887),
+                word("closer,", 31887, 32705),
+                word("quiet", 32705, 33523),
+                word("the", 33523, 34342),
+                word("cobra", 34342, 35160)
+        ]
+        def onsets = [30331, 30556, 30846, 31056, 31581, 31906, 32082,
+                      32806, 33356, 33506, 33631, 33936, 34056]
+        def timing = new TranscriptTimingRefinementService.PhraseTiming(
+                0,
+                30250,
+                30331,
+                35160,
+                30331,
+                35267,
+                34754,
+                onsets,
+                onsets,
+                [
+                        signalWindow(30331, 30434),
+                        signalWindow(30434, 30537),
+                        signalWindow(30537, 30743),
+                        signalWindow(30743, 30846),
+                        signalWindow(30846, 31052),
+                        signalWindow(31052, 31464),
+                        signalWindow(31567, 31670),
+                        signalWindow(31670, 31876),
+                        signalWindow(31876, 31979),
+                        signalWindow(31979, 32082),
+                        signalWindow(32082, 32288),
+                        signalWindow(32700, 32803),
+                        signalWindow(32803, 32906),
+                        signalWindow(32906, 33215),
+                        signalWindow(33215, 33318),
+                        signalWindow(33318, 33421),
+                        signalWindow(33421, 33524),
+                        signalWindow(33627, 33730),
+                        signalWindow(33730, 33833),
+                        signalWindow(33936, 34039),
+                        signalWindow(34039, 34142),
+                        signalWindow(34142, 34754)
+                ],
+                "It's coming closer, quiet the cobra",
+                "detected vocal end")
+        def segment = segment(30250, 35160, words)
+
+        when:
+        def refined = (List<OpenAiTranscriptWord>) method.invoke(service, words, timing, segment)
+
+        then:
+        // "the" (index 4) should snap into the unused energy block at 33627, not stay at 33356.
+        Math.abs(refined[4].startMs - 33627) <= 60
+        // "quiet" (index 3) and "cobra" (index 5) keep their placements.
+        Math.abs(refined[3].startMs - 32806) <= 60
+        Math.abs(refined[5].startMs - 33936) <= 60
+    }
+
+    // Characterization of the "ming" early-break: "coming" sits in the energy block 30331-31464,
+    // and the next word "closer" starts in a separate block (31567+). The old midpoint end rule cut
+    // "coming" at ~31213 (halfway to "closer"), truncating the sustained "ming" while the vocal
+    // energy was still strong to ~31464. When the next word lives in a different energy block, the
+    // word should hold until its own block ends. Fixture values are the phrase=0 onsets/windows.
+    def "a word holds until its energy block ends when the next word starts a new block"() {
+        given:
+        def service = new TranscriptTimingRefinementService()
+        def method = TranscriptTimingRefinementService.getDeclaredMethod(
+                "refineWordsForPhrase",
+                List,
+                TranscriptTimingRefinementService.PhraseTiming,
+                OpenAiTranscriptSegment)
+        method.accessible = true
+        def words = [
+                word("It's", 30250, 31068),
+                word("coming", 31068, 31887),
+                word("closer,", 31887, 32705),
+                word("quiet", 32705, 33523),
+                word("the", 33523, 34342),
+                word("cobra", 34342, 35160)
+        ]
+        def onsets = [30331, 30556, 30846, 31056, 31581, 31906, 32082,
+                      32806, 33356, 33506, 33631, 33936, 34056]
+        def timing = new TranscriptTimingRefinementService.PhraseTiming(
+                0,
+                30250,
+                30331,
+                35160,
+                30331,
+                35267,
+                34754,
+                onsets,
+                onsets,
+                [
+                        signalWindow(30331, 30434),
+                        signalWindow(30434, 30537),
+                        signalWindow(30537, 30743),
+                        signalWindow(30743, 30846),
+                        signalWindow(30846, 31052),
+                        signalWindow(31052, 31464),
+                        signalWindow(31567, 31670),
+                        signalWindow(31670, 31876),
+                        signalWindow(31876, 31979),
+                        signalWindow(31979, 32082),
+                        signalWindow(32082, 32288),
+                        signalWindow(32700, 32803),
+                        signalWindow(32803, 32906),
+                        signalWindow(32906, 33215),
+                        signalWindow(33215, 33318),
+                        signalWindow(33318, 33421),
+                        signalWindow(33421, 33524),
+                        signalWindow(33627, 33730),
+                        signalWindow(33730, 33833),
+                        signalWindow(33936, 34039),
+                        signalWindow(34039, 34142),
+                        signalWindow(34142, 34754)
+                ],
+                "It's coming closer, quiet the cobra",
+                "detected vocal end")
+        def segment = segment(30250, 35160, words)
+
+        when:
+        def refined = (List<OpenAiTranscriptWord>) method.invoke(service, words, timing, segment)
+
+        then:
+        // "coming" (index 1) holds until its energy block ends (~31464), not the midpoint (31213).
+        Math.abs(refined[1].endMs - 31464) <= 60
+        // and it must not bleed into the next word's start.
+        refined[1].endMs <= refined[2].startMs
+    }
+
+    // Characterization of the "Hush" page-2 melisma regression: "composure" is sung across one long
+    // energy block (36095-37331) that contains its own internal onsets (po, sure). Plain onset
+    // normalization mapped those internal onsets to the following words "I" and "want", burying them
+    // ~1.2s early inside composure's melisma while the genuine "I want" energy block (37743-38464)
+    // got starved. Syllable-balanced grouping of words across energy blocks must let composure claim
+    // its block alone, so "I" lands in the 37743 block. Fixture values are the phrase=1 onsets/windows.
+    def "a melismatic word claims its own energy block instead of capturing following words"() {
+        given:
+        def service = new TranscriptTimingRefinementService()
+        def method = TranscriptTimingRefinementService.getDeclaredMethod(
+                "refineWordsForPhrase",
+                List,
+                TranscriptTimingRefinementService.PhraseTiming,
+                OpenAiTranscriptSegment)
+        method.accessible = true
+        def words = [
+                word("Can't", 35160, 35756),
+                word("keep", 35756, 36353),
+                word("composure,", 36353, 36949),
+                word("I", 36949, 37545),
+                word("want", 37545, 38141),
+                word("to", 38141, 38738),
+                word("feel", 38738, 39334),
+                word("it", 39334, 39930)
+        ]
+        def onsets = [35271, 35683, 35796, 36095, 36198, 36646, 36971,
+                      37949, 38621, 38796, 38921, 39082, 39221]
+        def timing = new TranscriptTimingRefinementService.PhraseTiming(
+                1,
+                35160,
+                35271,
+                39930,
+                35271,
+                39930,
+                39717,
+                onsets,
+                onsets,
+                [
+                        signalWindow(35271, 35374),
+                        signalWindow(35374, 35580),
+                        signalWindow(35580, 35683),
+                        signalWindow(35683, 35786),
+                        signalWindow(35786, 35889),
+                        signalWindow(35889, 35992),
+                        signalWindow(36095, 36198),
+                        signalWindow(36198, 36610),
+                        signalWindow(36610, 36713),
+                        signalWindow(36713, 36919),
+                        signalWindow(36919, 37022),
+                        signalWindow(37022, 37125),
+                        signalWindow(37125, 37331),
+                        signalWindow(37743, 37949),
+                        signalWindow(37949, 38052),
+                        signalWindow(38052, 38464),
+                        signalWindow(38567, 38670),
+                        signalWindow(38670, 38773),
+                        signalWindow(38773, 38876),
+                        signalWindow(38876, 38979),
+                        signalWindow(38979, 39082),
+                        signalWindow(39082, 39185),
+                        signalWindow(39185, 39717)
+                ],
+                "Can't keep composure, I want to feel it",
+                "detected vocal end")
+        def segment = segment(35160, 39930, words)
+
+        when:
+        def refined = (List<OpenAiTranscriptWord>) method.invoke(service, words, timing, segment)
+
+        then:
+        // "composure," (index 2) starts its block at ~36095.
+        Math.abs(refined[2].startMs - 36095) <= 80
+        // "I" (index 3) lands in the genuine "I want" block (~37743), not inside composure (~36646).
+        Math.abs(refined[3].startMs - 37743) <= 120
+        // "want" (index 4) stays within its own block, not buried in composure.
+        refined[4].startMs >= 37743
     }
 
     def "onset anchors take precedence over equally-sized signal windows for word starts"() {
@@ -997,6 +1344,34 @@ class TranscriptTimingRefinementServiceSpec extends Specification {
         refined.segments[0].words*.startMs == [14150, 14396, 14765, 14949, 15134, 15687]
     }
 
+    // The dominant-pitch-band filter drops octave-error frames (consonant transients / breath that
+    // aubio mis-detects an octave or more above the voice) while keeping the in-band fundamentals
+    // and all unpitched energy-only frames. Pitches are semitones from C4, so G3 = -5.
+    def "dominant pitch band filter drops octave-error frames but keeps in-band and unpitched frames"() {
+        given:
+        def service = new TranscriptTimingRefinementService()
+        def method = TranscriptTimingRefinementService.getDeclaredMethod("filterToDominantPitchBand", List)
+        method.accessible = true
+        // Majority of pitched frames sit on G3 (-5); a few octave-error spikes land at C7 (+36)/A6 (+33);
+        // one unpitched energy-only frame (rawFrequency 0) must survive regardless of band.
+        def frames = []
+        20.times { frames.add(new PitchDetector.PitchData((0.10f + it * 0.01f) as float, -5, "G3", 196.0d, 0.40d)) }
+        frames.add(new PitchDetector.PitchData(0.31f as float, 36, "C7", 2093.0d, 0.20d))
+        frames.add(new PitchDetector.PitchData(0.32f as float, 33, "A6", 1760.0d, 0.18d))
+        frames.add(new PitchDetector.PitchData(0.33f as float, 0, "-", 0.0d, 0.05d))
+
+        when:
+        def filtered = (List<PitchDetector.PitchData>) method.invoke(service, frames)
+
+        then:
+        // octave-error spikes removed
+        filtered.findAll { it.rawFrequency() > 0 && (it.pitch() == 36 || it.pitch() == 33) }.isEmpty()
+        // all 20 in-band G3 frames kept
+        filtered.count { it.pitch() == -5 } == 20
+        // the unpitched energy-only frame survives
+        filtered.any { it.rawFrequency() == 0.0d }
+    }
+
     def "refines evenly distributed subtitle words to separate vocal islands in a dense opening line"() {
         given:
         int gapMs = 53200
@@ -1201,6 +1576,8 @@ class TranscriptTimingRefinementServiceSpec extends Specification {
                 null, null, "#SUBTITLES", "", [], [], [], false, null, "#SUBTITLES", "#SUBTITLES"))
         service.shouldRefineForAlignment(new OpenAiTranscriptionResult(
                 null, null, "#LRCLIB", "", [], [], [], false, null, "#LRCLIB", "#LRCLIB"))
+        service.shouldRefineForAlignment(new OpenAiTranscriptionResult(
+                null, null, "#LRC", "", [], [], [], false, null, "#LRC", "#LRC"))
         service.shouldRefineForAlignment(new OpenAiTranscriptionResult(
                 null, null, "#AUDIO", "", [], [], [], false, new File("audio-transcript.openai.json")))
         !service.shouldRefineForAlignment(new OpenAiTranscriptionResult(

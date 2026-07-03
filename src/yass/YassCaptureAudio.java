@@ -42,13 +42,31 @@ public class YassCaptureAudio {
     private final static float MAX_8_BITS_UNSIGNED = 0xff;
     private final static float MAX_16_BITS_SIGNED = Short.MAX_VALUE;
     private final static float MAX_16_BITS_UNSIGNED = 0xffff;
-    private final static int BUFFER_SIZE = 256;
+    // 16-bit mono @ 48 kHz: 4096 bytes = 2048 samples (~43 ms), enough to
+    // autocorrelate the lowest detected pitch (~65 Hz, period ~738 samples).
+    private final static int BUFFER_SIZE = 4096;
     private byte[] buffer = new byte[BUFFER_SIZE];
     private static Hashtable<String, Integer> channelsHash = new Hashtable<>();
-    // "0.05", "0.1", "0.15", "0.2"
-    double minlevel = Double.parseDouble("0.5");
+    // Noise gate: input below this fraction of full scale (0..1) is treated as
+    // silence. Lower = more sensitive (sing quieter). Default 0.15.
+    double minlevel = Double.parseDouble("0.15");
     // "1", "2", "4", "8"
     int micboost = Integer.parseInt("64");
+
+    // Input gain applied to decoded samples before level/pitch analysis. The
+    // built-in mic is often quiet with no OS gain, so amplifying here lets the
+    // user sing at a normal volume. 1.0 = no change.
+    private double micGain = 1.0;
+
+    /** Sets the noise-gate threshold (0..1). Lower means more sensitive. */
+    public void setMinLevel(double level) {
+        minlevel = Math.max(0.0, Math.min(1.0, level));
+    }
+
+    /** Sets the input gain multiplier (>= 1). Higher means more sensitive. */
+    public void setMicGain(double gain) {
+        micGain = Math.max(1.0, gain);
+    }
     Hashtable<String, TargetDataLine> linesHash = new Hashtable<>();
     private Color leftColor = new Color(51, 153, 255);
     private Color rightColor = new Color(255, 51, 51);
@@ -57,7 +75,12 @@ public class YassCaptureAudio {
     private Vector<YassPlayerNote> notesRight = null;
     private YassAudioMonitor monitor = null;
     private boolean stopCapture = false;
-    private AudioFormat audioFormat = new AudioFormat(8000, 8, 2, true, false);
+    private final static float SAMPLE_RATE = 48000f;
+    private AudioFormat audioFormat = new AudioFormat(SAMPLE_RATE, 16, 1, true, false);
+    // 16-bit samples decoded down to the 8-bit numeric range (-128..127) so the
+    // legacy autocorrelation heuristic (micboost, /10000.0) stays calibrated.
+    private int[] samples = new int[BUFFER_SIZE / 2];
+    private int sampleCount = 0;
     private TargetDataLine line;
     private int currentPitch = YassPlayerNote.NOISE;
     private double currentLevel = 0;
@@ -95,6 +118,7 @@ public class YassCaptureAudio {
      * @return The deviceNames value
      */
     public static String[] getDeviceNames() {
+        logAvailableCaptureFormats();
         Vector<String> m = new Vector<>();
         Line.Info targetLineInfo = new Line.Info(TargetDataLine.class);
         Mixer.Info[] mixerInfo = AudioSystem.getMixerInfo();
@@ -111,13 +135,15 @@ public class YassCaptureAudio {
                     for (AudioFormat format : formats) {
                         int channels = format.getChannels();
                         int sampleSizeInBits = format.getSampleSizeInBits();
-                        int frameSize = format.getFrameSize();
                         boolean pcmSigned = format.getEncoding().equals(
                                 AudioFormat.Encoding.PCM_SIGNED);
-                        if (sampleSizeInBits == 8 && frameSize == 2
-                                && pcmSigned) {
+                        // Capture as 16-bit signed mono; accept any device that
+                        // advertises a 16-bit signed (mono or unknown-channel)
+                        // line. Channel count may be reported as -1 (unspecified).
+                        if (sampleSizeInBits == 16 && pcmSigned
+                                && (channels == 1 || channels == AudioSystem.NOT_SPECIFIED)) {
                             m.addElement(name);
-                            channelsHash.put(name, new Integer(channels));
+                            channelsHash.put(name, 1);
                             break;
                         }
                     }
@@ -128,28 +154,53 @@ public class YassCaptureAudio {
     }
 
     /**
+     * Diagnostic: logs every mixer that supports a capture (TargetDataLine) line
+     * and the audio formats it advertises, without applying any format filter.
+     * Used to discover what the host microphones actually report so the capture
+     * format and the {@link #getDeviceNames()} filter can be matched to real
+     * hardware.
+     */
+    public static void logAvailableCaptureFormats() {
+        Line.Info targetLineInfo = new Line.Info(TargetDataLine.class);
+        Mixer.Info[] mixerInfo = AudioSystem.getMixerInfo();
+        LOGGER.info("Mic diagnostic: scanning " + mixerInfo.length + " mixers for capture lines");
+        for (Mixer.Info aMixerInfo : mixerInfo) {
+            Mixer mixer = AudioSystem.getMixer(aMixerInfo);
+            if (!mixer.isLineSupported(targetLineInfo)) {
+                continue;
+            }
+            LOGGER.info("Mic diagnostic: capture mixer '" + aMixerInfo.getName()
+                    + "' (" + aMixerInfo.getDescription() + ")");
+            for (Line.Info aLineInfo : mixer.getTargetLineInfo()) {
+                if (!(aLineInfo instanceof DataLine.Info)) {
+                    LOGGER.info("    line: " + aLineInfo + " (no format details)");
+                    continue;
+                }
+                AudioFormat[] formats = ((DataLine.Info) aLineInfo).getFormats();
+                if (formats.length == 0) {
+                    LOGGER.info("    line supports no enumerated formats (any format may work)");
+                }
+                for (AudioFormat format : formats) {
+                    LOGGER.info("    format: encoding=" + format.getEncoding()
+                            + " rate=" + format.getSampleRate()
+                            + " bits=" + format.getSampleSizeInBits()
+                            + " channels=" + format.getChannels()
+                            + " frameSize=" + format.getFrameSize()
+                            + " bigEndian=" + format.isBigEndian());
+                }
+            }
+        }
+        LOGGER.info("Mic diagnostic: end of scan");
+    }
+
+    /**
      * Gets the currentPitch attribute of the YassCaptureAudio object
      *
      * @param channel Description of the Parameter
      * @return The currentPitch value
      */
     public YassPlayerNote getCurrentNote(int channel) {
-        int available = line.available();
-        if (available < buffer.length) {
-            return new YassPlayerNote(YassPlayerNote.NOISE, 0, 0);
-        }
-
-        line.read(buffer, 0, buffer.length);
-
-        // "0.05", "0.1", "0.15", "0.2"
-        float level = calculateLevel(channel);
-        boolean noise = level < minlevel;
-        int pitch = noise ? YassPlayerNote.NOISE : calculatePitch(channel);
-
-        currentPitch = pitch;
-        currentLevel = level;
-        currentMillis = System.currentTimeMillis();
-        return new YassPlayerNote(currentPitch, currentLevel, currentMillis);
+        return getCurrentNote(line, channel);
     }
 
     /**
@@ -165,17 +216,37 @@ public class YassCaptureAudio {
             return new YassPlayerNote(YassPlayerNote.NOISE, 0, 0);
         }
 
-        line.read(buffer, 0, buffer.length);
+        int read = line.read(buffer, 0, buffer.length);
+        decodeSamples(read);
 
-        // "0.05", "0.1", "0.15", "0.2"
-        float level = calculateLevel(channel);
+        float level = calculateLevel();
         boolean noise = level < minlevel;
-        int pitch = noise ? YassPlayerNote.NOISE : calculatePitch(channel);
+        int pitch = noise ? YassPlayerNote.NOISE : calculatePitch();
 
         currentPitch = pitch;
         currentLevel = level;
         currentMillis = System.currentTimeMillis();
         return new YassPlayerNote(currentPitch, currentLevel, currentMillis);
+    }
+
+    /**
+     * Decodes the raw 16-bit signed mono capture buffer into {@link #samples},
+     * scaling down to the 8-bit numeric range so the legacy autocorrelation
+     * thresholds remain valid.
+     *
+     * @param bytesRead number of valid bytes in {@link #buffer}
+     */
+    private void decodeSamples(int bytesRead) {
+        boolean bigEndian = audioFormat.isBigEndian();
+        int n = bytesRead / 2;
+        for (int i = 0; i < n; i++) {
+            int lo = buffer[2 * i] & 0xff;
+            int hi = buffer[2 * i + 1] & 0xff;
+            short s = (short) (bigEndian ? ((lo << 8) | hi) : ((hi << 8) | lo));
+            int v = (int) Math.round((s >> 8) * micGain); // 16-bit -> 8-bit + gain
+            samples[i] = Math.max(-128, Math.min(127, v)); // clip to 8-bit range
+        }
+        sampleCount = n;
     }
 
     /**
@@ -185,58 +256,55 @@ public class YassCaptureAudio {
      * @return Description of the Return Value
      */
     public int calculatePitch(int channel) {
+        return calculatePitch();
+    }
+
+    public int calculatePitch() {
         for (int p = 0; p < 12; p++) {
             pitchprob[p] = 0;
         }
 
         int maxp = -1;
         maxpitchprob = 0;
-        double f = 130.81;// middle-C
-        int basepitch = 0;
-        double cor = 0;
+        double f;
+        int basepitch;
+        double cor;
         for (int p = 0; p < 36; p++) {
-            // for (int p = 0; p < 12; p++) {
             basepitch = p % 12;
             // 1.05946309436 = 12th root of 2 = pitch difference between two
-            // half-tones
-            // multiply a note (frequency) by 1.0546309436 to get the next note
-
+            // half-tones. C3 (~130.81 Hz) up three octaves, folded to pitch class.
             f = 130.81 * Math.pow(1.05946309436, p) / 2;
-            cor = autocorrelate(f, channel);
+            cor = autocorrelate(f);
             pitchprob[basepitch] = Math.max(cor, pitchprob[basepitch]);
             if (cor > maxpitchprob) {
                 maxpitchprob = cor;
                 maxp = basepitch;
             }
-            // f *= 1.05946309436;// /2.0
         }
         return maxp;
     }
 
-    /**
-     * Description of the Method
-     *
-     * @param f       Description of the Parameter
-     * @param channel Description of the Parameter
-     * @return Description of the Return Value
-     */
     public double autocorrelate(double f, int channel) {
-        int buffersize = buffer.length;
+        return autocorrelate(f);
+    }
 
+    /**
+     * Mono autocorrelation over the decoded {@link #samples}. Lag is the number
+     * of samples in one period of {@code f} at the capture sample rate.
+     */
+    public double autocorrelate(double f) {
+        int lag = (int) Math.round(SAMPLE_RATE / f);
+        if (lag < 1 || lag >= sampleCount) {
+            return 0;
+        }
         double n = 0;
         int i = 0;
-        int src = channel == LEFT ? 0 : 1;
-        int move = (int) Math.round(8000 / f);
-        if (move % 2 == 1) {
-            move++;
+        for (int src = 0; src + lag < sampleCount; src++, i++) {
+            n += Math.abs(samples[src] - samples[src + lag]) / 10000.0;
         }
-
-        for (int dst = src + move; dst < buffersize; i++) {
-            n += Math.abs(buffer[src] - buffer[dst]) / 10000.0;
-            src += 2;
-            dst += 2;
+        if (i == 0) {
+            return 0;
         }
-
         return 1 - micboost * (n / (double) i);
     }
 
@@ -247,75 +315,19 @@ public class YassCaptureAudio {
      * @return Description of the Return Value
      */
     public float calculateLevel(int channel) {
-        float level = 0;
+        return calculateLevel();
+    }
 
+    /**
+     * Peak level (0..1) over the decoded mono {@link #samples}, which are scaled
+     * to the 8-bit numeric range.
+     */
+    public float calculateLevel() {
         int max = 0;
-        boolean use16Bit = (audioFormat.getSampleSizeInBits() == 16);
-        boolean signed = (audioFormat.getEncoding() == AudioFormat.Encoding.PCM_SIGNED);
-        boolean bigEndian = (audioFormat.isBigEndian());
-        if (use16Bit) {
-            for (int i = 0; i < buffer.length; i += 2) {
-                int value = 0;
-                // deal with endianness
-                int hiByte = (bigEndian ? buffer[i] : buffer[i + 1]);
-                int loByte = (bigEndian ? buffer[i + 1] : buffer[i]);
-                if (signed) {
-                    short shortVal = (short) hiByte;
-                    shortVal = (short) ((shortVal << 8) | (byte) loByte);
-                    value = shortVal;
-                } else {
-                    value = (hiByte << 8) | loByte;
-                }
-                max = Math.max(max, value);
-            }
-        } else {
-            // 8 bit - no endianness issues, just sign
-            if (channel == LEFT) {
-                for (int i = 0; i < buffer.length; i += 2) {
-                    int value = 0;
-                    if (signed) {
-                        value = buffer[i];
-                    } else {
-                        short shortVal = 0;
-                        shortVal = (short) (shortVal | buffer[i]);
-                        value = shortVal;
-                    }
-                    max = Math.max(max, value);
-                }
-            } else {
-                for (int i = 1; i < buffer.length; i += 2) {
-                    int value = 0;
-                    if (signed) {
-                        value = buffer[i];
-                    } else {
-                        short shortVal = 0;
-                        shortVal = (short) (shortVal | buffer[i]);
-                        value = shortVal;
-                    }
-                    max = Math.max(max, value);
-                }
-            }
+        for (int i = 0; i < sampleCount; i++) {
+            max = Math.max(max, Math.abs(samples[i]));
         }
-        // 8 bit
-        // express max as float of 0.0 to 1.0 of max value
-        // of 8 or 16 bits (signed or unsigned)
-
-        // max = (int) (max * Math.pow(max / MAX_8_BITS_SIGNED, 2.2));
-
-        if (signed) {
-            if (use16Bit) {
-                level = (float) max / MAX_16_BITS_SIGNED;
-            } else {
-                level = (float) max / MAX_8_BITS_SIGNED;
-            }
-        } else {
-            if (use16Bit) {
-                level = (float) max / MAX_16_BITS_UNSIGNED;
-            } else {
-                level = (float) max / MAX_8_BITS_UNSIGNED;
-            }
-        }
-        return level;
+        return (float) max / MAX_8_BITS_SIGNED;
     }
 
     /**
@@ -419,14 +431,12 @@ public class YassCaptureAudio {
         TargetDataLine line = linesHash.get(name);
         try {
             if (line.available() < buffer.length) {
-                // try {
-                // Thread.currentThread().sleep(10);
-                // }
-                // catch (Exception e) {}
                 return null;
             }
+            // Mono capture: one read serves both slots so we don't double-drain
+            // the line and starve the second call.
             left = getCurrentNote(line, LEFT);
-            right = getCurrentNote(line, RIGHT);
+            right = new YassPlayerNote(left);
         } catch (Exception e) {
         }
         return new YassPlayerNote[]{left, right};
@@ -668,8 +678,7 @@ public class YassCaptureAudio {
                         continue;
                     }
                     YassPlayerNote pnoteLeft = getCurrentNote(LEFT);
-                    YassPlayerNote pnoteRight = getCurrentNote(RIGHT);
-                    // LOGGER.info(pnoteLeft.getLevel()+"/"+pnoteRight.getLevel());
+                    YassPlayerNote pnoteRight = new YassPlayerNote(pnoteLeft);
 
                     if (monitor != null) {
                         notesLeft.addElement(pnoteLeft);

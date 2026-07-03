@@ -26,7 +26,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
         def event = new KeyEvent(focusOwner, KeyEvent.KEY_RELEASED, System.currentTimeMillis(), 0, KeyEvent.VK_UP, KeyEvent.CHAR_UNDEFINED)
 
         when:
@@ -50,7 +50,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
         def event = new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, KeyEvent.VK_UP, KeyEvent.CHAR_UNDEFINED)
 
         when:
@@ -74,7 +74,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
         def event = new KeyEvent(focusOwner, KeyEvent.KEY_RELEASED, System.currentTimeMillis(), 0, KeyEvent.VK_DOWN, KeyEvent.CHAR_UNDEFINED)
 
         when:
@@ -103,7 +103,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
         def event = new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0, KeyEvent.VK_UP, KeyEvent.CHAR_UNDEFINED)
 
         when:
@@ -129,7 +129,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
 
         when:
         def firstPress = new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), KeyEvent.SHIFT_DOWN_MASK, KeyEvent.VK_DOWN, KeyEvent.CHAR_UNDEFINED)
@@ -155,7 +155,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
 
         when:
         dispatcher.dispatchKeyEvent(new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), KeyEvent.SHIFT_DOWN_MASK, KeyEvent.VK_DOWN, KeyEvent.CHAR_UNDEFINED))
@@ -164,6 +164,31 @@ class EditorKeyDispatcherSpec extends Specification {
 
         then:
         commandCalls == ['single', 'double']
+    }
+
+    def 'keeps shift-down single-note when multi-press escalation is disabled'() {
+        given:
+        def focusOwner = new JPanel()
+        KeyboardFocusManager.setCurrentKeyboardFocusManager(new StubKeyboardFocusManager(focusOwner))
+        def registry = new EditorKeyBindingRegistry()
+        def tracker = new KeySequenceTracker(500)
+        def commandCalls = []
+        registry.bind(javax.swing.KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, KeyEvent.SHIFT_DOWN_MASK),
+                new SimpleEditorCommand('shiftDownSingle', { true }, { commandCalls << 'single' }))
+        registry.bind(javax.swing.KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, KeyEvent.SHIFT_DOWN_MASK), 2,
+                new SimpleEditorCommand('shiftDownDouble', { true }, { commandCalls << 'double' }))
+        Supplier<EditorInputContext> contextSupplier = {
+            new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
+        }
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { false })
+
+        when:
+        dispatcher.dispatchKeyEvent(new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), KeyEvent.SHIFT_DOWN_MASK, KeyEvent.VK_DOWN, KeyEvent.CHAR_UNDEFINED))
+        dispatcher.dispatchKeyEvent(new KeyEvent(focusOwner, KeyEvent.KEY_RELEASED, System.currentTimeMillis() + 10, KeyEvent.SHIFT_DOWN_MASK, KeyEvent.VK_DOWN, KeyEvent.CHAR_UNDEFINED))
+        dispatcher.dispatchKeyEvent(new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis() + 20, KeyEvent.SHIFT_DOWN_MASK, KeyEvent.VK_DOWN, KeyEvent.CHAR_UNDEFINED))
+
+        then:
+        commandCalls == ['single', 'single']
     }
 
     def 'dispatches single shift-up selection after shift modifier is pressed first'() {
@@ -182,7 +207,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
 
         when:
         def shiftPress = new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), KeyEvent.SHIFT_DOWN_MASK, KeyEvent.VK_SHIFT, KeyEvent.CHAR_UNDEFINED)
@@ -209,7 +234,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(focusArea, false, false, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
         def event = new KeyEvent(focusOwner, KeyEvent.KEY_TYPED, System.currentTimeMillis(), modifiers, KeyEvent.VK_UNDEFINED, shortcutChar as char)
 
         when:
@@ -244,7 +269,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
         int altGrModifiers = KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.ALT_GRAPH_DOWN_MASK
         def event = new KeyEvent(focusOwner, KeyEvent.KEY_TYPED, System.currentTimeMillis(), altGrModifiers,
                 KeyEvent.VK_UNDEFINED, '~' as char)
@@ -270,7 +295,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
         int altGrModifiers = KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.ALT_GRAPH_DOWN_MASK
         def event = new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), altGrModifiers,
                 KeyEvent.VK_DEAD_TILDE, KeyEvent.CHAR_UNDEFINED)
@@ -298,7 +323,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(FocusArea.SHEET, false, false, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
         int altGrModifiers = KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.ALT_GRAPH_DOWN_MASK
         def press = new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), altGrModifiers,
                 KeyEvent.VK_DEAD_TILDE, KeyEvent.CHAR_UNDEFINED)
@@ -329,7 +354,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(FocusArea.LYRICS_EDIT, true, false, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
         int altGrModifiers = KeyEvent.CTRL_DOWN_MASK | KeyEvent.ALT_DOWN_MASK | KeyEvent.ALT_GRAPH_DOWN_MASK
         def event = new KeyEvent(focusOwner, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), altGrModifiers,
                 KeyEvent.VK_DEAD_TILDE, KeyEvent.CHAR_UNDEFINED)
@@ -355,7 +380,7 @@ class EditorKeyDispatcherSpec extends Specification {
         Supplier<EditorInputContext> contextSupplier = {
             new EditorInputContext(focusArea, false, songHeaderEditing, false, false, false, true, false)
         }
-        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker)
+        def dispatcher = new EditorKeyDispatcher({ true }, contextSupplier, registry, tracker, { true })
         def event = new KeyEvent(focusOwner, KeyEvent.KEY_TYPED, System.currentTimeMillis(), modifiers, KeyEvent.VK_UNDEFINED, '+' as char)
 
         when:

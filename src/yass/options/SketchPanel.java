@@ -50,10 +50,13 @@ public class SketchPanel extends OptionsPanel {
         addSeparator();
         addBoolean("", "quicksave", I18.get("options_quicksave"));
         addComment(I18.get("options_quicksave_comment"));
-            // DD 2024.10 Mics don't work as of now
-//        addSeparator();
-//        addChoice(I18.get("options_control_mic_title"), getProperties().getProperty("control-mics"), "control-mics", "control-mic");
-//        addComment(I18.get("options_control_mic_comment"));
+        addSeparator();
+        addChoice(I18.get("options_control_mic_title"), getProperties().getProperty("control-mics"), "control-mics", "control-mic");
+        addComment(I18.get("options_control_mic_comment"));
+        addChoice(I18.get("options_control_mic_sensitivity_title"),
+                I18.get("options_control_mic_sensitivity_choices"),
+                "control-mic-sensitivities", "control-mic-sensitivity");
+        addComment(I18.get("options_control_mic_sensitivity_comment"));
     }
 }
 

@@ -6,6 +6,7 @@ import java.awt.event.KeyEvent;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
 
@@ -15,17 +16,20 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
     private final Supplier<EditorInputContext> contextSupplier;
     private final EditorKeyBindingRegistry registry;
     private final KeySequenceTracker sequenceTracker;
+    private final BooleanSupplier multiPressEscalationEnabled;
     private final Set<Integer> pressedKeyCodes = new HashSet<>();
     private boolean suppressNextTypedTildeShortcut = false;
 
     public EditorKeyDispatcher(Supplier<Boolean> editorActive,
                                Supplier<EditorInputContext> contextSupplier,
                                EditorKeyBindingRegistry registry,
-                               KeySequenceTracker sequenceTracker) {
+                               KeySequenceTracker sequenceTracker,
+                               BooleanSupplier multiPressEscalationEnabled) {
         this.editorActive = Objects.requireNonNull(editorActive);
         this.contextSupplier = Objects.requireNonNull(contextSupplier);
         this.registry = Objects.requireNonNull(registry);
         this.sequenceTracker = Objects.requireNonNull(sequenceTracker);
+        this.multiPressEscalationEnabled = Objects.requireNonNull(multiPressEscalationEnabled);
     }
 
     @Override
@@ -91,7 +95,8 @@ public class EditorKeyDispatcher implements KeyEventDispatcher {
         if (!repeatedPressWithoutRelease) {
             sequenceTracker.record(lookupStroke, nowMs);
         }
-        int pressCount = repeatedPressWithoutRelease ? 1 : sequenceTracker.countRecentMatches(lookupStroke, nowMs);
+        int pressCount = (repeatedPressWithoutRelease || !multiPressEscalationEnabled.getAsBoolean())
+                ? 1 : sequenceTracker.countRecentMatches(lookupStroke, nowMs);
         if (isTrackedMultiPressStroke(stroke)) {
             LOGGER.fine("Editor multi-press count: keyCode=" + e.getKeyCode()
                     + ", modifiers=" + stroke.getModifiers()

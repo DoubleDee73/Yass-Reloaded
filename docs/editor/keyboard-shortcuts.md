@@ -51,27 +51,39 @@ These are real repeated presses, not separate modifier combinations.
 
 ## Note Editing
 
-| Action | Shortcut |
-| --- | --- |
-| Move note left / right | `Shift-Left` / `Shift-Right` |
-| Move note pitch | `Ctrl-Up` / `Ctrl-Down` |
-| Move note pitch and audition | `Ctrl-Alt-Up` / `Ctrl-Alt-Down` |
-| Move note by octave | `Ctrl-Shift-Up` / `Ctrl-Shift-Down` |
-| Move note by octave and audition | `Ctrl-Alt-Shift-Up` / `Ctrl-Alt-Shift-Down` |
-| Resize from left / right | `Ctrl-Alt-Left` / `Ctrl-Alt-Right` |
-| Move remaining notes left / right | `Ctrl-Alt-Shift-Left` / `Ctrl-Alt-Shift-Right` |
-| Split / join note | `-` / `+` |
-| Delete note | `Delete` |
-| Delete note and lyrics | `Ctrl-Delete` |
-| Add note | `Ctrl-Enter` or `Shift-Enter` |
-| Toggle page break | `Enter` |
-| Remove page break | `Backspace` |
+The arrow-key shortcuts use different combinations on macOS, because the
+Windows/Linux defaults collide with macOS system shortcuts (Mission Control,
+Spaces). Both are listed below.
+
+| Action | Windows / Linux | macOS |
+| --- | --- | --- |
+| Move note left / right | `Shift-Left` / `Shift-Right` | `Shift-Left` / `Shift-Right` |
+| Move note pitch | `Ctrl-Up` / `Ctrl-Down` | `Cmd-Up` / `Cmd-Down` |
+| Move note pitch and audition | `Ctrl-Alt-Up` / `Ctrl-Alt-Down` | `Ctrl-Option-Cmd-Up` / `Ctrl-Option-Cmd-Down` |
+| Move note by octave | `Ctrl-Shift-Up` / `Ctrl-Shift-Down` | `Cmd-Shift-Up` / `Cmd-Shift-Down` |
+| Move note by octave and audition | `Ctrl-Alt-Shift-Up` / `Ctrl-Alt-Shift-Down` | `Ctrl-Option-Cmd-Shift-Up` / `Ctrl-Option-Cmd-Shift-Down` |
+| Resize left edge (start earlier / later) | `Ctrl-Left` / `Ctrl-Right` | `Cmd-Shift-Left` / `Cmd-Shift-Right` |
+| Resize right edge (end earlier / later) | `Alt-Left` / `Alt-Right` | `Cmd-Left` / `Cmd-Right` |
+| Move note left / right (beat) | `Ctrl-Alt-Left` / `Ctrl-Alt-Right` | `Ctrl-Option-Cmd-Left` / `Ctrl-Option-Cmd-Right` |
+| Move remaining notes left / right | `Ctrl-Alt-Shift-Left` / `Ctrl-Alt-Shift-Right` | `Ctrl-Option-Cmd-Shift-Left` / `Ctrl-Option-Cmd-Shift-Right` |
+| Split / join note | `-` / `+` | `-` / `+` |
+| Delete note | `Delete` | `Delete` |
+| Delete note and lyrics | `Ctrl-Delete` | `Ctrl-Delete` |
+| Add note | `Ctrl-Enter` or `Shift-Enter` | `Ctrl-Enter` or `Shift-Enter` |
+| Toggle page break | `Enter` | `Enter` |
+| Remove page break | `Backspace` | `Backspace` |
+| Undo / redo | `Ctrl-Z` / `Ctrl-Y` | `Ctrl-Z` / `Ctrl-Y` |
+| Toggle medley start / end | `A` / `Shift-A` | `A` / `Shift-A` |
 
 ## Alignment and Views
 
 | Action | Shortcut |
 | --- | --- |
-| Align to melody | `M` |
+| Align to melody (pitch and timing) | `M` |
+| Align timing | `Ctrl-M` |
+| Align pitch | `Shift-M` |
+| Align to grid | `Ctrl-G` |
+| Set pitch from microphone | `Ctrl-Shift-M` |
 | Toggle absolute pitch view | `L` |
 | Select line | `Ctrl-A` |
 | Select all notes | `Ctrl-Shift-A` |
@@ -83,23 +95,25 @@ These are real repeated presses, not separate modifier combinations.
 
 | Action | Shortcut |
 | --- | --- |
-| Decrease / increase gap by 10 | `0` / `9` |
-| Decrease / increase gap by 1000 | `Shift-0` / `Shift-9` |
+| Decrease / increase gap by 10 | `9` / `0` |
+| Decrease / increase gap by 1000 | `Shift-9` / `Shift-0` |
 | Decrease / increase BPM by 0.1 | `Ctrl--` / `Ctrl-+` |
 | Decrease / increase BPM by 1 | `Ctrl-Shift--` / `Ctrl-Shift-+` |
-| Multiply / divide BPM by 2 | `Ctrl-M` / `Ctrl-D` |
 
 ## Lyrics Editing
 
 | Action | Shortcut |
 | --- | --- |
-| Edit lyrics | `F4` |
+| Edit lyrics | `F4` (also `F2`) |
 | Roll lyrics right / left | `R` / `Shift-R` |
-| Mark as golden / freestyle / plain | `G` / `F` |
-| Mark as Golden Rap / Rap / Plain | `Shift-G` / `Shift-F` |
+| Mark as golden | `G` |
+| Mark as freestyle | `F` |
+| Mark as plain (standard) | `Shift-N` |
+| Mark as golden rap | `Shift-G` |
+| Mark as rap | `Shift-F` |
 | Add trailing space to syllable | `Ctrl-Alt-Space` |
 | Remove trailing space from syllable | `Ctrl-Alt-Backspace` |
-| Toggle `ing` / `in'` ending | `'` |
+| Toggle leading tilde (`~`) on syllable | `~` (or `^`) |
 
 ## Tracks and Miscellaneous
 

@@ -66,10 +66,18 @@ public class YassSheetInfo extends JPanel {
     private static final int NONE = 0;
     private static final int ACTIVATE_TRACK = 1;
     private static final int SHOW_ERRORS = 2;
-    //private static final int SHOW_SELECT = 3;
+    private static final int SHOW_ESCALATION = 3;
+    private static final int SHOW_MIC = 4;
     //private boolean isSelected = false;
 
     private boolean hasErr = false;
+
+    // Status indicators (top strip). Hit areas are recomputed on every paint;
+    // null means the indicator is not currently shown (e.g. inactive track).
+    private Rectangle escalationHitRect = null;
+    private Rectangle micHitRect = null;
+    private static final Color STATUS_ON = new Color(0x3C9A4E);
+    private static final Color STATUS_MIC = new Color(0xD64545);
 
     private static final int OVERVIEW_HANDLE_WIDTH = 12;
     private static final int OVERVIEW_MIN_WINDOW_MS = 1000;
@@ -121,7 +129,13 @@ public class YassSheetInfo extends JPanel {
                 //    repaint();
                 //}
                 final int trackNameWidth = sheet.getTableCount() > 1 ? 100 : 0;
-                if (isInErrorQuickArea(e.getX(), e.getY(), trackNameWidth) && hiliteCue == SHOW_ERRORS)
+                if (escalationHitRect != null && escalationHitRect.contains(e.getPoint())) {
+                    toggleEscalation();
+                }
+                else if (micHitRect != null && micHitRect.contains(e.getPoint())) {
+                    toggleMic();
+                }
+                else if (isInErrorQuickArea(e.getX(), e.getY(), trackNameWidth) && hiliteCue == SHOW_ERRORS)
                     showErrors();
                 else {
                     SwingUtilities.invokeLater(() -> {
@@ -173,7 +187,21 @@ public class YassSheetInfo extends JPanel {
                 }
                 setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
                 final int trackNameWidth = sheet.getTableCount() > 1 ? 100 : 0;
-                if (isInErrorQuickArea(e.getX(), e.getY(), trackNameWidth) && hasErr) {
+                if (escalationHitRect != null && escalationHitRect.contains(e.getPoint())) {
+                    setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                    if (hiliteCue != SHOW_ESCALATION) {
+                        hiliteCue = SHOW_ESCALATION;
+                        repaint();
+                    }
+                }
+                else if (micHitRect != null && micHitRect.contains(e.getPoint())) {
+                    setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                    if (hiliteCue != SHOW_MIC) {
+                        hiliteCue = SHOW_MIC;
+                        repaint();
+                    }
+                }
+                else if (isInErrorQuickArea(e.getX(), e.getY(), trackNameWidth) && hasErr) {
                     if (hiliteCue != SHOW_ERRORS) {
                         hiliteCue = SHOW_ERRORS;
                         repaint();
@@ -507,6 +535,20 @@ public class YassSheetInfo extends JPanel {
     }
     private void showErrors() {
         sheet.getActiveTable().getActions().showErrors.actionPerformed(null);
+    }
+
+    private void toggleEscalation() {
+        YassActions actions = getActions();
+        if (actions != null) {
+            actions.setShiftArrowEscalation(!actions.isShiftArrowEscalationEnabled());
+        }
+    }
+
+    private void toggleMic() {
+        YassActions actions = getActions();
+        if (actions != null) {
+            actions.toggleMicPitch();
+        }
     }
 
     private boolean isActiveTrack() {
@@ -955,6 +997,13 @@ public class YassSheetInfo extends JPanel {
             }
         }
 
+        // status indicators (escalation toggle + mic), active track only
+        escalationHitRect = null;
+        micHitRect = null;
+        if (isActive) {
+            paintStatusIndicators(g2, table, trackNameWidth, errorWidth);
+        }
+
         // artist/title/year
         x = getWidth()-sideBar; //-selectBar;
         String t = StringUtils.defaultString(table.getTitle());
@@ -1024,5 +1073,80 @@ public class YassSheetInfo extends JPanel {
         }
         g2.setColor(sheet.darkMode ? sheet.dkGrayDarkMode : sheet.dkGray);
         g2.drawRect(x, 2, selectBar-2, txtBar-4);*/
+    }
+
+    private YassActions getActions() {
+        YassTable t = sheet.getActiveTable();
+        return t != null ? t.getActions() : null;
+    }
+
+    /**
+     * Draws the status strip in the gap after the error/golden block: a clickable
+     * "Shift Acc" indicator for the Shift-Arrow word/page escalation mode, and a
+     * clickable "Mic" indicator (lit while a pitch session is listening). Each
+     * shows its hover box only while the mouse is over it.
+     */
+    private void paintStatusIndicators(Graphics2D g2, YassTable table, int trackNameWidth, int errorWidth) {
+        YassActions actions = getActions();
+        if (actions == null) {
+            return;
+        }
+
+        Color dim = sheet.darkMode ? sheet.dkGrayDarkMode : sheet.DK_GRAY;
+        Color label = sheet.darkMode ? sheet.hiGrayDarkMode : sheet.HI_GRAY;
+        int dot = 8;
+        // Sit on the lower line of the top strip (next to the error icons / golden
+        // bar) so the indicators clear the filename, which is drawn on the line above.
+        int pillH = txtBar - 10;
+        int pillY = txtBar - pillH - 1;
+
+        int sx = sideBar + 12 + trackNameWidth + errorWidth + 16;
+
+        // escalation indicator (clickable; box shown on hover only)
+        boolean escOn = actions.isShiftArrowEscalationEnabled();
+        String escText = "Shift Acc";
+        int escTextW = g2.getFontMetrics().stringWidth(escText);
+        int pillW = 10 + dot + 6 + escTextW + 8;
+        Rectangle pill = new Rectangle(sx, pillY, pillW, pillH);
+        if (sx + pillW < getWidth() - sideBar - 200) {
+            if (hiliteCue == SHOW_ESCALATION) {
+                g2.setColor(sheet.darkMode ? sheet.blueDragDarkMode : sheet.blueDrag);
+                g2.fillRect(pill.x, pill.y, pill.width, pill.height);
+                g2.setColor(dim);
+                g2.drawRect(pill.x, pill.y, pill.width, pill.height);
+            }
+            g2.setColor(escOn ? STATUS_ON : dim);
+            int cy = pillY + (pillH - dot) / 2;
+            g2.fillOval(sx + 8, cy, dot, dot);
+            g2.setColor(dim);
+            g2.drawOval(sx + 8, cy, dot, dot);
+            g2.setColor(label);
+            g2.drawString(escText, sx + 8 + dot + 6, pillY + pillH - 5);
+            escalationHitRect = pill;
+            sx += pillW + 10;
+        }
+
+        // mic indicator (clickable; box shown on hover only, lit while listening)
+        boolean micOn = actions.isMicPitchActive();
+        String micText = "Mic";
+        int micTextW = g2.getFontMetrics().stringWidth(micText);
+        int micW = 10 + dot + 6 + micTextW + 8;
+        Rectangle micPill = new Rectangle(sx, pillY, micW, pillH);
+        if (sx + micW < getWidth() - sideBar - 200) {
+            if (hiliteCue == SHOW_MIC) {
+                g2.setColor(sheet.darkMode ? sheet.blueDragDarkMode : sheet.blueDrag);
+                g2.fillRect(micPill.x, micPill.y, micPill.width, micPill.height);
+                g2.setColor(dim);
+                g2.drawRect(micPill.x, micPill.y, micPill.width, micPill.height);
+            }
+            int cy = pillY + (pillH - dot) / 2;
+            g2.setColor(micOn ? STATUS_MIC : dim);
+            g2.fillOval(sx + 8, cy, dot, dot);
+            g2.setColor(dim);
+            g2.drawOval(sx + 8, cy, dot, dot);
+            g2.setColor(micOn ? STATUS_MIC : label);
+            g2.drawString(micText, sx + 8 + dot + 6, pillY + pillH - 5);
+            micHitRect = micPill;
+        }
     }
 }

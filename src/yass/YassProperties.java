@@ -117,7 +117,18 @@ public class YassProperties extends Properties {
             if (getProperty("titlecase") == null) {
                 setProperty("titlecase", "off");
             }
+            // Migrate the mic sensitivity setting from the old 0..1 noise-gate
+            // scale to the new gain scale (>= 1). Old fractional values map to
+            // the default gain.
+            String micSens = getProperty("control-mic-sensitivity");
+            if (micSens != null && micSens.contains(".")) {
+                setProperty("control-mic-sensitivity", "4");
+            }
+            if (!"1|2|4|8|16".equals(getProperty("control-mic-sensitivities"))) {
+                setProperty("control-mic-sensitivities", "1|2|4|8|16");
+            }
             setupTags();
+            loadDevices();
             setupHyphenationDictionaries();
             return;
         } catch (Exception e) {
@@ -276,6 +287,9 @@ public class YassProperties extends Properties {
         //mic
         p.putIfAbsent("control-mic", "");
         p.putIfAbsent("control-mics", "");
+        // Pitch-capture input gain (>= 1, higher = more sensitive) and its choices.
+        p.putIfAbsent("control-mic-sensitivity", "4");
+        p.putIfAbsent("control-mic-sensitivities", "1|2|4|8|16");
 
         //editor
         p.putIfAbsent("lyrics-font-size", "14");
@@ -345,6 +359,7 @@ public class YassProperties extends Properties {
         p.putIfAbsent("quicksave", "false");
 
         p.putIfAbsent("mouseover", "false");
+        p.putIfAbsent("shift-arrow-escalation", "true");
         p.putIfAbsent("sketching", "false");
         p.putIfAbsent("sketching-playback", "false");
         p.putIfAbsent("show-note-heightnum", "false");

@@ -3043,9 +3043,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
 
          paintBackBuffer(g2);
 
-          if (!live) {
-              paintMessage(g2);
-          }
+          paintMessage(g2);
       }
 
     /**
@@ -3883,6 +3881,11 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
         int midi = pitch + 60;
         int octave = midi / 12 - 1;
         return getNoteName(normalizeNoteHeight(midi)) + octave;
+    }
+
+    /** Formats a Yass note height as a note name with octave, e.g. "A4". */
+    public String formatHeightName(int height) {
+        return formatPitchName(height);
     }
 
     private PagePitchScope getPitchScopeForRow(int noteRow, List<PitchDetector.PitchData> pitchDataList) {
@@ -6593,6 +6596,11 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
     }
 
     public void setMessage(String s) {
+        message = s;
+    }
+
+    public String getMessage() {
+        return message;
     }
 
     public void setErrorMessage(String s) {
@@ -6602,12 +6610,26 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
     public void paintMessage(Graphics2D g2) {
         if (message == null || message.length() < 1)
             return;
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g2.setFont(bigFonts[19]);
         FontMetrics metrics = g2.getFontMetrics();
-        metrics.stringWidth(message);
-        metrics.getHeight();
-        g2.setColor(Color.blue);
-        g2.drawString(message, clip.x + 4, 2 + metrics.getAscent());
+        int textW = metrics.stringWidth(message);
+        int textH = metrics.getHeight();
+        int padX = 14;
+        int padY = 8;
+        int boxW = textW + 2 * padX;
+        int boxH = textH + 2 * padY;
+        // Anchor to the visible viewport (clip), centered horizontally and near
+        // the top, so it stays on screen regardless of vertical scroll.
+        int boxX = clip.x + Math.max(0, (clip.width - boxW) / 2);
+        int boxY = clip.y + 12;
+        g2.setColor(new Color(0, 0, 0, 180));
+        g2.fillRoundRect(boxX, boxY, boxW, boxH, 16, 16);
+        g2.setColor(new Color(120, 200, 255));
+        g2.setStroke(new BasicStroke(2f));
+        g2.drawRoundRect(boxX, boxY, boxW, boxH, 16, 16);
+        g2.setColor(Color.white);
+        g2.drawString(message, boxX + padX, boxY + padY + metrics.getAscent());
     }
 
     private int getNotePageMin(YassTable t, int rowIndex, YassRow row) {
@@ -8299,6 +8321,7 @@ public class YassSheet extends JPanel implements YassPlaybackRenderer, Scrollabl
                 paintWait(pgb, (int) fromTimeline(clip.x - playerPos));
             paintTemporaryNotes();
             paintRecordedNotes();
+            paintMessage(pgb);
 
             Graphics2D pg2 = (Graphics2D) getGraphics();
             // Always blit the full back buffer to avoid stale pixels in the

@@ -55,7 +55,17 @@ originated.
   segment and word-timing model, tagged as `#LRC`.
 - Rolling YouTube captions are collapsed before conversion.
 - Vocal-aware refinement can adjust transcript timing before alignment when a
-  vocal pitch/energy signal is close enough to transcript anchors.
+  vocal pitch/energy signal is close enough to transcript anchors. It is enabled
+  for line-based timing sources that only distribute syllables linearly across a
+  line (`#SUBTITLES`, `#LRCLIB`, `#LRC`) and for OpenAI `.openai.json` caches.
+- The initial-offset anchor (first vocal onset) is found two ways depending on
+  the current GAP. When the GAP is set, refinement trusts the hint and takes the
+  first significant frame within +/-5s of it, so a user can react if the offset
+  is off. When the GAP is unknown (0) - e.g. audio ripped from a music video that
+  may carry dialog or an instrumental intro - it instead scans for the first real
+  vocal entry: a strong frame (>=40% of peak energy) preceded by a near-silent
+  lead-in (<15% of peak for ~200ms). This skips pre-song dialog/bleed that would
+  otherwise anchor the whole song too early.
 - When a coarse subtitle transcript receives a global timing offset from the
   opening phrase, vocal-aware refinement still checks local phrase starts near
   the original subtitle anchors before rebuilding notes. This keeps a later line
@@ -67,6 +77,26 @@ originated.
 - Vocal-aware refinement filters weak support windows only when enough onset
   anchors remain for every word, snaps close onset buckets to following signal
   starts, and collapses duplicate onsets inside word-level signal windows.
+- Before any onset/window detection, refinement applies a dominant-pitch-band
+  pre-filter: it keeps only pitched frames inside the two-octave band holding the
+  majority of the voice and drops out-of-band frames (aubio's octave-error
+  transients on consonant attacks, breath, and sibilants). Unpitched
+  energy-only frames are always kept (they carry the energy envelope onsets
+  need), and filtering is skipped when the band would retain under half the
+  pitched frames, so a genuinely wide-range phrase is never starved.
+- When the half-beat grid shatters a line into far more signal windows than
+  words (over-fragmentation), refinement keeps the clean onset-per-word anchors
+  instead of the window->word distribution, which would otherwise drag a word
+  past its sung onset.
+- A word stranded inside the previous word's sustained energy block (no onset of
+  its own) is snapped onto an unused, separately-onset energy block before the
+  next word, so a real sung block is not left empty.
+- A word holds until its own energy block ends (clamped before the next word)
+  when the next word begins in a separate block, rather than ending at the
+  midpoint, so a sustained syllable is not truncated while it is still sung.
+- A melismatic word that fills one long energy block with its own internal
+  onsets is kept in that block via syllable-balanced grouping, so its internal
+  onsets do not capture the following words and starve a later block.
 - When there are more local signal windows than transcript words, extra windows
   are assigned preferentially to multi-syllable words so a short leading word
   does not swallow the next sung island.
