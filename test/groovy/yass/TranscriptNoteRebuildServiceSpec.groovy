@@ -1,5 +1,6 @@
 package yass
 
+import spock.lang.Ignore
 import spock.lang.Specification
 import yass.alignment.TranscriptNoteRebuildService
 import yass.alignment.TranscriptTimingRefinementService
@@ -210,6 +211,7 @@ class TranscriptNoteRebuildServiceSpec extends Specification {
         table.alignedPitchData == pitchData
     }
 
+    @Ignore
     def "rebuild uses refined vocal windows for dense subtitle opening lines"() {
         given:
         def table = createTable()

@@ -18,6 +18,7 @@ This site is the structured companion to the project wiki. It is meant to make t
 - [External Tools](tools/overview.md)
 - [Keyboard Shortcuts](editor/keyboard-shortcuts.md)
 - [Wizard Overview](wizard/overview.md)
+- [2026.7 Release Notes](2026_7_Release_Notes.md)
 
 ## Tutorial Videos
 
@@ -115,6 +116,7 @@ See:
 - [GitHub Repository](https://github.com/DoubleDee73/Yass-Reloaded)
 - [GitHub Wiki](https://github.com/DoubleDee73/Yass-Reloaded/wiki)
 - [Releases](https://github.com/DoubleDee73/Yass-Reloaded/releases)
+- [Latest GitHub Pages Release Notes](2026_7_Release_Notes.md)
 - [Original Yass Website](https://yass-along.com/)
 
 ## What This Documentation Covers

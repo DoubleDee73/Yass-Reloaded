@@ -33,6 +33,8 @@ sections:
         url: /library/overview.html
   - title: Reference
     links:
+      - title: Release Notes 2026.7
+        url: /2026_7_Release_Notes.html
       - title: FAQ
         url: /reference/faq.html
       - title: Troubleshooting

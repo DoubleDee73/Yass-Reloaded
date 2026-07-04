@@ -33,6 +33,10 @@ Some navigation shortcuts support intentional repeated presses:
 
 These are real repeated presses, not separate modifier combinations.
 
+This repeated-press behavior can be disabled in
+`Extras -> Preferences... -> Editor -> Keyboard` if you prefer `Shift-Up` and `Shift-Down` to
+always move note-by-note.
+
 ## Playback and Recording
 
 | Action | Shortcut |
@@ -135,7 +139,7 @@ During tap recording, Yass Reloaded can use the top keyboard rows as a virtual p
 
 You can review and configure keyboard-related behavior in:
 
-- `Settings -> Editor -> Keyboard`
+- `Extras -> Preferences... -> Editor -> Keyboard`
 
 ## Notes
 

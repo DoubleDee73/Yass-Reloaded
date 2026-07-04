@@ -147,9 +147,12 @@ final class AudioAssignmentHeuristics {
                                           String title,
                                           String txtFilename,
                                           boolean duet,
+                                          String normalizedTxtStem,
+                                          boolean specificTxtStem,
                                           List<String> normalizedTitleKeys) {
         private static AudioAssignmentContext from(YassSong song) {
             String txtFilename = StringUtils.defaultString(song.getFilename());
+            String normalizedTxtStem = normalize(Path.of(txtFilename).getFileName().toString().replaceFirst("\\.[^.]+$", ""));
             String cleanedTxtStem = normalize(Path.of(txtFilename).getFileName().toString().replaceFirst("\\.[^.]+$", "")
                     .replaceAll("\\[[^\\]]+\\]", " "));
             List<String> keys = new ArrayList<>();
@@ -172,6 +175,8 @@ final class AudioAssignmentHeuristics {
                     song.getTitle(),
                     txtFilename,
                     duet,
+                    normalizedTxtStem,
+                    !StringUtils.equals(normalizedTxtStem, cleanedTxtStem),
                     keys.stream().filter(StringUtils::isNotBlank).distinct().toList());
         }
     }
@@ -233,6 +238,9 @@ final class AudioAssignmentHeuristics {
                     })
                     .max()
                     .orElse(0);
+            if (context.specificTxtStem() && normalizedStem.contains(context.normalizedTxtStem())) {
+                titleMatchScore += 15;
+            }
 
             int audioScore = 0;
             if ((extension.equals(".m4a") || extension.equals(".opus")) && hints.contains(AudioHint.PLAIN_ARTIST_TITLE)) {

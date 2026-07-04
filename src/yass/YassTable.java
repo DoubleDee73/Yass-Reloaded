@@ -6157,11 +6157,15 @@ public class YassTable extends JTable {
                 return false;
             }
             String text = tempSyllable.getTrimmedText();
-            if (i == 0 && !toLeft && text.length() < 1) {
-                // First syllable is empty
+            if (i == 0 && (StringUtils.isBlank(text) || tempSyllable.endsWithSpace())) {
+                // First syllable is empty or ends a word already.
                 return false;
-            } else if (i > 0 && i < (selectedRows - 1) && !text.equals("~")) {
-                // Syllables between are not ~
+            } else if (i > 0 && i < (selectedRows - 1)
+                    && (!text.equals("~") || tempSyllable.endsWithSpace())) {
+                // Syllables between are not ~ or cross a word boundary.
+                return false;
+            } else if (i == selectedRows - 1 && toLeft && "~".equals(text)) {
+                // There must be at least one movable character in the last syllable.
                 return false;
             }
         }

@@ -46,6 +46,7 @@ Used for:
 - cloud-based stem separation
 - API-key based online vocal/instrumental separation
 - choosing a Vocal Model and Audio Format for returned stems
+- removing reverb from an existing `#VOCALS` file
 
 ### audio-separator
 
@@ -129,6 +130,7 @@ Not every workflow needs every tool:
 - use OpenAI for cloud transcription workflows
 - use LrcLib first when you mainly want existing lyrics with minimal setup
 - use MVSEP or audio-separator when you need stems
+- use MVSEP Reverb Removal when you already have a vocals stem but want a drier track for pitch-aware editing
 - use direct USDB integration when you want compare/import/edit workflows against the live song database
 - use fanart.tv for library polish and media management
 - use USDB Syncer when you want faster USDB search and a local DB-backed lookup path

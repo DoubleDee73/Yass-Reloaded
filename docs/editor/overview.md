@@ -64,6 +64,7 @@ The editor provides:
 - place page breaks
 - align notes to grid
 - align notes to melody
+- set selected note pitch from a microphone
 - jump to a precise cursor time
 - move all following notes to a new timestamp
 - reuse or compare repeating melodic patterns
@@ -109,10 +110,11 @@ Some of the most used editing shortcuts are:
 | Play page | `P` |
 | Move note left/right | `Shift-Left` / `Shift-Right` |
 | Move note pitch | `Ctrl-Up` / `Ctrl-Down` |
-| Resize note | `Ctrl-Alt-Left` / `Ctrl-Alt-Right` |
+| Resize note | `Ctrl-Left` / `Ctrl-Right` and `Alt-Left` / `Alt-Right` |
 | Toggle page break | `Enter` |
 | Add note | `Ctrl-Enter` |
 | Align to melody | `M` |
+| Set pitch from microphone | `Ctrl-Shift-M` |
 | Toggle absolute view | `L` |
 
 ## Related Pages

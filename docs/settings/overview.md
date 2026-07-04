@@ -4,7 +4,10 @@ title: Settings Overview
 
 # Settings Overview
 
-Yass Reloaded groups its settings into several areas in the options dialog. This page explains what each area is for and when a setting actually matters.
+Yass Reloaded groups its settings into several areas in the options dialog. Open
+the dialog from `Extras -> Preferences...` in the English UI, or
+`Extras -> Einstellungen...` in the German UI. This page explains what each area
+is for and when a setting actually matters.
 
 ## How the Settings Dialog Is Structured
 
@@ -144,6 +147,17 @@ This section controls mouse-gesture and sketch-related behavior.
 
 It matters if you prefer gesture-heavy editing or want to tune how direct note manipulation feels.
 
+It also contains practical editor behavior settings:
+
+- autosave interval in seconds (`0` disables autosave)
+- quicksave behavior
+- microphone device selection
+- microphone sensitivity for pitch capture
+
+The microphone settings are used by **Set Pitch From Microphone** in the editor.
+Devices are detected at startup, so restart Yass Reloaded if a newly connected
+microphone does not appear yet.
+
 ### Keyboard
 
 Configure keyboard-related behavior such as the virtual piano layout and shortcut-oriented control preferences.
@@ -153,6 +167,10 @@ Useful when:
 - you use note-tapping heavily
 - you use QWERTY, QWERTZ, or AZERTY layouts
 - you depend on keyboard-driven editing
+
+This is also where repeated `Shift-Up` / `Shift-Down` selection escalation can be
+enabled or disabled. When enabled, repeated presses can extend a selection to
+word/page boundaries. When disabled, those shortcuts stay note-by-note.
 
 ### Spelling
 
@@ -230,6 +248,10 @@ Relevant settings include:
 In most cases, the default Vocal Model is fine. Audio Format controls which file format MVSEP returns for the separated stems.
 
 If no API token is configured, MVSEP cannot be used even though the page is still visible.
+
+The editor can also use the same MVSEP account for **Remove Reverb (MVSEP)** on
+an existing `#VOCALS` file. That action is exposed from the editor Extras menu
+when a usable vocals file and API token are available.
 
 ### USDB and Syncer-Related Behavior
 

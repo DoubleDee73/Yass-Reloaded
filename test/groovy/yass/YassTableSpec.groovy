@@ -34,6 +34,7 @@ class YassTableSpec extends Specification {
     private final static List<YassRow> LEADING_SPACE_END_WORD_SONG = initSong3()
     private final static List<YassRow> TRAILING_SPACE_END_WORD_SONG = initSong4()
     private final static List<YassRow> TILDE_SONG = initSong5()
+    private final static List<YassRow> TRAILING_SPACE_SHORT_WORD_TILDE_SONG = initSong6()
 
     def 'selectPrevBeat extends a single-note selection upward'() {
         given:
@@ -947,7 +948,7 @@ class YassTableSpec extends Specification {
     def 'getText retrieves the text of a song with regular spacing'() {
         given:
         YassTableModel ytm = new YassTableModel()
-        TRAILING_SPACE_END_TILDE_SONG.each { row ->
+        TRAILING_SPACE_SHORT_WORD_TILDE_SONG.each { row ->
             ytm.addRow(row)
         }
 
@@ -960,7 +961,7 @@ class YassTableSpec extends Specification {
         }
         YassTable yassTable = new YassTable(ytm, props)
         yassTable.model = Stub(TableModel) {
-            getRowCount() >> TRAILING_SPACE_END_TILDE_SONG.size()
+            getRowCount() >> TRAILING_SPACE_SHORT_WORD_TILDE_SONG.size()
         }
 
         when:
@@ -974,7 +975,7 @@ class YassTableSpec extends Specification {
     def 'insertRowsAt should insert rows'() {
         given:
         YassTableModel ytm = new YassTableModel()
-        TRAILING_SPACE_END_TILDE_SONG.each { row ->
+        TRAILING_SPACE_SHORT_WORD_TILDE_SONG.each { row ->
             ytm.addRow(row)
         }
 
@@ -989,7 +990,7 @@ class YassTableSpec extends Specification {
         yassTable.setBPM(240d)
         yassTable.gap = 1000
         yassTable.model = Stub(TableModel) {
-            getRowCount() >> TRAILING_SPACE_END_TILDE_SONG.size()
+            getRowCount() >> TRAILING_SPACE_SHORT_WORD_TILDE_SONG.size()
         }
         YassHyphenator hyphenator = new YassHyphenator(null)
         hyphenator.hyphenator = new Hyphenator()
@@ -1005,8 +1006,8 @@ class YassTableSpec extends Specification {
 
         where:
         textToInsert                  | startRow || expectation
-        ':\t0\t4\t20\tHello '         | 7        || ['One', '~ ', 'two ', 'a ', '_', 'Hello ', '_', 'five', '~ ']
-        ':\t0\t8\t20\tHello '         | 7        || ['One', '~ ', 'two ', 'a ', '_', 'Hello ', '_', '~ ']
+        ':\t0\t4\t20\tHello '         | 7        || ['One', '~ ', 'two ', 'a ', '_', 'Hello ', 'five', '~ ']
+        ':\t0\t8\t20\tHello '         | 7        || ['One', '~ ', 'two ', 'a ', '_', 'Hello ', '~ ']
         ':\t0\t2\t20\ta \n' +
                 ':\t3\t2\t20\tb \n' +
                 ':\t6\t2\t20\tc \n' +
@@ -1536,7 +1537,7 @@ class YassTableSpec extends Specification {
                 new YassRow(':', '0', '5', '10', 'One'),
                 new YassRow(':', '6', '5', '10', '~ '),
                 new YassRow(':', '12', '5', '10', 'two '),
-                new YassRow(':', '18', '5', '10', 'a '),
+                new YassRow(':', '18', '5', '10', 'three '),
                 new YassRow('-', '124', '', '', ''),
                 new YassRow(':', '126', '5', '10', 'Four '),
                 new YassRow(':', '132', '5', '10', 'five'),
@@ -1599,6 +1600,24 @@ class YassTableSpec extends Specification {
                 new YassRow(':', '46', '5', '10', 'Tes'),
                 new YassRow(':', '52', '5', '10', '~'),
                 new YassRow(':', '58', '5', '10', 't'),
+                new YassRow('E', '', '', '', '')
+        ]
+        rows.each { row ->
+            row.setText(row.getText().replace(' ' as char, YassRow.SPACE))
+        }
+        rows
+    }
+
+    private static List<YassRow> initSong6() {
+        List<YassRow> rows = [
+                new YassRow(':', '0', '5', '10', 'One'),
+                new YassRow(':', '6', '5', '10', '~ '),
+                new YassRow(':', '12', '5', '10', 'two '),
+                new YassRow(':', '18', '5', '10', 'a '),
+                new YassRow('-', '124', '', '', ''),
+                new YassRow(':', '126', '5', '10', 'Four '),
+                new YassRow(':', '132', '5', '10', 'five'),
+                new YassRow(':', '138', '5', '10', '~ '),
                 new YassRow('E', '', '', '', '')
         ]
         rows.each { row ->

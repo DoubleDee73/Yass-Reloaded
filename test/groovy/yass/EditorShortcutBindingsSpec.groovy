@@ -72,10 +72,8 @@ class EditorShortcutBindingsSpec extends Specification {
         String actionsSource = Files.readString(Path.of('src/yass/YassActions.java'))
 
         expect:
-        actionsSource.contains('KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),\n' +
-                '                        "shiftLeft"')
-        actionsSource.contains('KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK),\n' +
-                '                        "shiftRight"')
+        actionsSource =~ /KeyStroke\.getKeyStroke\(KeyEvent\.VK_LEFT,\s*InputEvent\.CTRL_DOWN_MASK \| InputEvent\.SHIFT_DOWN_MASK\),\s*"shiftLeft"/
+        actionsSource =~ /KeyStroke\.getKeyStroke\(KeyEvent\.VK_RIGHT,\s*InputEvent\.CTRL_DOWN_MASK \| InputEvent\.SHIFT_DOWN_MASK\),\s*"shiftRight"/
     }
 
     def 'ctrl enter routes to vocal-aware insert while shift enter remains legacy insert'() {
@@ -103,7 +101,7 @@ class EditorShortcutBindingsSpec extends Specification {
         eligibilityBlock.contains('!mp3.getPitchDataList().isEmpty()')
         actionBlock.contains('if (shouldUseVocalAwareInsertNote())')
         actionBlock.contains('table.insertNoteWithVocalPitch(currentPitchDataForEditorAlignment());')
-        actionBlock.contains('} else {\n                table.insertNote();')
+        actionBlock =~ /\}\s+else\s+\{\s+table\.insertNote\(\);/
     }
 
     def 'insert note dialog uses ok as default and cancel or escape as non-mutating paths'() {

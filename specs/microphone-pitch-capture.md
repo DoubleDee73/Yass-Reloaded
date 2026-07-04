@@ -21,9 +21,9 @@ Note-Tapping Recording).
   gate on `isOpened` only because the table selection listener does not re-run
   `updateActions`). If triggered with no note selected, it shows
   `edit_mic_select_one_note` and does nothing.
-- The microphone device is chosen in **Options > Editor > Control** ("Mic:"
-  dropdown, `SketchPanel`), stored in property `control-mic`. Devices are
-  enumerated at startup only.
+- The microphone device is chosen in **Extras > Preferences... > Editor >
+  Control** ("Mic:" dropdown, `SketchPanel`), stored in property `control-mic`.
+  Devices are enumerated at startup only.
 - Triggering arms a **toggle listen mode**: a banner HUD is drawn into the
   visible grid (`edit_mic_listening`, then `edit_mic_detected <note>` once a
   stable pitch is found), the microphone opens, and all selected note(s) follow
@@ -37,7 +37,8 @@ Note-Tapping Recording).
   - **Moving the selection to other note(s)** accepts the current note(s) and
     re-arms listening on the new selection ("walk down the line").
   - **Moving to a non-note / empty selection** accepts and turns the mode off.
-  - **Esc** restores the original height(s) and turns the mode off.
+  - **Esc** accepts the current detected pitch and turns the mode off (same as
+    toggling off). Use undo afterwards to discard it.
   - In every case the banner disappears.
 - Accept commits as undo step(s) (original height -> detected height). If no
   stable pitch was detected for a note group, it is left at its original height
@@ -45,7 +46,7 @@ Note-Tapping Recording).
 - With a multi-note selection the single detected pitch is applied to every
   selected note (like the Higher/Lower height actions).
 - If no microphone is configured/available, the sheet shows `edit_mic_no_device`
-  and nothing is mutated.
+  and nothing is mutated. This setup hint can be dismissed with **Esc**.
 
 ## Core Rules
 
@@ -99,7 +100,8 @@ Note-Tapping Recording).
 - `src/yass/YassActions.java` — `setPitchFromMicrophone` action,
   `toggleMicPitchCapture` / `onMicPitchTick` / `applyMicPitchHeight` /
   `commitMicPitchSelection` / `acceptAndStopMicPitchCapture` /
-  `cancelMicPitchCapture` / `bindMicPitchSelection` /
+  `showDismissibleMicPitchMessage` /
+  `installMicPitchMessageDismissDispatcher` / `bindMicPitchSelection` /
   `installMicPitchSelectionListener` / `installMicPitchKeyDispatcher` /
   `selectedNoteRows` / `pageHeightRange`, inner `MicPitchSession` (holds the row
   set, original heights, window, timer, key + selection listeners), keybinding in
@@ -123,8 +125,10 @@ Note-Tapping Recording).
   (G4-D5 -> F4-E5, octave clamping, reversed args), `stablePitchClass`
   trimmed/circular mean including the C/B octave-edge case and the
   too-few-readings empty case.
+- `test/groovy/yass/YassActionsMicPitchFeedbackSpec.groovy` covers the
+  dismissible setup hints and the real Preferences-path wording.
 - Live microphone behavior (device open, live tracking, HUD, commit/cancel undo)
-  is verified manually; it cannot be exercised in headless tests.
+  is otherwise verified manually; it cannot be exercised in headless tests.
 
 ## Extension Notes
 

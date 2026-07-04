@@ -240,6 +240,8 @@ public class YassActions implements DropTargetListener {
     private final KeySequenceTracker editorKeySequenceTracker = new KeySequenceTracker(350L);
     private EditorKeyDispatcher editorKeyDispatcher;
     private MicPitchSession micPitchSession;
+    private KeyEventDispatcher micPitchMessageDismissDispatcher;
+    private String micPitchDismissibleMessage = "";
 
     private record EditorShortcutBinding(KeyStroke keyStroke, String actionKey, Action action, KeyStroke accelerator) {
     }
@@ -3420,22 +3422,17 @@ public class YassActions implements DropTargetListener {
         if (table == null || lyrics.isEditable() || isFocusInSongHeader() || isFilterEditing()) {
             return;
         }
+        removeMicPitchMessageDismissDispatcher();
         int[] selection = selectedNoteRows();
         if (selection.length == 0) {
-            if (sheet != null) {
-                sheet.setErrorMessage(I18.get("edit_mic_select_one_note"));
-                sheet.repaint();
-            }
+            showDismissibleMicPitchMessage(I18.get("edit_mic_select_one_note"));
             return;
         }
 
         MicPitchSession session = new MicPitchSession();
         String device = prop != null ? prop.getProperty("control-mic") : null;
         if (!session.capture.start(device, 0.04, micPitchGain())) {
-            if (sheet != null) {
-                sheet.setErrorMessage(I18.get("edit_mic_no_device"));
-                sheet.repaint();
-            }
+            showDismissibleMicPitchMessage(I18.get("edit_mic_no_device"));
             return;
         }
 
@@ -3481,6 +3478,48 @@ public class YassActions implements DropTargetListener {
         } catch (NumberFormatException e) {
             return 4.0;
         }
+    }
+
+    private void showDismissibleMicPitchMessage(String message) {
+        if (sheet == null) {
+            return;
+        }
+        sheet.setErrorMessage(message);
+        sheet.repaint();
+        installMicPitchMessageDismissDispatcher(message);
+    }
+
+    private void installMicPitchMessageDismissDispatcher(String message) {
+        removeMicPitchMessageDismissDispatcher();
+        micPitchDismissibleMessage = StringUtils.defaultString(message);
+        micPitchMessageDismissDispatcher = e -> {
+            if (e.getID() != KeyEvent.KEY_PRESSED || e.getKeyCode() != KeyEvent.VK_ESCAPE) {
+                return false;
+            }
+            if (sheet == null || !StringUtils.equals(sheet.getMessage(), micPitchDismissibleMessage)) {
+                removeMicPitchMessageDismissDispatcher();
+                return false;
+            }
+            sheet.setMessage("");
+            sheet.repaint();
+            removeMicPitchMessageDismissDispatcher();
+            e.consume();
+            return true;
+        };
+        KeyboardFocusManager kfm = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+        kfm.addKeyEventDispatcher(micPitchMessageDismissDispatcher);
+        if (editorKeyDispatcher != null) {
+            kfm.removeKeyEventDispatcher(editorKeyDispatcher);
+            kfm.addKeyEventDispatcher(editorKeyDispatcher);
+        }
+    }
+
+    private void removeMicPitchMessageDismissDispatcher() {
+        if (micPitchMessageDismissDispatcher != null) {
+            KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(micPitchMessageDismissDispatcher);
+            micPitchMessageDismissDispatcher = null;
+        }
+        micPitchDismissibleMessage = "";
     }
 
     private void setMicPitchBanner(MicPitchSession session, String text) {
@@ -3614,6 +3653,7 @@ public class YassActions implements DropTargetListener {
     }
 
     private void clearMicPitchBanner() {
+        removeMicPitchMessageDismissDispatcher();
         if (sheet != null) {
             sheet.setMessage("");
             sheet.init();

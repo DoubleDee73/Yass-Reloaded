@@ -22,10 +22,28 @@ Frequently used shortcuts:
 | --- | --- |
 | Move note left / right | `Shift-Left` / `Shift-Right` |
 | Move note pitch | `Ctrl-Up` / `Ctrl-Down` |
-| Resize note | `Ctrl-Alt-Left` / `Ctrl-Alt-Right` |
+| Resize left edge | `Ctrl-Left` / `Ctrl-Right` |
+| Resize right edge | `Alt-Left` / `Alt-Right` |
 | Split / join note | `-` / `+` |
 | Delete note | `Delete` |
 | Add note | `Ctrl-Enter` or `Shift-Enter` |
+
+## Set Pitch From Microphone
+
+If you know the melody but not the exact note height, **Set Pitch From
+Microphone** can set the selected note pitch from live microphone input.
+
+- Select one or more notes.
+- Use `Ctrl-Shift-M` or the editor menu action.
+- Sing or hum the intended pitch.
+- Use `Up` / `Down` to shift the octave window if needed.
+- Press `Esc` or `Ctrl-Shift-M` again to accept and stop listening; use undo if
+  you want to discard the accepted pitch.
+
+The microphone device and sensitivity are configured in
+`Extras -> Preferences... -> Editor -> Control`. If no microphone is configured
+yet, the on-screen hint can be dismissed with `Esc`. Captured audio is not
+stored.
 
 ## Copy and Paste Workflows
 

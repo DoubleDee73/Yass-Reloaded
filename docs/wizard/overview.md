@@ -27,6 +27,10 @@ Use it when:
 - you want the wizard to download source media
 - you want the wizard to reuse YouTube metadata such as subtitles or video context
 
+When subtitles are downloaded, the wizard can keep a selected subtitle file for
+later transcript fallback. Manual subtitles are preferred over auto-generated
+subtitles when both are available.
+
 If `yt-dlp` is not installed, you cannot enter a YouTube URL in the wizard. In that case the wizard starts from local files instead.
 
 ### Melody
@@ -60,6 +64,11 @@ If LrcLib is used from this page:
 - the previously confirmed artist/title values are reused automatically
 - Yass Reloaded can import either plain lyric text or already timed lyric lines when available
 - the result is meant as a lightweight lyrics source, not as a full replacement for every transcription workflow
+
+Subtitle, LRC, and LRCLib timing can be converted into the same reusable
+transcript model used by the transcription engines. When separated vocals are
+available, Yass Reloaded can refine those coarse timings against vocal pitch and
+energy before rebuilding notes.
 
 ### Lyrics for MIDI
 
@@ -110,6 +119,7 @@ If these are not available, the feature may be disabled or not useful yet.
 The helper can also reuse earlier work:
 
 - if a previous wizard run already created usable separation or transcription data for the same source, Yass Reloaded can reuse that state instead of starting from zero again
+- if a YouTube subtitle file is available and no full transcript was produced, the subtitle can become a fallback transcript artifact
 - if you finish the wizard without running separation first, Yass Reloaded can still offer separation once the new song opens in the editor
 
 ## When Steps Are Missing
