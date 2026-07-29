@@ -1021,7 +1021,7 @@ class YassTableSpec extends Specification {
         'hello b c d\ne f g h\n'      | 5        || ['One', '~ ', 'two ', 'he', 'lo ', 'b ', 'c ', 'd ', '_', 'e ', 'f ', 'g ', 'h ', '_', 'Four ', 'five', '~ ']
     }
 
-    def 'blank insert note creates a tilde placeholder with inherited pitch and capped length'() {
+    def 'blank insert note creates a tilde placeholder and trims previous same-page end space'() {
         given:
         YassTable yassTable = tableForInsertedLyrics([
                 note(':', 0, 4, 7, 'one '),
@@ -1034,11 +1034,30 @@ class YassTableSpec extends Specification {
         invokeInsertNoteWithOptionalText(yassTable, '')
 
         then:
-        noteTexts(yassTable) == ['one ', '~', 'two ']
+        noteTexts(yassTable) == ['one', '~', 'two ']
         noteBeats(yassTable) == [0, 4, 9]
         noteLengths(yassTable) == [4, 3, 4]
         notePitches(yassTable) == [7, 7, 12]
         yassTable.getRowAt(yassTable.selectedRow).text == '~'
+    }
+
+    def 'blank insert note does not trim previous note across a page break'() {
+        given:
+        YassTable yassTable = tableForInsertedLyrics([
+                note(':', 0, 4, 7, 'one '),
+                new YassRow('-', '10', '', '', ''),
+                new YassRow('Y', 'hide', '', '', ''),
+                note(':', 16, 4, 12, 'two ')
+        ], [:])
+        int hiddenRow = firstRowIndex(yassTable) { it.hidden }
+        yassTable.setRowSelectionInterval(hiddenRow, hiddenRow)
+
+        when:
+        invokeInsertNoteWithOptionalText(yassTable, '')
+
+        then:
+        noteTexts(yassTable) == ['one ', '~', 'two ']
+        noteBeats(yassTable) == [0, 10, 16]
     }
 
     def 'blank insert note is blocked on comment rows'() {
@@ -1150,6 +1169,37 @@ class YassTableSpec extends Specification {
         result.status() == YassTable.InsertedLyricsStatus.NO_USABLE_PITCH_DATA
         noteTexts(yassTable) == ['old ', 'next ']
         noteBeats(yassTable) == [100, 104]
+    }
+
+    def 'handleInsertedLyricsResult falls back to legacy insert for recoverable vocal insert failures'() {
+        given:
+        ObservingInsertResultTable yassTable = observingInsertResultTable()
+
+        when:
+        yassTable.handleInsertedLyricsResult(result, 'hello')
+
+        then:
+        yassTable.insertedNoteText == 'hello'
+        yassTable.shownResult == null
+
+        where:
+        result << [
+                YassTable.InsertedLyricsResult.noUsablePitchData(2, 2),
+                YassTable.InsertedLyricsResult.alignmentOutOfBounds(2, 2)
+        ]
+    }
+
+    def 'handleInsertedLyricsResult still shows a message for non-recoverable vocal insert failures'() {
+        given:
+        ObservingInsertResultTable yassTable = observingInsertResultTable()
+        def result = YassTable.InsertedLyricsResult.tooManySyllables(3, 2)
+
+        when:
+        yassTable.handleInsertedLyricsResult(result, 'hello darkness')
+
+        then:
+        yassTable.insertedNoteText == null
+        yassTable.shownResult == result
     }
 
     def 'calculateNewGap should add a Gap'() {
@@ -1448,6 +1498,18 @@ class YassTableSpec extends Specification {
         yassTable
     }
 
+    private ObservingInsertResultTable observingInsertResultTable() {
+        I18.setDefaultLanguage()
+        YassTableModel ytm = new YassTableModel()
+        ytm.addRow(new YassRow('E', '', '', '', ''))
+        YassProperties props = Stub(YassProperties) {
+            isUncommonSpacingAfter() >> true
+        }
+        ObservingInsertResultTable yassTable = new ObservingInsertResultTable(ytm, props)
+        yassTable.setModel(ytm)
+        yassTable
+    }
+
     private static void invokeInsertNoteWithOptionalText(YassTable table, String noteText) {
         def method = YassTable.getDeclaredMethod('insertNoteWithOptionalText', String)
         method.accessible = true
@@ -1512,6 +1574,23 @@ class YassTableSpec extends Specification {
             frames.add(new PitchDetector.PitchData(time as float, pitch, 'A', 440d))
         }
         frames
+    }
+
+    private static class ObservingInsertResultTable extends YassTable {
+        String insertedNoteText
+        InsertedLyricsResult shownResult
+
+        ObservingInsertResultTable(YassTableModel tm, YassProperties props) {
+            super(tm, props)
+        }
+
+        void insertNoteWithOptionalText(String noteText) {
+            insertedNoteText = noteText
+        }
+
+        void showInsertedLyricsResult(InsertedLyricsResult result) {
+            shownResult = result
+        }
     }
 
     private static List<YassRow> initSong1() {

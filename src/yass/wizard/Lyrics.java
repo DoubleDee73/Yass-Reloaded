@@ -147,7 +147,7 @@ public class Lyrics extends JPanel {
         YassUtils.addChangeListener(lyricsArea, e -> {
             determineLanguage();
             if (!updatingLyricsProgrammatically) {
-                transcriptionResult = null;
+                clearSubtitleSourceForManualLyrics();
             }
         });
         lyricsPanel.add(new JScrollPane(lyricsArea), BorderLayout.CENTER);
@@ -200,6 +200,21 @@ public class Lyrics extends JPanel {
      */
     public void setSubtitleFile(String path) {
         subtitleFileField.setText(path);
+    }
+
+    /** Clears subtitle-derived state when the user supplies lyrics manually. */
+    public void clearSubtitleSourceForManualLyrics() {
+        subtitles = null;
+        transcriptionResult = null;
+        wizard.setValue("subtitle", "");
+        if (subtitleFileField != null && StringUtils.isNotBlank(subtitleFileField.getText())) {
+            subtitleFileField.setText("");
+        }
+    }
+
+    public void clearLyricsAndSubtitleSource() {
+        clearSubtitleSourceForManualLyrics();
+        setText("");
     }
 
 

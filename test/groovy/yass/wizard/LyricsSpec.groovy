@@ -73,6 +73,36 @@ E
         noteTexts(table) == ["try", "ing"]
     }
 
+    def "manual lyrics clear subtitle-derived source before table creation"() {
+        given:
+        I18.setDefaultLanguage()
+        def properties = new YassProperties()
+        def wizard = new com.nexes.wizard.Wizard()
+        wizard.setValue("language", "English")
+        wizard.setValue("bpm", "60")
+        def lyrics = new Lyrics(wizard, properties)
+        def subtitleFile = java.nio.file.Files.createTempFile("wizard-lyrics", ".vtt")
+        java.nio.file.Files.writeString(subtitleFile, """WEBVTT
+
+00:00:01.000 --> 00:00:02.000
+Subtitle text
+""")
+        lyrics.setSubtitleFile(subtitleFile.toString())
+
+        when:
+        lyrics.lyricsArea.setText("Manual text")
+        javax.swing.SwingUtilities.invokeAndWait({})
+
+        then:
+        lyrics.subtitleFileField.text == ""
+        lyrics.getTable().contains("Ma")
+        !lyrics.getTable().contains("Subtitle")
+
+        cleanup:
+        java.nio.file.Files.deleteIfExists(subtitleFile)
+        wizard.dialog.dispose()
+    }
+
     private static List<String> noteTexts(YassTable table) {
         (0..<table.rowCount)
                 .collect { table.getRowAt(it) }

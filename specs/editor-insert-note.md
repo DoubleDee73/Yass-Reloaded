@@ -44,10 +44,16 @@ inserting one placeholder tilde note when no text is entered.
 - Inserted text rows replace the overlapping note/page-break range and then
   append the preserved remainder of the song. The end row is restored if needed.
 - Blank input creates a single `:` note, never a page break.
+- When blank input inserts the `~` placeholder after a previous note on the
+  same page, and that previous note ends with a stored trailing space, Yass
+  removes that trailing space so the placeholder is treated as a continuation
+  rather than a new word.
 - For blank input, the anchor row is the current selection. If there is no
   selection, the player cursor/next visible element is used when available.
 - Blank insertion is blocked on comment rows and when there is no positive
   beat space before the next note or page break.
+- Blank insertion does not remove a trailing space from a note before the
+  previous page break.
 - The blank note beat is the maximum of the previous note end, previous page
   break second beat, and the player cursor beat when the cursor path is used.
 - The blank note length defaults to four beats, is capped by the next note or
@@ -145,6 +151,10 @@ inserting one placeholder tilde note when no text is entered.
   track is `#VOCALS` and loaded pitch data is available.
 - If the selected track is not `#VOCALS`, or there is no pitch data at all,
   `Ctrl+Enter` falls back to the legacy Insert Note action.
+- If vocal-aware insertion has pitch data but still cannot keep the generated
+  note group inside the available local range, or cannot derive usable pitch
+  frames for that local insert, `Ctrl+Enter` also falls back to the legacy
+  Insert Note action instead of aborting.
 - The vocal-aware path uses the already-loaded `mp3.getPitchDataList()` frames,
   applying `mp3.getPitchWaveformTranspose()` the same way existing pitch-aware
   editor actions do.

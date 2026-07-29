@@ -1,5 +1,6 @@
 package yass
 
+import com.nexes.wizard.Wizard
 import spock.lang.Specification
 import yass.analysis.PitchDetector
 import yass.integration.separation.SeparationResult
@@ -7,6 +8,7 @@ import yass.integration.transcription.openai.OpenAiTranscriptSegment
 import yass.integration.transcription.openai.OpenAiTranscriptWord
 import yass.integration.transcription.openai.OpenAiTranscriptionResult
 import yass.wizard.WizardTranscriptionState
+import yass.wizard.Lyrics
 
 import java.nio.file.Files
 
@@ -188,6 +190,58 @@ E
         refined.timingSourceTag == UltrastarHeaderTag.VOCALS.toString()
         refined.segments[0].words*.startMs.collect { beatForMs(it, gapMs, bpm) } == [0, 33, 42, 48, 58]
         refined.segments[1].words*.startMs.collect { beatForMs(it, gapMs, bpm) } == [90, 98, 118]
+    }
+
+    def "creates Moloko Indigo table and prints non-empty YassTable lyric rows"() {
+        given:
+        def lyricsFile = new File("C:/Users/User/.yass/indigo.txt")
+        assert lyricsFile.isFile()
+        def songRoot = Files.createTempDirectory("yass-wizard-indigo")
+        def dummyAudio = Files.createTempFile("wizard-dummy-audio", ".mp3")
+        def properties = new YassProperties()
+        def wizard = new Wizard()
+        wizard.setValue("language", "English")
+        wizard.setValue("bpm", "300")
+        def lyrics = new Lyrics(wizard, properties)
+        lyrics.setText(lyricsFile.getText("UTF-8"))
+        def tableText = lyrics.getTable()
+        def values = [
+                artist: "Moloko", title: "Indigo", language: "English", genre: "Other", bpm: "300",
+                filename: dummyAudio.toString(), folder: "", songdir: songRoot.toString(),
+                melodytable: tableText, encoding: ""
+        ] as Hashtable
+
+        when:
+        def songFile = YassUtils.createSong(null, values, properties)
+        def createdText = Files.readString(new File(songFile).toPath())
+        def createdTable = new YassTable()
+        createdTable.init(properties)
+        assert createdTable.setText(createdText)
+        def noteRows = createdTable.rows.findAll { it.isNote() }
+        def nonEmptyNoteRows = noteRows.findAll { it.text != null && !it.text.trim().isEmpty() }
+        def emptyCommentRows = createdTable.rows.findAll { it.isComment() && it.toString() == "#" }
+        println("Wizard table:\n${createdText}")
+        if (nonEmptyNoteRows.isEmpty()) {
+            println("No non-empty YassTable lyric rows found.")
+        } else {
+            nonEmptyNoteRows.eachWithIndex { row, index ->
+                println("YassTable lyric row ${index + 1}: ${row.toString()}")
+            }
+        }
+
+        then:
+        songFile.endsWith("Moloko - Indigo\\Moloko - Indigo.txt")
+        createdTable.artist == "Moloko"
+        createdTable.title == "Indigo"
+        noteRows.size() > 11
+        emptyCommentRows.empty
+
+        cleanup:
+        if (songRoot != null) {
+            songRoot.toFile().deleteDir()
+        }
+        Files.deleteIfExists(dummyAudio)
+        wizard?.dialog?.dispose()
     }
 
     private static OpenAiTranscriptSegment segment(int startMs, int endMs, List<OpenAiTranscriptWord> words) {

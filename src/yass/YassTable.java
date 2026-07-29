@@ -2551,7 +2551,8 @@ public class YassTable extends JTable {
     public synchronized boolean addRow(String s) {
         // trim empty lines
         if (s == null || s.trim().length() < 1 || s.trim().equals("#")) {
-            tm.addRow("#", "", "", "", "", YassRow.EMPTY_LINE);
+            // Empty input lines are separators in imported/wizard lyrics, not
+            // song rows. Do not persist them as a literal '#' row.
             return true;
         }
         int n = s.length();
@@ -6314,9 +6315,7 @@ public class YassTable extends JTable {
             return;
         }
         InsertedLyricsResult result = insertLyricsWithVocalPitchAtBeat(noteText, resolveInsertCursorBeat(), pitchData);
-        if (!result.inserted()) {
-            showInsertedLyricsResult(result);
-        }
+        handleInsertedLyricsResult(result, noteText);
     }
 
     public enum InsertedLyricsStatus {
@@ -6435,7 +6434,19 @@ public class YassTable extends JTable {
         return 0;
     }
 
-    private void showInsertedLyricsResult(InsertedLyricsResult result) {
+    void handleInsertedLyricsResult(InsertedLyricsResult result, String noteText) {
+        if (result == null || result.inserted()) {
+            return;
+        }
+        if (result.status() == InsertedLyricsStatus.NO_USABLE_PITCH_DATA
+                || result.status() == InsertedLyricsStatus.ALIGNMENT_OUT_OF_BOUNDS) {
+            insertNoteWithOptionalText(noteText);
+            return;
+        }
+        showInsertedLyricsResult(result);
+    }
+
+    void showInsertedLyricsResult(InsertedLyricsResult result) {
         if (result == null || result.inserted() || StringUtils.isBlank(result.messageKey())) {
             return;
         }
@@ -6466,7 +6477,7 @@ public class YassTable extends JTable {
         });
     }
 
-    private void insertNoteWithOptionalText(String noteText) {
+    void insertNoteWithOptionalText(String noteText) {
         int preservedAbsoluteViewY = -1;
         if (sheet != null && sheet.isAbsolutePitchViewEnabled()) {
             preservedAbsoluteViewY = sheet.getViewPosition().y;
@@ -6574,12 +6585,23 @@ public class YassTable extends JTable {
             height = nextNote.getHeightInt();
         }
 
+        trimPreviousNoteEndSpaceOnSamePage(pnote, prevBreak == null ? -1 : pbreak);
         tm.insertRowAt(":", beat, length, height, "~", row + 1);
         tm.fireTableRowsInserted(row + 1, row + 1);
         setRowSelectionInterval(row + 1, row + 1);
         updatePlayerPosition();
         zoomPage();
         restoreAbsoluteViewYLater(preservedAbsoluteViewY);
+    }
+
+    private void trimPreviousNoteEndSpaceOnSamePage(int previousNoteIndex, int previousBreakIndex) {
+        if (previousNoteIndex < 0 || previousNoteIndex >= getRowCount()) {
+            return;
+        }
+        if (previousBreakIndex >= 0 && previousNoteIndex < previousBreakIndex) {
+            return;
+        }
+        trimEndSpace(previousNoteIndex);
     }
 
     public InsertedLyricsResult insertLyricsWithVocalPitchAtBeat(String noteText,
