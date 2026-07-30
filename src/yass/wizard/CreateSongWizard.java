@@ -349,8 +349,8 @@ public class CreateSongWizard extends Wizard {
 
             public void aboutToHidePanel() {
                 header.ensureTableCommit();
-                setValue("title", header.getTitle());
-                setValue("artist", header.getArtist());
+                setValue("title", StringUtils.trimToEmpty(header.getTitle()));
+                setValue("artist", StringUtils.trimToEmpty(header.getArtist()));
                 setValue("genre", header.getGenre());
                 setValue("language", header.getLanguage());
                 setValue("bpm", header.getBPM());

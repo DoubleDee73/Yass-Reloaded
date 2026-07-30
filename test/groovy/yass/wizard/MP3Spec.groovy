@@ -11,6 +11,13 @@ class MP3Spec extends Specification {
         resolved.title == "My One And Only Love"
     }
 
+    def "resolvedMetadata trims meaningful wizard values"() {
+        expect:
+        def resolved = MP3.resolveMetadata(" Stevie Wonder ", " Send one your love ", "Ignored", "Ignored")
+        resolved.artist == "Stevie Wonder"
+        resolved.title == "Send one your love"
+    }
+
     def "resolvedMetadata falls back to parsed values when wizard values are still unknown"() {
         expect:
         def resolved = MP3.resolveMetadata("UnknownArtist", "UnknownTitle", "Sting", "My One And Only Love")

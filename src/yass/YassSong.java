@@ -207,18 +207,30 @@ public class YassSong implements Cloneable, Comparable<Object> {
         StringBuilder sb = new StringBuilder();
         int i = 0;
         int n = s.length();
-        String c = "/\\?*:<>";
+        String c = "/\\?*:<>\"|";
         char ch;
         while (i < n) {
-            if (c.indexOf(ch = s.charAt(i++)) < 0) {
+            ch = s.charAt(i++);
+            if (c.indexOf(ch) < 0 && !Character.isISOControl(ch)) {
                 sb.append(ch);
             }
         }
-        while (sb.charAt(sb.length() - 1) == '.') {
-            sb.deleteCharAt(sb.length() - 1);
-        }
 
-        return sb.toString();
+        String filename = sb.toString();
+        filename = filename.replaceAll("[ .]+(?=\\.[^.]+$)", "");
+        return stripTrailingWindowsPathChars(filename);
+    }
+
+    private static String stripTrailingWindowsPathChars(String value) {
+        int end = value.length();
+        while (end > 0) {
+            char ch = value.charAt(end - 1);
+            if (ch != ' ' && ch != '.') {
+                break;
+            }
+            end--;
+        }
+        return value.substring(0, end);
     }
 
     /**

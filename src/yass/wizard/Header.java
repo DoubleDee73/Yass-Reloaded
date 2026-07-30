@@ -19,6 +19,7 @@
 package yass.wizard;
 
 import com.nexes.wizard.Wizard;
+import org.apache.commons.lang3.StringUtils;
 import yass.I18;
 
 import javax.swing.*;
@@ -119,7 +120,7 @@ public class Header extends JPanel {
      * @return The title value
      */
     public String getTitle() {
-        return (String) fileTable.getValueAt(0, 1);
+        return StringUtils.trimToEmpty((String) fileTable.getValueAt(0, 1));
     }
 
     /**
@@ -137,7 +138,7 @@ public class Header extends JPanel {
      * @return The artist value
      */
     public String getArtist() {
-        return (String) fileTable.getValueAt(1, 1);
+        return StringUtils.trimToEmpty((String) fileTable.getValueAt(1, 1));
     }
 
     /**

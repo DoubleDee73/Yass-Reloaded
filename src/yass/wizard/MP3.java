@@ -131,8 +131,8 @@ public class MP3 extends JPanel {
     }
 
     static Metadata resolveMetadata(String existingArtist, String existingTitle, String parsedArtist, String parsedTitle) {
-        String artist = hasMeaningfulMetadata(existingArtist) ? existingArtist : parsedArtist;
-        String title = hasMeaningfulMetadata(existingTitle) ? existingTitle : parsedTitle;
+        String artist = hasMeaningfulMetadata(existingArtist) ? StringUtils.trimToEmpty(existingArtist) : StringUtils.trimToEmpty(parsedArtist);
+        String title = hasMeaningfulMetadata(existingTitle) ? StringUtils.trimToEmpty(existingTitle) : StringUtils.trimToEmpty(parsedTitle);
         return new Metadata(
                 StringUtils.defaultIfBlank(artist, "UnknownArtist"),
                 StringUtils.defaultIfBlank(title, "UnknownTitle"));

@@ -12859,11 +12859,10 @@ public class YassActions implements DropTargetListener {
                 File sourceAudioFile = new File(sourceAudio);
                 if (sourceAudioFile.exists()) {
                     try {
-                        File destinationFile = Path.of(destinationDir.getAbsolutePath() +
-                                                               File.separator + hash.get("audio")).toFile();
+                        File destinationFile = new File(destinationDir, StringUtils.defaultString((String) hash.get("audio")));
                         FileUtils.moveFile(sourceAudioFile, destinationFile);
                         LOGGER.info("Moved audio file to " + destinationDir.getAbsolutePath());
-                    } catch (IOException e) {
+                    } catch (IOException | RuntimeException e) {
                         LOGGER.log(Level.SEVERE, "Could not move audio file to " + destinationDir.getAbsolutePath(), e);
                     }
                 }
@@ -12875,12 +12874,11 @@ public class YassActions implements DropTargetListener {
                 File sourceVideoFile = new File(sourceVideo);
                 if (sourceVideoFile.exists()) {
                     try {
-                        File destinationFile = Path.of(destinationDir.getAbsolutePath() +
-                                                               File.separator + hash.get("videofile")).toFile();
+                        File destinationFile = new File(destinationDir, StringUtils.defaultString((String) hash.get("videofile")));
 
                         FileUtils.moveFile(sourceVideoFile, destinationFile);
                         LOGGER.info("Moved video file to " + destinationDir.getAbsolutePath());
-                    } catch (IOException e) {
+                    } catch (IOException | RuntimeException e) {
                         LOGGER.log(Level.SEVERE, "Could not move video file to " + destinationDir.getAbsolutePath(), e);
                     }
                 }

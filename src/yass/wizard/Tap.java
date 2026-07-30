@@ -114,7 +114,7 @@ public class Tap extends JPanel {
         table.setEnabled(true);
         table.removeAllRows();
         table.setText(wizard.getValue("melodytable"));
-        String title = wizard.getValue("title");
+        String title = StringUtils.trimToEmpty(wizard.getValue("title"));
         if (wizard.getValue("language").equalsIgnoreCase(Locale.ENGLISH.getDisplayLanguage())) {
             if (wizard.getProperty("titlecase").equals("simple")) {
                 title = WordUtils.capitalize(title);
@@ -123,7 +123,8 @@ public class Tap extends JPanel {
             }
         }
         table.setTitle(title);
-        table.setArtist(wizard.getValue("artist"));
+        String artist = StringUtils.trimToEmpty(wizard.getValue("artist"));
+        table.setArtist(artist);
         String extension;
         String temp = wizard.getValue("filename");
         if (StringUtils.isNotEmpty(temp)) {
@@ -131,7 +132,6 @@ public class Tap extends JPanel {
         } else {
             extension = ".mp3";
         }
-        String artist = wizard.getValue("artist");
         String actualFileName = YassSong.toFilename(artist + " - " + title + extension);
         table.setMP3(actualFileName);
         wizard.setValue("audio", actualFileName);
