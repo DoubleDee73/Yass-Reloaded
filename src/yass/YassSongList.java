@@ -6425,6 +6425,7 @@ public class YassSongList extends JTable {
         Font bigFont = null;
         String t, a, g, l, e, y, f, ds, multi, al, len;
         boolean bold, underlined, opened, locked, video, nobackground, perfect;
+        boolean selected;
         int langIndex = -1;
         boolean err_minorpage, err_major, err_file, err_text, err_tags;
 
@@ -6586,6 +6587,7 @@ public class YassSongList extends JTable {
             } else if (options == TILE) {
                 bold = false;
                 // useBigFont;
+                selected = isSelected;
                 underlined = opened = s.isOpened();
                 locked = s.isLocked();
                 video = s.getComplete().equals("V");
@@ -6733,10 +6735,15 @@ public class YassSongList extends JTable {
                 extra += "...";
             }
 
-            g2d.setColor(Color.black);
+            Color titleColor = selected ? UIManager.getColor("Table.selectionForeground") : Color.black;
+            Color artistColor = selected ? new Color(
+                    Math.min(255, titleColor.getRed() + 60),
+                    Math.min(255, titleColor.getGreen() + 60),
+                    Math.min(255, titleColor.getBlue() + 60)) : Color.gray;
+            g2.setColor(titleColor);
             g2.drawString(t, x_text, sh);
 
-            g2.setColor(Color.gray);
+            g2.setColor(artistColor);
             g2.setFont(font);
             fm = g2.getFontMetrics();
             sh = fm.getHeight() - 1;
