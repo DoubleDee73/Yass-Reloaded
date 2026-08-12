@@ -19,9 +19,15 @@
 
 package yass.extras;
 
+import com.jfposton.ytdlp.YtDlp;
+import com.jfposton.ytdlp.YtDlpCallback;
+import com.jfposton.ytdlp.YtDlpException;
+import com.jfposton.ytdlp.YtDlpRequest;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.LoggerFactory;
 import yass.*;
+import yass.options.YtDlpPanel;
+import yass.wizard.DownloadSplashFrame;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
@@ -121,7 +127,6 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         checkExistingUsdbSyncerTags();
         setModal(true);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-        setSize(760, 720);
         setLocationRelativeTo(YassUtils.resolveDialogOwner(a.getTab()));
         setTitle(I18.get("usdb_syncer_title"));
         setLayout(new BorderLayout());
@@ -135,6 +140,13 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         metaScrollPane.setBorder(BorderFactory.createEmptyBorder());
         metaScrollPane.getVerticalScrollBar().setUnitIncrement(16);
         add(metaScrollPane, BorderLayout.CENTER);
+        pack();
+        int maxH = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getMaximumWindowBounds().height - 40;
+        if (getHeight() > maxH) {
+            setSize(getWidth(), maxH);
+        }
+        setLocationRelativeTo(YassUtils.resolveDialogOwner(a.getTab()));
         updateResultline();
         getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
                      .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "close");
@@ -595,20 +607,36 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         gbc.gridy = line;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         main.add(new JLabel(I18.get("usdb_syncer_video_url")), gbc);
-        gbc.gridwidth = 10;
+        gbc.gridwidth = 9;
         gbc.gridx = 2;
         gbc.gridy = line;
         main.add(videoUrl, gbc);
+        if (isYtDlpConfigured()) {
+            gbc.gridwidth = 1;
+            gbc.fill = GridBagConstraints.NONE;
+            gbc.gridx = 11;
+            gbc.gridy = line;
+            main.add(createYtDlpVideoDownloadButton(), gbc);
+            gbc.fill = GridBagConstraints.HORIZONTAL;
+        }
         line++;
         // --------------------------------------------------------
         gbc.gridwidth = 2;
         gbc.gridx = 0;
         gbc.gridy = line;
         main.add(new JLabel(I18.get("usdb_syncer_audio_url")), gbc);
-        gbc.gridwidth = 10;
+        gbc.gridwidth = 9;
         gbc.gridx = 2;
         gbc.gridy = line;
         main.add(audioUrl, gbc);
+        if (isYtDlpConfigured()) {
+            gbc.gridwidth = 1;
+            gbc.fill = GridBagConstraints.NONE;
+            gbc.gridx = 11;
+            gbc.gridy = line;
+            main.add(createYtDlpAudioDownloadButton(), gbc);
+            gbc.fill = GridBagConstraints.HORIZONTAL;
+        }
         line++;
         // --------------------------------------------------------
         line = coverUrlLine(gbc, line, main);
@@ -1398,5 +1426,200 @@ public class UsdbSyncerMetaTagCreator extends JDialog {
         lab.setFont(f);
         box.add(lab);
         return box;
+    }
+
+    private boolean isYtDlpConfigured() {
+        YassProperties prop = actions.getProperties();
+        return StringUtils.isNotBlank(prop.getProperty("ytdlp-version"));
+    }
+
+    private JButton createYtDlpVideoDownloadButton() {
+        JButton btn = new JButton();
+        btn.setIcon(actions.getIcon("globe16Icon"));
+        btn.setToolTipText(I18.get("usdb_syncer_video_download"));
+        btn.addActionListener(e -> downloadMediaViaYtDlp(true));
+        return btn;
+    }
+
+    private JButton createYtDlpAudioDownloadButton() {
+        JButton btn = new JButton();
+        btn.setIcon(actions.getIcon("globe16Icon"));
+        btn.setToolTipText(I18.get("usdb_syncer_audio_download"));
+        btn.addActionListener(e -> downloadMediaViaYtDlp(false));
+        return btn;
+    }
+
+    private void downloadMediaViaYtDlp(boolean videoOnly) {
+        String urlText = videoOnly ? videoUrl.getText() : audioUrl.getText();
+        urlText = StringUtils.trimToEmpty(urlText);
+        if (StringUtils.isEmpty(urlText)) {
+            return;
+        }
+        String url = toYouTubeWatchUrl(urlText);
+
+        YassProperties prop = actions.getProperties();
+        try {
+            YtDlpSupport.ensureExecutableAvailable(prop);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this,
+                    I18.get("create_youtube_ytdlp_not_available"),
+                    I18.get("create_youtube_ytdlp_error_title"),
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String songDir = song.getDir();
+        if (StringUtils.isEmpty(songDir)) {
+            return;
+        }
+        String txtFilename = song.getDirFilename();
+        String rawBase = txtFilename.contains(File.separator)
+                ? txtFilename.substring(txtFilename.lastIndexOf(File.separator) + 1)
+                : txtFilename;
+        final String baseName = rawBase.toLowerCase().endsWith(".txt")
+                ? rawBase.substring(0, rawBase.length() - 4)
+                : rawBase;
+
+        YtDlpRequest request = new YtDlpRequest(url);
+        request.setDirectory(songDir);
+        YtDlpSupport.applyCommonOptions(request, prop);
+
+        if (videoOnly) {
+            request.setOption("format", YtDlpSupport.buildVideoOnlyFormatString(prop, true));
+            request.setOption("no-audio");
+        } else {
+            request.setOption("format", "bestaudio");
+            if (StringUtils.isNotEmpty(prop.getProperty(YtDlpPanel.YTDLP_AUDIO_FORMAT))) {
+                YtDlpSupport.applyAudioExtractionOptions(request, prop);
+            }
+        }
+
+        // Use a temp output name; we'll rename after download
+        String tempTemplate = baseName + ".ytdlp_tmp.%(ext)s";
+        request.setOption("output", tempTemplate);
+        request.setOption("ignore-errors");
+
+        DownloadSplashFrame splash = new DownloadSplashFrame(this);
+        final String[] downloadedPath = {null};
+
+        YtDlpCallback callback = new YtDlpCallback() {
+            @Override public void onProcessStarted(Process process, YtDlpRequest req) {}
+
+            @Override
+            public void onProcessFinished(int exitCode, String out, String err) {
+                SwingUtilities.invokeLater(() -> {
+                    if (exitCode != 0 && (downloadedPath[0] == null || !new File(downloadedPath[0]).exists())) {
+                        splash.appendText("Download failed.");
+                        splash.enableCloseButton();
+                        return;
+                    }
+                    final File downloaded = resolveDownloadedFile(downloadedPath[0], songDir);
+                    if (downloaded == null || !downloaded.exists()) {
+                        splash.appendText("Download failed: output file not found.");
+                        splash.enableCloseButton();
+                        return;
+                    }
+
+                    String dlName = downloaded.getName();
+                    int dot = dlName.lastIndexOf('.');
+                    final String ext = dot >= 0 ? dlName.substring(dot) : "";
+
+                    File uniqueTarget = buildUniqueTargetFile(songDir, baseName, ext);
+                    boolean renamed = downloaded.renameTo(uniqueTarget);
+                    if (!renamed) {
+                        LOGGER.warning("Could not rename downloaded file, using as-is: " + downloaded.getName());
+                    }
+                    final File finalFile = renamed ? uniqueTarget : downloaded;
+                    if (videoOnly) {
+                        // Fill #VIDEO tag only if the song has none yet
+                        if (StringUtils.isBlank(song.getVideo())) {
+                            song.setVideo(finalFile.getName());
+                            song.storeFile(song.getDirFilename());
+                        }
+                        JOptionPane.showMessageDialog(UsdbSyncerMetaTagCreator.this,
+                                I18.get("usdb_syncer_video_saved").replace("%s", finalFile.getName()),
+                                I18.get("usdb_syncer_title"),
+                                JOptionPane.PLAIN_MESSAGE);
+                    } else {
+                        JOptionPane.showMessageDialog(UsdbSyncerMetaTagCreator.this,
+                                I18.get("usdb_syncer_audio_saved").replace("%s", finalFile.getName()),
+                                I18.get("usdb_syncer_title"),
+                                JOptionPane.PLAIN_MESSAGE);
+                    }
+                    splash.enableCloseButton();
+                    splash.dispose();
+                });
+            }
+
+            @Override
+            public void onOutput(String line) {
+                if (line == null) return;
+                SwingUtilities.invokeLater(() -> {
+                    LOGGER.info(line);
+                    splash.appendText(line);
+                    if (line.contains("[download] Destination:") || line.contains("[ExtractAudio] Destination:")) {
+                        String path = line.substring(line.indexOf(":") + 2).trim();
+                        if (!path.endsWith(".part")) {
+                            File f = new File(path);
+                            downloadedPath[0] = f.isAbsolute() ? f.getAbsolutePath() : new File(songDir, path).getAbsolutePath();
+                        }
+                    }
+                });
+            }
+
+            @Override
+            public void onProgressUpdate(float progress, long etaInSeconds) {
+                SwingUtilities.invokeLater(() -> splash.updateProgress(progress, etaInSeconds));
+            }
+        };
+
+        new Thread(() -> {
+            try {
+                YtDlp.executeAsync(request, callback);
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> {
+                    splash.appendText("Error: " + ex.getMessage());
+                    splash.enableCloseButton();
+                });
+            }
+        }, "ytdlp-meta-downloader").start();
+
+        splash.setVisible(true);
+    }
+
+    private static File resolveDownloadedFile(String knownPath, String songDir) {
+        if (knownPath != null) {
+            File f = new File(knownPath);
+            if (f.exists()) return f;
+        }
+        File[] candidates = new File(songDir).listFiles(f ->
+                f.isFile() && f.getName().contains(".ytdlp_tmp.") && !f.getName().endsWith(".part"));
+        if (candidates != null && candidates.length == 1) {
+            return candidates[0];
+        }
+        return null;
+    }
+
+    private static File buildUniqueTargetFile(String dir, String baseName, String ext) {
+        File candidate = new File(dir, baseName + ext);
+        int index = 2;
+        while (candidate.exists()) {
+            candidate = new File(dir, baseName + " " + index + ext);
+            index++;
+        }
+        return candidate;
+    }
+
+    private static String toYouTubeWatchUrl(String value) {
+        String trimmed = StringUtils.trimToEmpty(value);
+        if (trimmed.contains("://") || trimmed.startsWith("youtu")) {
+            return trimmed;
+        }
+        // bare YouTube ID (11 chars) or v=ID
+        String id = trimmed.startsWith("v=") ? trimmed.substring(2) : trimmed;
+        if (id.matches("[A-Za-z0-9_-]{11}")) {
+            return "https://www.youtube.com/watch?v=" + id;
+        }
+        return trimmed;
     }
 }
