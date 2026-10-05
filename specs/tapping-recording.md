@@ -32,13 +32,15 @@ then be used to align tapped notes to the detected melody.
 - `YassTapNotes.evaluateTaps(...)` converts tap timestamps into UltraStar beats
   using table BPM, GAP, and playrate timebase.
 - Odd trailing tap timestamps are discarded.
-- For normal playback speed, reaction-time compensation is applied.
+- Tap timestamps are used without reaction-time compensation.
 - If recording starts at the first note of the song, the first completed tap sets
   `#GAP` and the first processed note lands at beat `0`.
 - First-note anchoring means the real audio start of the first note is stored in
   `#GAP`.
 - If recording starts at a later note, absolute timing relative to `#GAP` is
   preserved.
+- After tapped note timing is applied, page breaks are repositioned within the
+  gaps between adjacent notes before optional melody alignment runs.
 - Post-recording Align To Melody uses
   `YassTable.AlignToMelodyContext.recording()` so detected octave is preserved.
 
@@ -54,6 +56,10 @@ then be used to align tapped notes to the detected melody.
 - `src/yass/YassTapNotes.java`
   - `evaluateTaps(...)`
   - first-note GAP anchoring
+  - page-break repositioning before melody alignment
+- `src/yass/autocorrect/YassAutoCorrect.java`
+  - shared `repositionPageBreaks(...)` process used by tapping, alignment, and
+    page-break auto-correction
 - `src/yass/YassActions.java`
   - recording session state
   - playback start/stop/interruption handling

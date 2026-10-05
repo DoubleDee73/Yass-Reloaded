@@ -25,7 +25,7 @@ class SongTimingTagSanityServiceSpec extends Specification {
         YassTable table = tableWith("""
 #GAP:30000
 #START:20
-#END:10
+#END:10000
 : 0 4 10 La
 """)
 
@@ -73,7 +73,7 @@ class SongTimingTagSanityServiceSpec extends Specification {
         given:
         YassTable table = tableWith("""
 #START:181
-#END:240
+#END:240000
 : 0 4 10 La
 """)
 

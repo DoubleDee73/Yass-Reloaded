@@ -435,9 +435,10 @@ public class SongHeader extends JPanel implements YassSheetListener {
         }
         startSpinner.setTime(table.getStart());
         startSpinner.setDuration(duration);
-        double end = table.getEnd() > 0 ? table.getEnd() : 10000d;
-        endSpinner.setTime(Math.min(duration, end));
-        endSpinner.setDuration(Math.max(10000d, duration));
+        double durationMillis = duration * 1000d;
+        double endMillis = table.getEnd() > 0 ? table.getEnd() * 1000d : durationMillis;
+        endSpinner.setTime(Math.min(durationMillis, endMillis));
+        endSpinner.setDuration(Math.max(10000d, durationMillis));
         languageField.setText(table.getLanguage());
         yearField.setText(table.getYear());
         genreField.setText(table.getGenre());
@@ -501,7 +502,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
         JPanel endPanel = new JPanel();
         endPanel.setLayout(new BoxLayout(endPanel, BoxLayout.X_AXIS));
         panels.add(endPanel);
-        endSpinner = new TimeSpinner(null, 0d, 0d, 0.1d);
+        endSpinner = new TimeSpinner(null, 0, 0);
         endSpinner.setSpinnerSize(HEADER_COMPACT_SPINNER_SIZE);
         endSpinner.getSpinner().setFocusable(false);
         endPanel.add(endSpinner);
@@ -583,7 +584,7 @@ public class SongHeader extends JPanel implements YassSheetListener {
             if (isInternalUpdate) {
                 return;
             }
-            actions.setEndSeconds(endSpinner.getTimeDouble());
+            actions.setEndMillis(endSpinner.getTime());
         });
 
         bpmField.addActionListener(e -> {

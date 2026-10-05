@@ -154,7 +154,7 @@ public class SongTimingTagSanityService {
         if (row == null) {
             return;
         }
-        OptionalDouble end = parseDouble(row);
+        OptionalDouble end = parseEndSeconds(row);
         if (end.isEmpty() || end.getAsDouble() < 0d) {
             findings.add(new Finding(UltrastarHeaderTag.END, row.getHeaderComment(), Action.REMOVE,
                     "END must be greater than or equal to 0"));
@@ -173,7 +173,7 @@ public class SongTimingTagSanityService {
             return;
         }
         OptionalDouble start = parseDouble(startRow);
-        OptionalDouble end = parseDouble(endRow);
+        OptionalDouble end = parseEndSeconds(endRow);
         if (start.isEmpty() || end.isEmpty()) {
             return;
         }
@@ -311,6 +311,13 @@ public class SongTimingTagSanityService {
             }
         }
         return endBeat;
+    }
+
+    private OptionalDouble parseEndSeconds(YassRow row) {
+        OptionalDouble endMillis = parseDouble(row);
+        return endMillis.isPresent()
+                ? OptionalDouble.of(endMillis.getAsDouble() / 1000d)
+                : OptionalDouble.empty();
     }
 
     private OptionalDouble parseDouble(YassRow row) {

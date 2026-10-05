@@ -53,6 +53,8 @@ video, timeline, preview markers, or grid far outside the useful range.
   - `#MEDLEYENDBEAT`
   - `#VIDEOGAP`
 - Audio duration is used when available.
+- `#END` is persisted in milliseconds; the in-memory editor representation remains
+  seconds and converts at the file/UI boundary.
 - Cleanup removes invalid optional header rows except `#GAP`, which is corrected
   to `0`.
 

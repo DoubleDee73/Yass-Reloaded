@@ -22,8 +22,8 @@ class YassTapNotesSpec extends Specification {
 
         then:
         processed == 2
-        table.getGap() == 2000
-        table.getCommentRow('GAP:').getHeaderComment() == '2000'
+        table.getGap() == 2200
+        table.getCommentRow('GAP:').getHeaderComment() == '2200'
         List<YassRow> notes = noteRows(table).collect { table.getRowAt(it) }
         notes[0].getBeatInt() == 0
         notes[0].getLengthInt() == 4
@@ -50,7 +50,7 @@ class YassTapNotesSpec extends Specification {
         processed == 1
         table.getGap() == 1000
         YassRow secondNote = table.getRowAt(secondNoteRow)
-        secondNote.getBeatInt() == 8
+        secondNote.getBeatInt() == 10
         secondNote.getLengthInt() == 4
     }
 

@@ -313,6 +313,9 @@ public class YouTube extends JPanel {
         String audioFormat = wizard.getProperty(YtDlpPanel.YTDLP_AUDIO_FORMAT);
         if (needAudio && StringUtils.isNotEmpty(audioFormat)) {
             YtDlpSupport.applyAudioExtractionOptions(request, wizard.getYassProperties());
+            if (needVideo) {
+                request.setOption("keep-video");
+            }
         }
 
         YtDlpSupport.applyCommonOptions(request, wizard.getYassProperties());

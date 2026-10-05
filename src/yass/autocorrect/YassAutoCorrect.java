@@ -574,7 +574,57 @@ public class YassAutoCorrect {
                 }
             }
         }
+        changedAny |= repositionPageBreaks(table);
         return changedAny;
+    }
+
+
+    /**
+     * Repositions page breaks within the available gap between adjacent notes.
+     *
+     * @return whether at least one page break moved
+     */
+    public static boolean repositionPageBreaks(YassTable table) {
+        boolean changed = false;
+        for (int rowIndex = 0; rowIndex < table.getRowCount(); rowIndex++) {
+            YassRow row = table.getRowAt(rowIndex);
+            if (row == null || !row.isPageBreak()) {
+                continue;
+            }
+            int previousNoteEnd = Integer.MIN_VALUE;
+            for (int previousIndex = rowIndex - 1; previousIndex >= 0; previousIndex--) {
+                YassRow previous = table.getRowAt(previousIndex);
+                if (previous != null && previous.isNote()) {
+                    previousNoteEnd = previous.getBeatInt() + Math.max(1, previous.getLengthInt());
+                    break;
+                }
+            }
+            int nextTimingBoundary = Integer.MAX_VALUE;
+            for (int nextIndex = rowIndex + 1; nextIndex < table.getRowCount(); nextIndex++) {
+                YassRow next = table.getRowAt(nextIndex);
+                if (next != null && next.isNoteOrPageBreak()) {
+                    nextTimingBoundary = next.getBeatInt();
+                    break;
+                }
+            }
+            if (previousNoteEnd == Integer.MIN_VALUE || nextTimingBoundary == Integer.MAX_VALUE) {
+                continue;
+            }
+            int gap = nextTimingBoundary - previousNoteEnd;
+            if (gap < 2) {
+                continue;
+            }
+            int idealBeat = previousNoteEnd + (int) Math.round(gap * 0.6d);
+            idealBeat = Math.max(previousNoteEnd + 1, Math.min(nextTimingBoundary - 1, idealBeat));
+            if (row.getBeatInt() != idealBeat) {
+                row.setBeat(idealBeat);
+                if (row.hasSecondBeat() && row.getSecondBeatInt() < idealBeat) {
+                    row.setSecondBeat(idealBeat);
+                }
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     /**

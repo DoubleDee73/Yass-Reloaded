@@ -1736,7 +1736,7 @@ public class YassActions implements DropTargetListener {
     };
     final Action removeEnd = new AbstractAction(I18.get("tool_audio_end_reset")) {
         public void actionPerformed(ActionEvent e) {
-            setEnd((int) (mp3.getDuration() / 1000));
+            setEndMillis((int) (mp3.getDuration() / 1000));
         }
     };
     private final Action removeVideoGap = new AbstractAction(I18.get("tool_video_gap_reset")) {
@@ -6340,7 +6340,7 @@ public class YassActions implements DropTargetListener {
                 setStart(i.intValue());
             } else if (p.equals("end")) {
                 Integer i = (Integer) e.getNewValue();
-                setEnd(i.intValue());
+                setEndMillis(i.intValue());
             } else if (p.equals("gap")) {
                 Integer i = (Integer) e.getNewValue();
                 setGap(i.intValue());
@@ -10428,10 +10428,10 @@ public class YassActions implements DropTargetListener {
             if (r.isEnd()
                     || (r.isComment() && r.getHeaderCommentTag().equals("END:"))) {
                 String input = JOptionPane.showInputDialog(tab, I18.get("edit_lyrics_edit_end_msg"),
-                                                           (int) (table.getEnd()) + "");
+                                                           (int) Math.round(table.getEnd() * 1000d) + "");
                 try {
                     int val = Integer.parseInt(input);
-                    table.setEnd(val);
+                    setEndMillis(val);
                     sheet.update();
                     table.lastNote();
                     table.repaint();
@@ -10463,7 +10463,7 @@ public class YassActions implements DropTargetListener {
     }
 
     public void setEnd(int ms) {
-        setEndSeconds(ms);
+        setEndMillis(ms);
     }
 
     public void setEndMillis(int ms) {
@@ -10478,7 +10478,8 @@ public class YassActions implements DropTargetListener {
         for (YassTable t : tablesForCurrentSongUpdate(getOpenTables(table), table)) {
             t.setEnd(seconds);
         }
-        if (Math.abs(sheet.getSongHeader().getEndSpinner().getTimeDouble() - seconds) > 0.0001d) {
+        double spinnerSeconds = sheet.getSongHeader().getEndSpinner().getTimeDouble() / 1000d;
+        if (Math.abs(spinnerSeconds - seconds) > 0.0001d) {
             updateStartEnd();
         }
     }
@@ -10492,10 +10493,10 @@ public class YassActions implements DropTargetListener {
             end = dur;
         }
         songHeader.getStartSpinner().setTime(start);
-        songHeader.getEndSpinner().setTime(end);
+        songHeader.getEndSpinner().setTime(end * 1000d);
 
         songHeader.getStartSpinner().setDuration(dur);
-        songHeader.getEndSpinner().setDuration(dur);
+        songHeader.getEndSpinner().setDuration(dur * 1000d);
     }
 
     public void setGap(int ms) {
@@ -13261,7 +13262,7 @@ public class YassActions implements DropTargetListener {
         try {
             return usdbSessionService.useBrowserCookies(browser);
         } catch (Exception ex) {
-            LOGGER.log(Level.INFO, "USDB browser-cookie login failed for " + browser, ex);
+            LOGGER.log(Level.INFO, "USDB browser-cookie login failed for " + browser + ": " + ex.getMessage());
             if (browser == UsdbCookieBrowser.CHROME || browser == UsdbCookieBrowser.EDGE) {
                 return loginToUsdbWithPythonBrowserCookies(browser);
             }

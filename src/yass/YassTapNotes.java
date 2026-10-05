@@ -20,9 +20,10 @@ package yass;
 
 import java.util.List;
 import java.util.Vector;
+import yass.autocorrect.YassAutoCorrect;
 
 public class YassTapNotes {
-    public static final double REACTION_TIME = 200;
+
     public static int evaluateTaps(YassTable table, Vector<Long> taps, List<Integer> pitches, Timebase timebase) {
         return evaluateTaps(table, taps, pitches, timebase, -1);
     }
@@ -96,6 +97,7 @@ public class YassTapNotes {
             }
         }
 
+        YassAutoCorrect.repositionPageBreaks(table);
         tm.fireTableDataChanged();
         table.addUndo();
         table.repaint();
@@ -118,10 +120,6 @@ public class YassTapNotes {
     }
 
     private static double toCompensatedTapMillis(long tapMicros, Timebase timebase) {
-        double ms = tapMicros / 1000.0;
-        if (timebase == Timebase.NORMAL) {
-            ms = ms - REACTION_TIME;
-        }
-        return Math.max(0d, ms);
+        return Math.max(0d, tapMicros / 1000.0);
     }
 }

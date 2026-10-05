@@ -3,6 +3,7 @@ package yass.alignment;
 import org.apache.commons.lang3.StringUtils;
 import yass.YassRow;
 import yass.YassTable;
+import yass.autocorrect.YassAutoCorrect;
 import yass.integration.transcription.openai.OpenAiTranscriptWord;
 import yass.integration.transcription.openai.OpenAiTranscriptionResult;
 
@@ -59,7 +60,7 @@ public class LyricsAlignmentService {
             movedNotes += shiftRowsForwardToAvoidOverlaps(table);
             movedNotes += shortenNoteLengthsToFit(table);
             movedNotes += shiftRowsForwardToAvoidOverlaps(table);
-            repositionPageBreaks(table);
+            YassAutoCorrect.repositionPageBreaks(table);
         } finally {
             table.setPreventUndo(oldUndo);
         }
@@ -360,32 +361,6 @@ public class LyricsAlignmentService {
         return changed;
     }
 
-    private void repositionPageBreaks(YassTable table) {
-        for (int rowIndex = 0; rowIndex < table.getRowCount(); rowIndex++) {
-            YassRow row = table.getRowAt(rowIndex);
-            if (row == null || !row.isPageBreak()) {
-                continue;
-            }
-            int prevEnd = findPreviousNoteEndBeat(table, rowIndex);
-            int nextStart = findNextTimingBoundaryBeat(table, rowIndex);
-            if (prevEnd == Integer.MIN_VALUE || nextStart == Integer.MAX_VALUE) {
-                continue;
-            }
-            int gap = nextStart - prevEnd;
-            if (gap < 2) {
-                continue;
-            }
-            int idealBeat = prevEnd + (int) Math.round(gap * 0.6d);
-            idealBeat = Math.max(prevEnd + 1, Math.min(nextStart - 1, idealBeat));
-            if (row.getBeatInt() != idealBeat) {
-                row.setBeat(idealBeat);
-                if (row.hasSecondBeat() && row.getSecondBeatInt() < idealBeat) {
-                    row.setSecondBeat(idealBeat);
-                }
-            }
-        }
-    }
-
     private int findPreviousNoteEndBeat(YassTable table, int fromRowIndex) {
         for (int rowIndex = fromRowIndex - 1; rowIndex >= 0; rowIndex--) {
             YassRow row = table.getRowAt(rowIndex);
@@ -395,6 +370,7 @@ public class LyricsAlignmentService {
         }
         return Integer.MIN_VALUE;
     }
+
     private int findNextTimingBoundaryBeat(YassTable table, int fromRowIndex) {
         for (int rowIndex = fromRowIndex + 1; rowIndex < table.getRowCount(); rowIndex++) {
             YassRow row = table.getRowAt(rowIndex);

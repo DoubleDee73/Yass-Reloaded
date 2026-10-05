@@ -31,8 +31,13 @@ wizard generation, tapping recording, or transcription-based note creation.
 - `YassTable.AlignToMelodyMode.PITCH_ONLY` preserves timing.
 - `YassTable.AlignToMelodyContext.MANUAL` may use octave bias so selected notes
   land in a coherent octave.
-- `CREATE_WIZARD` and `RECORDING` contexts keep the detected octave. Do not
-  apply manual octave correction there.
+- Manual alignment folds detected octave outliers into the C3–G5 vocal range
+  while preserving their pitch class; generated-note contexts otherwise retain
+  their existing octave behavior.
+- `CREATE_WIZARD` and `RECORDING` contexts keep the detected octave except for
+  high-octave outliers: a detected pitch above C5 is lowered by one octave when
+  the previous note is at least one octave lower. The same continuity rule is
+  applied during manual alignment.
 - Visible pitch-data transpose offsets must be applied before alignment so the
   action matches the pitch line shown to the user.
 - Timing alignment should prefer the strong sung body:

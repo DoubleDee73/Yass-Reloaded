@@ -68,7 +68,7 @@ public final class YtDlpSupport {
 
     public static String buildCombinedVideoFormatString(YassProperties properties, boolean includeCodec) {
         StringBuilder format = new StringBuilder(buildVideoOnlyFormatString(properties, includeCodec));
-        format.append(",bestaudio");
+        format.append("+bestaudio");
         String audioBitrate = properties.getProperty(YtDlpPanel.YTDLP_AUDIO_BITRATE);
         if (StringUtils.isNotBlank(audioBitrate)) {
             format.append("[abr<=").append(audioBitrate.replace("k", "000")).append("]");

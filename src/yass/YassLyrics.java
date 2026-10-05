@@ -397,6 +397,8 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
         lyricsArea.getInputMap().put(
                 KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0), "nop");
         lyricsArea.getInputMap().put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_SUBTRACT, 0), "nop");
+        lyricsArea.getInputMap().put(
                 KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE, 0), "nop");
         lyricsArea.getInputMap().put(
                 KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "nop");
@@ -478,8 +480,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                     }
                     e.consume();
                     return;
-                } else if (keyCode == KeyEvent.VK_SPACE
-                        || keyCode == KeyEvent.VK_MINUS) {
+                } else if (keyCode == KeyEvent.VK_SPACE || isMinusKey(e)) {
                     char key = keyCode == KeyEvent.VK_SPACE ? ' ' : '-';
 
                     if (!lyricsArea.isEditable()) {
@@ -693,7 +694,7 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
                 if (!overwrite && (keyCode == KeyEvent.VK_SPACE
                         || keyCode == KeyEvent.VK_DELETE
                         || keyCode == KeyEvent.VK_BACK_SPACE
-                        || keyCode == KeyEvent.VK_MINUS)) {
+                        || isMinusKey(e))) {
                     e.consume();
                 }
                 if (lyricsArea.isEditable() && sheet != null && overwrite) {
@@ -2189,6 +2190,12 @@ public class YassLyrics extends JPanel implements TabChangeListener, YassSheetLi
         } catch (BadLocationException ex) {
             ex.printStackTrace();
         }
+    }
+
+    static boolean isMinusKey(KeyEvent event) {
+        return event.getKeyCode() == KeyEvent.VK_MINUS
+                || event.getKeyCode() == KeyEvent.VK_SUBTRACT
+                || event.getKeyChar() == '-';
     }
 
     private boolean isWordDelimiter(@NotNull String character) {

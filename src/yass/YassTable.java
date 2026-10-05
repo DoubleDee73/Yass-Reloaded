@@ -133,9 +133,11 @@ public class YassTable extends JTable {
     // widen the pitch-histogram window by this much on each side to pick up the nearby sung note.
     private static final int ALIGN_PITCH_WIDEN_MS = 250;
     private static final int SEMITONES_PER_OCTAVE = 12;
-    private static final int RECORDING_OUTLIER_HIGH_PITCH = 24; // C6 relative to C4
+    private static final int RECORDING_OUTLIER_HIGH_PITCH = 12; // C5 relative to C4
     private static final int RECORDING_OUTLIER_LOW_PITCH = -12; // C3 relative to C4
     private static final int RECORDING_OUTLIER_NEIGHBOR_DISTANCE = 20;
+    private static final int MANUAL_VOCAL_RANGE_LOW = -12; // C3 relative to C4
+    private static final int MANUAL_VOCAL_RANGE_HIGH = 19; // G5 relative to C4
     private static final int PITCH_SPLIT_MIN_STABLE_BEATS = 3;
     private static final int PITCH_SPLIT_TOLERANCE = 1;
     private static final List<String> PITCH_SPLIT_FINAL_CLUSTERS = Arrays.asList(
@@ -655,7 +657,7 @@ public class YassTable extends JTable {
     public void setEnd(double b) {
         end = b;
 
-        String s = formatTenthsSecondValue(end);
+        String s = end < 0 ? "" : String.valueOf(Math.round(end * 1000d));
         YassRow r = tm.getCommentRow("END:");
         if (r == null && end >= 0) {
             r = new YassRow("#", "END:", s, "", "");
@@ -2589,7 +2591,7 @@ public class YassTable extends JTable {
                 } else if (tag.equals("START:")) {
                     start = Double.parseDouble(s.replace(',', '.'));
                 } else if (tag.equals("END:")) {
-                    end = Double.parseDouble(s.replace(',', '.'));
+                    end = Double.parseDouble(s.replace(',', '.')) / 1000d;
                 } else if (tag.equals("VIDEOGAP:")) {
                     vgap = Double.parseDouble(s.replace(',', '.'));
                 } else if (tag.equals(AUDIO.getTagName())) {
@@ -5240,6 +5242,19 @@ public class YassTable extends JTable {
                     pitchDecision = "relative view: nearest pitch-line octave";
                 }
             }
+            if (!keepDetectedOctave) {
+                recordingNeighborReference = determineRecordingOutlierNeighborReference(row, rows,
+                                                                                       prevalentPitches);
+                recordingOutlierCorrection =
+                        determineRecordingOutlierOctaveCorrection(alignedPitch, recordingNeighborReference);
+                if (recordingOutlierCorrection != 0) {
+                    alignedPitch += recordingOutlierCorrection;
+                    pitchDecision = "detected high octave: one-octave correction from previous note";
+                }
+            }
+            if (effectiveContext.origin() == AlignToMelodyOrigin.MANUAL) {
+                alignedPitch = normalizePitchIntoVocalRange(alignedPitch);
+            }
             if (debugAlignToMelody) {
                 LOGGER.fine(String.format(Locale.ROOT,
                     "[AlignToMelodyDebug] row beat=%d length=%d text=\"%s\" mode=%s origin=%s absolutePitchView=%s currentPitch=%d prevalentPitch=%d drawnPitchLine=%d octaveBias=%d biasedPitchLine=%d snappedPitch=%s alignedPitch=%d decision=\"%s\" recordingNeighborReference=%s recordingOutlierCorrection=%d pitchLineOctavesNearCurrent=%s pitchHistogram=%s",
@@ -5843,6 +5858,17 @@ public class YassTable extends JTable {
         return bestHits * 4 >= total * 3 ? bestOffset : 0;
     }
 
+    private int normalizePitchIntoVocalRange(int pitch) {
+        int normalized = pitch;
+        while (normalized < MANUAL_VOCAL_RANGE_LOW) {
+            normalized += SEMITONES_PER_OCTAVE;
+        }
+        while (normalized > MANUAL_VOCAL_RANGE_HIGH) {
+            normalized -= SEMITONES_PER_OCTAVE;
+        }
+        return normalized;
+    }
+
     private int normalizePitchIntoWindow(int pitch, int referencePitch) {
         int bestPitch = pitch;
         int bestDistance = Integer.MAX_VALUE;
@@ -5859,29 +5885,15 @@ public class YassTable extends JTable {
     private Integer determineRecordingOutlierNeighborReference(YassRow row,
                                                                List<YassRow> alignedRows,
                                                                Map<YassRow, Integer> prevalentPitches) {
-        List<Integer> neighborPitches = new ArrayList<>(2);
-        addNeighborPitchReference(neighborPitches,
-                                  findAdjacentNoteInAlignedRows(row, alignedRows, -1),
-                                  prevalentPitches);
-        addNeighborPitchReference(neighborPitches,
-                                  findAdjacentNoteInAlignedRows(row, alignedRows, 1),
-                                  prevalentPitches);
-        if (neighborPitches.isEmpty()) {
-            addNeighborPitchReference(neighborPitches, findAdjacentNoteInTable(row, -1), prevalentPitches);
-            addNeighborPitchReference(neighborPitches, findAdjacentNoteInTable(row, 1), prevalentPitches);
+        YassRow previous = findAdjacentNoteInAlignedRows(row, alignedRows, -1);
+        if (previous == null) {
+            previous = findAdjacentNoteInTable(row, -1);
         }
-        if (neighborPitches.isEmpty()) {
+        if (previous == null || !previous.isNote()) {
             return null;
         }
-        neighborPitches.sort(null);
-        if (neighborPitches.size() == 1) {
-            return neighborPitches.get(0);
-        }
-        int middle = neighborPitches.size() / 2;
-        if ((neighborPitches.size() & 1) == 1) {
-            return neighborPitches.get(middle);
-        }
-        return (int) Math.round((neighborPitches.get(middle - 1) + neighborPitches.get(middle)) / 2.0d);
+        Integer detectedPitch = prevalentPitches == null ? null : prevalentPitches.get(previous);
+        return detectedPitch == null ? previous.getHeightInt() : detectedPitch;
     }
 
     private void addNeighborPitchReference(List<Integer> neighborPitches,
@@ -5941,23 +5953,17 @@ public class YassTable extends JTable {
         return null;
     }
 
-    private int determineRecordingOutlierOctaveCorrection(int pitch, Integer neighborReference) {
-        if (neighborReference == null) {
+    private int determineRecordingOutlierOctaveCorrection(int pitch, Integer previousPitch) {
+        if (previousPitch == null) {
             return 0;
         }
+        if (pitch > RECORDING_OUTLIER_HIGH_PITCH
+                && pitch - previousPitch >= SEMITONES_PER_OCTAVE) {
+            return -SEMITONES_PER_OCTAVE;
+        }
         int correctedPitch = pitch;
-        if (correctedPitch > RECORDING_OUTLIER_HIGH_PITCH) {
-            while (correctedPitch >= RECORDING_OUTLIER_HIGH_PITCH) {
-                correctedPitch -= SEMITONES_PER_OCTAVE;
-            }
-            return correctedPitch - pitch;
-        }
-        if (correctedPitch == RECORDING_OUTLIER_HIGH_PITCH
-                && correctedPitch - neighborReference > RECORDING_OUTLIER_NEIGHBOR_DISTANCE) {
-            correctedPitch -= SEMITONES_PER_OCTAVE;
-        }
         while (correctedPitch < RECORDING_OUTLIER_LOW_PITCH
-                && neighborReference - correctedPitch > RECORDING_OUTLIER_NEIGHBOR_DISTANCE) {
+                && previousPitch - correctedPitch > RECORDING_OUTLIER_NEIGHBOR_DISTANCE) {
             correctedPitch += SEMITONES_PER_OCTAVE;
         }
         return correctedPitch - pitch;

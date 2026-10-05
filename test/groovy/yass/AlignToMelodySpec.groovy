@@ -185,6 +185,24 @@ class AlignToMelodySpec extends Specification {
         note.getHeightInt() == -2
     }
 
+    def 'manual alignment folds octave outliers into the C3 to G5 vocal range'() {
+        given:
+        def high = new YassRow(':', '0', '4', '10', 'High ')
+        def low = new YassRow(':', '4', '4', '-2', 'Low ')
+        YassTable yassTable = tableWithRows(high, low)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(0, 4, 24, 1.0d))
+        pitchData.addAll(framesForBeat(4, 4, -20, 1.0d))
+
+        when:
+        yassTable.alignToMelody([high, low], pitchData,
+                YassTable.AlignToMelodyContext.manual(), YassTable.AlignToMelodyMode.PITCH_ONLY)
+
+        then:
+        high.getHeightInt() == 12
+        low.getHeightInt() == -8
+    }
+
     def 'alignNoteLength keeps pitch while adjusting note timing to the detected melody'() {
         given:
         YassTableModel ytm = new YassTableModel()
@@ -338,6 +356,27 @@ class AlignToMelodySpec extends Specification {
         and.getHeightInt() == 8
     }
 
+    def 'recording alignToMelody preserves tapped timing for first note after page break'() {
+        given:
+        def previous = new YassRow(':', '712', '16', '5', '~ ')
+        def pageBreak = new YassRow('-', '734', '', '', '')
+        def tapped = new YassRow(':', '744', '8', '7', 'And ')
+        def next = new YassRow(':', '761', '3', '8', 'I ')
+        YassTable yassTable = tableWithRows(previous, pageBreak, tapped, next)
+        def pitchData = []
+        pitchData.addAll(framesForBeat(712, 4, 5, 1.0d))
+        pitchData.addAll(framesForBeat(736, 4, 7, 1.0d))
+        pitchData.addAll(framesForBeat(737, 4, 7, 1.0d))
+        pitchData.addAll(framesForBeat(744, 4, 7, 1.0d))
+        pitchData.addAll(framesForBeat(761, 4, 8, 1.0d))
+
+        when:
+        yassTable.alignToMelody([tapped], pitchData, YassTable.AlignToMelodyContext.recording())
+
+        then:
+        tapped.getBeatInt() == 744
+    }
+
     def 'manual alignToMelody keeps first note after page break on pitch prevalent inside original note'() {
         given:
         def previous = new YassRow(':', '1315', '5', '4', '~ng ')
@@ -452,7 +491,7 @@ class AlignToMelodySpec extends Specification {
         next.getHeightInt() == 2
     }
 
-    def 'recording alignment lowers very high outliers repeatedly until they land below C6'() {
+    def 'recording alignment lowers a high outlier by one octave'() {
         given:
         def previous = new YassRow(':', '0', '4', '0', 'Prev ')
         def outlier = new YassRow(':', '4', '4', '0', 'VeryHigh ')
@@ -478,7 +517,7 @@ class AlignToMelodySpec extends Specification {
 
         then:
         previous.getHeightInt() == 0
-        outlier.getHeightInt() == 17
+        outlier.getHeightInt() == 29
         next.getHeightInt() == 2
     }
 
@@ -572,7 +611,7 @@ class AlignToMelodySpec extends Specification {
         next.getHeightInt() == 10
     }
 
-    def 'recording alignment keeps C6 notes when neighboring notes are not far enough below'() {
+    def 'recording alignment lowers high notes when the previous note is an octave lower'() {
         given:
         def previous = new YassRow(':', '0', '4', '5', 'Prev ')
         def high = new YassRow(':', '4', '4', '0', 'High ')
@@ -598,7 +637,7 @@ class AlignToMelodySpec extends Specification {
 
         then:
         previous.getHeightInt() == 5
-        high.getHeightInt() == 24
+        high.getHeightInt() == 12
         next.getHeightInt() == 5
     }
 
