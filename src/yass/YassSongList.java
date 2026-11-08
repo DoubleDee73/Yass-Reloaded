@@ -38,7 +38,6 @@ import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
-import java.lang.reflect.Method;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
@@ -1868,42 +1867,7 @@ public class YassSongList extends JTable {
             Vector<YassSong> data = (Vector<YassSong>) d.clone();
             p.print(data, filename, hash);
 
-            try {
-                // Java 1.6
-                Class<?> c = Class.forName("java.awt.Desktop");
-                Method m = c.getMethod("getDesktop", (Class[]) null);
-                Object desktop = m.invoke(null, (Object[]) null);
-
-                Class<?>[] par = new Class[1];
-                par[0] = File.class;
-                m = c.getMethod("open", par);
-                m.invoke(desktop, new File(filename));
-            } catch (Throwable t) {
-                try {
-                    String os = System.getProperty("os.name");
-                    if (os.startsWith("Windows")) {
-                        Runtime.getRuntime().exec("rundll32 url.dll,FileProtocolHandler " + filename);
-                    } else if (os.startsWith("MacOS")) {
-                        Class<?> fileMgr = Class.forName("com.apple.eio.FileManager");
-                        java.lang.reflect.Method openURL = fileMgr.getDeclaredMethod("openURL", new Class[]{String.class});
-                        openURL.invoke(null, new Object[]{filename});
-                    } else if (os.startsWith("Linux")) {
-                        String[] apps = {"gpdf", "evince", "kpdf", "firefox", "opera", "gnome-open", "kfmclient", "xdg-open", "gvfs-open"};
-                        String app = null;
-                        for (int i = 0; i < apps.length && app == null; i++) {
-                            if (Runtime.getRuntime().exec(new String[]{"which", apps[i]}).waitFor() == 0) {
-                                app = apps[i];
-                            }
-                        }
-                        if (app != null) {
-                            Runtime.getRuntime().exec(new String[]{app, filename});
-                        } else {
-
-                        }
-                    }
-                } catch (Exception ex) {
-                }
-            }
+            YassActions.openURLFile(filename);
         }
     }
 
