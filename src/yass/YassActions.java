@@ -86,7 +86,6 @@ import java.awt.im.InputContext;
 import java.awt.image.BufferedImage;
 import java.beans.PropertyChangeListener;
 import java.io.*;
-import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
@@ -6354,29 +6353,19 @@ public class YassActions implements DropTargetListener {
     }
 
     public static void openURL(String url) {
-        String osName = System.getProperty("os.name");
+        if (StringUtils.isBlank(url)) {
+            return;
+        }
         try {
-            if (osName.startsWith("Mac OS")) {
-                Class<?> fileMgr = Class.forName("com.apple.eio.FileManager");
-                java.lang.reflect.Method openURL = fileMgr.getDeclaredMethod("openURL", String.class);
-                openURL.invoke(null, url);
-            } else if (osName.startsWith("Windows")) {
-                Runtime.getRuntime().exec("rundll32 url.dll,FileProtocolHandler " + url);
-            } else {
-                String[] browsers = {"firefox", "opera", "konqueror", "epiphany", "mozilla", "netscape", "chrome"};
-                String browser = null;
-                for (int count = 0; count < browsers.length && browser == null; count++) {
-                    if (Runtime.getRuntime().exec(new String[]{"which", browsers[count]}).waitFor() == 0) {
-                        browser = browsers[count];
-                    }
-                }
-                if (browser == null) {
-                    throw new Exception("Could not find web browser");
-                } else {
-                    Runtime.getRuntime().exec(new String[]{browser, url});
-                }
+            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                Desktop.getDesktop().browse(new URI(url));
+                return;
             }
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            LOGGER.log(Level.INFO, "Desktop browse failed for " + url + ", trying system handler", ex);
+        }
+        if (!openWithSystemHandler(url)) {
+            LOGGER.warning("Could not open URL: " + url);
         }
     }
 
@@ -6390,57 +6379,52 @@ public class YassActions implements DropTargetListener {
         if (fn == null || fn.size() < 1 || fn.size() > 10) {
             return;
         }
-        try {
-            for (Enumeration<String> en = fn.elements(); en.hasMoreElements(); ) {
-                String filename = en.nextElement();
-
-                try {
-                    // Java 1.6
-                    Class<?> c = Class.forName("java.awt.Desktop");
-                    Method m = c.getMethod("getDesktop", (Class[]) null);
-                    Object desktop = m.invoke(null, (Object[]) null);
-
-                    Class[] par = new Class[1];
-                    par[0] = File.class;
-                    m = c.getMethod("open", par);
-                    m.invoke(desktop, new File(filename));
-                    // LOGGER.info("desktop open " + filename);
-                } catch (Throwable t) {
-                    try {
-                        String os = System.getProperty("os.name");
-                        if (os.startsWith("Windows")) {
-                            Runtime.getRuntime().exec("rundll32 url.dll,FileProtocolHandler " + filename);
-                        } else if (System.getProperty("os.name").startsWith(
-                                "MacOS")) {
-                            Class<?> fileMgr = Class
-                                    .forName("com.apple.eio.FileManager");
-                            java.lang.reflect.Method openURL = fileMgr
-                                    .getDeclaredMethod("openURL", String.class);
-                            openURL.invoke(null, filename);
-                        } else if (System.getProperty("os.name").startsWith("Linux")) {
-                            String[] apps = {"gnome-open", "kfmclient", "xdg-open", "gvfs-open", "firefox", "opera",
-                                    "chrome"};
-                            String app = null;
-                            for (int i = 0; i < apps.length && app == null; i++) {
-                                if (Runtime
-                                        .getRuntime()
-                                        .exec(new String[]{"which", apps[i]})
-                                        .waitFor() == 0) {
-                                    app = apps[i];
-                                }
-                            }
-                            if (app != null) {
-                                Runtime.getRuntime().exec(new String[]{app, filename});
-                            }
-                        }
-                    } catch (Exception ex) {
-                        LOGGER.log(Level.INFO, ex.getMessage(), ex);
-                    }
-                }
+        for (String filename : fn) {
+            if (StringUtils.isBlank(filename)) {
+                continue;
             }
-        } catch (Exception ex) {
-            LOGGER.log(Level.INFO, ex.getMessage(), ex);
+            File file = new File(filename);
+            try {
+                if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+                    Desktop.getDesktop().open(file);
+                    continue;
+                }
+            } catch (Exception ex) {
+                LOGGER.log(Level.INFO, "Desktop open failed for " + filename + ", trying system handler", ex);
+            }
+            if (!openWithSystemHandler(file.getAbsolutePath())) {
+                LOGGER.warning("Could not open file: " + filename);
+            }
         }
+    }
+
+    /**
+     * Fallback when java.awt.Desktop is unavailable or fails: hands the target to the
+     * operating system's default handler. Arguments are passed separately, so paths
+     * containing spaces are not split.
+     */
+    private static boolean openWithSystemHandler(String target) {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        List<List<String>> commands = new ArrayList<>();
+        if (os.startsWith("windows")) {
+            commands.add(List.of("rundll32", "url.dll,FileProtocolHandler", target));
+        } else if (os.startsWith("mac")) {
+            commands.add(List.of("open", target));
+        } else {
+            commands.add(List.of("xdg-open", target));
+            commands.add(List.of("gio", "open", target));
+            commands.add(List.of("gnome-open", target));
+            commands.add(List.of("kde-open", target));
+        }
+        for (List<String> command : commands) {
+            try {
+                new ProcessBuilder(command).start();
+                return true;
+            } catch (IOException ex) {
+                LOGGER.log(Level.FINE, "Could not run " + command.get(0), ex);
+            }
+        }
+        return false;
     }
 
     // BUG Workaround for JOptionPane: add keyboard support
